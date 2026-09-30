@@ -2,6 +2,7 @@
 # Typed manifest of what hivemind created. Never stores a command: hm-cleanup derives removal from the kind.
 set -u
 . "$(dirname "$0")/hm-lib.sh"
+. "$(dirname "$0")/hm-paths.sh"
 hm_ensure_state
 ROOT=$(hm_project_root) || exit $?
 STATE="$ROOT/.hivemind"; FILE="$STATE/manifest.jsonl"; LOCK="$STATE/manifest.lock"
@@ -19,36 +20,6 @@ required() {
     dir|file) echo "path" ;; remote) echo "host path" ;;
   esac
 }
-resolve_path() {  # absolute, no . or .. segment, parent resolved with pwd -P, never a symlink or another user's
-  local p="$1" d b
-  case "$p" in /*) ;; *) hm_die 4 "path must be absolute: $p" ;; esac
-  case "/$p/" in */../*|*/./*) hm_die 4 "'.' or '..' segment in path: $p" ;; esac
-  while [ "${#p}" -gt 1 ] && [ "${p%/}" != "$p" ]; do p="${p%/}"; done
-  [ "$p" = / ] && hm_die 4 "refused path: /"
-  d=$(cd "$(dirname "$p")" 2>/dev/null && pwd -P) || hm_die 4 "parent directory does not exist: $p"
-  b=$(basename "$p")
-  if [ "$d" = / ]; then printf '/%s\n' "$b"; else printf '%s/%s\n' "$d" "$b"; fi
-}
-refuse_protected() {  # equal to, or an ancestor of, a place hivemind must never remove
-  local rp="$1" q
-  for q in / "$HOME" "$ROOT" /tmp /private/tmp "${TMPDIR:-}"; do
-    [ -n "$q" ] && [ -d "$q" ] || continue
-    q=$(cd "$q" && pwd -P)
-    case "$q/" in "$rp"/*) hm_die 4 "refused path (is or contains a protected directory): $rp" ;; esac
-  done
-  [ "$rp" = "$STATE" ] && hm_die 4 "refused path: $rp"
-  if [ -L "$rp" ]; then hm_die 4 "refused: $rp is a symlink"; fi
-  if [ -e "$rp" ] && [ ! -O "$rp" ]; then hm_die 4 "refused: $rp is not owned by the caller"; fi
-  return 0
-}
-refuse_inside_project() {  # file and dir entries: not in the project, not in a recorded worktree
-  local rp="$1" w
-  case "$rp/" in "$ROOT/.hivemind/tmp/"*) ;; "$ROOT/"*) hm_die 4 "refused: $rp is inside the project" ;; esac
-  while IFS= read -r w; do
-    [ -n "$w" ] || continue
-    case "$rp/" in "$w/"*) hm_die 4 "refused: $rp is inside the recorded worktree $w" ;; esac
-  done < <(jq -r 'select(.kind == "worktree") | .path' "$FILE")
-}
 valid_value() {  # valid_value <field> <value>
   local k="$1" v="$2"
   case "$v" in *$'\n'*|*$'\r'*) hm_die 4 "control character in $k" ;; esac
@@ -63,7 +34,7 @@ valid_value() {  # valid_value <field> <value>
 cmd_add() {
   local kind="${1:-}"; [ $# -gt 0 ] && shift
   local fields; fields=$(allowed "$kind") || hm_die 4 "unknown kind: $kind"
-  local json kv k v seen=" " rp
+  local json kv k v seen=" " rp why
   json=$(jq -nc --arg id "m-$(date +%s)-$$-$RANDOM" --arg kind "$kind" --arg at "$(hm_now)" \
     --arg by "${HM_AGENT:-owner}" '{id:$id,kind:$kind,at:$at,by:$by}')
   for kv in "$@"; do
@@ -74,9 +45,9 @@ cmd_add() {
     seen="$seen$k "
     valid_value "$k" "$v"
     if { [ "$k" = path ] && [ "$kind" != remote ]; } || [ "$k" = socket ]; then
-      rp=$(resolve_path "$v") || exit $?
-      refuse_protected "$rp"
-      if [ "$kind" = file ] || [ "$kind" = dir ]; then refuse_inside_project "$rp"; fi
+      rp=$(hm_resolve_path "$v") || hm_die 4 "$rp"
+      why=$(hm_check_path_safe "$rp" "$ROOT") || hm_die 4 "$why"
+      if [ "$kind" = file ] || [ "$kind" = dir ]; then why=$(hm_check_path_outside "$rp" "$ROOT" "$FILE") || hm_die 4 "$why"; fi
       v="$rp"
     elif [ "$k" = path ]; then   # a remote path is judged on the remote by hm-remote-sync; here only its shape
       case "$v" in /*) ;; *) hm_die 4 "remote path must be absolute: $v" ;; esac
