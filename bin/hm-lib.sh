@@ -36,3 +36,54 @@ hm_pane_key() {  # hm_pane_key <socket> <pane id> -> filename-safe key
 }
 hm_tmux() { if [ -n "${HM_TMUX_SOCKET:-}" ]; then tmux -S "$HM_TMUX_SOCKET" "$@"; else tmux "$@"; fi; }
 hm_socket() { if [ -n "${HM_TMUX_SOCKET:-}" ]; then echo "$HM_TMUX_SOCKET"; else tmux display -p '#{socket_path}'; fi; }
+
+# ---- mkdir locks (macOS has no flock). Used by hm-slot and hm-manifest. -------------------------------------------
+# A lock is a directory holding holder.json {pid, lstart, created, ...}. A holder is stale when its pid is dead, when
+# the pid is alive with another start time (pid reuse), or when holder.json is missing or empty and the directory is
+# older than 10 s. A stale lock is taken over inside a guard directory "<lock>.takeover" (itself stale after 30 s),
+# after re-reading the holder, so exactly one contender removes it. `kill -9` of a holder frees its lock.
+hm_alive()  { ps -p "$1" >/dev/null 2>&1; }
+hm_lstart() { ps -o lstart= -p "$1" 2>/dev/null | sed 's/^ *//;s/ *$//'; }
+hm_dir_age() {  # seconds since the directory was last modified
+  local m; m=$(stat -f %m "$1" 2>/dev/null || stat -c %Y "$1" 2>/dev/null) || return 1
+  echo $(( $(date +%s) - m ))
+}
+hm_holder_json() {  # hm_holder_json <pid> [extra json object] -> the holder record
+  local x="${2:-}"; [ -n "$x" ] || x='{}'
+  jq -nc --argjson pid "$1" --arg l "$(hm_lstart "$1")" --argjson c "$(date +%s)" --argjson x "$x" \
+    '{pid:$pid,lstart:$l,created:$c} + $x'
+}
+hm_lock_stale() {  # hm_lock_stale <lock>: 0 when the holder is gone
+  local h="$1/holder.json" pid ls age
+  pid=$(hm_json_get "$h" .pid); ls=$(hm_json_get "$h" .lstart)
+  if [ -z "$pid" ]; then age=$(hm_dir_age "$1") || return 1; [ "$age" -gt 10 ]; return; fi
+  hm_alive "$pid" || return 0
+  [ "$(hm_lstart "$pid")" != "$ls" ]
+}
+hm_lock_try() {  # hm_lock_try <lock> <holder json>: 0 taken, 1 busy
+  local lock="$1" json="$2" guard age snap
+  mkdir -p "$(dirname "$lock")"
+  if mkdir "$lock" 2>/dev/null; then printf '%s\n' "$json" > "$lock/holder.json"; return 0; fi
+  snap=$(cat "$lock/holder.json" 2>/dev/null)
+  hm_lock_stale "$lock" || return 1
+  guard="$lock.takeover"
+  if ! mkdir "$guard" 2>/dev/null; then
+    age=$(hm_dir_age "$guard") || return 1
+    [ "$age" -gt 30 ] || return 1
+    rmdir "$guard" 2>/dev/null; mkdir "$guard" 2>/dev/null || return 1
+  fi
+  if [ "$(cat "$lock/holder.json" 2>/dev/null)" != "$snap" ] || ! hm_lock_stale "$lock"; then
+    rmdir "$guard" 2>/dev/null; return 1   # somebody else took it over first
+  fi
+  mv "$lock" "$lock.stale.$$" 2>/dev/null && rm -rf "$lock.stale.$$"
+  if mkdir "$lock" 2>/dev/null; then
+    printf '%s\n' "$json" > "$lock/holder.json"; rmdir "$guard" 2>/dev/null; return 0
+  fi
+  rmdir "$guard" 2>/dev/null; return 1
+}
+hm_lock_release() {  # hm_lock_release <lock> <pid>: removes the lock only when the record is that process's own
+  local hp hl
+  hp=$(hm_json_get "$1/holder.json" .pid); hl=$(hm_json_get "$1/holder.json" .lstart)
+  [ -n "$hp" ] && [ "$hp" = "$2" ] && [ "$hl" = "$(hm_lstart "$2")" ] || return 1
+  rm -rf "$1"
+}
