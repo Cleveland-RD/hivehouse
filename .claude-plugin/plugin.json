@@ -1,0 +1,29 @@
+{
+  "name": "hivemind",
+  "version": "0.1.0",
+  "description": "Run a feature with a team of Claude sessions in tmux: plan, build, review, gate, rotate, overnight, clean up.",
+  "author": { "name": "Cleveland R&D" },
+  "license": "MIT",
+  "repository": "https://github.com/Cleveland-RD/hivemind",
+  "keywords": ["orchestration", "tmux", "agents", "review", "workflow"],
+  "userConfig": {
+    "commit_style": { "type": "string", "title": "Commit subject style", "description": "conventional (type(scope): summary) or free", "options": ["conventional", "free"], "default": "conventional" },
+    "allow_attribution": { "type": "boolean", "title": "Allow AI attribution trailers in commits", "description": "When off, gates refuse commits carrying Co-Authored-By or similar trailers", "default": false },
+    "files_per_commit": { "type": "number", "title": "Most files per commit", "description": "Gates warn or refuse commits touching more files than this", "default": 5, "min": 1 },
+    "model_orchestrator": { "type": "string", "title": "Orchestrator model", "description": "Model alias for the orchestrator session", "default": "opus" },
+    "model_builder": { "type": "string", "title": "Implementer/fixer model", "description": "Model alias for builder agents", "default": "sonnet" },
+    "model_reviewer": { "type": "string", "title": "Reviewer/architect/product model", "description": "Model alias for reviewing agents", "default": "opus" },
+    "effort_builder": { "type": "string", "title": "Builder effort", "description": "Reasoning effort for builder agents", "options": ["low", "medium", "high", "xhigh"], "default": "medium" },
+    "effort_reviewer": { "type": "string", "title": "Reviewer effort", "description": "Reasoning effort for reviewing agents", "options": ["low", "medium", "high", "xhigh"], "default": "high" },
+    "window_orchestrator": { "type": "number", "title": "Orchestrator context window (tokens)", "description": "Recorded per agent at spawn; never inferred from a model name", "default": 200000, "min": 1000 },
+    "window_builder": { "type": "number", "title": "Builder context window (tokens)", "description": "Recorded per agent at spawn; never inferred from a model name", "default": 200000, "min": 1000 },
+    "window_reviewer": { "type": "number", "title": "Reviewer context window (tokens)", "description": "Recorded per agent at spawn; never inferred from a model name", "default": 200000, "min": 1000 },
+    "permission_mode_local": { "type": "string", "title": "Agents' permission mode on this machine", "description": "Bypass permissions is never used locally", "options": ["plan", "dontAsk", "default", "acceptEdits", "auto"], "default": "auto" },
+    "remote_hosts": { "type": "string", "title": "Known remote hosts (comma-separated ssh names)", "description": "ssh host names hivemind may run overnight work on", "default": "" },
+    "dedicated_hosts": { "type": "string", "title": "Remote hosts dedicated to agents (bypass allowed)", "description": "Comma-separated ssh names where bypass permissions may be used, asked again each time", "default": "" },
+    "rotate_at_percent": { "type": "number", "title": "Context level that triggers a handoff", "description": "Percent of the context window at which an agent hands off and is cleared", "default": 50, "min": 10, "max": 95 },
+    "overnight_ceiling_usd": { "type": "number", "title": "Spending ceiling per overnight run (USD)", "description": "A project may only lower this", "default": 50, "min": 0 },
+    "heartbeat_minutes": { "type": "number", "title": "Overnight heartbeat interval (minutes)", "description": "How often the orchestrator checks context, disk, queue and spend", "default": 30, "min": 1 },
+    "min_free_gb": { "type": "number", "title": "Free disk (GB) below which cleanup runs", "description": "Below this, sessions get a low-disk warning and cleanup runs", "default": 20, "min": 0 }
+  }
+}

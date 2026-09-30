@@ -1,0 +1,15 @@
+{
+  "name": "hivemind",
+  "owner": {
+    "name": "Cleveland R&D"
+  },
+  "plugins": [
+    {
+      "name": "hivemind",
+      "source": "./",
+      "description": "Run a feature with a team of Claude sessions in tmux.",
+      "version": "0.1.0"
+    }
+  ],
+  "description": "Run a feature with a team of Claude sessions in tmux."
+}
