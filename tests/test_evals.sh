@@ -78,6 +78,17 @@ RUBY
       try { new RegExp(r.pattern, r.flags); console.log("ok\t" + r.label + ": the pattern compiles as JavaScript"); }
       catch (e) { console.log("FAIL\t" + r.label + ": " + e.message); } }' "$T_TMP/regexes.json")
     while IFS=$'\t' read -r verdict label; do [ "$verdict" = ok ] && ok "$label" || bad "$label"; done <<< "$js"
+    # nothing-spawned counts a spawn and only a spawn, on the JSON a Bash call's input is encoded as
+    js=$(node -e 'const rs = JSON.parse(require("fs").readFileSync(process.argv[1])).filter(r => r.label.endsWith("/nothing-spawned"));
+      console.log((rs.length > 0 ? "ok" : "FAIL") + "\tevery case has a nothing-spawned grader");
+      const spawns = ["hm-spawn --agent impl --role r.md", "cd /w && hm-spawn --agent impl", "/p/bin/hm-spawn --agent impl", "hm-slot status; hm-spawn --agent a", "echo a\nhm-spawn --agent b"];
+      const not = ["hm-spawn --self --agent orch", "hm-spawn --self --agent o && echo ok", "command -v hm-spawn", "which hm-spawn", "echo \"run hm-spawn\"", "hm-spawn-x --agent a"];
+      for (const r of rs) {
+        const re = new RegExp(r.pattern, r.flags);
+        for (const c of spawns) console.log((re.test(JSON.stringify({ command: c, description: "d" })) ? "ok" : "FAIL") + "\t" + r.label + " counts " + JSON.stringify(c));
+        for (const c of not) console.log((re.test(JSON.stringify({ command: c, description: "d" })) ? "FAIL" : "ok") + "\t" + r.label + " does not count " + JSON.stringify(c));
+      }' "$T_TMP/regexes.json")
+    while IFS=$'\t' read -r verdict label; do [ "$verdict" = ok ] && ok "$label" || bad "$label"; done <<< "$js"
   else echo "  skip the patterns compile (node is not installed)"; fi
 else echo "  skip the case schema (ruby is not installed)"; fi
 
