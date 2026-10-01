@@ -136,6 +136,35 @@ git reset -q --hard "$good"; git merge -q --no-ff --no-commit side >/dev/null 2>
 git add -A; git commit -qm "chore(join): merge side"
 out=$(hm-gate-verify commits "$good..HEAD" $COMMON 2>&1); assert_status "a merge carrying 6 files of its own fails --max-files 5" $? 1
 assert_contains "the merge itself is named, by its own 6 files" "$out" "$(git rev-parse --short HEAD) files: 6"
+# a merge that undoes 6 of the side's files counts them: --cc saw nothing there
+git reset -q --hard "$good"; git branch -q -D side; git checkout -q -b side
+c "feat: six on the side" u1 u2 u3 u4 u5 u6; git checkout -q -
+git merge -q --no-ff --no-commit side >/dev/null 2>&1; git checkout -q "$good" -- . 2>/dev/null; rm -f u1 u2 u3 u4 u5 u6
+git add -A; git commit -qm "chore(join): merge side"
+out=$(hm-gate-verify commits "$good..HEAD" $COMMON 2>&1); assert_status "a merge that undoes 6 of the side's files fails" $? 1
+assert_contains "the merge itself is named, by the 6 it undid" "$out" "$(git rev-parse --short HEAD) files: 6"
+# both sides edit the same 6 files, cleanly: git's own merge, nothing of the merge's own (--cc counted all 6)
+git reset -q --hard "$good"; git branch -q -D side
+for k in 1 2 3 4 5 6; do printf 'a\nb\nc\nd\ne\n' > both$k; done; c "feat: six shared files"; shared=$(git rev-parse HEAD)
+git checkout -q -b side   # each side's edits in two commits of 3, so only the merge is judged on 6
+for half in "1 2 3" "4 5 6"; do for k in $half; do printf 'A\nb\nc\nd\ne\n' > both$k; done; git commit -qam "feat: the side's first lines"; done
+git checkout -q -
+for half in "1 2 3" "4 5 6"; do for k in $half; do printf 'a\nb\nc\nd\nE\n' > both$k; done; git commit -qam "feat: our last lines"; done
+git merge -q --no-ff -m "chore(join): merge side" side >/dev/null 2>&1
+assert_eq "both sides' edits are in the merge" "$(cat both6)" "$(printf 'A\nb\nc\nd\nE')"
+assert_eq "and --cc would count all 6" "$(git diff-tree -r --cc --no-commit-id --name-only HEAD | grep -c .)" "6"
+out=$(hm-gate-verify commits "$shared..HEAD" $COMMON 2>&1); assert_status "a clean merge where both sides edit 6 files passes" $? 0
+assert_eq "with every commit checked" "$out" "OK (5 commits)"
+# 6 conflicts resolved by taking our side: the resolutions are the merge's own (--cc saw none of them)
+git reset -q --hard "$shared"; git branch -q -D side; git checkout -q -b side
+for half in "1 2 3" "4 5 6"; do for k in $half; do echo theirs > both$k; done; git commit -qam "feat: theirs"; done
+git checkout -q -
+for half in "1 2 3" "4 5 6"; do for k in $half; do echo ours > both$k; done; git commit -qam "feat: ours"; done
+git merge -q --no-ff side >/dev/null 2>&1; git checkout -q --ours -- both1 both2 both3 both4 both5 both6
+git add -A; git commit -qm "chore(join): merge side"
+assert_eq "--cc counts no resolution taken whole from one side" "$(git diff-tree -r --cc --no-commit-id --name-only HEAD | grep -c .)" "0"
+out=$(hm-gate-verify commits "$shared..HEAD" $COMMON 2>&1); assert_status "a merge resolving 6 conflicts by hand fails" $? 1
+assert_contains "the merge itself is named, by its 6 resolutions" "$out" "$(git rev-parse --short HEAD) files: 6"
 git reset -q --hard "$good"; git branch -q -D side
 git reset -q --hard "$good"; c "update stuff" f3
 hm-gate-verify commits "$good..HEAD" $COMMON >/dev/null 2>&1; assert_status "a free subject fails conventional" $? 1

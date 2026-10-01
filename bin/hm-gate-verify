@@ -8,10 +8,9 @@
 #     so it is red, not green.
 #   hm-gate-verify commits <base>..<tip> --max-files <n> --style conventional|free --attribution allow|deny [--no-body]
 #     Every flag but --no-body is required, so nothing is loosened by leaving one out. Per commit: a subject, the
-#     conventional form when asked, at most <n> files against its first parent (for a merge, only the files it differs
-#     from every parent in, its own content, since the merged commits are each checked in the same range), and under
-#     deny no attribution line. A
-#     body is a warning, and a violation with --no-body. An empty range is red: nothing checked is not a pass.
+#     conventional form when asked, at most <n> files against its first parent (for a merge, only the files where it
+#     differs from the merge git itself computes of its two parents, its own content, since the merged commits are each
+#     checked in the same range), and under deny no attribution line. A body is a warning, and a violation with --no-body. An empty range is red: nothing checked is not a pass.
 # Exit: 0 green or ok, 1 red or a violation, 4 a refused range, 64 usage.
 set -u
 . "$(dirname "$0")/hm-lib.sh"
@@ -91,11 +90,21 @@ verify_commits() {
     if [ "$style" = conventional ] && ! printf '%s\n' "$subject" | grep -Eq "$CONVENTIONAL"; then
       echo "$short subject: not conventional: $subject"; bad=1; fi
     # A merge brings in commits the range holds and checks one by one, so a merge counts only its own content: the files
-    # it differs from every parent in (`--cc`), which a clean merge has none of and a hand edit or resolution has.
-    if [ "$(git rev-list --parents -n 1 "$c" | wc -w)" -le 2 ]; then
+    # where it differs from git's own merge of its two parents, recomputed (`merge-tree --write-tree`, git 2.38). A clean
+    # merge has none; a hand edit, a resolved conflict or a side's change undone each count. merge-tree exits 1 on a
+    # conflict but still prints the tree it would leave, which is read either way. An octopus merge, or a git without
+    # --write-tree, falls back to `--cc` (the files it differs from every parent in), which is near and not exact.
+    parents=$(git rev-list --parents -n 1 "$c" | wc -w)
+    if [ "$parents" -le 2 ]; then
       files=$(git diff-tree -r --root --no-commit-id --name-only -m --first-parent "$c" | grep -c .)
     else
-      files=$(git diff-tree -r --cc --no-commit-id --name-only "$c" | grep -c .)
+      merged=""
+      [ "$parents" -eq 3 ] && merged=$(git merge-tree --write-tree "$c^1" "$c^2" 2>/dev/null | head -1)
+      if printf '%s' "$merged" | grep -Eq '^[0-9a-f]{40,64}$'; then
+        files=$(git diff --name-only "$merged" "$c" | grep -c .)
+      else
+        files=$(git diff-tree -r --cc --no-commit-id --name-only "$c" | grep -c .)
+      fi
     fi
     [ "$files" -le "$max" ] || { echo "$short files: $files, more than $max"; bad=1; }
     if [ "$attribution" = deny ]; then

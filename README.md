@@ -11,7 +11,8 @@ tested bash executable in `bin/`.
 ## Requirements
 
 - tmux ≥ 3.2 (`new-session` and `new-window` take `-e`; hm-spawn hands each pane its environment that way)
-- git ≥ 2.31
+- git ≥ 2.31; ≥ 2.38 for `hm-gate-verify commits` to count a merge's own files exactly (`merge-tree --write-tree`;
+  before it a merge is counted by `--cc`, which is near and not exact)
 - bash (the macOS 3.2 is enough), jq, perl and shasum (both ship with macOS)
 - ssh and rsync, for remote runs
 - Claude Code ≥ 2.1.271
