@@ -1,0 +1,68 @@
+#!/usr/bin/env bash
+# Run a gate's steps under the machine's slot and write one `<name> exit <n>` line per step, for hm-gate-verify.
+#   hm-gate --log <file> -- <name> <command> [<name> <command> ...]
+# Every argument is checked before anything runs. The slot is held for this process (`hm-slot acquire`, released by
+# pid in the EXIT trap), never through a flag that says it is already held, which a caller could use to skip it.
+# <file> is started empty and <file>.d/ afresh, so no line of an earlier run survives. Its first line is a header,
+#   # hm-gate steps: <name>,<name>... head=<commit|none> dirty=<0|1>
+# naming every step it will run and the tree it ran on, which `hm-gate-verify log` reads as the steps that must have a
+# line and `--commit` as the commit a green log vouches for. Each command runs with `bash -c` from the current directory,
+# in its own process group, its output in <file>.d/<name>.log; every step runs after a failure. An interrupt (INT, TERM,
+# HUP) stops the running step's whole group and writes no line for it, so the header names a step the log lacks. With
+# the steps in their own groups (`set -m`), a SIGKILL to the gate's group no longer reaches them: the same trade as a
+# `kill -9` of `hm-slot run`.
+# Not pre-approved for agents (A16): it runs commands, so the whole command line goes through permission.
+# Exit: 0 every step 0, 1 any step failed, 64 usage, 75 the slot is busy (the holder on stderr), 129/130/143 interrupted.
+set -u
+. "$(dirname "$0")/hm-lib.sh"
+USAGE="usage: hm-gate --log <file> -- <name> <command> [<name> <command> ...]"
+[ "${1:-}" = "--log" ] && [ -n "${2:-}" ] || hm_die 64 "$USAGE"
+log="$2"; shift 2
+[ "${1:-}" = "--" ] || hm_die 64 "$USAGE"; shift
+[ $# -gt 0 ] && [ $(($# % 2)) -eq 0 ] || hm_die 64 "$USAGE"
+names=(); cmds=(); seen=" "
+while [ $# -gt 0 ]; do
+  hm_is_step_name "$1" || hm_die 64 "a step name is $HM_STEP_NAME_RULE: $1"
+  case "$seen" in *" $1 "*) hm_die 64 "a step name is given twice: $1" ;; esac
+  seen="$seen$1 "; names+=("$1"); cmds+=("$2"); shift 2
+done
+logdir=$(dirname "$log")
+[ -d "$logdir" ] && [ -w "$logdir" ] && { [ ! -e "$log" ] || [ -w "$log" ]; } || hm_die 64 "the gate log cannot be written: $log"
+# A log or a step-log directory git tracks is refused: the gate would overwrite a tracked file, and the dirty check below
+# leaves the log out, so a change to that file would go unseen. The exclude then only ever hides the gate's own output.
+for own in "$log" "$log.d"; do
+  GIT_LITERAL_PATHSPECS=1 git ls-files --error-unmatch -- "$own" >/dev/null 2>&1 \
+    && hm_die 64 "the gate log may not be a file git tracks: $own"
+done
+
+# The tree the steps run on, read before they run (a step may change it). The gate's own log and step logs are left out
+# when they are in the tree, so a log an earlier gate left there does not make the next run dirty and its --commit red.
+head=$(git rev-parse --verify -q HEAD 2>/dev/null) || head=none
+dirty=0
+if [ "$head" != none ]; then
+  top=$(git rev-parse --show-toplevel 2>/dev/null); top=$(cd "$top" && pwd -P); here=$(cd "$logdir" && pwd -P)
+  own=()
+  case "$here/" in "$top/"*) rel="${here#"$top"}"; rel="${rel#/}"; rel="${rel:+$rel/}$(basename "$log")"
+    own=(":(top,literal,exclude)$rel" ":(top,literal,exclude)$rel.d") ;; esac
+  [ -n "$(git status --porcelain -- ':/' ${own[@]+"${own[@]}"} 2>/dev/null)" ] && dirty=1
+fi
+
+"$(dirname "$0")/hm-slot" acquire gate --pid $$ || exit $?
+trap '"$(dirname "$0")/hm-slot" release --pid $$ --label gate' EXIT
+# A step runs in the background, in its own process group (job control), and is waited for, so a signal is handled now
+# rather than when the step ends, and stops everything the step started, not its shell alone.
+set -m
+child=""
+stop() { [ -n "$child" ] && kill -TERM -- "-$child" 2>/dev/null; exit "$1"; }
+trap 'stop 130' INT; trap 'stop 143' TERM; trap 'stop 129' HUP
+
+IFS=,; echo "# hm-gate steps: ${names[*]} head=$head dirty=$dirty" > "$log" || exit 1; unset IFS
+rm -rf "$log.d"; mkdir -p "$log.d" || exit 1
+status=0
+for i in "${!names[@]}"; do
+  bash -c "${cmds[$i]}" </dev/null >> "$log.d/${names[$i]}.log" 2>&1 & child=$!
+  wait "$child"; rc=$?; child=""
+  echo "${names[$i]} exit $rc" >> "$log"
+  [ "$rc" -eq 0 ] || status=1
+done
+exit $status
