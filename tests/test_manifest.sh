@@ -31,6 +31,9 @@ hm-manifest drop nosuchid 2>/dev/null; assert_status "drop of an unknown id is r
 # A5: path safety
 hm-manifest add dir path="$T_TMP" 2>/dev/null; assert_status "refuses the project's parent" $? 4
 hm-manifest add dir path=/tmp 2>/dev/null; assert_status "refuses /tmp" $? 4
+# the refusal's reason, not only its status: on macOS /private/tmp is root-owned and /tmp is a symlink, so either would
+# refuse these paths on its own and hide a dropped entry in the protected list
+out=$(hm-manifest add dir path=/private/tmp 2>&1); assert_contains "/private/tmp is refused as a protected directory" "$out" "protected directory"
 mkdir "$T_TMP/tmpd"; TMPDIR="$T_TMP/tmpd" hm-manifest add dir path="$T_TMP/tmpd" 2>/dev/null; assert_status "refuses TMPDIR itself" $? 4
 hm-manifest add dir path="$HOME//" 2>/dev/null; assert_status "refuses HOME with trailing slashes" $? 4
 hm-manifest add dir path="/tmp/..$HOME" 2>/dev/null; assert_status "refuses a .. segment" $? 4
