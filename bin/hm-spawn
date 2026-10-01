@@ -117,6 +117,12 @@ if [ ! -f "$STATE/handoffs/$agent.md" ]; then
     "$agent" "$project" "$agent" "$project" "$agent" > "$STATE/handoffs/$agent.md"
 fi
 
+# No --session: an agent goes beside the pane that spawns it (the orchestrator's own tmux session), when that pane is on the server
+# the agent is spawned on; outside tmux, or on another server, it goes to the project's own session as before.
+if [ -z "$session" ] && [ -n "${TMUX_PANE:-}" ] && [ -n "${TMUX:-}" ]; then
+  here=$(hm_tmux display-message -p -t "$TMUX_PANE" '#{socket_path}'$'\t''#{session_name}' 2>/dev/null) || here=""
+  [ -n "$here" ] && [ "${here%%$'\t'*}" = "${TMUX%%,*}" ] && session="${here#*$'\t'}"
+fi
 session=${session:-hm-$(hm_project_key "$ROOT")}
 # exec: the pane's own process must BE claude (the hook's one rule for a spawned agent), not a shell that happens to exec its last
 # command; a shell that does not (fish, a startup file that sets a trap, `cmd; :`) would otherwise stay as the pane's process

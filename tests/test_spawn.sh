@@ -132,4 +132,14 @@ hm_tmux new-session -d -s orchx -c "$r" -e "HIVEMIND_HOME=$HIVEMIND_HOME" "hm-sp
 sleep 2
 assert_contains "self refused for a managed agent's name" "$(cat "$T_TMP/selfx.out")" "rc=4"
 assert_eq "...and impl's pane is unchanged" "$(jq -r '.agents[]|select(.name=="impl").pane' .hivemind/team.json)" "$(hm-manifest list --kind tmux | jq -r 'select(.agent=="impl")|.pane')"
+# with no --session an agent goes beside the pane that spawns it, when that pane is on the server it is spawned on
+assert_eq "outside tmux: the project's own session" "$(jq -r '.agents[]|select(.name=="impl").session' .hivemind/team.json)" "hm-$(hm_project_key "$r")"
+orchpane=$(hm_tmux new-session -d -s myorch -c "$r" -P -F '#{pane_id}' 'sleep 600')
+TMUX="$HM_TMUX_SOCKET,1,0" TMUX_PANE="$orchpane" spawn beside >/dev/null; assert_status "spawn from inside a pane" $? 0
+assert_eq "...lands in that pane's own session" "$(hm_tmux display-message -p -t "$(jq -r '.agents[]|select(.name=="beside").pane' .hivemind/team.json)" '#{session_name}')" "myorch"
+assert_eq "...and team.json says so" "$(jq -r '.agents[]|select(.name=="beside").session' .hivemind/team.json)" "myorch"
+TMUX="/nonexistent/other-server,1,0" TMUX_PANE="$orchpane" spawn elsewhere >/dev/null; assert_status "spawn from a pane on another server" $? 0
+assert_eq "...goes to the project's own session" "$(jq -r '.agents[]|select(.name=="elsewhere").session' .hivemind/team.json)" "hm-$(hm_project_key "$r")"
+TMUX="$HM_TMUX_SOCKET,1,0" TMUX_PANE="$orchpane" spawn named --session chosen >/dev/null; assert_status "spawn with --session from inside a pane" $? 0
+assert_eq "...--session still wins" "$(jq -r '.agents[]|select(.name=="named").session' .hivemind/team.json)" "chosen"
 cd /; t_teardown; t_done
