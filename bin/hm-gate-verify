@@ -10,7 +10,8 @@
 #     Every flag but --no-body is required, so nothing is loosened by leaving one out. Per commit: a subject, the
 #     conventional form when asked, at most <n> files against its first parent (for a merge, only the files where it
 #     differs from the merge git itself computes of its two parents, its own content, since the merged commits are each
-#     checked in the same range), and under deny no attribution line. A body is a warning, and a violation with --no-body. An empty range is red: nothing checked is not a pass.
+#     checked in the same range), and under deny no attribution line. A body is a warning, and a violation with
+#     --no-body. An empty range is red: nothing checked is not a pass.
 # Exit: 0 green or ok, 1 red or a violation, 4 a refused range, 64 usage.
 set -u
 . "$(dirname "$0")/hm-lib.sh"
