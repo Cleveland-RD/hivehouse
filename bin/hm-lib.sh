@@ -35,6 +35,17 @@ hm_pane_key() {  # hm_pane_key <socket> <pane id> -> filename-safe key
   printf '%s' "$1|$2" | shasum | cut -c1-16
 }
 hm_tmux() { if [ -n "${HM_TMUX_SOCKET:-}" ]; then tmux -S "$HM_TMUX_SOCKET" "$@"; else tmux "$@"; fi; }
+# A pane is identified by its process and that process's start time: a pane id alone is handed out again by a restarted
+# tmux server. These three are the only place that is read and compared (the registry's writer and hook use them).
+hm_pane_pid() { tmux -S "$1" display-message -p -t "$2" '#{pane_pid}' 2>/dev/null | grep -E '^[0-9]+$'; }   # hm_pane_pid <socket> <pane>: empty when the server has no such pane
+hm_pane_identity() {  # hm_pane_identity <socket> <pane>: "<pid><TAB><start time>", or fails when the pane cannot be read
+  local pid; pid=$(hm_pane_pid "$1" "$2") || return 1
+  printf '%s\t%s\n' "$pid" "$(hm_lstart "$pid")"
+}
+hm_pane_is() {  # hm_pane_is <socket> <pane> <pid> <started>: 0 it is that pane, 1 the pane is another (or the record is empty), 2 the pane cannot be read
+  local cur; cur=$(hm_pane_pid "$1" "$2") || return 2
+  [ -n "$3" ] && [ -n "$4" ] && [ "$cur" = "$3" ] && [ "$(hm_lstart "$cur")" = "$4" ]
+}
 hm_socket() { if [ -n "${HM_TMUX_SOCKET:-}" ]; then echo "$HM_TMUX_SOCKET"; else tmux display -p '#{socket_path}'; fi; }
 
 # ---- mkdir locks (macOS has no flock). Used by hm-slot and hm-manifest. -------------------------------------------

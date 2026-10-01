@@ -20,6 +20,8 @@ assert_eq "worktree is on its branch" "$(git -C "$T_TMP/proj-impl" rev-parse --a
 assert_eq "tmux on manifest" "$(hm-manifest list --kind tmux | jq -r .pane)" "$pane"
 assert_eq "registered" "$(jq -r .agent "$(hm_registry_dir)/$(hm_pane_key "$HM_TMUX_SOCKET" "$pane").json")" "impl"
 assert_eq "registered project" "$(jq -r .project "$(hm_registry_dir)/$(hm_pane_key "$HM_TMUX_SOCKET" "$pane").json")" "$r"
+rf="$(hm_registry_dir)/$(hm_pane_key "$HM_TMUX_SOCKET" "$pane").json"
+assert_eq "registered with the pane's process and start time" "$(jq -r '.pane_pid + "|" + .pane_started' "$rf")" "$(hm_pane_identity "$HM_TMUX_SOCKET" "$pane" | tr '\t' '|')"
 assert_eq "team.json model" "$(jq -r '.agents[0].model' .hivemind/team.json)" "sonnet"
 assert_eq "team.json window" "$(jq -r '.agents[0].window' .hivemind/team.json)" "123456"
 assert_eq "team.json pane" "$(jq -r '.agents[0].pane' .hivemind/team.json)" "$pane"
@@ -69,11 +71,19 @@ chmod 755 "$(hm_registry_dir)"
 [ "$late_rc" -ne 0 ] && ok "a failed registry write fails the spawn" || bad "a failed registry write was ignored"
 assert_eq "...and the pane is on the manifest" "$(hm-manifest list --kind tmux | jq -r 'select(.agent=="late")|.agent')" "late"
 
+# a pane whose process cannot be read is never registered: no file without identity (tmux answers the socket, not the pid)
+mkdir -p "$T_TMP/shim"; REALTMUX=$(command -v tmux)
+printf '#!/bin/sh\ncase "$*" in *pane_pid*) exit 1 ;; esac\nexec %s "$@"\n' "$REALTMUX" > "$T_TMP/shim/tmux"; chmod +x "$T_TMP/shim/tmux"
+ghost=$(hm_tmux new-session -d -s ghost -c "$r" -P -F '#{pane_id}' 'sleep 30')
+(cd "$r" && PATH="$T_TMP/shim:$PATH" TMUX_PANE="$ghost" hm-spawn --self --agent ghostly --window 1 >/dev/null 2>&1); assert_status "--self on a pane whose process cannot be read fails" $? 1
+[ -e "$(hm_registry_dir)/$(hm_pane_key "$HM_TMUX_SOCKET" "$ghost").json" ] && bad "a registry file without identity was written" || ok "...and no registry file was written"
+
 # register-self (F1): the orchestrator's own pane, no window, no claude, and never on the manifest
 tmux_o=$(hm_tmux new-session -d -s orch -c "$r" -P -F '#{pane_id}' -e "HIVEMIND_HOME=$HIVEMIND_HOME" "hm-spawn --self --agent orchestrator --window 200000 >$T_TMP/self.out 2>&1; sleep 30")
 sleep 2
 k=$(hm_pane_key "$HM_TMUX_SOCKET" "$tmux_o")
 assert_eq "self: registered" "$(jq -r .agent "$(hm_registry_dir)/$k.json")" "orchestrator"
+assert_eq "self: registered with the pane's identity" "$(jq -r '.pane_pid + "|" + .pane_started' "$(hm_registry_dir)/$k.json")" "$(hm_pane_identity "$HM_TMUX_SOCKET" "$tmux_o" | tr '\t' '|')"
 assert_eq "self: team.json" "$(jq -r '.agents[]|select(.name=="orchestrator")|.pane' .hivemind/team.json)" "$tmux_o"
 assert_eq "self: window" "$(jq -r '.agents[]|select(.name=="orchestrator")|.window' .hivemind/team.json)" "200000"
 assert_eq "self: not on the manifest (cleanup would kill the owner's pane)" "$(hm-manifest list --kind tmux | jq -r --arg p "$tmux_o" 'select(.pane==$p)|.pane')" ""

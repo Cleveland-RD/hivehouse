@@ -10,6 +10,12 @@ reg="$(hm_registry_dir)/$(hm_pane_key "$socket" "$TMUX_PANE").json"
 [ -f "$reg" ] || exit 0
 project=$(hm_json_get "$reg" .project); agent=$(hm_json_get "$reg" .agent)
 [ -n "$project" ] && [ -n "$agent" ] && [ -d "$project" ] || exit 0
+# The registry file must still describe THIS pane: a restarted tmux server hands out pane ids again, and a file with no
+# identity (an older format) proves nothing. Another pane, or no identity, writes nothing and removes the stale file;
+# a tmux that cannot answer proves nothing either way, so the file stays.
+hm_pane_is "$socket" "$TMUX_PANE" "$(hm_json_get "$reg" .pane_pid)" "$(hm_json_get "$reg" .pane_started)"; same=$?
+[ "$same" -ne 2 ] || exit 0
+[ "$same" -eq 0 ] || { rm -f "$reg"; exit 0; }
 hm_is_agent_name "$agent" || exit 0
 [ -z "$(git -C "$project" ls-files -- .hivemind 2>/dev/null)" ] || exit 0   # a tracked .hivemind is never written to
 dir="$project/.hivemind/team/$agent"; mkdir -p "$dir" 2>/dev/null || exit 0
