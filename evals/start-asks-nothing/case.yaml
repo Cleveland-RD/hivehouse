@@ -1,0 +1,33 @@
+schema_version: "1.1"
+name: start-asks-nothing
+tags: [start]
+context:
+  scaffold_script: scaffold.sh
+graders:
+  # See start-plans-and-waits/case.yaml for why the markers are matched at a line start in the trace. The plan is
+  # required too, so a run that ends before it cannot pass on the question being absent.
+  - name: no-question
+    type: regex
+    target: trace
+    pattern: '(?:"text":"|\\n)HM-CLARIFY:'
+    match: not_contains
+  - name: plan-shown
+    type: regex
+    target: trace
+    pattern: '(?:"text":"|\\n)HM-PLAN:'
+  # A spawn is hm-spawn run as a command: at the start, after a separator, a backtick, `{` or the start of a `-c` string,
+  # behind assignments or env, timeout, nohup, exec, sudo or xargs, any path before it. Never `--self`, which registers
+  # the calling session, nor a mention such as `command -v hm-spawn`. tests/test_evals.sh pins both lists.
+  - name: nothing-spawned
+    type: tool_used
+    tool: Bash
+    input_match: '"command"\s*:\s*"(?:(?:[^"\\]|\\.)*?(?:&&|\|\||[;|(&{`]|\\n|-c\s+(?:\\"|'')))?\s*(?:(?:[A-Za-z_]\w*=(?:[^\s"\\]|\\.)*|env|nohup|exec|sudo|xargs|timeout(?:\s+-\S+)*\s+\S+|-\S+)\s+)*(?:[^\s"\\;&|`]*/)?hm-spawn(?![\w-])(?!(?:[^"\\;&|]|\\.)*--self)'
+    min: 0
+    max: 0
+    arm: both
+  # Asked nothing: no question tool either, not only no marked question in the text.
+  - name: no-question-asked
+    type: tool_used
+    tool: AskUserQuestion
+    min: 0
+    max: 0

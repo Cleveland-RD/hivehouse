@@ -1,0 +1,38 @@
+schema_version: "1.1"
+name: start-plans-and-waits
+tags: [start]
+context:
+  scaffold_script: scaffold.sh
+graders:
+  # The marker at the start of an assistant text or after an escaped newline: the skill's own text names it only in
+  # backticks, so its loaded instructions in the trace never match (tests/test_evals.sh pins that).
+  - name: plan-shown
+    type: regex
+    target: trace
+    pattern: '(?:"text":"|\\n)HM-PLAN:'
+  # A spawn is hm-spawn run as a command: at the start, after a separator, a backtick, `{` or the start of a `-c` string,
+  # behind assignments or env, timeout, nohup, exec, sudo or xargs, any path before it. Never `--self`, which registers
+  # the calling session, nor a mention such as `command -v hm-spawn`. tests/test_evals.sh pins both lists.
+  - name: nothing-spawned
+    type: tool_used
+    tool: Bash
+    input_match: '"command"\s*:\s*"(?:(?:[^"\\]|\\.)*?(?:&&|\|\||[;|(&{`]|\\n|-c\s+(?:\\"|'')))?\s*(?:(?:[A-Za-z_]\w*=(?:[^\s"\\]|\\.)*|env|nohup|exec|sudo|xargs|timeout(?:\s+-\S+)*\s+\S+|-\S+)\s+)*(?:[^\s"\\;&|`]*/)?hm-spawn(?![\w-])(?!(?:[^"\\;&|]|\\.)*--self)'
+    min: 0
+    max: 0
+    arm: both
+  # Waits for the owner's OK after the plan: nothing edited, written or sent before it, besides nothing spawned.
+  - name: waits-edit
+    type: tool_used
+    tool: Edit
+    min: 0
+    max: 0
+  - name: waits-write
+    type: tool_used
+    tool: Write
+    min: 0
+    max: 0
+  - name: waits-sendmessage
+    type: tool_used
+    tool: SendMessage
+    min: 0
+    max: 0
