@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+# SessionStart hook. Silent and harmless anywhere hivemind did not spawn this pane: it never fails the session, so every
+# path exits 0. The project and agent come from the registry hm-spawn wrote, never from the cwd.
+set -u
+. "$(dirname "$0")/hm-lib.sh"
+input=$(cat)
+[ -n "${TMUX:-}" ] && [ -n "${TMUX_PANE:-}" ] || exit 0
+socket="${TMUX%%,*}"
+reg="$(hm_registry_dir)/$(hm_pane_key "$socket" "$TMUX_PANE").json"
+[ -f "$reg" ] || exit 0
+project=$(hm_json_get "$reg" .project); agent=$(hm_json_get "$reg" .agent)
+[ -n "$project" ] && [ -n "$agent" ] && [ -d "$project" ] || exit 0
+case "$agent" in *[!a-z0-9_-]*|[-_]*) exit 0 ;; esac
+[ -z "$(git -C "$project" ls-files -- .hivemind 2>/dev/null)" ] || exit 0   # a tracked .hivemind is never written to
+dir="$project/.hivemind/team/$agent"; mkdir -p "$dir" 2>/dev/null || exit 0
+printf '%s' "$input" | jq -c --arg at "$(hm_now)" '{session_id, transcript_path, source, at:$at}' > "$dir/session.json.tmp$$" 2>/dev/null \
+  && mv "$dir/session.json.tmp$$" "$dir/session.json" || { rm -f "$dir/session.json.tmp$$"; exit 0; }
+"$(dirname "$0")/hm-disk" --hook --min-gb "${CLAUDE_PLUGIN_OPTION_MIN_FREE_GB:-20}" --path "$project" 2>/dev/null || true
+exit 0
