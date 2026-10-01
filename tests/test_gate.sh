@@ -169,6 +169,12 @@ git reset -q --hard "$good"; git branch -q -D side
 git reset -q --hard "$good"; c "update stuff" f3
 hm-gate-verify commits "$good..HEAD" $COMMON >/dev/null 2>&1; assert_status "a free subject fails conventional" $? 1
 hm-gate-verify commits "$good..HEAD" --max-files 5 --style free --attribution deny >/dev/null 2>&1; assert_status "and passes free" $? 0
+for loc in C en_US.UTF-8; do   # a scope is lower-case ASCII under any locale
+  git reset -q --hard "$good"; c "fix(gaté): a scope with é" f5
+  (export LC_ALL=$loc; hm-gate-verify commits "$good..HEAD" $COMMON >/dev/null 2>&1); assert_status "a non-ASCII scope fails conventional under $loc" $? 1
+  git reset -q --hard "$good"; c "fix(Gate): a capital scope" f5
+  (export LC_ALL=$loc; hm-gate-verify commits "$good..HEAD" $COMMON >/dev/null 2>&1); assert_status "a capital scope fails conventional under $loc" $? 1
+done
 git reset -q --hard "$good"; c "$(printf 'fix: with a body\n\nsome words')" f4
 out=$(hm-gate-verify commits "$good..HEAD" $COMMON 2>&1); assert_status "a body is only a warning" $? 0; assert_contains "and is warned of" "$out" "WARN"
 hm-gate-verify commits "$good..HEAD" $COMMON --no-body >/dev/null 2>&1; assert_status "a body fails with --no-body" $? 1

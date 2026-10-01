@@ -69,6 +69,14 @@ assert_contains "...named" "$out" "conflict two.md"
 assert_eq "...and NOT overwritten" "$(cat "$T_TMP/rmem/two.md")" "two, edited remotely"
 LABEL="a relative remote memory dir"; refused 4 memory testhost "$r/mem" "rel"
 echo bad > "mem/bad name.md"; LABEL="a memory file name with a space"; refused 4 memory testhost "$r/mem" "$T_TMP/rmem"; rm -f "mem/bad name.md"
+# bash 3.2's letter ranges follow the locale: under en_US.UTF-8 `[a-z]` takes é, ß and capitals. Each check runs under both.
+for loc in C en_US.UTF-8; do
+  export LC_ALL=$loc
+  echo bad > "mem/né.md"; LABEL="a non-ASCII memory file name under $loc"; refused 4 memory testhost "$r/mem" "$T_TMP/rmem"; rm -f "mem/né.md"
+  LABEL="a non-ASCII host under $loc"; refused 4 memory tésthost "$r/mem" "$T_TMP/rmem"
+  LABEL="a non-ASCII remote path under $loc"; refused 4 memory testhost "$r/mem" "$T_TMP/rmém"
+  unset LC_ALL
+done
 
 # ---- branches ------------------------------------------------------------------------------------------------------
 git checkout -q -b feat/one; echo one > one; git add one; git -c user.email=t@t -c user.name=t commit -qm one; tip1=$(git rev-parse HEAD)

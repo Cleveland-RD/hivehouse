@@ -46,6 +46,13 @@ spawn x --worktree "$T_TMP/proj-x" --branch b --base -evil >/dev/null 2>&1; asse
 mkdir "$T_TMP/taken"
 spawn y --worktree "$T_TMP/taken" --branch b --base main >/dev/null 2>&1; assert_status "existing unlisted path refused" $? 4
 spawn "../evil" >/dev/null 2>&1; assert_status "bad agent name refused" $? 4
+for loc in C en_US.UTF-8; do   # and é, ß and a fullwidth letter, in a model, an effort or a branch
+  (export LC_ALL=$loc; spawn x --model sonné >/dev/null 2>&1); assert_status "a non-ASCII model is refused under $loc" $? 4
+  (export LC_ALL=$loc; spawn x --effort ｈigh >/dev/null 2>&1); assert_status "a non-ASCII effort is refused under $loc" $? 4
+  (export LC_ALL=$loc; spawn x --worktree "$T_TMP/proj-loc" --branch feat/é --base main >/dev/null 2>&1); assert_status "a non-ASCII branch is refused under $loc" $? 4
+  (export LC_ALL=$loc; spawn x --worktree "$T_TMP/proj-loc" --branch b --base maiß >/dev/null 2>&1); assert_status "a non-ASCII base is refused under $loc" $? 4
+done
+[ ! -e "$T_TMP/proj-loc" ] && ok "and none of them made a worktree" || bad "a non-ASCII refusal made a worktree"
 for loc in C en_US.UTF-8; do   # bash 3.2's [a-z] takes capitals in en_US.UTF-8, so the rule is checked under both
   (export LC_ALL=$loc; spawn Upper >/dev/null 2>&1); assert_status "a capital in an agent name is refused under $loc" $? 4
 done
