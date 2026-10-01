@@ -45,3 +45,6 @@ owner's to fix), 64 on a usage error and 75 when another cleanup is already runn
 Free disk before and after, the count of each outcome, everything kept and why, and the trash size (`du -sh` is
 printed by `hm-cleanup`). Trash does not free disk. Ask before emptying it, and empty it only on the owner's word for
 that time. Never delete anything that is not on the manifest, and never delete outside the trash yourself.
+
+End every message to the owner with either "Nothing needed from you." or one short sentence saying what you need from
+them.

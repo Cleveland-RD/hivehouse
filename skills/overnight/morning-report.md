@@ -17,3 +17,5 @@ Each as a choice the owner can answer in a word, with what you recommend and why
 ## State left behind
 Free disk; running sessions, servers and worktrees; anything on a remote host that is waiting for the return trip or
 cleanup.
+
+<Last line: "Nothing needed from you." or one short sentence saying what you need from the owner.>

@@ -97,9 +97,11 @@ route around a refusal, never retry it differently, and never stop the night sil
 - A run said to be free proves it after its first item, by reading spend.
 - No deploy, no migration, no outward message (email, chat, post, push that triggers a deploy or migration), unless the
   queue names that exact item and the owner approved it in step 2.
-- One heavy job at a time: `hm-slot run` for suites, builds and browser runs, while `hm-gate` takes the slot itself. A gate
-  log is read, never assumed (`hm-gate-verify`).
+- One heavy job at a time: `hm-slot run` for suites, builds and browser runs, while `hm-gate` takes the slot itself. A
+  gate log is read, never assumed (`hm-gate-verify`).
 - A blocker that needs the owner goes in the report, not in a guess.
+- Every message to the owner, the morning report included, is short and plain. End every message to the owner with
+  either "Nothing needed from you." or one short sentence saying what you need from them.
 - Times in the handoff and the report come from `date`, never estimated.
 - After a usage-limit pause, write a dated line in your handoff, re-read your top block, and re-send any relay that was in
   flight when you stopped.

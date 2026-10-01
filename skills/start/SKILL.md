@@ -75,7 +75,8 @@ project is added where a name is shown), so never put the project in it. Step 8'
 owner rather than choosing another name.
 
 Then for each agent, in its own call. A spawned agent's context level uses Claude Code's own window; the window per
-role (`${user_config.window_builder}`, `${user_config.window_reviewer}`) is the fallback, never inferred from a model name:
+role (`${user_config.window_builder}`, `${user_config.window_reviewer}`) is the fallback, never inferred from a model
+name:
 
 `hm-spawn --agent <name> --role ${CLAUDE_PLUGIN_ROOT}/roles/<role>.md --rules ${CLAUDE_PLUGIN_ROOT}/rules/RULES.md --model <model> --effort <effort> --mode <resolved permission mode> --window <window> [--worktree <absolute path> --branch <branch> --base <branch>]`
 
@@ -99,7 +100,8 @@ A new agent waits for its first message. Send it its brief with `SendMessage`, f
 - Land on the owner's word, then push by full hash with `hm-push <remote> <40-hex hash> <branch>`. A push is an outward
   step whenever CI deploys or migrates on it; ask for that item unless the owner has already said otherwise for it.
 - Agents message each other directly for technical questions; decisions and finished work come to you; only you talk to
-  the owner. Answers to the owner are short and plain.
+  the owner. Answers to the owner are short and plain. End every message to the owner with either
+  "Nothing needed from you." or one short sentence saying what you need from them.
 - One heavy job at a time: `hm-slot run <label> -- <command>` for every suite, build and browser run; `hm-gate` takes
   the slot itself and is never wrapped in it. Check `hm-slot status` first.
 - Add a dated line to your handoff for each event (decision, landing, rotation, blocker).

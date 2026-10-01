@@ -40,8 +40,8 @@ variable is split or globbed differently by each shell. Executables are tested f
 ## Shared machine
 
 **One heavy job at a time.** Every test suite, build and browser run goes through `hm-slot run <label> -- <command>`.
-`hm-gate` takes the slot itself, so it is never wrapped in `hm-slot run`. If the slot is busy, wait or report; never run beside the holder. Two heavy jobs starve each other and both fail in ways
-that look like bugs.
+`hm-gate` takes the slot itself, so it is never wrapped in `hm-slot run`. If the slot is busy, wait or report; never
+run beside the holder. Two heavy jobs starve each other and both fail in ways that look like bugs.
 
 **Never kill a process you did not start.** Not to free memory, not to free a port. Another session's process is that
 session's live work. Say what is in the way and ask the orchestrator.
@@ -60,7 +60,8 @@ cached even if deleted.
 paths that back it next; the checks skipped and why last. A report that buries the verdict is read as no report.
 
 **Answers to the owner are short and plain.** Only the orchestrator talks to the owner. State the result, the one thing
-they must decide, and stop.
+they must decide, and stop. End every message to the owner with either "Nothing needed from you." or one short
+sentence saying what you need from them.
 
 **Options offered to the owner all satisfy rules the owner already fixed.** An option that breaks a stated rule wastes a
 turn and reads as not listening.
