@@ -31,22 +31,23 @@ Choose the log path (outside the tracked tree, for example `.hivemind/tmp/<name>
 
 - A gate made of separate commands: `hm-gate --log <file> -- <name> <command> [<name> <command> ...]`. It takes the
   slot itself, runs every step even after a failure, and writes `<name> exit <n>` after each. Step names are letters,
-  digits, `_`, `.`, `-` only.
+  digits, `_`, `.`, `-` only, and never `..`.
 - A gate that is already one script printing `<step> exit <n>` lines:
   `hm-slot run gate -- <script>` with its output redirected to the log file, as the project records it.
 
 ## 4. Verify the log
 
-`hm-gate-verify log <file> --commit <tip>`
+For a log `hm-gate` wrote: `hm-gate-verify log <file> --commit <tip>`
 
-An `hm-gate` log starts with a header naming every step it set out to run, the commit and whether the tree was dirty, so
-no `--expect` is needed: a gate stopped part way is red because a named step has no line. It passes only if the log has
+It starts with a header naming every step it set out to run, the commit and whether the tree was dirty, so no
+`--expect` is needed: a gate stopped part way is red because a named step has no line. It passes only if the log has
 at least one `<step> exit <n>` line, every one is `exit 0`, no step appears twice, and the header names the commit you
 gave on a clean tree. A log left from an earlier run, or from uncommitted changes, is RED.
 
-A project's own gate script writes no header: add `--expect <every step the project's gate has, comma-separated>`, and
-`--commit` then cannot vouch for a commit (the log is red for that reason), so say that in the report. On failure the
-command names the steps; report those, not a summary.
+For a project's own gate script, which writes no header: `hm-gate-verify log <file> --expect <every step the project's
+gate has, comma-separated>`, **without** `--commit`. With `--commit` such a log is always RED ("vouches for no commit"),
+so never pass it. The report then says that log names no commit: it shows the steps passed, not which commit they ran
+on. On failure the command names the steps; report those, not a summary.
 
 ## 5. Verify the commits
 
