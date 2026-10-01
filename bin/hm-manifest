@@ -64,6 +64,13 @@ cmd_add() {
     started=$(hm_lstart "$pid"); command=$(ps -o command= -p "$pid"); pgid=$(ps -o pgid= -p "$pid" | tr -d ' ')
     json=$(printf '%s' "$json" | jq -c --arg s "$started" --arg c "$command" --arg g "$pgid" '. + {started:$s, command:$c, pgid:$g}')
   fi
+  if [ "$kind" = tmux ]; then   # the pane's process and its start time: a pane id is reused by the next server
+    local sock pane ppid
+    sock=$(printf '%s' "$json" | jq -r .socket); pane=$(printf '%s' "$json" | jq -r .pane)
+    ppid=$(tmux -S "$sock" display-message -p -t "$pane" '#{pane_pid}' 2>/dev/null)   # empty when the server has no such pane
+    case "$ppid" in ''|*[!0-9]*) hm_die 4 "no pane $pane on $sock" ;; esac
+    json=$(printf '%s' "$json" | jq -c --arg p "$ppid" --arg s "$(hm_lstart "$ppid")" '. + {pane_pid:$p, pane_started:$s}')
+  fi
   printf '%s\n' "$json" >> "$FILE"
   printf '%s\n' "$json" | jq -r .id
 }
