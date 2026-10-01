@@ -190,8 +190,8 @@ hm_owner_statusline() {  # hm_owner_statusline <session cwd>
 
 # The line that starts (hm-spawn) or restarts (hm-rotate) an agent from its handoff: one text, so they cannot drift.
 hm_pickup_line() {  # hm_pickup_line <project name> <project root> <agent>
-  printf 'You are %s-%s. Read %s/.hivemind/handoffs/%s.md from the top: its START HERE block is your prompt, and %s/.hivemind/team/%s/ holds your role and the rules. Report to %s-orchestrator. Wait for its first message before any work.' \
-    "$1" "$3" "$2" "$3" "$2" "$3" "$1"
+  printf 'You are %s-%s. Read %s/.hivemind/handoffs/%s.md from the top: its START HERE block is your prompt, and %s/.hivemind/team/%s/ holds your role and the rules. Report to %s. Wait for its first message before any work.' \
+    "$1" "$3" "$2" "$3" "$2" "$3" "$(hm_orchestrator_name "$2")"
 }
 
 # The ASCII letters and digits, listed and never written as a range: under bash 3.2 a bracket range follows the locale's
@@ -200,6 +200,38 @@ hm_pickup_line() {  # hm_pickup_line <project name> <project root> <agent>
 HM_LOWER='abcdefghijklmnopqrstuvwxyz'
 HM_UPPER='ABCDEFGHIJKLMNOPQRSTUVWXYZ'
 HM_DIGITS='0123456789'
+
+# A session name hivemind will type into a pane (it goes through send-keys): one line of letters, digits, space, '-', '_',
+# '.', '(' and ')', at most 64 characters.
+HM_SESSION_NAME_CHARS="${HM_LOWER}${HM_UPPER}${HM_DIGITS} ._()-"
+hm_is_session_name() {  # hm_is_session_name <name>: 0 when it is one
+  case "$1" in ''|*[!$HM_SESSION_NAME_CHARS]*) return 1 ;; esac
+  [ "${#1}" -le 64 ]
+}
+# Claude Code's own record of a running session, <config dir>/sessions/<pid>.json (undocumented, checked against
+# 2.1.286): prints the field when the record is that pid's, else nothing. A missing file or field, another pid or a file
+# that is not JSON is no answer, never an error.
+hm_session_record() {  # hm_session_record <pid> <jq path>
+  case "$1" in ''|*[!0-9]*) return 0 ;; esac
+  jq -j --arg p "$1" "select((.pid | tostring) == \$p) | $2 // empty" "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/sessions/$1.json" 2>/dev/null
+}
+# The name agents report to: the --self orchestrator's session name as Claude Code has it now (a /rename after --self is
+# followed), else the name recorded at --self, else <project>-orchestrator. One helper for every text that names it.
+hm_orchestrator_name() {  # hm_orchestrator_name <project root>
+  local t="$1/.hivemind/team.json" o pid started live="" full n
+  o=$(jq -c '[.agents[]? | select((.claude_pid // "") != "")][0] // empty' "$t" 2>/dev/null)
+  pid=$(printf '%s' "$o" | jq -r '.claude_pid // empty' 2>/dev/null); started=$(printf '%s' "$o" | jq -r '.claude_started // empty' 2>/dev/null)
+  full=$(printf '%s' "$o" | jq -r '.name_full // empty' 2>/dev/null)
+  if [ -n "$pid" ] && hm_claude_is "$pid" "$started"; then
+    live=$(hm_session_record "$pid" .name)
+  fi
+  for n in "$live" "$full"; do
+    [ -n "$n" ] || continue
+    hm_is_session_name "$n" && { printf '%s\n' "$n"; return 0; }
+    echo "hivemind: the orchestrator's session name is not one hivemind will type; using another" >&2
+  done
+  printf '%s-orchestrator\n' "$(basename "$1")"
+}
 
 # A gate's step name, the one rule hm-gate's steps and hm-gate-verify's expected names and lines are read by: letters,
 # digits, '_', '.' and '-', with no '..' (A13). HM_STEP_NAME_CHARS is a bracket expression's contents, built from the lists
