@@ -102,9 +102,8 @@ branches)
   hm_scp "$tmpd/b.bundle" "$host:$rbundle" >/dev/null 2>&1 || unreachable
   bad=0
   for b in "${list[@]}"; do
-    # the only forced refspec: onto refs/remotes/local/*, the namespace this tool owns on the remote
+    # the only forced refspec: onto refs/remotes/local/*, the namespace this tool owns on the remote (a branch name with a colon is refused above)
     spec="+refs/heads/${b}:refs/remotes/local/${b}"
-    case "$spec" in +refs/heads/*:refs/remotes/local/*) ;; *) hm_die 4 "refusing a refspec outside refs/remotes/local" ;; esac
     rrun git -C "$rroot" fetch -q "$rbundle" "$spec" >/dev/null 2>&1 || { echo "FINDING: fetch of $b failed"; bad=1; continue; }
     got=$(rrun git -C "$rroot" rev-parse "refs/remotes/local/${b}" 2>/dev/null | clean); want=$(git -C "$ROOT" rev-parse "refs/heads/${b}")
     if [ "$got" = "$want" ]; then echo "ok $b at ${want:0:7} (refs/remotes/local/$b on $host)"; else echo "FINDING: $b is ${got:-missing} there, $want here"; bad=1; fi
