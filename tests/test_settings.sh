@@ -19,6 +19,10 @@ hm-settings resolve permission_mode default >/dev/null 2>"$T_TMP/err"; assert_co
 set_project '{"permission_mode":"acceptEdits"}'; assert_eq "acceptEdits beats auto" "$(res permission_mode auto)" "acceptEdits"
 set_project '{"permission_mode":"auto"}';        assert_eq "auto does not beat acceptEdits" "$(res permission_mode acceptEdits)" "acceptEdits"
 set_project '{"permission_mode":"plan"}';    assert_eq "plan beats acceptEdits" "$(res permission_mode acceptEdits)" "plan"
+set_project '{"permission_mode":"dontAsk"}';    assert_eq "dontAsk beats acceptEdits" "$(res permission_mode acceptEdits)" "dontAsk"
+set_project '{"permission_mode":"dontAsk"}';    assert_eq "dontAsk beats auto" "$(res permission_mode auto)" "dontAsk"
+set_project '{"permission_mode":"auto"}';       assert_eq "auto does not beat dontAsk" "$(res permission_mode dontAsk)" "dontAsk"
+set_project '{"permission_mode":"default"}';    assert_eq "default does not beat plan" "$(res permission_mode plan)" "plan"
 set_project '{"permission_mode":"bypassPermissions"}'; assert_eq "project bypass never effective" "$(res permission_mode acceptEdits)" "acceptEdits"
 set_project '{}'; hm-settings resolve permission_mode bypassPermissions >/dev/null 2>&1; assert_status "owner bypass refused" $? 4
 set_project '{"permission_mode":"yolo"}'; hm-settings resolve permission_mode auto >/dev/null 2>&1; assert_status "unknown project mode refused" $? 4
@@ -41,6 +45,9 @@ set_project '{"files_per_commit":3}';  assert_eq "files tighter" "$(res files_pe
 set_project '{"files_per_commit":9}';  assert_eq "files looser keeps owner" "$(res files_per_commit 5)" "5"
 set_project '{"files_per_commit":0}';  hm-settings resolve files_per_commit 5 >/dev/null 2>&1; assert_status "zero refused" $? 4
 set_project '{"files_per_commit":2.5}'; hm-settings resolve files_per_commit 5 >/dev/null 2>&1; assert_status "fraction refused" $? 4
+
+# an empty project value is a refusal, not an absent key
+set_project '{"files_per_commit":""}'; hm-settings resolve files_per_commit 5 >/dev/null 2>&1; assert_status "empty project value refused" $? 4
 
 # unknown keys
 hm-settings resolve nosuch 1 >/dev/null 2>&1; assert_status "unknown key refused" $? 4

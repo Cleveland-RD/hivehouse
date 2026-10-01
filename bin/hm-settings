@@ -44,8 +44,8 @@ jq -e 'type == "object"' "$file" >/dev/null 2>&1 || hm_die 4 "$file is not a JSO
 for k in $(jq -r 'keys[]' "$file"); do
   case " $KEYS " in *" $k "*) ;; *) hm_die 4 "unknown setting in $file: $k" ;; esac
 done
-proj=$(jq -r --arg k "$key" 'if has($k) then .[$k] | tostring else empty end' "$file") || exit 4
-[ -n "$proj" ] || { printf '%s\n' "$owner"; exit 0; }
+[ "$(jq -r --arg k "$key" 'has($k)' "$file")" = true ] || { printf '%s\n' "$owner"; exit 0; }
+proj=$(jq -r --arg k "$key" '.[$k] | tostring' "$file") || exit 4
 if [ "$key" = permission_mode ] && [ "$proj" = bypassPermissions ]; then
   echo "hivemind: project $key bypassPermissions is never effective; using the owner's $owner" >&2
   printf '%s\n' "$owner"; exit 0
