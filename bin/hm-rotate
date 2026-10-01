@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+# Clear an agent's context and send it back to its handoff: /clear, then the pickup line, each only when the pane is idle.
+# hm-rotate <agent> [--still 15] [--max 900] [--settle 8]
+# Exit: 0 rotated, 1 the pane never went idle (nothing sent), 2 no such agent or project, 3 .hivemind tracked,
+# 5 a dialog needs a person (nothing typed), 64 usage. Every outcome that sent nothing is logged to .hivemind/rotate.log.
+set -u
+. "$(dirname "$0")/hm-lib.sh"
+agent=""; still=15; max=900; settle=8
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --still) still="${2:-}"; shift 2 ;; --max) max="${2:-}"; shift 2 ;; --settle) settle="${2:-}"; shift 2 ;;
+    -*) hm_die 64 "usage: hm-rotate <agent> [--still s] [--max s] [--settle s]" ;;
+    *) [ -z "$agent" ] || hm_die 64 "usage: hm-rotate <agent> [--still s] [--max s] [--settle s]"; agent="$1"; shift ;;
+  esac
+done
+[ -n "$agent" ] || hm_die 64 "usage: hm-rotate <agent> [--still s] [--max s] [--settle s]"
+for n in "$still" "$max" "$settle"; do case "$n" in ''|*[!0-9]*) hm_die 64 "--still, --max and --settle are numbers" ;; esac; done
+ROOT=$(hm_project_root) || exit $?
+STATE="$ROOT/.hivemind"
+if [ -n "$(git -C "$ROOT" ls-files -- .hivemind)" ]; then
+  hm_die 3 "files under .hivemind/ are tracked by git; untrack them before using hivemind here"
+fi
+pane=$(jq -r --arg a "$agent" '[.agents[]? | select(.name == $a) | .pane][0] // empty' "$STATE/team.json" 2>/dev/null)
+[ -n "$pane" ] || hm_die 2 "no agent named $agent in this project's team"
+export HM_PROJECT="$ROOT"
+hm_tmux display-message -p -t "$pane" '#{pane_id}' >/dev/null 2>&1 || hm_die 2 "the pane of $agent ($pane) is gone"
+project=$(basename "$ROOT")
+note() { printf '%s %s\n' "$(hm_now)" "$*" >> "$STATE/rotate.log"; }
+level() { local v; v=$("$(dirname "$0")/hm-context" "$agent" 2>/dev/null) && echo "$v%" || echo '?'; }
+shows_clear() {  # the last non-blank line is an input prompt that still holds /clear
+  hm_tmux capture-pane -p -J -t "$pane" | grep -v '^[[:space:]]*$' | tail -1 | grep -Eq '^[│| ]*(>|❯) */clear'
+}
+
+before=$(level)
+wait_idle "$pane" "$still" "$max"; rc=$?
+case "$rc" in
+  0) ;;
+  3) note "dialog $agent (nothing sent)"; echo "hivemind: a dialog is waiting in $agent's pane; nothing was typed" >&2; exit 5 ;;
+  *) note "not-idle $agent (nothing sent)"; echo "hivemind: $agent's pane never went idle within ${max}s; nothing was sent" >&2; exit 1 ;;
+esac
+hm_tmux send-keys -t "$pane" -l '/clear'; hm_tmux send-keys -t "$pane" Enter
+sleep "$settle"
+if shows_clear; then   # the UI left /clear on the input line: clear it and type it again, once
+  hm_tmux send-keys -t "$pane" C-u
+  hm_tmux send-keys -t "$pane" -l '/clear'; hm_tmux send-keys -t "$pane" Enter
+  sleep "$settle"
+fi
+if ! wait_idle "$pane" 2 "$max"; then
+  note "cleared-but-not-idle $agent (pickup line not sent)"
+  echo "hivemind: $agent was cleared but its pane did not go idle; the pickup line was not sent" >&2; exit 1
+fi
+hm_tmux send-keys -t "$pane" -l "$(hm_pickup_line "$project" "$ROOT" "$agent")"
+hm_tmux send-keys -t "$pane" Enter
+note "rotated $agent $before -> $(level)"

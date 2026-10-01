@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Stand-in for `claude` in tests (tests/lib.sh puts this directory first on PATH). Prints its argv, one per line, then
 # behaves as HM_FAKE_CLAUDE says: idle (default: an empty input prompt, then reads), dialog (a trust dialog, then reads),
-# bare (reads with no prompt at all), busy (never still), dialogprompt (a dialog above an empty prompt), ticking (an
+# clearbusy (idle until /clear, then never idle again), retryclear (idle, but the first /clear is left on the input line), bare (reads with no prompt at all), busy (never still), dialogprompt (a dialog above an empty prompt), ticking (an
 # empty prompt that keeps being redrawn, so never still). The variable reaches a pane through tmux -e, never inherited.
 for a in "$@"; do printf 'ARGV: %s\n' "$a"; done
 printf 'ENV: HM_AGENT=%s HM_PROJECT=%s HIVEMIND_HOME=%s HM_TMUX_SOCKET=%s\n' "${HM_AGENT:-}" "${HM_PROJECT:-}" "${HIVEMIND_HOME:-}" "${HM_TMUX_SOCKET:-}"
@@ -11,5 +11,16 @@ case "${HM_FAKE_CLAUDE:-idle}" in
   bare) cat ;;
   dialogprompt) printf 'Do you trust the files in this folder?\n  1. Yes, proceed\nEsc to cancel\n\n❯ \n'; cat ;;
   ticking) while :; do date; printf '❯ \n'; sleep 0.3; done ;;
-  *) printf '\n❯ \n'; cat ;;
+  retryclear|clearbusy|*)  # idle: an empty prompt, then a line reader that understands /clear. retryclear swallows the first /clear
+    # (left on the input line, as a slash-command menu can) and clears on the second.
+    n=0; printf '\n❯ \n'
+    while IFS= read -r line; do
+      case "$line" in
+        /clear) n=$((n + 1))
+          if [ "${HM_FAKE_CLAUDE:-idle}" = retryclear ] && [ "$n" -lt 2 ]; then printf '❯ /clear\n'
+          elif [ "${HM_FAKE_CLAUDE:-idle}" = clearbusy ]; then printf '\033[2J\033[HCLEARED\n'; while :; do date; sleep 0.3; done
+          else printf '\033[2J\033[HCLEARED\n\n❯ \n'; fi ;;
+        *) printf 'GOT: %s\n\n❯ \n' "$line" ;;
+      esac
+    done ;;
 esac
