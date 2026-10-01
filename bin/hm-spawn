@@ -48,13 +48,13 @@ else
   for v in role rules model effort mode; do [ -n "${!v}" ] || hm_die 64 "$USAGE"; done
   case "$mode" in plan|dontAsk|default|acceptEdits|auto) ;; bypassPermissions) hm_die 4 "bypassPermissions is never started by hm-spawn" ;; *) hm_die 4 "unknown permission mode: $mode" ;; esac
   [ -f "$role" ] && [ -f "$rules" ] || hm_die 4 "--role and --rules must be files"
-  case "$model$effort" in *[!A-Za-z0-9._\[\]-]*) hm_die 4 "bad model or effort" ;; esac
+  case "$model$effort" in *[!${HM_LOWER}${HM_UPPER}${HM_DIGITS}._\[\]-]*) hm_die 4 "bad model or effort" ;; esac
   case "$model" in -*) hm_die 4 "a model starting with - would be read as an option: $model" ;; esac
   case "$effort" in -*) hm_die 4 "an effort starting with - would be read as an option: $effort" ;; esac
   if [ -n "$wt" ]; then
     [ -n "$branch" ] && [ -n "$base" ] || hm_die 64 "--worktree needs --branch and --base"
     case "$wt" in /*) ;; *) hm_die 4 "--worktree must be an absolute path" ;; esac
-    for b in "$branch" "$base"; do case "$b" in ''|-*|*[!A-Za-z0-9._/-]*) hm_die 4 "bad branch name: $b" ;; esac; done
+    for b in "$branch" "$base"; do hm_is_branch_name "$b" || hm_die 4 "bad branch name: $b"; done
   fi
   ROOT=$(hm_project_root) || exit $?
   hm_ensure_state || exit $?
