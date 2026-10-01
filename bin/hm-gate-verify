@@ -5,7 +5,7 @@
 #     two, and every step the hm-gate header names, and every --expect name, has one. A log with no header (a project's
 #     own gate script) needs --expect. With --commit, the header must name that commit and a clean tree: a log left from
 #     an earlier run, or a run on uncommitted changes, vouches for nothing. A gate that wrote no step line did not run,
-#     so it is red, not green.
+#     so it is red, not green. An hm-gate log read without --commit is GREEN with a note on stderr: it vouches for no commit.
 #   hm-gate-verify commits <base>..<tip> --max-files <n> --style conventional|free --attribution allow|deny [--no-body]
 #     Every flag but --no-body is required, so nothing is loosened by leaving one out. Per commit: a subject, the
 #     conventional form when asked, at most <n> files against its first parent (for a merge, only the files where it
@@ -63,6 +63,12 @@ verify_log() {
     [ -n "$twice" ] && echo "twice: $twice"; [ -n "$reasons" ] && echo "$reasons"; exit 1
   fi
   echo "GREEN ($(printf '%s\n' "$lines" | wc -l | tr -d ' ') steps)"
+  # An hm-gate log read without --commit shows the steps passed, not which commit they ran on: said on stderr, so the
+  # verdict line stays the same
+  if [ -z "$commit" ] && [ -n "$hhead" ]; then
+    if [ "$hdirty" = 1 ]; then echo "note: this gate ran on a dirty tree (head $hhead), so it vouches for no commit; commit, gate the tip, and verify with --commit <tip>" >&2
+    else echo "note: not checked against a commit; verify with --commit <tip> before reporting it" >&2; fi
+  fi
 }
 
 verify_commits() {

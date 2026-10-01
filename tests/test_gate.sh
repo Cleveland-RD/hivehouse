@@ -21,7 +21,10 @@ assert_eq "a rerun leaves no line of the earlier run" "$(steps "$LOG")" "only ex
 hm-gate --log "$LOG" -- s 'hm-slot status'; assert_contains "the gate holds the slot under its label" "$(cat "$LOG.d/s.log")" '"label":"gate"'
 echo stray > stray; hm-gate --log "$LOG" -- d true
 assert_eq "a dirty tree is recorded" "$(head -1 "$LOG")" "# hm-gate steps: d head=$head_now dirty=1"
+hm-gate --log "$LOG" -- d true 2>"$T_TMP/dirty.err"
+assert_contains "a gate started on a dirty tree says to commit first" "$(cat "$T_TMP/dirty.err")" "vouch for no commit; commit first"
 rm stray
+hm-gate --log "$LOG" -- d true 2>"$T_TMP/clean.err"; assert_eq "...and on a clean tree it says nothing" "$(cat "$T_TMP/clean.err")" ""
 # the gate's own log in the tree: a second run is not made dirty by the first run's log and step logs
 mkdir -p sub; for run in 1 2; do (cd sub && hm-gate --log ../gate.log -- e true); done
 assert_eq "a log in the tree does not make the next run dirty" "$(head -1 gate.log)" "# hm-gate steps: e head=$head_now dirty=0"
@@ -86,6 +89,16 @@ done
 H="# hm-gate steps: a,b head=$head_now dirty=0"
 printf '%s\na exit 0\nb exit 0\n' "$H" > "$T_TMP/g.log"
 out=$(hm-gate-verify log "$T_TMP/g.log"); assert_status "green log" $? 0; assert_eq "green says its step count" "$out" "GREEN (2 steps)"
+# read without --commit, an hm-gate log is green with a note on stderr: it vouches for no commit
+hm-gate-verify log "$T_TMP/g.log" >/dev/null 2>"$T_TMP/n.err"
+assert_contains "no --commit: a note says to verify with --commit" "$(cat "$T_TMP/n.err")" "not checked against a commit; verify with --commit <tip>"
+hm-gate-verify log "$T_TMP/g.log" --commit HEAD >/dev/null 2>"$T_TMP/n.err"; assert_eq "...none with --commit" "$(cat "$T_TMP/n.err")" ""
+printf '# hm-gate steps: a head=%s dirty=1\na exit 0\n' "$head_now" > "$T_TMP/dirty-nc.log"
+out=$(hm-gate-verify log "$T_TMP/dirty-nc.log" 2>"$T_TMP/n.err"); assert_status "a dirty log with no --commit is still green" $? 0
+assert_eq "...with the same verdict line" "$out" "GREEN (1 steps)"
+assert_contains "...and a note that it ran on a dirty tree" "$(cat "$T_TMP/n.err")" "ran on a dirty tree (head $head_now), so it vouches for no commit"
+printf 'a exit 0\n' > "$T_TMP/own.log"
+hm-gate-verify log "$T_TMP/own.log" --expect a >/dev/null 2>"$T_TMP/n.err"; assert_eq "...and none for a project's own script (no header)" "$(cat "$T_TMP/n.err")" ""
 hm-gate --log "$LOG" -- a true b false c true >/dev/null 2>&1
 out=$(hm-gate-verify log "$LOG" 2>&1); assert_status "a red step is red" $? 1; assert_contains "red names the failing step" "$out" "b exit 1"
 printf '%s\n' "$H" > "$T_TMP/none.log"
