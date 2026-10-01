@@ -97,8 +97,11 @@ RUBY
     # nothing-spawned counts a spawn and only a spawn, on the JSON a Bash call's input is encoded as
     js=$(node -e 'const rs = JSON.parse(require("fs").readFileSync(process.argv[1])).filter(r => r.label.endsWith("/nothing-spawned"));
       console.log((rs.length > 0 ? "ok" : "FAIL") + "\tevery case has a nothing-spawned grader");
-      const spawns = ["hm-spawn --agent impl --role r.md", "cd /w && hm-spawn --agent impl", "/p/bin/hm-spawn --agent impl", "hm-slot status; hm-spawn --agent a", "echo a\nhm-spawn --agent b"];
-      const not = ["hm-spawn --self --agent orch", "hm-spawn --self --agent o && echo ok", "command -v hm-spawn", "which hm-spawn", "echo \"run hm-spawn\"", "hm-spawn-x --agent a"];
+      const spawns = ["hm-spawn --agent impl --role r.md", "cd /w && hm-spawn --agent impl", "/p/bin/hm-spawn --agent impl", "hm-slot status; hm-spawn --agent a",
+        "echo a\nhm-spawn --agent b", "  hm-spawn --agent a", "HM_X=1 hm-spawn --agent a", "env A=1 hm-spawn --agent a", "timeout 60 hm-spawn --agent a",
+        "nohup hm-spawn --agent a &", "`hm-spawn --agent a`", "{ hm-spawn --agent a; }", "bash -c \"hm-spawn --agent a\""];
+      const not = ["hm-spawn --self --agent orch", "hm-spawn --self --agent o && echo ok", "command -v hm-spawn", "which hm-spawn", "echo \"run hm-spawn\"",
+        "echo a\\nhm-spawn --agent b", "hm-spawn-x --agent a"];
       for (const r of rs) {
         const re = new RegExp(r.pattern, r.flags);
         for (const c of spawns) console.log((re.test(JSON.stringify({ command: c, description: "d" })) ? "ok" : "FAIL") + "\t" + r.label + " counts " + JSON.stringify(c));
