@@ -115,6 +115,8 @@ const reportPath = A.reportPath || `${firstRepo}/.hivemind/reports/docs-health-r
 const reportInState = !A.reportPath
 // the line hm_ensure_state writes (bin/hm-lib.sh), the same one and only when absent
 const IGNORE_STATE = `Before writing the report, make sure git ignores .hivemind/ in ${firstRepo}: run \`git -C ${firstRepo} ls-files -- .hivemind\`; if it prints anything, those files are tracked, so do not write under .hivemind/ at all: write the report OUTSIDE every repository, to \`\${TMPDIR:-/tmp}/docs-health-report-<date>.md\` (resolve $TMPDIR with Bash), and say so in the reportPath you return and in the summary. Otherwise run \`common=$(git -C ${firstRepo} rev-parse --path-format=absolute --git-common-dir)\`, then \`mkdir -p "$common/info"\`, \`touch "$common/info/exclude"\` and \`grep -qx '/.hivemind/' "$common/info/exclude" || echo '/.hivemind/' >> "$common/info/exclude"\` (append that exact line, and only when it is absent), and \`mkdir -p ${firstRepo}/.hivemind/reports\`.`
+const WRITE_UNLESS_TRACKED = `Unless the check above sent the report to \${TMPDIR:-/tmp}, write the report to ${reportPath} (create the file; replace <date> with today's date).`
+const WRITE_GIVEN = `Write the report to ${reportPath} (create the file; replace <date> with today's date).`
 const base = (p) => p.replace(/\/+$/, '').split('/').pop()
 
 // ----------------------------- shared rules -----------------------------
@@ -315,7 +317,8 @@ ALL RESULTS (JSON — audits, cross-repo analyses, plans${applied ? ', and apply
 ${JSON.stringify(allResults, null, 2)}
 
 The report must have, per group and per repo: (a) recent-change documentation gaps, (b) inconsistencies (naming/structure/stale/broken-link/missing-index/duplication), (c) cross-repo issues + the unified-structure recommendation, (d) ${applied ? 'what was APPLIED (and any judgment calls / deferred items / remaining broken links)' : 'the recommended change plan'}, and (e) deleteCandidates (never auto-applied) for human decision. End with a prioritized, cross-project "Top actions" list.
-Determine today's date with \`date +%F\` via Bash. ${reportInState ? IGNORE_STATE + '\n' : ''}Write the report to ${reportPath} (create the file; replace <date> with today's date). If you cannot write there, write it OUTSIDE every repository, to \${TMPDIR:-/tmp}/docs-health-report-<date>.md (resolve $TMPDIR with Bash), and say so in the reportPath you return and in the summary. Never write the report anywhere inside a repository except the path above. Return the actual reportPath you wrote, a short summary, and the top actions.`
+Determine today's date with \`date +%F\` via Bash. ${reportInState ? IGNORE_STATE + '\n' + WRITE_UNLESS_TRACKED : WRITE_GIVEN}
+If you cannot write to the path you chose, write the report OUTSIDE every repository, to \${TMPDIR:-/tmp}/docs-health-report-<date>.md (resolve $TMPDIR with Bash), and say so in the reportPath you return and in the summary. Never write the report inside a repository anywhere but at ${reportPath}${reportInState ? ', and never under .hivemind/ when the check above found it tracked' : ''}. Return the actual reportPath you wrote, a short summary, and the top actions.`
 
 // ----------------------------- run -----------------------------
 log(`docs-health-check | mode=${mode} | window=${sinceDays}d | groups: ${groups.map((g) => `${g.name}(${g.repos.length})`).join(', ')}`)

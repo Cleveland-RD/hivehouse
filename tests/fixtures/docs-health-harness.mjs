@@ -14,7 +14,7 @@ const agent = async (prompt, opts) => {
   if (l.startsWith('xref:')) return { group: l, relationships: [], crossRepoInconsistencies: [], unifiedStructure: '' };
   if (l.startsWith('plan:')) return { repo: l };
   if (l.startsWith('apply:')) return { repo: l, applied: [], summary: '' };
-  if (l === 'report') { reportPrompt = prompt; calls.push('report-prompt:' + prompt.match(/MODE: \w+/)[0] + ' | ' + (prompt.match(/Write the report to (\S+)/) || [])[1]); return { reportPath: 'x', summary: '', topActions: [] }; }
+  if (l === 'report') { reportPrompt = prompt; calls.push('report-prompt:' + prompt.match(/MODE: \w+/)[0] + ' | ' + (prompt.match(/[Ww]rite the report to (\S+)/) || [])[1]); return { reportPath: 'x', summary: '', topActions: [] }; }
   return null;
 };
 const parallel = (thunks) => Promise.all(thunks.map((t) => t().catch(() => null)));
