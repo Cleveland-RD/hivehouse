@@ -13,6 +13,9 @@ Every grader is free (no judge model). The markers are matched in the trace at t
 an escaped newline, since the skill's own instructions name them only in backticks; `tests/test_evals.sh` keeps both
 true and checks every case's files and scaffold without running Claude.
 
+A model that writes `HM-CLARIFY:` inside `AskUserQuestion`'s question field, rather than on its own line, is graded as not
+asking: a known false negative.
+
 ## Running them is a paid step
 
 Only on the owner's word. From the plugin root:
