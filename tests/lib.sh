@@ -9,7 +9,7 @@ T_TMP=""
 # finish it. A process is recorded as pid TAB start time, the moment $! names it (the start time is fixed at fork and an
 # exec does not move it); it is signalled only while that pid still has that start time, which a recycled pid would
 # have to share to the second, and never when it is this shell or above it.
-t_lstart() { ps -o lstart= -p "$1" 2>/dev/null | sed 's/^ *//;s/ *$//'; }
+t_lstart() { ps -o lstart= -p "$1" 2>/dev/null | sed 's/^ *//;s/ *$//'; }   # hm_lstart's reading: the reaper shares no code with what it tests
 t_track() {  # t_track <pid>...: record processes the test started
   local p
   for p in "$@"; do printf '%s\t%s\n' "$p" "$(t_lstart "$p")" >> "$T_TMP/run.ledger"; done
@@ -25,9 +25,11 @@ t_same() {  # t_same <pid> <recorded start>: 0 when the pid is alive with that s
   [ -n "$1" ] && [ -n "$2" ] && [ "$(t_lstart "$1")" = "$2" ]
 }
 t_guard() {  # sets T_ABOVE (this shell and everything above it) and T_OWN_PG (its group): never signalled
-  # walked from inside sh while it runs: bash 3.2 has no BASHPID, and a subshell's $$ is its parent's
-  T_ABOVE=" $(sh -c 'p=$PPID; while [ -n "$p" ] && [ "$p" -gt 1 ]; do printf "%s " "$p"; p=$(ps -o ppid= -p "$p" | tr -d " "); done') $$ "
-  T_OWN_PG=$(set -- $T_ABOVE; ps -o pgid= -p "$1" 2>/dev/null | tr -d ' ')
+  # read from inside sh while it runs (bash 3.2 has no BASHPID, and a subshell's $$ is its parent's): sh's parent is this
+  # shell, or the command substitution's child of it, which is in this shell's group and is gone once sh returns
+  local r
+  r=$(sh -c 'p=$PPID; ps -o pgid= -p "$p" | tr -d " "; while [ -n "$p" ] && [ "$p" -gt 1 ]; do printf "%s " "$p"; p=$(ps -o ppid= -p "$p" | tr -d " "); done')
+  T_OWN_PG=${r%%$'\n'*}; T_ABOVE=" ${r#*$'\n'} $$ "
 }
 t_reap_groups() {  # t_reap_groups <run dir>: kill -9 each recorded group whose leader is still the one recorded
   local p s
