@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # The eval cases, checked without running Claude (running them is paid): every case loads by the documented schema, every
 # scaffold builds its workspace as an eval run would, the markers the graders look for are written by no instruction a
-# run loads, and the documented run grants nothing the start skill does not.
+# run loads, and the documented run grants nothing the start skill does not. A missing ruby, node or skills/ is a failure,
+# never a skip: a check that did not run must not read as one that passed.
 . "$(dirname "$0")/lib.sh"
 t_setup
 EVALS="${HM_EVALS_DIR:-$HM_REPO_ROOT/evals}"
@@ -89,8 +90,8 @@ RUBY
         for (const c of not) console.log((re.test(JSON.stringify({ command: c, description: "d" })) ? "FAIL" : "ok") + "\t" + r.label + " does not count " + JSON.stringify(c));
       }' "$T_TMP/regexes.json")
     while IFS=$'\t' read -r verdict label; do [ "$verdict" = ok ] && ok "$label" || bad "$label"; done <<< "$js"
-  else echo "  skip the patterns compile (node is not installed)"; fi
-else echo "  skip the case schema (ruby is not installed)"; fi
+  else bad "node is installed, which compiles the graders' JavaScript patterns"; fi
+else bad "ruby is installed, which reads the cases' YAML"; fi
 
 # ---- every scaffold builds its workspace as a run would: an empty directory, a minimal environment, 120 s ---------
 for script in "$EVALS"/*/scaffold.sh; do
@@ -112,7 +113,7 @@ done
 # The graders match `HM-PLAN:` and `HM-CLARIFY:` at the start of a text or after a newline in the trace. The skill's
 # instructions and the case prompts are in the trace too, so neither may have a line that starts with a marker.
 loaded=$(ls "$EVALS"/*/prompt.md 2>/dev/null)
-if [ -d "$SKILLS" ]; then loaded="$loaded"$'\n'$(find "$SKILLS" -name '*.md'); else echo "  skip the skills' markers (no skills/ here)"; fi
+if [ -d "$SKILLS" ]; then loaded="$loaded"$'\n'$(find "$SKILLS" -name '*.md'); else bad "the skills are here (on a branch without skills/, set HM_SKILLS_DIR to an export of them)"; fi
 hits=$(printf '%s\n' "$loaded" | grep -v '^$' | xargs grep -nE '^HM-(PLAN|CLARIFY):' 2>/dev/null)
 assert_eq "no loaded instruction starts a line with a marker" "$hits" ""
 
@@ -128,5 +129,5 @@ if [ -f "$SKILLS/start/SKILL.md" ]; then
   for g in "Bash(hm-spawn *)" "Bash(hm-rotate *)" "Bash(hm-self-rotate *)"; do
     case "$grants" in *"$g"*) bad "the documented run must not grant $g" ;; *) ok "the documented run does not grant $g" ;; esac
   done
-else echo "  skip the documented grants (no skills/start/SKILL.md here)"; fi
+else bad "the start skill is at $SKILLS/start/SKILL.md, which the documented grants are checked against"; fi
 t_done
