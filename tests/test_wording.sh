@@ -17,4 +17,8 @@ assert_eq "nothing says an hm-gate run goes through hm-slot run" "$hits" ""
 for f in rules/RULES.md roles/implementer.md skills/start/SKILL.md skills/gate/SKILL.md; do
   tr '\n' ' ' < "$f" | tr -s ' ' | grep -q "slot itself" && ok "$f: hm-gate takes the slot itself" || bad "$f: does not say hm-gate takes the slot itself"
 done
+# every place the orchestrator is told how to talk to the owner says how a message ends
+for f in rules/RULES.md skills/start/SKILL.md skills/overnight/SKILL.md skills/overnight/morning-report.md skills/cleanup/SKILL.md; do
+  grep -q '"Nothing needed from you."' "$f" && ok "$f: a message to the owner ends with what is needed" || bad "$f: does not say how a message to the owner ends"
+done
 [ "$FAILS" -eq 0 ] || exit 1
