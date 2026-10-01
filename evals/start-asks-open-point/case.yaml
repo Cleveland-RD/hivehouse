@@ -18,3 +18,8 @@ graders:
     min: 0
     max: 0
     arm: both
+  # The open point is put to the owner, not only marked in the text.
+  - name: question-asked
+    type: tool_used
+    tool: AskUserQuestion
+    min: 1

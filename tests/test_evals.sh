@@ -67,6 +67,21 @@ cases.each do |dir|
     end
   end
 end
+# What each case's run may and may not do with a tool, as [tool, min, max] (nil: unbounded); a grader dropped or loosened
+# is a failure here before it is a run that passes for the wrong reason.
+TOOL_RULES = {
+  'start-asks-nothing' => [['AskUserQuestion', 0, 0]],
+  'start-asks-open-point' => [['AskUserQuestion', 1, nil]],
+  'start-plans-and-waits' => [['Edit', 0, 0], ['Write', 0, 0], ['SendMessage', 0, 0]],
+}
+TOOL_RULES.each do |c, rules|
+  y = File.exist?("#{evals}/#{c}/case.yaml") ? (YAML.safe_load(File.read("#{evals}/#{c}/case.yaml")) || {}) : {}
+  used = (y['graders'] || []).select { |g| g['type'] == 'tool_used' && g['input_match'].nil? }
+  rules.each do |tool, min, max|
+    g = used.find { |u| u['tool'] == tool }
+    say(!g.nil? && (g['min'] || 1) == min && g['max'] == max, "#{c}: #{tool} is graded with min #{min} and max #{max.nil? ? 'none' : max}")
+  end
+end
 File.write(File.join(ENV['T_TMP'], 'regexes.json'), JSON.generate(regexes))
 RUBY
   ) || bad "the schema check ran"
