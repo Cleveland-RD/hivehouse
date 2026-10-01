@@ -1,0 +1,95 @@
+---
+name: overnight
+description: Run a queue of work unattended on this machine or a named remote host, with a team of Claude sessions, a heartbeat and a morning report. Use when the owner types /hivemind:overnight.
+when_to_use: When the owner wants work to continue while they are away, or to move a team to another machine for the night.
+argument-hint: <what to work through>
+disable-model-invocation: true
+allowed-tools: Bash(hm-spawn *) Bash(hm-rotate *) Bash(hm-self-rotate *) Bash(hm-slot status) Bash(hm-slot release *) Bash(hm-context *) Bash(hm-gate-verify *) Bash(hm-settings resolve *) Bash(hm-manifest *) Bash(hm-disk *) Bash(git status *) Bash(git log *) Bash(git diff *) Bash(git rev-parse *) Bash(git show *) Read Edit(./.hivemind/**) Write(./.hivemind/**) AskUserQuestion SendMessage ListAgents CronCreate CronDelete CronList
+---
+
+# hivemind: overnight
+
+You run a queue of work while the owner is away. The work: $ARGUMENTS
+
+First read `${CLAUDE_PLUGIN_ROOT}/rules/RULES.md` and follow it. Briefs follow `${CLAUDE_PLUGIN_ROOT}/rules/brief-template.md`;
+roles are in `${CLAUDE_PLUGIN_ROOT}/roles/`. Team setup is the same as the start skill's steps 5 and 6 (plan, owner's OK,
+spawn); this skill adds what an unattended night needs.
+
+Call every `hm-*` executable on its own, never inside a compound command. Executables that are not pre-approved
+(`hm-push`, `hm-cleanup`, `hm-gate`, `hm-slot run`, `hm-slot acquire`, `hm-remote-sync`) ask for permission each time;
+that is intended, and you do not work around it. Never write permission rules into the owner's settings.
+
+If `hm-*` is not found, the plugin is not enabled in this session: say so and stop.
+
+## 1. Close every open question
+
+List the open decisions: scope, done conditions, paid steps, what may be pushed, where to run. Ask each with
+`AskUserQuestion`, multiple choice, until none remain. Write `HM-CLARIFY:` before the questions. Every option must satisfy
+a rule the owner has already fixed. Nobody is there to answer after this step, so an assumption made here is a
+decision made for the owner: ask instead.
+
+## 2. Write the queue
+
+Write `.hivemind/overnight-queue.md`: each item with its done condition; each paid step with its price; what may be
+pushed, naming what CI runs on that push (deploys, migrations), since a push that deploys is an outward step; and the
+morning-report template from `${CLAUDE_SKILL_DIR}/morning-report.md`. Show it to the owner and take their OK.
+
+## 3. Ask where
+
+This machine or a named remote host, and with it the permission mode. Resolve the local mode on its own call:
+`hm-settings resolve permission_mode ${user_config.permission_mode_local}`.
+
+Bypass permissions only on a host listed in `${user_config.dedicated_hosts}`, and only when the owner confirms it this
+time; a previous night's yes does not carry. `hm-spawn` refuses bypass on its own (exit 4). A bypass session on a remote
+host is started by `hm-remote-sync start-agent`, which asks permission each time.
+
+## 4. Remote host (skip on this machine)
+
+Over ssh, with `hm-remote-sync`, in this order, each on its own call:
+
+- `check`: free disk first, the hivemind plugin installed at the same version (a private marketplace needs git
+  credentials there), and the plugin's install path, which every later remote call uses by absolute path;
+- `branches`: bundles of the branches the remote lacks;
+- `files`: files git does not carry, by manifest, verified by sha256;
+- `memory`: copied by content into the remote's own path-derived memory folder (a different absolute path is a
+  different folder, so the mapping is explicit);
+- `secret`: such as `.env`, copied at mode 0600, recorded in the remote's manifest and removed by its cleanup; settings
+  are compared by key hash and never printed.
+
+Start the dev servers there and health-check them before the team starts.
+
+## 5. Start the team and the heartbeat
+
+Spawn as the start skill's step 6, with the models and efforts from `${user_config.model_builder}` /
+`${user_config.effort_builder}` and `${user_config.model_reviewer}` / `${user_config.effort_reviewer}`. Write `HM-PLAN:`
+and show the team and the queue's order; wait for the owner's OK.
+
+Then set the heartbeat with `CronCreate`, every `${user_config.heartbeat_minutes}` minutes. Each beat:
+
+1. `hm-context --all`, yours included; rotate any session at or above `${user_config.rotate_at_percent}`% as the start
+   skill's step 8 says, yourself last.
+2. `hm-disk --min-gb ${user_config.min_free_gb}`; when it reports low, `hm-cleanup --disk` (it asks permission).
+3. The queue: what is done, what is next, what is blocked.
+4. Spend, read the project's way, against the ceiling from `hm-settings resolve overnight_ceiling_usd ${user_config.overnight_ceiling_usd}`.
+   At the ceiling, stop starting paid work and say so in the report.
+
+Add a dated line to your handoff for each beat that changed something.
+
+## 6. Rules for the night
+
+- Never idle on an empty queue. Sort what is carried over; build what can be ruled on from the owner's recorded rules.
+- A run said to be free proves it after its first item, by reading spend.
+- No deploy, no migration, no outward message (email, chat, post, push that triggers a deploy or migration), unless the
+  queue names that exact item and the owner approved it in step 2.
+- One heavy job at a time under `hm-slot`; a gate log is read, never assumed (`hm-gate-verify`).
+- A blocker that needs the owner goes in the report, not in a guess.
+- Times in the handoff and the report come from `date`, never estimated.
+- After a usage-limit pause, write a dated line in your handoff, re-read your top block, and re-send any relay that was in
+  flight when you stopped.
+
+## 7. Morning
+
+Write the report from `${CLAUDE_SKILL_DIR}/morning-report.md`: what landed, what is on a branch only, spend, and the
+owner's questions. Delete the heartbeat (`CronDelete`). The return trip of branches and files from a remote host, and
+the remote's cleanup (`hm-remote-sync`, then `hm-cleanup --finish --dry-run` and `hm-cleanup --finish`), happen only
+on the owner's word.
