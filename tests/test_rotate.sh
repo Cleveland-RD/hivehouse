@@ -62,4 +62,8 @@ for i in $(seq 1 25); do case "$(log)" in *"rotated selfy"*) break ;; esac; slee
 assert_contains "the detached rotation cleared the pane" "$(screen selfy)" "CLEARED"
 assert_eq "...and sent the pickup line a second time" "$(screen selfy | grep -c "GOT: You are proj-selfy")" "2"
 assert_contains "...and logged it" "$(log)" "rotated selfy"
+# a fresh repo: self-rotate sets .hivemind up through hm_ensure_state, so it is excluded and a `git add -A` cannot track it
+fresh=$(t_repo fresh); (cd "$fresh" && hm-self-rotate nobody --still 1 --settle 1 >/dev/null 2>&1)
+grep -qx '/.hivemind/' "$fresh/.git/info/exclude" && ok "self-rotate excludes .hivemind in a fresh repo" || bad "self-rotate left .hivemind unexcluded in a fresh repo"
+[ -z "$(git -C "$fresh" status --porcelain)" ] && ok "...so the repo stays clean" || bad "the fresh repo shows untracked files: $(git -C "$fresh" status --porcelain)"
 cd /; t_teardown; t_done
