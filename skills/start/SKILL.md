@@ -3,7 +3,7 @@ name: start
 description: Run a feature or task with a team of Claude sessions in tmux, from planning through review, gates and cleanup. Use when the owner types /hivemind:start followed by a task.
 argument-hint: <task description>
 disable-model-invocation: true
-allowed-tools: Bash(hm-spawn *) Bash(hm-rotate *) Bash(hm-self-rotate *) Bash(hm-slot status) Bash(hm-slot release *) Bash(hm-context *) Bash(hm-gate-verify *) Bash(hm-settings resolve *) Bash(hm-manifest *) Bash(hm-disk *) Bash(git status *) Bash(git log *) Bash(git diff *) Bash(git rev-parse *) Bash(git show *) Read Write Edit AskUserQuestion SendMessage ListAgents
+allowed-tools: Bash(hm-spawn *) Bash(hm-rotate *) Bash(hm-self-rotate *) Bash(hm-slot status) Bash(hm-slot release *) Bash(hm-context *) Bash(hm-gate-verify *) Bash(hm-settings resolve *) Bash(hm-manifest *) Bash(hm-disk *) Bash(git status *) Bash(git log *) Bash(git diff *) Bash(git rev-parse *) Bash(git show *) Read Edit(./.hivemind/**) Edit(./CLAUDE.md) Edit(./CLAUDE.local.md) Write(./.hivemind/**) Write(./CLAUDE.md) Write(./CLAUDE.local.md) AskUserQuestion SendMessage ListAgents
 ---
 
 # hivemind: start
