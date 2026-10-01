@@ -89,22 +89,34 @@ hm_lock_release() {  # hm_lock_release <lock> <pid>: removes the lock only when 
 }
 
 # ---- idle detection ------------------------------------------------------------------------------------------------
-# TIED TO THE CLAUDE CODE TERMINAL UI. When a release changes how the input prompt is drawn or how a dialog is worded,
-# update HM_DIALOG_TEXT (any of these in the pane means a person must answer) and the prompt pattern in
-# hm_pane_idle_text. A pane is idle when it is still, its last lines show an empty input prompt, and no dialog is up.
-HM_DIALOG_TEXT=("Do you trust" "Yes, proceed" "Esc to cancel" "Do you want to" "Allow this" "Press Enter to continue")
-hm_pane_idle_text() {  # reads a pane's text on stdin: 0 when it shows an empty prompt and no dialog, 1 when it shows
-  local text p     # no prompt, 3 when a dialog is up
-  text=$(cat)
-  for p in "${HM_DIALOG_TEXT[@]}"; do case "$text" in *"$p"*) return 3 ;; esac; done
-  printf '%s\n' "$text" | grep -v '^[[:space:]]*$' | tail -6 | grep -Eq '^[│| ]*(>|❯)[ │|]*$'
+# TIED TO THE CLAUDE CODE TERMINAL UI (checked against 2.1.x). When a release changes how the prompt box is drawn or how a
+# dialog is worded, update HM_DIALOG_TEXT and hm_pane_idle_text. The prompt box is a rule, "❯", a no-break space and a dim
+# placeholder (the placeholder comes back after C-u and /clear), a rule, and a footer. A pane is idle when it is still, its
+# last lines show an empty prompt, and no dialog is up. Dialog wording is looked for from the box's top rule down only,
+# so a dialog quoted in the conversation above is not mistaken for a live one; with fewer than two rules it is looked for
+# everywhere (a refusal to type is the safe error).
+HM_DIALOG_TEXT=("Do you trust" "Yes, proceed" "Esc to cancel" "Do you want to" "Allow this" "Press Enter to continue" "Enter to confirm" "I trust this folder")
+hm_pane_clean() {  # a pane captured with -e on stdin: drop dim runs (the placeholder), other escapes, and no-break spaces
+  perl -pe 's/\e\[(?:[01];)?2m.*?(?:\e\[(?:0|22)?m|$)//g; s/\e\[[0-9;?]*[A-Za-z]//g; s/\xc2\xa0/ /g'
+}
+hm_pane_text() { hm_tmux capture-pane -p -e -J -t "$1" 2>/dev/null | hm_pane_clean; }   # hm_pane_text <pane>
+hm_pane_idle_text() {  # a cleaned pane on stdin: 0 an empty prompt and no dialog, 1 no empty prompt, 3 a dialog is up
+  local text region p top
+  text=$(hm_pane_clean)   # idempotent: callers may hand it a cleaned pane or a raw one
+  top=$(printf '%s\n' "$text" | grep -nE '^[[:space:]]*(─){4,}' | tail -2 | head -1 | cut -d: -f1)
+  if [ "$(printf '%s\n' "$text" | grep -cE '^[[:space:]]*(─){4,}')" -ge 2 ] && [ -n "$top" ]; then
+    region=$(printf '%s\n' "$text" | tail -n +"$top")
+  else region="$text"; fi
+  for p in "${HM_DIALOG_TEXT[@]}"; do case "$region" in *"$p"*) return 3 ;; esac; done
+  printf '%s\n' "$text" | grep -v '^[[:space:]]*$' | tail -6 | grep -Eq '^(│| )*(>|❯)( |│)*$'
 }
 # wait_idle <pane> <seconds still> <max seconds>: 0 idle, 1 timed out, 3 timed out with a dialog on screen (the caller
 # tells the orchestrator; nothing here ever types into a pane).
 wait_idle() {
   local prev="" cur text still=0 waited=0 rc=1
   while [ "$waited" -lt "$3" ]; do
-    text=$(hm_tmux capture-pane -p -t "$1" 2>/dev/null) || return 1
+    hm_tmux display-message -p -t "$1" '#{pane_id}' >/dev/null 2>&1 || return 1   # the pane is gone
+    text=$(hm_pane_text "$1")
     cur=$(printf '%s' "$text" | shasum)
     if [ "$cur" = "$prev" ]; then still=$((still + 1)); else still=0; fi
     prev="$cur"

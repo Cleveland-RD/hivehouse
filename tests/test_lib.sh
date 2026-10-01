@@ -37,5 +37,16 @@ pane=$(new_pane dialog); wait_idle "$pane" 2 6; assert_status "a dialog is never
 pane=$(new_pane bare); wait_idle "$pane" 2 6; assert_status "still with no prompt is not idle" $? 1
 pane=$(new_pane dialogprompt); wait_idle "$pane" 2 6; assert_status "a dialog above an empty prompt is not idle" $? 3
 pane=$(new_pane ticking); wait_idle "$pane" 2 5; assert_status "an empty prompt that keeps changing is not idle" $? 1
+pane=$(new_pane quotesdialog); wait_idle "$pane" 2 20; assert_status "dialog words quoted above the prompt box are not a dialog" $? 0
+pane=$(new_pane idle); wait_idle "$pane" 2 20
+assert_contains "the real prompt is a rule, a bullet and a non-breaking space" "$(hm_tmux capture-pane -p -t "$pane" | LC_ALL=C grep -c $'\xe2\x9d\xaf\xc2\xa0')" "1"
+printf '%s\n' '──────── r ────────' $'❯\xc2\xa0\033[2mTry "x"\033[0m' '──────── r ────────' 'footer' | hm_pane_idle_text; assert_status "an escaped dim placeholder after a no-break space is an empty prompt" $? 0
+printf '%s\n' '──────── r ────────' $'❯\xc2\xa0typed words' '──────── r ────────' 'footer' | hm_pane_idle_text; assert_status "typed words are not an empty prompt" $? 1
+printf '%s\n' '──────── r ────────' $'❯\xc2\xa0' '──────── r ────────' 'footer' | hm_pane_idle_text; assert_status "a bare prompt with a no-break space is empty" $? 0
+printf '%s\n' '──────── r ────────' $'❯ \033[38;5;2mx\033[0m' '──────── r ────────' | hm_pane_idle_text; assert_status "a colour 2 in the 256 palette is not a dim run" $? 1
+printf '%s\n' 'Enter to confirm' | hm_pane_idle_text; assert_status "the trust dialog's own words are a dialog" $? 3
+printf '%s\n' 'Yes, I trust this folder' | hm_pane_idle_text; assert_status "I trust this folder is a dialog" $? 3
+printf '%s\n' 'said: Esc to cancel' '──────── r ────────' $'❯\xc2\xa0' '──────── r ────────' 'footer' | hm_pane_idle_text; assert_status "words above the prompt box's top rule are not scanned" $? 0
+printf '%s\n' '──────── r ────────' 'Esc to cancel' $'❯\xc2\xa0' '──────── r ────────' 'footer' | hm_pane_idle_text; assert_status "words inside the prompt box are scanned" $? 3
 pane=$(new_pane busy); wait_idle "$pane" 2 5; assert_status "a busy pane is not idle" $? 1
 t_done

@@ -28,7 +28,7 @@ project=$(basename "$ROOT")
 note() { printf '%s %s\n' "$(hm_now)" "$*" >> "$STATE/rotate.log"; }
 level() { local v; v=$("$(dirname "$0")/hm-context" "$agent" 2>/dev/null) && echo "$v%" || echo '?'; }
 shows_clear() {  # the last non-blank line is an input prompt that still holds /clear
-  hm_tmux capture-pane -p -J -t "$pane" | grep -v '^[[:space:]]*$' | tail -1 | grep -Eq '^[│| ]*(>|❯) */clear'
+  hm_pane_text "$pane" | grep -v '^[[:space:]]*$' | tail -1 | grep -Eq '^(│| )*(>|❯) */clear'
 }
 
 before=$(level)
