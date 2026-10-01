@@ -58,6 +58,10 @@ After a clear, the orchestrator sends this (`hm-spawn` and `hm-rotate` send it f
 <orchestrator> is the orchestrator session's own name, read when the line is sent (so a rename is followed), or
 <project>-orchestrator when it cannot be read.
 
+The orchestrator's own line, after `hm-self-rotate`, is shorter: it reports to nobody and waits for nobody.
+
+`You are <orchestrator>. Read <root>/.hivemind/handoffs/<agent>.md from the top: its START HERE block is your prompt.`
+
 ### At the rotation threshold
 
 When the orchestrator (or your own check) says the context is at `${user_config.rotate_at_percent}`% or above:

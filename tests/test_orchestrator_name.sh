@@ -60,6 +60,19 @@ record "acme-orch-2"
 hm-rotate impl --still 2 --settle 1 >/dev/null; assert_status "rotate" $? 0
 assert_contains "a rename before a rotation is followed" "$(hm_tmux capture-pane -p -J -S - -t "$pane")" "Report to acme-orch-2."
 
+# the orchestrator's own pickup line (hm-self-rotate): its own name, its handoff, and no report, wait or role dir
+own=$(hm_pickup_line proj "$r" orchestrator)
+assert_eq "the --self entry's line" "$own" "You are acme-orch-2. Read $r/.hivemind/handoffs/orchestrator.md from the top: its START HERE block is your prompt."
+for w in "Report" "Wait" ".hivemind/team/"; do
+  case "$own" in *"$w"*) bad "the --self entry's line names $w" ;; *) ok "the --self entry's line has no $w" ;; esac
+done
+assert_contains "a spawned agent's line is unchanged" "$(hm_pickup_line proj "$r" impl)" "holds your role and the rules. Report to acme-orch-2. Wait for its first message before any work."
+# hm-self-rotate of the --self entry types the short line: impl's pane stands in for the orchestrator's own (a Claude there)
+jq '.agents |= map(if .name == "impl" then . + {claude_pid: .pane_pid, claude_started: .pane_started} else select(.name != "orchestrator") end)' .hivemind/team.json > "$T_TMP/t.json" && mv "$T_TMP/t.json" .hivemind/team.json
+hm-self-rotate impl --still 2 --settle 1; assert_status "hm-self-rotate returns at once" $? 0
+for i in $(seq 1 40); do grep -q "rotated impl" .hivemind/rotate.log 2>/dev/null && [ "$(grep -c 'rotated impl' .hivemind/rotate.log)" -ge 2 ] && break; sleep 0.5; done
+assert_contains "...and the orchestrator gets its own short line" "$(hm_tmux capture-pane -p -J -S - -t "$pane")" "GOT: You are proj-orchestrator. Read $r/.hivemind/handoffs/impl.md from the top: its START HERE block is your prompt."
+
 # --self records the name: --name, else the session's own, else none
 # a Claude stand-in that writes its own session record, as Claude Code does, then runs hm-spawn --self below itself
 rm -f .hivemind/team.json; mkdir -p "$T_TMP/cl2"

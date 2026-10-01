@@ -200,8 +200,13 @@ hm_write_session() {  # hm_write_session <project root> <agent> <session id> <tr
     > "$dir/session.json.tmp$$" 2>/dev/null && mv "$dir/session.json.tmp$$" "$dir/session.json" || { rm -f "$dir/session.json.tmp$$"; return 1; }
 }
 
-# The line that starts (hm-spawn) or restarts (hm-rotate) an agent from its handoff: one text, so they cannot drift.
+# The line that starts (hm-spawn) or restarts (hm-rotate) an agent from its handoff: one text, so they cannot drift. The
+# orchestrator itself (hm-self-rotate) reports to nobody, waits for nobody, and --self gives it no role or rules dir.
 hm_pickup_line() {  # hm_pickup_line <project name> <project root> <agent>
+  if [ "$(hm_self_entry "$2" | jq -r '.name // empty' 2>/dev/null)" = "$3" ]; then
+    printf 'You are %s. Read %s/.hivemind/handoffs/%s.md from the top: its START HERE block is your prompt.' "$(hm_orchestrator_name "$2")" "$2" "$3"
+    return
+  fi
   printf 'You are %s-%s. Read %s/.hivemind/handoffs/%s.md from the top: its START HERE block is your prompt, and %s/.hivemind/team/%s/ holds your role and the rules. Report to %s. Wait for its first message before any work.' \
     "$1" "$3" "$2" "$3" "$2" "$3" "$(hm_orchestrator_name "$2")"
 }
@@ -234,11 +239,14 @@ hm_session_transcript() {  # hm_session_transcript <session id>: the one <id>.js
   n=$(printf '%s' "$m" | grep -c .)
   [ "$n" -eq 1 ] && printf '%s\n' "$m"
 }
+hm_self_entry() {  # hm_self_entry <project root>: the team.json entry hm-spawn --self wrote (only it records a Claude process), or nothing
+  jq -c '[.agents[]? | select((.claude_pid // "") != "")][0] // empty' "$1/.hivemind/team.json" 2>/dev/null
+}
 # The name agents report to: the --self orchestrator's session name as Claude Code has it now (a /rename after --self is
 # followed), else the name recorded at --self, else <project>-orchestrator. One helper for every text that names it.
 hm_orchestrator_name() {  # hm_orchestrator_name <project root>
-  local t="$1/.hivemind/team.json" o pid started live="" full n
-  o=$(jq -c '[.agents[]? | select((.claude_pid // "") != "")][0] // empty' "$t" 2>/dev/null)
+  local o pid started live="" full n
+  o=$(hm_self_entry "$1")
   pid=$(printf '%s' "$o" | jq -r '.claude_pid // empty' 2>/dev/null); started=$(printf '%s' "$o" | jq -r '.claude_started // empty' 2>/dev/null)
   full=$(printf '%s' "$o" | jq -r '.name_full // empty' 2>/dev/null)
   if [ -n "$pid" ] && hm_claude_is "$pid" "$started"; then
