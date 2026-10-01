@@ -119,6 +119,20 @@ for trailer in 'co-authored-by: x' 'Co-authored-by : x' 'Claude-Session: abc' 'G
 done
 git reset -q --hard "$good"; c "fix: six files" g1 g2 g3 g4 g5 g6
 out=$(hm-gate-verify commits "$good..HEAD" $COMMON 2>&1); assert_status "a 6-file commit fails --max-files 5" $? 1; assert_contains "named as files" "$out" "files"
+# a merge's own file count is not counted; its subject and the merged commits are checked in the same range
+git reset -q --hard "$good"; git checkout -q -b side
+for k in 1 2 3 4 5 6 7 8; do c "feat: part $k" m${k}a m${k}b m${k}c m${k}d m${k}e; done
+git checkout -q -; git merge -q --no-ff -m "chore(join): merge side" side
+assert_eq "the merge brings in 40 files" "$(git diff --name-only "$good" HEAD | grep -c .)" "40"
+out=$(hm-gate-verify commits "$good..HEAD" $COMMON 2>&1); assert_status "a merge of 40 files passes --max-files 5" $? 0
+assert_eq "and every commit in the range is checked" "$out" "OK (9 commits)"
+git reset -q --hard "$good"; git merge -q --no-ff -m "merge side" side
+hm-gate-verify commits "$good..HEAD" $COMMON >/dev/null 2>&1; assert_status "a merge's free subject still fails conventional" $? 1
+git reset -q --hard "$good"; git checkout -q side; c "fix: six files" s1 s2 s3 s4 s5 s6; git checkout -q -
+git merge -q --no-ff -m "chore(join): merge side" side
+out=$(hm-gate-verify commits "$good..HEAD" $COMMON 2>&1); assert_status "a merged branch's own 6-file commit still fails" $? 1
+assert_contains "named as files" "$out" "files: 6"
+git reset -q --hard "$good"; git branch -q -D side
 git reset -q --hard "$good"; c "update stuff" f3
 hm-gate-verify commits "$good..HEAD" $COMMON >/dev/null 2>&1; assert_status "a free subject fails conventional" $? 1
 hm-gate-verify commits "$good..HEAD" --max-files 5 --style free --attribution deny >/dev/null 2>&1; assert_status "and passes free" $? 0
