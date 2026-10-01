@@ -152,6 +152,14 @@ if [ -f "$SKILLS/start/SKILL.md" ]; then
     g=$(printf '%s' "$g" | tr '\001' ' ')
     case " $skill " in *" $g "*) ok "the start skill grants $g" ;; *) bad "the documented run grants $g, which the start skill does not" ;; esac
   done
+  # the orchestrator registers and rotates itself under a bare agent name: the project is added where a name is shown
+  names=$(grep -oE '`(hm-spawn --self --agent|hm-self-rotate) [^` ]+' "$SKILLS/start/SKILL.md" | awk '{print $NF}')
+  [ "$(printf '%s\n' "$names" | grep -c .)" -ge 2 ] && ok "the start skill names its own agent for --self and hm-self-rotate" \
+    || bad "the start skill names its own agent for --self and hm-self-rotate"
+  for n in $names; do
+    case "$n" in *[!abcdefghijklmnopqrstuvwxyz0123456789_-]*|[-_]*) bad "the start skill's own agent name is bare: $n" ;;
+      *) ok "the start skill's own agent name is bare: $n" ;; esac
+  done
   for g in "Bash(hm-spawn *)" "Bash(hm-rotate *)" "Bash(hm-self-rotate *)"; do
     case "$grants" in *"$g"*) bad "the documented run must not grant $g" ;; *) ok "the documented run does not grant $g" ;; esac
   done

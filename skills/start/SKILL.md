@@ -67,9 +67,10 @@ again before adding an agent later. This approval is a plan confirmation, separa
 
 ## 6. Spawn
 
-First register this pane as the orchestrator, once: `hm-spawn --self --agent <project>-orchestrator`, the name from
-step 4. Step 8's `hm-context --all` and `hm-self-rotate` find you through it. It exits 4 when that name already belongs
-to a pane hivemind spawned; tell the owner rather than choosing another name.
+First register this pane as the orchestrator, once: `hm-spawn --self --agent orchestrator`. An agent name is bare (the
+project is added where a name is shown), so never put the project in it. Step 8's `hm-context --all` and
+`hm-self-rotate` find you through it. It exits 4 when that name already belongs to a pane hivemind spawned; tell the
+owner rather than choosing another name.
 
 Then for each agent, in its own call. The window per role is a setting (`${user_config.window_builder}`,
 `${user_config.window_reviewer}`), never inferred from a model name:
@@ -107,7 +108,7 @@ A new agent waits for its first message. Send it its brief with `SendMessage`, f
 At each check read every session's context level, yours included: `hm-context --all`. At or above
 `${user_config.rotate_at_percent}`% the agent updates its START HERE block, says "done", and you run
 `hm-rotate <agent>`. It waits for the pane to be idle, clears, sends the pickup line and logs the levels. Rotate
-yourself last with `hm-self-rotate <orchestrator name>` as your final act of that turn, after updating your own
+yourself last with `hm-self-rotate orchestrator` as your final act of that turn, after updating your own
 handoff. Never rotate an agent that is mid-task without its "done".
 
 ## 9. Finish on the owner's word
