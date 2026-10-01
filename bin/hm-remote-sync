@@ -51,6 +51,24 @@ need_remote_root() {  # need_remote_root <path>: absolute, and an existing direc
   rrun test -d "$1" || { [ $? -eq 255 ] && unreachable; hm_die 4 "no such directory on $host: $1"; }
 }
 
+rsafe_dir() {  # rsafe_dir <remote root> <relative dir or .>: walks the directory on the remote, creating what is missing, and refuses a
+  # symlink or a non-directory at any step; prints the resolved directory, which must lie under the resolved root (R1)
+  local out rc
+  out=$(rrun sh -c 'root=$(cd "$1" && pwd -P) || exit 2; [ -n "$root" ] || exit 2; d=$root; IFS=/; set -f
+    for c in $2; do { [ -n "$c" ] && [ "$c" != . ]; } || continue; d="$d/$c"
+      if [ -L "$d" ]; then exit 3; fi
+      if [ -e "$d" ]; then [ -d "$d" ] || exit 3; else mkdir "$d" || exit 4; fi
+    done
+    real=$(cd "$d" && pwd -P) || exit 4
+    case "$real" in "$root"|"$root"/*) ;; *) exit 3 ;; esac
+    printf "%s\n" "$real"' sh "$1" "$2" 2>/dev/null); rc=$?
+  [ "$rc" -ne 255 ] || unreachable
+  [ "$rc" -eq 0 ] || hm_die 4 "$2 under $1 on $host is a symlink out of the root, not a directory or cannot be made (exit $rc)"
+  out=$(printf '%s\n' "$out" | clean | head -1)
+  abs_ok "$out" || hm_die 4 "$host did not answer with a usable resolved path for $2 under $1"
+  printf '%s\n' "$out"
+}
+
 case "$sub" in
 # ---- check ---------------------------------------------------------------------------------------------------------
 check)
@@ -166,7 +184,9 @@ secret)
   [ -f "$ROOT/$rel" ] || hm_die 4 "no such file here: $rel"
   ip=$(install_path) || exit $?
   reach; need_remote_root "$rroot"
-  dest="$rroot/$rel"; ddir=$(dirname "$dest"); base=$(basename "$dest")
+  base=$(basename "$rel"); ddir=$(rsafe_dir "$rroot" "$(dirname "$rel")") || exit $?
+  rabs=$(rsafe_dir "$rroot" .) || exit $?; dest="$ddir/$base"
+  rrun test -L "$dest" && hm_die 4 "the secret's destination on $host is a symlink: $rel"
   keys() { sed -n 's/^[[:space:]]*\(export[[:space:]]\{1,\}\)\{0,1\}\([A-Za-z_][A-Za-z0-9_]*\)=\(.*\)$/\2 \3/p'; }   # "NAME value" lines; values stay in this pipeline
   have=$(sha_remote "$dest"); mine=$(sha_local "$ROOT/$rel")
   if [ -n "$have" ] && [ "$have" != "$mine" ]; then
@@ -188,18 +208,19 @@ secret)
     tmp="$ddir/.$base.hm.$$"
     # the content travels on stdin into a file created under umask 077 in the destination directory, so it is never
     # wider than 600 at any moment, then moved into place; scp would create it at the remote umask
-    hm_ssh "umask 077; mkdir -p $(printf '%q' "$ddir") && cat > $(printf '%q' "$tmp") && mv $(printf '%q' "$tmp") $(printf '%q' "$dest") && chmod 600 $(printf '%q' "$dest")" < "$ROOT/$rel" >/dev/null 2>&1 \
-      || { rrun rm -f "$tmp" >/dev/null 2>&1; hm_die 5 "could not write the secret on $host"; }
+    # no-clobber: a file that appeared at the destination since the check above is left as it is (exit 9)
+    hm_ssh "umask 077; cat > $(printf '%q' "$tmp") && { if test -e $(printf '%q' "$dest") || test -L $(printf '%q' "$dest"); then rm -f $(printf '%q' "$tmp"); exit 9; fi; mv -n $(printf '%q' "$tmp") $(printf '%q' "$dest"); if test -e $(printf '%q' "$tmp"); then rm -f $(printf '%q' "$tmp"); exit 9; fi; chmod 600 $(printf '%q' "$dest"); }" < "$ROOT/$rel" >/dev/null 2>&1; wrc=$?
+    [ "$wrc" -ne 9 ] || hm_die 1 "a file appeared at $rel on $host while it was being copied: it was not overwritten"
+    [ "$wrc" -eq 0 ] || { rrun rm -f "$tmp" >/dev/null 2>&1; hm_die 5 "could not write the secret on $host"; }
     [ "$(sha_remote "$dest")" = "$mine" ] || hm_die 1 "the copy on $host does not match"
     echo "copied: $rel to $host (mode 600)"
   fi
   mode=$(rrun ls -ln "$dest" 2>/dev/null | cut -c1-10); [ "$mode" = "-rw-------" ] || hm_die 1 "the copy on $host has mode $mode, not 600"
-  abs=$(rrun sh -c 'cd "$1" && pwd -P' sh "$rroot" | clean)
-  if rrun env "HM_PROJECT=$rroot" "$ip/bin/hm-manifest" list --kind file 2>/dev/null | jq -e --arg p "$abs/$rel" 'select(.path == $p)' >/dev/null 2>&1; then
-    echo "already on the remote manifest: $abs/$rel"
+  if rrun env "HM_PROJECT=$rroot" "$ip/bin/hm-manifest" list --kind file 2>/dev/null | jq -e --arg p "$rabs/$rel" 'select(.path == $p)' >/dev/null 2>&1; then
+    echo "already on the remote manifest: $rabs/$rel"
   else
-    rrun env "HM_PROJECT=$rroot" "$ip/bin/hm-manifest" add file "path=$abs/$rel" >/dev/null 2>&1 || hm_die 1 "the remote manifest refused the entry"
-    echo "recorded on the remote manifest: $abs/$rel"
+    rrun env "HM_PROJECT=$rroot" "$ip/bin/hm-manifest" add file "path=$rabs/$rel" >/dev/null 2>&1 || hm_die 1 "the remote manifest refused the entry"
+    echo "recorded on the remote manifest: $rabs/$rel"
   fi
   exit 0 ;;
 esac

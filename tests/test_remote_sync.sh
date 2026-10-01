@@ -143,6 +143,28 @@ rm -f "$T_TMP/PWNED"; HM_FAKE_DF="a[\$(touch\${IFS}$T_TMP/PWNED)]" sync check te
 [ ! -e "$T_TMP/PWNED" ] && ok "...and no command in it ran" || bad "a command inside the df answer ran locally"
 HM_FAKE_DF=1048576 sync check testhost --min-gb 1 --plugin-version 0.1.0 >/dev/null 2>&1; assert_status "a numeric answer is still used (1 GB meets --min-gb 1)" $? 0
 
+# a secret never leaves the named remote root, whatever is a symlink over there
+sync check testhost --min-gb 0 --plugin-version 0.1.0 >/dev/null
+mkdir -p "$T_TMP/elsewhere"; rr2=$(t_repo remote2); : > "$HM_FAKE_LOG"
+ln -s "$T_TMP/elsewhere" "$rr2/.hivemind"
+LABEL="secret: .hivemind on the remote is a symlink out of the root"; refused 4 secret testhost "$rr2" .hivemind/tmp/.env.remote
+assert_eq "...and nothing was written outside the root" "$(find "$T_TMP/elsewhere" | wc -l | tr -d ' ')" "1"
+rm "$rr2/.hivemind"; mkdir -p "$rr2/.hivemind"; ln -s "$T_TMP/elsewhere" "$rr2/.hivemind/tmp"
+LABEL="secret: .hivemind/tmp on the remote is a symlink out of the root"; refused 4 secret testhost "$rr2" .hivemind/tmp/.env.remote
+assert_eq "...and nothing was written outside the root (tmp)" "$(find "$T_TMP/elsewhere" | wc -l | tr -d ' ')" "1"
+rm "$rr2/.hivemind/tmp"; mkdir -p "$rr2/.hivemind/tmp"; ln -s "$T_TMP/elsewhere/target" "$rr2/.hivemind/tmp/.env.remote"
+LABEL="secret: the destination is a dangling symlink"; refused 4 secret testhost "$rr2" .hivemind/tmp/.env.remote
+[ ! -e "$T_TMP/elsewhere/target" ] && ok "...and its target was not created" || bad "the symlink's target was written"
+rm "$rr2/.hivemind/tmp/.env.remote"
+LABEL="secret: a remote that answers nothing to a path resolution"; HM_FAKE_BLANK_PWD=1 refused 4 secret testhost "$rr2" .hivemind/tmp/.env.remote
+[ ! -e "$rr2/.hivemind/tmp/.env.remote" ] && ok "...and nothing was written" || bad "a secret was written after an empty resolution"
+# a file that appears at the destination after the check is never clobbered
+out=$(HM_FAKE_MV_RACE=1 sync secret testhost "$rr2" .hivemind/tmp/.env.remote 2>&1); assert_status "a file that appeared at the destination is a finding, exit 1" $? 1
+assert_eq "...and it was not overwritten" "$(cat "$rr2/.hivemind/tmp/.env.remote")" "raced"
+assert_eq "...and no temporary file is left" "$(ls -A "$rr2/.hivemind/tmp" | grep -c 'hm\.')" "0"
+rm -f "$rr2/.hivemind/tmp/.env.remote"
+sync secret testhost "$rr2" .hivemind/tmp/.env.remote >/dev/null 2>&1; assert_status "a clean remote root still takes the secret" $? 0
+
 # ---- common --------------------------------------------------------------------------------------------------------
 sync check testhost --min-gb 0 --plugin-version 0.1.0 >/dev/null
 mkdir "$T_TMP/norepo"; (cd "$T_TMP/norepo" && hm-remote-sync check testhost --min-gb 0 --plugin-version 0.1.0 >/dev/null 2>&1); assert_status "outside a repo" $? 2
