@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+# Context level from the session transcript (not the pane's status line, which is the owner's own setup).
+# hm-context <agent> [--window <tokens>] | --all.  Exit: 2 no project / no session or usable transcript, 3 .hivemind
+# tracked, 4 bad window, 64 usage. The window is the agent's `window` in team.json (written at spawn), default 200000;
+# it is never inferred from a model name.
+set -u
+. "$(dirname "$0")/hm-lib.sh"
+ROOT=$(hm_project_root) || exit $?
+STATE="$ROOT/.hivemind"
+if [ -n "$(git -C "$ROOT" ls-files -- .hivemind)" ]; then
+  hm_die 3 "files under .hivemind/ are tracked by git; untrack them before using hivemind here"
+fi
+pct() {  # pct <agent> [window]
+  local a="$1" win="${2:-}" s t used
+  s="$STATE/team/$a/session.json"; [ -f "$s" ] || return 2
+  t=$(hm_json_get "$s" .transcript_path); [ -f "$t" ] || return 2
+  # the last assistant line that is the main conversation's own and carries usage (a sidechain's or a synthetic line
+  # would read as another agent's, or as zero)
+  used=$(jq -c 'select(.type == "assistant" and .message.model != "<synthetic>" and (.isSidechain // false) == false)
+      | .message.usage | (.input_tokens // 0) + (.cache_read_input_tokens // 0) + (.cache_creation_input_tokens // 0) + (.output_tokens // 0)
+      | select(. > 0)' "$t" 2>/dev/null | tail -1)
+  [ -n "$used" ] || return 2
+  if [ -z "$win" ]; then win=$(jq -r --arg a "$a" '[.agents[]? | select(.name == $a) | .window][0] // empty' "$STATE/team.json" 2>/dev/null); fi
+  win=${win:-200000}
+  echo $(( used * 100 / win ))
+}
+if [ "${1:-}" = "--all" ]; then
+  [ -f "$STATE/team.json" ] || hm_die 2 "no team recorded"
+  for a in $(jq -r '.agents[].name' "$STATE/team.json"); do printf '%s %s\n' "$a" "$(pct "$a" || echo '?')"; done
+  exit 0
+fi
+[ -n "${1:-}" ] || hm_die 64 "usage: hm-context <agent> [--window n] | --all"
+w=""
+if [ "${2:-}" = "--window" ]; then
+  w="${3:-}"; case "$w" in ''|*[!0-9]*|0) hm_die 4 "--window must be a positive number: $w" ;; esac
+fi
+pct "$1" "$w" || hm_die 2 "no session or transcript recorded for $1"
