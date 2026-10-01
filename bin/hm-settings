@@ -1,0 +1,58 @@
+#!/usr/bin/env bash
+# Tighten-only project settings. `hm-settings resolve <key> <owner value>` prints the effective value: the project's
+# .hivemind/settings.json may make a safety value stricter than the owner's, never looser. Takes no command to run.
+# Exit: 2 no project, 3 .hivemind tracked by git, 4 refused value or key, 64 usage.
+set -u
+. "$(dirname "$0")/hm-lib.sh"
+KEYS="permission_mode overnight_ceiling_usd allow_attribution files_per_commit"
+[ $# -eq 3 ] && [ "$1" = resolve ] || hm_die 64 "usage: hm-settings resolve <key> <owner value>"
+key="$2"; owner="$3"
+case " $KEYS " in *" $key "*) ;; *) hm_die 4 "unknown setting: $key" ;; esac
+
+mode_rank() {  # plan and dontAsk are the same strictness; bypassPermissions is never a local value
+  case "$1" in plan|dontAsk) echo 0 ;; default) echo 1 ;; acceptEdits) echo 2 ;; auto) echo 3 ;; *) return 1 ;; esac
+}
+is_num()  { printf '%s' "$1" | grep -Eq '^[0-9]+(\.[0-9]+)?$'; }
+is_int()  { printf '%s' "$1" | grep -Eq '^[1-9][0-9]*$'; }
+is_bool() { [ "$1" = true ] || [ "$1" = false ]; }
+valid() {  # valid <value>
+  case "$key" in
+    permission_mode) mode_rank "$1" >/dev/null ;;
+    overnight_ceiling_usd) is_num "$1" ;;
+    allow_attribution) is_bool "$1" ;;
+    files_per_commit) is_int "$1" ;;
+  esac
+}
+stricter() {  # stricter <project> <owner>: 0 when the project value is strictly tighter than the owner's
+  case "$key" in
+    permission_mode) [ "$(mode_rank "$1")" -lt "$(mode_rank "$2")" ] ;;
+    overnight_ceiling_usd|files_per_commit) awk -v a="$1" -v b="$2" 'BEGIN { exit !(a + 0 < b + 0) }' ;;
+    allow_attribution) [ "$1" = false ] && [ "$2" = true ] ;;
+  esac
+}
+
+valid "$owner" || hm_die 4 "owner value for $key is not allowed here: $owner"
+
+root=$(hm_project_root) || exit $?
+if [ -n "$(git -C "$root" ls-files -- .hivemind)" ]; then
+  hm_die 3 "files under .hivemind/ are tracked by git; untrack them before using hivemind here"
+fi
+file="$root/.hivemind/settings.json"
+if [ ! -f "$file" ]; then printf '%s\n' "$owner"; exit 0; fi
+
+jq -e 'type == "object"' "$file" >/dev/null 2>&1 || hm_die 4 "$file is not a JSON object"
+for k in $(jq -r 'keys[]' "$file"); do
+  case " $KEYS " in *" $k "*) ;; *) hm_die 4 "unknown setting in $file: $k" ;; esac
+done
+proj=$(jq -r --arg k "$key" 'if has($k) then .[$k] | tostring else empty end' "$file") || exit 4
+[ -n "$proj" ] || { printf '%s\n' "$owner"; exit 0; }
+if [ "$key" = permission_mode ] && [ "$proj" = bypassPermissions ]; then
+  echo "hivemind: project $key bypassPermissions is never effective; using the owner's $owner" >&2
+  printf '%s\n' "$owner"; exit 0
+fi
+valid "$proj" || hm_die 4 "project value for $key is not allowed: $proj"
+if stricter "$proj" "$owner"; then printf '%s\n' "$proj"
+else
+  [ "$proj" = "$owner" ] || echo "hivemind: project $key $proj is looser than the owner's $owner; using the owner's" >&2
+  printf '%s\n' "$owner"
+fi
