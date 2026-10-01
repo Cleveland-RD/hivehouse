@@ -48,5 +48,8 @@ printf '%s\n' 'Enter to confirm' | hm_pane_idle_text; assert_status "the trust d
 printf '%s\n' 'Yes, I trust this folder' | hm_pane_idle_text; assert_status "I trust this folder is a dialog" $? 3
 printf '%s\n' 'said: Esc to cancel' '──────── r ────────' $'❯\xc2\xa0' '──────── r ────────' 'footer' | hm_pane_idle_text; assert_status "words above the prompt box's top rule are not scanned" $? 0
 printf '%s\n' '──────── r ────────' 'Esc to cancel' $'❯\xc2\xa0' '──────── r ────────' 'footer' | hm_pane_idle_text; assert_status "words inside the prompt box are scanned" $? 3
+printf '%s\n' '──────── r ────────' $'❯\xc2\xa0/clear' '──────── r ────────' 'footer' | hm_pane_prompt_line | grep -q '/clear' && ok "the prompt line is found inside the box, not by the last line" || bad "prompt line not found"
+printf '%s\n' 'old: ❯ /clear' '──────── r ────────' $'❯\xc2\xa0\033[2mTry "x"\033[0m' '──────── r ────────' 'footer' | hm_pane_prompt_line | grep -q '/clear' && bad "an echo above the box was taken for the input line" || ok "an echo above the box is not the input line"
+printf '%s\n' '──────── r ────────' $'❯\xc2\xa0older line' $'❯\xc2\xa0/clear' '──────── r ────────' 'footer' | hm_pane_prompt_line | grep -q '/clear' && ok "the last prompt-marked line in the box is the input line" || bad "the input line is the last prompt-marked line in the box"
 pane=$(new_pane busy); wait_idle "$pane" 2 5; assert_status "a busy pane is not idle" $? 1
 t_done

@@ -100,13 +100,21 @@ hm_pane_clean() {  # a pane captured with -e on stdin: drop dim runs (the placeh
   perl -pe 's/\e\[(?:[01];)?2m.*?(?:\e\[(?:0|22)?m|$)//g; s/\e\[[0-9;?]*[A-Za-z]//g; s/\xc2\xa0/ /g'
 }
 hm_pane_text() { hm_tmux capture-pane -p -e -J -t "$1" 2>/dev/null | hm_pane_clean; }   # hm_pane_text <pane>
-hm_pane_idle_text() {  # a cleaned pane on stdin: 0 an empty prompt and no dialog, 1 no empty prompt, 3 a dialog is up
-  local text region p top
-  text=$(hm_pane_clean)   # idempotent: callers may hand it a cleaned pane or a raw one
+hm_pane_box() {  # a cleaned pane on stdin: the prompt box and what is below it (from the second-to-last rule), else all of it
+  local text top
+  text=$(cat)
   top=$(printf '%s\n' "$text" | grep -nE '^[[:space:]]*(─){4,}' | tail -2 | head -1 | cut -d: -f1)
   if [ "$(printf '%s\n' "$text" | grep -cE '^[[:space:]]*(─){4,}')" -ge 2 ] && [ -n "$top" ]; then
-    region=$(printf '%s\n' "$text" | tail -n +"$top")
-  else region="$text"; fi
+    printf '%s\n' "$text" | tail -n +"$top"
+  else printf '%s\n' "$text"; fi
+}
+hm_pane_prompt_line() {  # a pane on stdin: the input line in its prompt box (the last line that starts with the prompt mark)
+  hm_pane_clean | hm_pane_box | grep -E '^(│| )*(>|❯)' | tail -1
+}
+hm_pane_idle_text() {  # a cleaned pane on stdin: 0 an empty prompt and no dialog, 1 no empty prompt, 3 a dialog is up
+  local text region p
+  text=$(hm_pane_clean)   # idempotent: callers may hand it a cleaned pane or a raw one
+  region=$(printf '%s\n' "$text" | hm_pane_box)
   for p in "${HM_DIALOG_TEXT[@]}"; do case "$region" in *"$p"*) return 3 ;; esac; done
   printf '%s\n' "$text" | grep -v '^[[:space:]]*$' | tail -6 | grep -Eq '^(│| )*(>|❯)( |│)*$'
 }

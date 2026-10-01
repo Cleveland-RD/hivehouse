@@ -9,7 +9,10 @@
 for a in "$@"; do printf 'ARGV: %s\n' "$a"; done
 printf 'ENV: HM_AGENT=%s HM_PROJECT=%s HIVEMIND_HOME=%s HM_TMUX_SOCKET=%s\n' "${HM_AGENT:-}" "${HM_PROJECT:-}" "${HIVEMIND_HOME:-}" "${HM_TMUX_SOCKET:-}"
 RULE='────────────────────────────── fake ──'
-box() { printf '\n%s\n❯\xc2\xa0\033[2mTry "fix lint errors"\033[0m\n%s\n  footer line\n' "$RULE" "$RULE"; }
+box() {  # box [typed text]: with text the input line holds it (no placeholder), as when the UI left a command there
+  if [ -n "${1:-}" ]; then printf '\n%s\n❯\xc2\xa0%s\n%s\n  footer line\n' "$RULE" "$1" "$RULE"
+  else printf '\n%s\n❯\xc2\xa0\033[2mTry "fix lint errors"\033[0m\n%s\n  footer line\n' "$RULE" "$RULE"; fi
+}
 dialog() { printf '%s\n Do you trust the files in this folder?\n\n ❯ 1. Yes, I trust this folder\n   2. No, exit\n\n Enter to confirm · Esc to cancel\n' "$RULE"; }
 case "${HM_FAKE_CLAUDE:-idle}" in
   busy) while :; do date; sleep 0.3; done ;;
@@ -23,7 +26,7 @@ case "${HM_FAKE_CLAUDE:-idle}" in
     while IFS= read -r line; do
       case "$line" in
         /clear) n=$((n + 1))
-          if [ "${HM_FAKE_CLAUDE:-idle}" = retryclear ] && [ "$n" -lt 2 ]; then printf '❯ /clear\n'
+          if [ "${HM_FAKE_CLAUDE:-idle}" = retryclear ] && [ "$n" -lt 2 ]; then box '/clear'
           elif [ "${HM_FAKE_CLAUDE:-idle}" = clearbusy ]; then printf '\033[2J\033[HCLEARED\n'; while :; do date; sleep 0.3; done
           else printf '\033[2J\033[HCLEARED\n'; box; fi ;;
         *) printf 'GOT: %s\n' "$line"; box ;;
