@@ -74,6 +74,28 @@ t=0; while ! grep -q "not the one recorded" .hivemind/rotate.out 2>/dev/null && 
 assert_contains "self-rotate refuses a mismatched pane, nothing typed" "$(cat .hivemind/rotate.out 2>/dev/null)" "not the one recorded"
 rm -f .hivemind/rotate.out
 
+# the identity is checked again just before each send: a pane that changed during the wait for an idle prompt gets nothing
+spawn mid; mpane=$(paneof mid)
+( hm-rotate mid --still 4 --settle 1 --max 30 >/dev/null 2>&1; echo $? > "$T_TMP/mid.rc" ) & midjob=$!
+sleep 1; setteam mid '.pane_pid = "1"'; wait "$midjob"
+assert_eq "an identity that changed during the wait exits 6" "$(cat "$T_TMP/mid.rc")" "6"
+assert_eq "...and nothing was typed" "$(hm_tmux capture-pane -p -J -S - -t "$mpane" | grep -c CLEARED)" "0"
+assert_contains "...and it is logged" "$(log | tail -1)" "identity mid"
+
+# ...also between the clear and its pickup line, and before the retried /clear
+hm_tmux set-environment -g HM_FAKE_CLAUDE idle; spawn mid2; hm_tmux set-environment -g -u HM_FAKE_CLAUDE; m2=$(paneof mid2)
+( hm-rotate mid2 --still 2 --settle 5 --max 30 >/dev/null 2>&1; echo $? > "$T_TMP/mid2.rc" ) & job=$!
+t=0; until hm_tmux capture-pane -p -J -S - -t "$m2" | grep -q CLEARED || [ $t -ge 100 ]; do sleep 0.2; t=$((t + 1)); done
+setteam mid2 '.pane_pid = "1"'; wait "$job"
+assert_eq "an identity that changed after the clear exits 6" "$(cat "$T_TMP/mid2.rc")" "6"
+assert_not "...and the pickup line was not typed after the clear" "$(hm_tmux capture-pane -p -J -S - -t "$m2" | sed -n '/^CLEARED/,$p')" "GOT: You are"
+hm_tmux set-environment -g HM_FAKE_CLAUDE retryclear; spawn mid3; hm_tmux set-environment -g -u HM_FAKE_CLAUDE; m3=$(paneof mid3)
+( hm-rotate mid3 --still 2 --settle 5 --max 30 >/dev/null 2>&1; echo $? > "$T_TMP/mid3.rc" ) & job=$!
+t=0; until hm_tmux capture-pane -p -J -S - -t "$m3" | grep -q '❯.*/clear' || [ $t -ge 100 ]; do sleep 0.2; t=$((t + 1)); done
+setteam mid3 '.pane_pid = "1"'; wait "$job"
+assert_eq "an identity that changed before the retried /clear exits 6" "$(cat "$T_TMP/mid3.rc")" "6"
+assert_eq "...and no second /clear was typed" "$(hm_tmux capture-pane -p -J -S - -t "$m3" | grep -c CLEARED)" "0"
+
 # a tracked .hivemind is refused
 echo x > .hivemind/leak; git add -f .hivemind/leak
 hm-rotate impl --still 2 --settle 1 >/dev/null 2>&1; assert_status "tracked .hivemind refused" $? 3
