@@ -45,6 +45,17 @@ out=$(run '{"groups":[{"name":"A","repos":["/a"]},{"name":"B","repos":["/c"]}],"
 assert_eq "one named group, case-insensitive" "$(field "$out" '.groups|join(",")')" "B"
 out=$(run '{"groups":[{"name":"A","repos":["/a"]}],"group":"zzz"}' /never); assert_eq "no group matched is refused" "$(field "$out" .ok)" "false"
 
+# a report that cannot go under .hivemind/ goes outside every repository, never into the working directory (S1 again)
+for spec in undefined '{"reportPath":"/elsewhere/report.md"}'; do
+  out=$(run "$spec" /some/proj); prompt=$(field "$out" .reportPrompt)
+  assert_contains "fallback ($spec): outside every repository, in TMPDIR" "$prompt" 'OUTSIDE every repository, to '
+  assert_contains "fallback ($spec): the TMPDIR path is written for the agent to resolve" "$prompt" '${TMPDIR:-/tmp}/docs-health-report-<date>.md'
+  assert_contains "fallback ($spec): it says so in the returned path and the summary" "$prompt" 'say so in the reportPath you return and in the summary'
+  case "$prompt" in *"current directory"*) bad "fallback ($spec): never the current directory" ;; *) ok "fallback ($spec): never the current directory" ;; esac
+done
+out=$(run undefined /some/proj); prompt=$(field "$out" .reportPrompt)
+assert_contains "a tracked .hivemind/ is never written to" "$prompt" 'those files are tracked, so do not write under .hivemind/ at all'
+
 # args.groups is shape-checked: the workflow's own message, never a TypeError
 for bad_groups in '[{"name":"A"}]' '[{"name":"A","repos":[]}]' '[{"name":"A","repos":[7]}]' '[{"name":"A","repos":["relative/path"]}]' '[{"repos":["/a"]}]' '[null]' '[]' '"A"' '{"name":"A","repos":["/a"]}'; do
   out=$(run "{\"groups\":$bad_groups}" /never)
