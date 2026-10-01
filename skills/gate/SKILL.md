@@ -31,8 +31,8 @@ you did not take.
 Choose the log path (outside the tracked tree, for example `.hivemind/tmp/<name>-gate.log`).
 
 - A gate made of separate commands: `hm-gate --log <file> -- <name> <command> [<name> <command> ...]`. It takes the
-  slot itself (never wrap it in `hm-slot run`), runs every step even after a failure, and writes `<name> exit <n>` after each. Step names are letters,
-  digits, `_`, `.`, `-` only, and never `..`.
+  slot itself (never wrap it in `hm-slot run`), runs every step even after a failure, and writes `<name> exit <n>`
+  after each. Step names are letters, digits, `_`, `.`, `-` only, and never `..`.
 - A gate that is already one script printing `<step> exit <n>` lines:
   `hm-slot run gate -- <script>` with its output redirected to the log file, as the project records it.
 

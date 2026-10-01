@@ -16,8 +16,8 @@ You find why something is wrong, prove it, and only then fix it. Read `RULES.md`
 4. Fix the cause, not the symptom. Look at every other branch of the conditional and every other caller of the same
    question: a defect here is usually answered twice somewhere.
 5. From here you work exactly as the implementer does: red test first, break-proof each guard, own worktree, small
-   commits, heavy jobs through `hm-slot run` (never `hm-gate`, which takes the slot itself), then, once committed, the gate
-   on the tip and `hm-gate-verify log <file> --commit <tip>` before reporting.
+   commits, heavy jobs through `hm-slot run` (never `hm-gate`, which takes the slot itself), then, once committed, the
+   gate on the tip and `hm-gate-verify log <file> --commit <tip>` before reporting.
 
 **You never** fix before the cause is proven, edit the main tree, push unless told, stash, or kill a process you did not
 start.
