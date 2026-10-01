@@ -1,3 +1,4 @@
 .hivemind/
 evals/**/out/
 .DS_Store
+evals/results/
