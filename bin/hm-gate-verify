@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
 # Read a gate's result and a range's commits; never run anything. Pre-approved for agents (A16): it takes no command.
-#   hm-gate-verify log <file> [--expect <name>,<name>...]
-#     GREEN (<n> steps) only when the file has at least one `<name> exit <n>` line, every one is `exit 0`, and every
-#     expected name has one. A gate that wrote no step line did not run, so it is red, not green.
+#   hm-gate-verify log <file> [--expect <name>,<name>...] [--commit <commit>]
+#     GREEN (<n> steps) only when the file has at least one `<name> exit <n>` line, every one is `exit 0`, no name has
+#     two, and every step the hm-gate header names, and every --expect name, has one. A log with no header (a project's
+#     own gate script) needs --expect. With --commit, the header must name that commit and a clean tree: a log left from
+#     an earlier run, or a run on uncommitted changes, vouches for nothing. A gate that wrote no step line did not run,
+#     so it is red, not green.
 #   hm-gate-verify commits <base>..<tip> --max-files <n> --style conventional|free --attribution allow|deny [--no-body]
 #     Every flag but --no-body is required, so nothing is loosened by leaving one out. Per commit: a subject, the
 #     conventional form when asked, at most <n> files against its first parent, and under deny no attribution line. A
@@ -11,30 +14,52 @@
 set -u
 . "$(dirname "$0")/hm-lib.sh"
 STEP='^[A-Za-z0-9_.-]+ exit [0-9]+$'
+HEADER='^# hm-gate steps: ([A-Za-z0-9_.,-]+) head=([0-9a-f]{40}|none) dirty=([01])$'
 CONVENTIONAL='^(feat|fix|refactor|docs|style|test|chore|perf)(\([a-z0-9-]+\))?: .+'
-ATTRIBUTION='^(co-authored-by|claude-session):'
-ATTRIBUTION_TEXT='Generated with [Claude Code]'
+ATTRIBUTION='^[[:space:]]*(co-authored-by|claude-session)[[:space:]]*:|generated with \[?claude code'
 
 verify_log() {
-  local file="" expect="" lines red missing="" n
-  [ $# -ge 1 ] || hm_die 64 "usage: hm-gate-verify log <file> [--expect <names>]"
+  local USAGE="usage: hm-gate-verify log <file> [--expect <name>,<name>...] [--commit <commit>]"
+  local file expect="" commit="" header="" hsteps="" hhead="" hdirty="" lines red missing="" twice reasons="" n sha
+  [ $# -ge 1 ] || hm_die 64 "$USAGE"
   file="$1"; shift
   while [ $# -gt 0 ]; do case "$1" in
-    --expect) [ -n "${2:-}" ] || hm_die 64 "--expect needs a list of names"; expect="$2"; shift 2 ;;
-    *) hm_die 64 "usage: hm-gate-verify log <file> [--expect <names>]" ;; esac; done
+    --expect) [ -n "${2:-}" ] || hm_die 64 "$USAGE"; expect="$2"; shift 2 ;;
+    --commit) [ -n "${2:-}" ] || hm_die 64 "$USAGE"; commit="$2"; shift 2 ;;
+    *) hm_die 64 "$USAGE" ;; esac; done
+  case "$commit" in -*) hm_die 4 "a commit may not start with '-': $commit" ;; esac
   [ -s "$file" ] || { echo "RED: no gate log at $file"; exit 1; }
-  lines=$(grep -E "$STEP" "$file")
-  [ -n "$lines" ] || { echo "RED: no steps in $file"; exit 1; }
-  red=$(printf '%s\n' "$lines" | grep -vE ' exit 0$')
-  local names=(); [ -n "$expect" ] && IFS=, read -r -a names <<< "$expect"   # split without globbing
+  # hm-gate's header names every step it set out to run, so a gate stopped part way is red without --expect.
+  header=$(head -1 "$file")
+  if printf '%s\n' "$header" | grep -Eq "$HEADER"; then
+    hsteps=$(printf '%s\n' "$header" | sed -E "s/$HEADER/\1/")
+    hhead=$(printf '%s\n' "$header" | sed -E "s/$HEADER/\2/")
+    hdirty=$(printf '%s\n' "$header" | sed -E "s/$HEADER/\3/")
+  elif [ -z "$expect" ]; then
+    echo "RED: $file has no hm-gate header; name the steps it must hold with --expect"; exit 1
+  fi
+  local names=(); IFS=, read -r -a names <<< "${hsteps}${hsteps:+${expect:+,}}${expect}"   # split without globbing
   for n in ${names[@]+"${names[@]}"}; do
     # the same rule as hm-gate's step names (A13), so an expected name can only be one a gate could have written
     printf '%s' "$n" | grep -Eq '^[A-Za-z0-9_.-]+$' && case "$n" in *..*) false ;; esac \
       || hm_die 64 "an expected name is a step name: $n"
-    printf '%s\n' "$lines" | grep -qE "^$(printf '%s' "$n" | sed 's/[.]/\\./g') exit [0-9]+$" || missing="$missing $n"
   done
-  if [ -n "$red" ] || [ -n "$missing" ]; then
-    echo "RED:"; [ -n "$red" ] && printf '%s\n' "$red"; [ -n "$missing" ] && echo "missing:$missing"; exit 1
+  lines=$(grep -E "$STEP" "$file")
+  [ -n "$lines" ] || { echo "RED: no steps in $file"; exit 1; }
+  red=$(printf '%s\n' "$lines" | grep -vE ' exit 0$')
+  twice=$(printf '%s\n' "$lines" | cut -d' ' -f1 | sort | uniq -d | tr '\n' ' ' | sed 's/ $//')
+  for n in ${names[@]+"${names[@]}"}; do
+    printf '%s\n' "$lines" | grep -qE "^$(printf '%s' "$n" | sed 's/[.]/\\./g') exit [0-9]+$" || case " $missing " in *" $n "*) ;; *) missing="$missing $n" ;; esac
+  done
+  if [ -n "$commit" ]; then
+    sha=$(git rev-parse --verify --quiet --end-of-options "$commit^{commit}") || hm_die 4 "unknown commit: $commit"
+    if [ -z "$hhead" ]; then reasons="a log with no hm-gate header vouches for no commit"
+    elif [ "$hhead" != "$sha" ]; then reasons="the gate ran on $hhead, not $sha"
+    elif [ "$hdirty" = 1 ]; then reasons="the gate ran on a dirty tree, so it vouches for no commit"; fi
+  fi
+  if [ -n "$red" ] || [ -n "$missing" ] || [ -n "$twice" ] || [ -n "$reasons" ]; then
+    echo "RED:"; [ -n "$red" ] && printf '%s\n' "$red"; [ -n "$missing" ] && echo "missing:$missing"
+    [ -n "$twice" ] && echo "twice: $twice"; [ -n "$reasons" ] && echo "$reasons"; exit 1
   fi
   echo "GREEN ($(printf '%s\n' "$lines" | wc -l | tr -d ' ') steps)"
 }
@@ -67,7 +92,7 @@ verify_commits() {
     files=$(git diff-tree -r --root --no-commit-id --name-only -m --first-parent "$c" | grep -c .)
     [ "$files" -le "$max" ] || { echo "$short files: $files, more than $max"; bad=1; }
     if [ "$attribution" = deny ]; then
-      if printf '%s\n' "$msg" | grep -iEq "$ATTRIBUTION" || printf '%s\n' "$msg" | grep -Fq "$ATTRIBUTION_TEXT"; then
+      if printf '%s\n' "$msg" | grep -iEq "$ATTRIBUTION"; then
         echo "$short attribution: an attribution line is not allowed"; bad=1; fi
     fi
     if [ -n "$body" ]; then
