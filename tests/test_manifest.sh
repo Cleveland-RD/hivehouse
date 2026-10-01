@@ -34,10 +34,23 @@ kill $p; wait $p 2>/dev/null
 hm-manifest add process pid=$p 2>/dev/null; assert_status "refuses a dead pid" $? 4
 hm-manifest drop "$id"; assert_eq "drop removes" "$(hm-manifest list --kind dir | wc -l | tr -d ' ')" "0"
 hm-manifest drop nosuchid 2>/dev/null; assert_status "drop of an unknown id is refused" $? 4
+# a tmux entry records its pane's process and that process's start time: pane ids start again at %0 on a new server,
+# so cleanup tells a recorded pane from another one that later took its id
+tmux -S "$HM_TMUX_SOCKET" new-session -d -s m 'sleep 300'
+mp=$(tmux -S "$HM_TMUX_SOCKET" display-message -p -t m '#{pane_id}'); mpp=$(tmux -S "$HM_TMUX_SOCKET" display-message -p -t m '#{pane_pid}')
+hm-manifest add tmux socket="$HM_TMUX_SOCKET" pane="$mp" agent=a >/dev/null; assert_status "add tmux" $? 0
+line=$(hm-manifest list --kind tmux)
+assert_eq "pane process captured" "$(printf '%s' "$line" | jq -r .pane_pid)" "$mpp"
+assert_eq "pane start time captured" "$(printf '%s' "$line" | jq -r .pane_started)" "$(ps -o lstart= -p "$mpp" | sed 's/^ *//;s/ *$//')"
+hm-manifest add tmux socket="$HM_TMUX_SOCKET" pane=%99 agent=a 2>/dev/null; assert_status "refuses a pane the server does not have" $? 4
+assert_eq "...and records nothing" "$(hm-manifest list --kind tmux | wc -l | tr -d ' ')" "1"
 
 # A5: path safety
 hm-manifest add dir path="$T_TMP" 2>/dev/null; assert_status "refuses the project's parent" $? 4
 hm-manifest add dir path=/tmp 2>/dev/null; assert_status "refuses /tmp" $? 4
+# the refusal's reason, not only its status: on macOS /private/tmp is root-owned and /tmp is a symlink, so either would
+# refuse these paths on its own and hide a dropped entry in the protected list
+out=$(hm-manifest add dir path=/private/tmp 2>&1); assert_contains "/private/tmp is refused as a protected directory" "$out" "protected directory"
 mkdir "$T_TMP/tmpd"; TMPDIR="$T_TMP/tmpd" hm-manifest add dir path="$T_TMP/tmpd" 2>/dev/null; assert_status "refuses TMPDIR itself" $? 4
 hm-manifest add dir path="$HOME//" 2>/dev/null; assert_status "refuses HOME with trailing slashes" $? 4
 hm-manifest add dir path="/tmp/..$HOME" 2>/dev/null; assert_status "refuses a .. segment" $? 4
