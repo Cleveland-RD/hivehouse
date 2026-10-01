@@ -14,8 +14,8 @@ team() {  # team [name_full]: the --self orchestrator's entry, naming the stand-
     '{agents:[{name:"orchestrator", pane:"%0", claude_pid:$c, claude_started:$s} + (if $f != "" then {name_full:$f} else {} end)]}' > .hivemind/team.json
 }
 
-team; record "acme-orchestrator"
-assert_eq "the session's own name" "$(hm_orchestrator_name "$r")" "acme-orchestrator"
+team; record "myproj-orchestrator"
+assert_eq "the session's own name" "$(hm_orchestrator_name "$r")" "myproj-orchestrator"
 record "renamed (2).v_x"
 assert_eq "a later /rename is followed" "$(hm_orchestrator_name "$r")" "renamed (2).v_x"
 team "at-self"
@@ -50,23 +50,23 @@ jq -nc --arg c "$gone" --arg s "$gs" '{agents:[{name:"orchestrator", claude_pid:
 assert_eq "the orchestrator's Claude is gone: the recorded name" "$(hm_orchestrator_name "$r")" "at-self"
 
 # spawn and rotate: the pickup line and the handoff skeleton name it, read when each is sent
-team "at-self"; record "acme-orchestrator"
+team "at-self"; record "myproj-orchestrator"
 spawn() { hm-spawn --agent "$1" --role "$T_TMP/impl.md" --rules "$T_TMP/RULES.md" --model sonnet --effort medium --mode auto --still 2 --max-wait 15 >/dev/null; }
 spawn impl; assert_status "spawn" $? 0
 pane=$(jq -r '.agents[]|select(.name=="impl").pane' .hivemind/team.json)
-assert_contains "the pickup line names the orchestrator's session" "$(hm_tmux capture-pane -p -J -S - -t "$pane")" "Report to acme-orchestrator."
-assert_contains "...and so does the handoff skeleton" "$(cat .hivemind/handoffs/impl.md)" "Report only to acme-orchestrator."
-record "acme-orch-2"
+assert_contains "the pickup line names the orchestrator's session" "$(hm_tmux capture-pane -p -J -S - -t "$pane")" "Report to myproj-orchestrator."
+assert_contains "...and so does the handoff skeleton" "$(cat .hivemind/handoffs/impl.md)" "Report only to myproj-orchestrator."
+record "myproj-orch-2"
 hm-rotate impl --still 2 --settle 1 >/dev/null; assert_status "rotate" $? 0
-assert_contains "a rename before a rotation is followed" "$(hm_tmux capture-pane -p -J -S - -t "$pane")" "Report to acme-orch-2."
+assert_contains "a rename before a rotation is followed" "$(hm_tmux capture-pane -p -J -S - -t "$pane")" "Report to myproj-orch-2."
 
 # the orchestrator's own pickup line (hm-self-rotate): its own name, its handoff, and no report, wait or role dir
 own=$(hm_pickup_line proj "$r" orchestrator)
-assert_eq "the --self entry's line" "$own" "You are acme-orch-2. Read $r/.hivemind/handoffs/orchestrator.md from the top: its START HERE block is your prompt."
+assert_eq "the --self entry's line" "$own" "You are myproj-orch-2. Read $r/.hivemind/handoffs/orchestrator.md from the top: its START HERE block is your prompt."
 for w in "Report" "Wait" ".hivemind/team/"; do
   case "$own" in *"$w"*) bad "the --self entry's line names $w" ;; *) ok "the --self entry's line has no $w" ;; esac
 done
-assert_contains "a spawned agent's line is unchanged" "$(hm_pickup_line proj "$r" impl)" "holds your role and the rules. Report to acme-orch-2. Wait for its first message before any work."
+assert_contains "a spawned agent's line is unchanged" "$(hm_pickup_line proj "$r" impl)" "holds your role and the rules. Report to myproj-orch-2. Wait for its first message before any work."
 # hm-self-rotate of the --self entry types the short line: impl's pane stands in for the orchestrator's own (a Claude there)
 jq '.agents |= map(if .name == "impl" then . + {claude_pid: .pane_pid, claude_started: .pane_started} else select(.name != "orchestrator") end)' .hivemind/team.json > "$T_TMP/t.json" && mv "$T_TMP/t.json" .hivemind/team.json
 hm-self-rotate impl --still 2 --settle 1; assert_status "hm-self-rotate returns at once" $? 0
