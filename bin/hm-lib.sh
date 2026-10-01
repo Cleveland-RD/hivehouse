@@ -44,6 +44,15 @@ hm_socket() { if [ -n "${HM_TMUX_SOCKET:-}" ]; then echo "$HM_TMUX_SOCKET"; else
 # after re-reading the holder, so exactly one contender removes it. `kill -9` of a holder frees its lock.
 hm_alive()  { ps -p "$1" >/dev/null 2>&1; }
 hm_lstart() { ps -o lstart= -p "$1" 2>/dev/null | sed 's/^ *//;s/ *$//'; }
+hm_is_claude() {  # hm_is_claude <pid>: 0 when the process is Claude Code's, which hivemind never stops
+  local args first second   # by argv: macOS ps reports comm from argv0 as well, so it would be the same reading
+  args=$(ps -o args= -p "$1" 2>/dev/null) || return 1
+  first=${args%% *}; second=${args#* }; second=${second%% *}
+  [ "$(basename "$first")" = claude ] && return 0
+  case "$(basename "$first")" in node|bash|sh|zsh) [ "$(basename "$second")" = claude ] && return 0 ;; esac   # run by an interpreter
+  case "$args" in *@anthropic-ai/claude-code/*) return 0 ;; esac
+  return 1
+}
 hm_dir_age() {  # seconds since the directory was last modified
   local m; m=$(stat -f %m "$1" 2>/dev/null || stat -c %Y "$1" 2>/dev/null) || return 1
   echo $(( $(date +%s) - m ))

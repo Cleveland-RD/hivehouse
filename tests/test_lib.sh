@@ -52,4 +52,17 @@ printf '%s\n' '──────── r ────────' $'❯\xc2\xa
 printf '%s\n' 'old: ❯ /clear' '──────── r ────────' $'❯\xc2\xa0\033[2mTry "x"\033[0m' '──────── r ────────' 'footer' | hm_pane_prompt_line | grep -q '/clear' && bad "an echo above the box was taken for the input line" || ok "an echo above the box is not the input line"
 printf '%s\n' '──────── r ────────' $'❯\xc2\xa0older line' $'❯\xc2\xa0/clear' '──────── r ────────' 'footer' | hm_pane_prompt_line | grep -q '/clear' && ok "the last prompt-marked line in the box is the input line" || bad "the input line is the last prompt-marked line in the box"
 pane=$(new_pane busy); wait_idle "$pane" 2 5; assert_status "a busy pane is not idle" $? 1
+# hm_is_claude: Claude Code's own processes are never stopped by cleanup, however they were started. Every probe is one
+# process (perl rather than bash -c, whose child would outlive a kill and hold the test's output open).
+ln -s /bin/sleep "$T_TMP/claude"; "$T_TMP/claude" 300 & c1=$!
+bash -c 'exec -a claude sleep 300' & c2=$!
+HM_FAKE_CLAUDE=busy bash "$HM_REPO_ROOT/tests/bin/claude" --name probe >/dev/null & c3=$!
+perl -e 'sleep 300' -- "$T_TMP/node_modules/@anthropic-ai/claude-code/cli.js" & c4=$!
+sleep 300 & n1=$!
+perl -e 'sleep 300' -- --name claude-notes & n2=$!
+sleep 0.5
+for p in $c1 $c2 $c3 $c4; do hm_is_claude "$p" && ok "seen as claude: $(ps -o args= -p $p | cut -c1-50)" || bad "not seen as claude: $p $(ps -o args= -p $p)"; done
+for p in $n1 $n2; do hm_is_claude "$p" && bad "mistaken for claude: $(ps -o args= -p $p)" || ok "not claude: $(ps -o args= -p $p | cut -c1-50)"; done
+hm_is_claude 999999 && bad "a dead pid is claude" || ok "a dead pid is not claude"
+kill $c1 $c2 $c3 $c4 $n1 $n2 2>/dev/null; wait $c1 $c2 $c3 $c4 $n1 $n2 2>/dev/null
 t_done
