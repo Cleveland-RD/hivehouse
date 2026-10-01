@@ -11,7 +11,16 @@ assert_eq "no args: runs" "$(field "$out" .ok)" "true"
 assert_eq "no args: report only" "$(field "$out" .mode)" "report"
 assert_eq "no args: the current project, named by its folder" "$(field "$out" '.groups|join(",")')" "proj"
 assert_contains "no args: one small agent finds the root" "$(field "$out" '.calls|join(",")')" "find-project-root"
-assert_contains "no args: the report is written under the project's docs" "$(field "$out" '.calls|join(",")')" "/some/proj/docs/docs-health-report-<date>.md"
+prompt=$(field "$out" .reportPrompt)
+assert_contains "no args: the report goes under .hivemind/reports, not docs/" "$prompt" "Write the report to /some/proj/.hivemind/reports/docs-health-report-<date>.md"
+case "$prompt" in */some/proj/docs/*) bad "no args: nothing is written under docs/" ;; *) ok "no args: nothing is written under docs/" ;; esac
+assert_contains "no args: the report agent makes git ignore .hivemind/ first" "$prompt" "grep -qx '/.hivemind/' \"\$common/info/exclude\" || echo '/.hivemind/' >> \"\$common/info/exclude\""
+assert_contains "no args: that is the line hm_ensure_state writes" "$(grep -n "grep -qx" "$HM_REPO_ROOT/bin/hm-lib.sh")" "grep -qx '/.hivemind/' \"\$excl\" || echo '/.hivemind/' >> \"\$excl\""
+assert_contains "no args: it appends only when absent and refuses to write into a tracked .hivemind/" "$prompt" "ls-files -- .hivemind"
+out=$(run '{"reportPath":"/elsewhere/report.md"}' /some/proj)
+prompt=$(field "$out" .reportPrompt)
+assert_contains "a given reportPath is used as it is" "$prompt" "Write the report to /elsewhere/report.md"
+case "$prompt" in *"info/exclude"*) bad "a given reportPath touches no git exclude" ;; *) ok "a given reportPath touches no git exclude" ;; esac
 case "$(field "$out" '.calls|join(",")')" in *xref:*) bad "a single repo gets no cross-repo agent" ;; *) ok "a single repo gets no cross-repo agent" ;; esac
 case "$(field "$out" '.calls|join(",")')" in *apply:*) bad "report mode applies nothing" ;; *) ok "report mode applies nothing" ;; esac
 
@@ -35,6 +44,14 @@ assert_contains "a group of two repos is compared across" "$(field "$out" '.call
 out=$(run '{"groups":[{"name":"A","repos":["/a"]},{"name":"B","repos":["/c"]}],"group":"b"}' /never)
 assert_eq "one named group, case-insensitive" "$(field "$out" '.groups|join(",")')" "B"
 out=$(run '{"groups":[{"name":"A","repos":["/a"]}],"group":"zzz"}' /never); assert_eq "no group matched is refused" "$(field "$out" .ok)" "false"
+
+# args.groups is shape-checked: the workflow's own message, never a TypeError
+for bad_groups in '[{"name":"A"}]' '[{"name":"A","repos":[]}]' '[{"name":"A","repos":[7]}]' '[{"name":"A","repos":["relative/path"]}]' '[{"repos":["/a"]}]' '[null]' '[]' '"A"' '{"name":"A","repos":["/a"]}'; do
+  out=$(run "{\"groups\":$bad_groups}" /never)
+  assert_eq "bad groups $bad_groups: refused" "$(field "$out" .ok)" "false"
+  assert_contains "bad groups $bad_groups: the workflow's own message" "$(field "$out" .err)" "docs-health-check: args.groups"
+  case "$(field "$out" .err)" in *TypeError*|*"Cannot read"*) bad "bad groups $bad_groups: not a TypeError" ;; *) ok "bad groups $bad_groups: not a TypeError" ;; esac
+done
 
 # the file itself
 if grep -nE '/Users/|discourse' "$W" >/dev/null; then bad "the workflow names no project and no user path"; else ok "the workflow names no project and no user path"; fi

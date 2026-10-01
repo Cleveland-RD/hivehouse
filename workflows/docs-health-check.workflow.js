@@ -21,7 +21,8 @@
  *   group:      string | string[]                  run only these named group(s) from `groups`; needs `groups`.
  *   sinceDays:  number                             default 30  (window for "recent changes")
  *   mode:       "report" | "apply"                 default "report"  (apply = write to working tree, NO commit)
- *   reportPath: absolute path for the md report    default <project root>/docs/docs-health-report-<date>.md
+ *   reportPath: absolute path for the md report    default <first repo>/.hivemind/reports/docs-health-report-<date>.md
+ *               (.hivemind/ is where hivemind keeps per-project state and git ignores it, so report mode leaves the tree as it was)
  *
  * The workflow runtime has no shell or working-directory global, so the current project is found by one small agent
  * that runs `git rev-parse --show-toplevel`.
@@ -66,7 +67,21 @@ function normalizeArgs(a) {
 }
 const A = normalizeArgs(args)
 
-const named = Array.isArray(A.groups) && A.groups.length ? A.groups : null
+// args.groups, when given, is a non-empty list of { name, repos } with absolute repo paths: say so plainly, never a TypeError
+function checkGroups(list) {
+  if (!Array.isArray(list) || !list.length) {
+    throw new Error('docs-health-check: args.groups must be a non-empty list of { name, repos }, e.g. [{ name: "Backend", repos: ["/abs/api", "/abs/web"] }]')
+  }
+  list.forEach((g, i) => {
+    const ok = g && typeof g === 'object' && typeof g.name === 'string' && g.name !== ''
+      && Array.isArray(g.repos) && g.repos.length > 0 && g.repos.every((r) => typeof r === 'string' && r.startsWith('/'))
+    if (!ok) {
+      throw new Error(`docs-health-check: args.groups[${i}] needs a name and a non-empty repos list of absolute paths, e.g. { name: "Backend", repos: ["/abs/api"] }`)
+    }
+  })
+  return list
+}
+const named = A.groups === undefined || A.groups === null ? null : checkGroups(A.groups)
 if (A.group && !named) {
   throw new Error(`docs-health-check: group ${JSON.stringify(A.group)} was named but no groups were passed. Pass args.groups, or omit the group to check the current project.`)
 }
@@ -92,8 +107,14 @@ if (named) {
 }
 const sinceDays = A.sinceDays || 30
 const mode = (A.mode === 'apply') ? 'apply' : 'report'
-// default: <first repo>/docs/docs-health-report-<date>.md, the date filled in by the report agent
-const reportPath = A.reportPath || `${groups[0].repos[0].replace(/\/+$/, '')}/docs/docs-health-report-<date>.md`
+// default: <first repo>/.hivemind/reports/docs-health-report-<date>.md, the date filled in by the report agent. .hivemind/ is
+// where hivemind keeps per-project state; it is git-ignored through .git/info/exclude, so the report is never an untracked file
+// (which would make report mode change the tree and turn a gate's dirty check red).
+const firstRepo = groups[0].repos[0].replace(/\/+$/, '')
+const reportPath = A.reportPath || `${firstRepo}/.hivemind/reports/docs-health-report-<date>.md`
+const reportInState = !A.reportPath
+// the line hm_ensure_state writes (bin/hm-lib.sh), the same one and only when absent
+const IGNORE_STATE = `Before writing the report, make sure git ignores .hivemind/ in ${firstRepo}: run \`git -C ${firstRepo} ls-files -- .hivemind\`; if it prints anything, those files are tracked, so do not write under .hivemind/ and write the report into the current directory instead. Otherwise run \`common=$(git -C ${firstRepo} rev-parse --path-format=absolute --git-common-dir)\`, then \`mkdir -p "$common/info"\`, \`touch "$common/info/exclude"\` and \`grep -qx '/.hivemind/' "$common/info/exclude" || echo '/.hivemind/' >> "$common/info/exclude"\` (append that exact line, and only when it is absent), and \`mkdir -p ${firstRepo}/.hivemind/reports\`.`
 const base = (p) => p.replace(/\/+$/, '').split('/').pop()
 
 // ----------------------------- shared rules -----------------------------
@@ -294,7 +315,7 @@ ALL RESULTS (JSON — audits, cross-repo analyses, plans${applied ? ', and apply
 ${JSON.stringify(allResults, null, 2)}
 
 The report must have, per group and per repo: (a) recent-change documentation gaps, (b) inconsistencies (naming/structure/stale/broken-link/missing-index/duplication), (c) cross-repo issues + the unified-structure recommendation, (d) ${applied ? 'what was APPLIED (and any judgment calls / deferred items / remaining broken links)' : 'the recommended change plan'}, and (e) deleteCandidates (never auto-applied) for human decision. End with a prioritized, cross-project "Top actions" list.
-Determine today's date with \`date +%F\` via Bash. Write the report to ${reportPath} (create the file; replace <date> with today's date). If you cannot write there, write it into the current directory instead and note that. Return the actual reportPath you wrote, a short summary, and the top actions.`
+Determine today's date with \`date +%F\` via Bash. ${reportInState ? IGNORE_STATE + '\n' : ''}Write the report to ${reportPath} (create the file; replace <date> with today's date). If you cannot write there, write it into the current directory instead and note that. Return the actual reportPath you wrote, a short summary, and the top actions.`
 
 // ----------------------------- run -----------------------------
 log(`docs-health-check | mode=${mode} | window=${sinceDays}d | groups: ${groups.map((g) => `${g.name}(${g.repos.length})`).join(', ')}`)
