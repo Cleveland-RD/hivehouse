@@ -12,12 +12,17 @@ allowed-tools: Bash(hm-spawn *) Bash(hm-rotate *) Bash(hm-self-rotate *) Bash(hm
 You run a queue of work while the owner is away. The work: $ARGUMENTS
 
 First read `${CLAUDE_PLUGIN_ROOT}/rules/RULES.md` and follow it. Briefs follow `${CLAUDE_PLUGIN_ROOT}/rules/brief-template.md`;
-roles are in `${CLAUDE_PLUGIN_ROOT}/roles/`. Team setup is the same as the start skill's steps 5 and 6 (plan, owner's OK,
-spawn); this skill adds what an unattended night needs.
+roles are in `${CLAUDE_PLUGIN_ROOT}/roles/`. Team setup is the same as the start skill's steps 1, 4, 5 and 6 (read the
+project and resume the team, name yourself, plan with the owner's OK, spawn); this skill adds what an unattended night
+needs.
 
 Call every `hm-*` executable on its own, never inside a compound command. Executables that are not pre-approved
 (`hm-push`, `hm-cleanup`, `hm-gate`, `hm-slot run`, `hm-slot acquire`, `hm-remote-sync`) ask for permission each time;
 that is intended, and you do not work around it. Never write permission rules into the owner's settings.
+
+A skill's pre-approval ends at the owner's next message, and every heartbeat beat is a new turn, so from the first beat
+`hm-context`, `hm-disk`, `hm-settings`, `hm-rotate` and `hm-self-rotate` are no longer pre-approved and `hm-cleanup`
+never was. Overnight therefore only runs unattended in auto mode, where the classifier decides each call (step 3).
 
 If `hm-*` is not found, the plugin is not enabled in this session: say so and stop.
 
@@ -36,8 +41,14 @@ morning-report template from `${CLAUDE_SKILL_DIR}/morning-report.md`. Show it to
 
 ## 3. Ask where
 
-This machine or a named remote host, and with it the permission mode. Resolve the local mode on its own call:
+This machine or a named remote host (offer the hosts in `${user_config.remote_hosts}` as the choices), and with it the
+permission mode. Resolve the local mode on its own call:
 `hm-settings resolve permission_mode ${user_config.permission_mode_local}`.
+
+The heartbeat in step 5 needs this session to run in auto mode. If the resolved mode is not `auto`, or this session is
+not running in auto mode, do not set the heartbeat and do not start the night: tell the owner that each beat would sit
+on a permission prompt with nobody there, and what they must set (`permission_mode_local` to `auto`, and this session
+started in auto mode). Ask whether they want to change that or stop.
 
 Bypass permissions only on a host listed in `${user_config.dedicated_hosts}`, and only when the owner confirms it this
 time; a previous night's yes does not carry. `hm-spawn` refuses bypass on its own (exit 4). A bypass session on a remote
@@ -73,7 +84,12 @@ Then set the heartbeat with `CronCreate`, every `${user_config.heartbeat_minutes
 4. Spend, read the project's way, against the ceiling from `hm-settings resolve overnight_ceiling_usd ${user_config.overnight_ceiling_usd}`.
    At the ceiling, stop starting paid work and say so in the report.
 
+Record the `CronCreate` id in your handoff, so a rotated orchestrator can `CronDelete` it (`CronList` also finds it).
 Add a dated line to your handoff for each beat that changed something.
+
+If a call in a beat is refused (a prompt nobody answers, a classifier denial, a permission error): log it in the
+handoff with the command and the reason, finish everything else the beat can do, and put it in the morning report. Never
+route around a refusal, never retry it differently, and never stop the night silently.
 
 ## 6. Rules for the night
 
@@ -89,7 +105,7 @@ Add a dated line to your handoff for each beat that changed something.
 
 ## 7. Morning
 
-Write the report from `${CLAUDE_SKILL_DIR}/morning-report.md`: what landed, what is on a branch only, spend, and the
+Write the report from `${CLAUDE_SKILL_DIR}/morning-report.md` to `.hivemind/morning-report-<date from `date`>.md`: what landed, what is on a branch only, spend, and the
 owner's questions. Delete the heartbeat (`CronDelete`). The return trip of branches and files from a remote host, and
 the remote's cleanup (`hm-remote-sync`, then `hm-cleanup --finish --dry-run` and `hm-cleanup --finish`), happen only
 on the owner's word.
