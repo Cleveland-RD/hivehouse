@@ -108,6 +108,14 @@ RUBY
   else bad "node is installed, which compiles the graders' JavaScript patterns"; fi
 else bad "ruby is installed, which reads the cases' YAML"; fi
 
+# ---- every scaffold is the shared one: two lines sourcing evals/scaffold-records.sh -------------------------------
+wrapper='#!/usr/bin/env bash
+. "$(dirname "$0")/../scaffold-records.sh"'
+for script in "$EVALS"/*/scaffold.sh; do
+  [ -f "$script" ] || continue
+  assert_eq "$(basename "$(dirname "$script")"): scaffold.sh is the two-line wrapper" "$(cat "$script")" "$wrapper"
+done
+
 # ---- every scaffold builds its workspace as a run would: an empty directory, a minimal environment, 120 s ---------
 for script in "$EVALS"/*/scaffold.sh; do
   [ -f "$script" ] || continue
