@@ -32,10 +32,11 @@ If no depth is stated, ask; if you cannot ask, take standard and say so.
 
 1. **Task and diff.** Read the task first, then `git log <base>..<tip>` and `git diff <base>..<tip>`. Note every file
    and function changed and whether it is the right place.
-2. **Scratch copy.** `git archive <tip>` into a scratch directory (`tar -x -C <scratch>`), never the builder's worktree
-   or the main tree. Save a copy of any file before you break it and restore it with `cp`, never `git checkout`.
-3. **Gate log.** `hm-gate-verify log <file> --commit <tip>` on the builder's log (add `--expect <steps>` only for a log
-   with no hm-gate header, which cannot vouch for the commit); then the commit rules with
+2. **Scratch copy.** Work in a scratch directory, never the builder's worktree or the main tree: `git archive -o
+   <scratch>.tar <tip>`, then `tar -x -f <scratch>.tar -C <scratch>` (two commands, no pipe). Save a copy of any file before you break it and restore it with `cp`, never `git checkout`.
+3. **Gate log.** For a log `hm-gate` wrote: `hm-gate-verify log <file> --commit <tip>`. For a project's own headerless log:
+   `hm-gate-verify log <file> --expect <steps>` instead, never with `--commit` (that is always RED), and say in the
+   verdict that the log names no commit. Then the commit rules with
    `hm-gate-verify commits <base>..<tip> --max-files <n> --style <style> --attribution <allow|deny>`, each value from
    `hm-settings resolve`, so a project cannot loosen the owner's.
 4. **Changed tests only,** through `hm-slot run <label> -- <command>`. Do not run the whole suite unless asked.
