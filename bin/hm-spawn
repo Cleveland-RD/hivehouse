@@ -1,0 +1,124 @@
+#!/usr/bin/env bash
+# Start an agent in tmux with its role, rules and (optionally) its own worktree; or, with --self, register the calling
+# pane as the orchestrator. Takes no command to run: it always starts `claude`. Never answers a dialog.
+# Exit: 2 no project or no tmux pane, 3 .hivemind tracked, 4 refused value, 5 a dialog needs a person, 1 never idle,
+# 64 usage.
+set -u
+. "$(dirname "$0")/hm-lib.sh"
+USAGE="usage: hm-spawn --agent <n> --role <file> --rules <file> --model <m> --effort <e> --mode <m> [--worktree <abs> --branch <b> --base <b>] [--session <s>] [--window <tokens>] [--still <s>] [--max-wait <s>]
+       hm-spawn --self --agent <n> [--window <tokens>]"
+# The only commands an agent may run without asking (A16): nothing here runs an arbitrary command.
+ALLOWED='Bash(hm-slot status) Bash(hm-slot release *) Bash(hm-context *) Bash(hm-gate-verify *) Bash(hm-settings resolve *) Bash(hm-manifest *) Bash(hm-disk *) Bash(git status *) Bash(git log *) Bash(git diff *) Bash(git rev-parse *) Bash(git show *)'
+
+agent=""; role=""; rules=""; model=""; effort=""; mode=""; wt=""; branch=""; base=""; session=""; window=200000
+still=5; maxwait=90; self=0; others=0
+while [ $# -gt 0 ]; do
+  [ $# -ge 2 ] || [ "$1" = --self ] || hm_die 64 "$USAGE"
+  case "$1" in
+    --self) self=1; shift; continue ;;
+    --agent) agent="$2" ;; --window) window="$2" ;;
+    --role) role="$2"; others=1 ;; --rules) rules="$2"; others=1 ;; --model) model="$2"; others=1 ;;
+    --effort) effort="$2"; others=1 ;; --mode) mode="$2"; others=1 ;; --worktree) wt="$2"; others=1 ;;
+    --branch) branch="$2"; others=1 ;; --base) base="$2"; others=1 ;; --session) session="$2"; others=1 ;;
+    --still) still="$2"; others=1 ;; --max-wait) maxwait="$2"; others=1 ;;
+    *) hm_die 64 "$USAGE" ;;
+  esac
+  shift 2
+done
+num() { case "$1" in ''|*[!0-9]*) return 1 ;; esac; }
+[ -n "$agent" ] || hm_die 64 "$USAGE"
+case "$agent" in *[!a-z0-9_-]*|[-_]*) hm_die 4 "bad agent name: $agent" ;; esac
+num "$window" && [ "$window" -gt 0 ] || hm_die 4 "--window must be a positive number: $window"
+num "$still" && num "$maxwait" || hm_die 4 "--still and --max-wait must be numbers"
+
+if [ "$self" = 1 ]; then
+  [ "$others" = 0 ] || hm_die 64 "--self takes only --agent and --window"
+  [ -n "${TMUX_PANE:-}" ] || hm_die 2 "--self must run inside the tmux pane to register"
+  ROOT=$(hm_project_root) || exit $?
+  hm_ensure_state || exit $?
+  export HM_PROJECT="$ROOT"
+  pane="$TMUX_PANE"
+  socket=$(hm_tmux display-message -p -t "$pane" '#{socket_path}') || exit $?
+  mode="" ; model=""; effort=""; session=""; branch=""; wt=""
+else
+  for v in role rules model effort mode; do [ -n "${!v}" ] || hm_die 64 "$USAGE"; done
+  case "$mode" in plan|dontAsk|default|acceptEdits|auto) ;; bypassPermissions) hm_die 4 "bypassPermissions is never started by hm-spawn" ;; *) hm_die 4 "unknown permission mode: $mode" ;; esac
+  [ -f "$role" ] && [ -f "$rules" ] || hm_die 4 "--role and --rules must be files"
+  case "$model$effort" in *[!A-Za-z0-9._\[\]-]*) hm_die 4 "bad model or effort" ;; esac
+  if [ -n "$wt" ]; then
+    [ -n "$branch" ] && [ -n "$base" ] || hm_die 64 "--worktree needs --branch and --base"
+    case "$wt" in /*) ;; *) hm_die 4 "--worktree must be an absolute path" ;; esac
+    for b in "$branch" "$base"; do case "$b" in ''|-*|*[!A-Za-z0-9._/-]*) hm_die 4 "bad branch name: $b" ;; esac; done
+  fi
+  ROOT=$(hm_project_root) || exit $?
+  hm_ensure_state || exit $?
+  export HM_PROJECT="$ROOT"
+fi
+STATE="$ROOT/.hivemind"; project=$(basename "$ROOT")
+
+register() {  # register <pane> <socket>: the registry maps a pane back to its project and agent
+  local dir key
+  dir=$(hm_registry_dir); mkdir -p "$dir"; key=$(hm_pane_key "$2" "$1")
+  jq -n --arg project "$ROOT" --arg agent "$agent" --arg pane "$1" --arg socket "$2" --arg now "$(hm_now)" \
+    '{project:$project, agent:$agent, pane:$pane, socket:$socket, created:$now}' > "$dir/$key.json.tmp$$" \
+    && mv "$dir/$key.json.tmp$$" "$dir/$key.json"
+}
+upsert_team() {  # upsert_team <json object for the agent>: one entry per agent name
+  local f="$STATE/team.json" cur='{"agents":[]}'
+  [ -f "$f" ] && cur=$(cat "$f")
+  printf '%s' "$cur" | jq --argjson a "$1" '.agents = ([.agents[]? | select(.name != $a.name)] + [$a])' > "$f.tmp$$" \
+    && mv "$f.tmp$$" "$f"
+}
+
+if [ "$self" = 1 ]; then
+  # The calling pane is the owner's own: it is registered and recorded in team.json, never on the manifest, because
+  # hm-cleanup kills every pane the manifest names.
+  register "$pane" "$socket"
+  upsert_team "$(jq -nc --arg n "$agent" --arg p "$pane" --arg s "$socket" --argjson w "$window" '{name:$n, pane:$p, socket:$s, window:$w}')"
+  echo "$pane"; exit 0
+fi
+
+cwd="$ROOT"
+if [ -n "$wt" ]; then
+  if [ -e "$wt" ]; then
+    hm-manifest list --kind worktree | jq -e --arg p "$wt" 'select(.path == $p)' >/dev/null \
+      || hm_die 4 "$wt exists and hivemind did not create it"
+  else
+    git -C "$ROOT" worktree add -q -b "$branch" "$wt" "$base" || hm_die 4 "git worktree add failed for $wt"
+    hm-manifest add worktree path="$wt" base="$base" >/dev/null || exit $?
+  fi
+  cwd="$wt"
+fi
+mkdir -p "$STATE/team/$agent" "$STATE/handoffs"
+cp "$role" "$STATE/team/$agent/role.md"; cp "$rules" "$STATE/team/$agent/RULES.md"
+if [ ! -f "$STATE/handoffs/$agent.md" ]; then
+  printf '# %s handoff\n\n## START HERE\n\nI am %s-%s. Report only to %s-orchestrator. Read .hivemind/team/%s/ (my role and the rules) first, then wait for its first message before any work.\n' \
+    "$agent" "$project" "$agent" "$project" "$agent" > "$STATE/handoffs/$agent.md"
+fi
+
+session=${session:-hm-$(hm_project_key "$ROOT")}
+cmd=$(printf '%q ' claude --name "$project-$agent" --model "$model" --effort "$effort" --permission-mode "$mode" --allowedTools "$ALLOWED")
+envs=(-e "HM_AGENT=$agent" -e "HM_PROJECT=$ROOT" -e "HIVEMIND_HOME=$(hm_home)")
+[ -n "${HM_TMUX_SOCKET:-}" ] && envs+=(-e "HM_TMUX_SOCKET=$HM_TMUX_SOCKET")
+if hm_tmux has-session -t "=$session" 2>/dev/null; then
+  pane=$(hm_tmux new-window -d -P -F '#{pane_id}' -t "=$session:" -n "$agent" -c "$cwd" "${envs[@]}" "$cmd") || exit $?
+else
+  pane=$(hm_tmux new-session -d -P -F '#{pane_id}' -s "$session" -n "$agent" -c "$cwd" "${envs[@]}" "$cmd") || exit $?
+fi
+socket=$(hm_tmux display-message -p -t "$pane" '#{socket_path}') || exit $?
+register "$pane" "$socket"
+hm-manifest add tmux socket="$socket" pane="$pane" agent="$agent" >/dev/null || exit $?
+upsert_team "$(jq -nc --arg n "$agent" --arg p "$pane" --arg s "$socket" --arg m "$model" --arg e "$effort" --arg mode "$mode" \
+  --arg wt "$wt" --arg b "$branch" --arg sess "$session" --argjson w "$window" \
+  '{name:$n, pane:$p, socket:$s, model:$m, effort:$e, mode:$mode, worktree:$wt, branch:$b, session:$sess, window:$w}')"
+
+wait_idle "$pane" "$still" "$maxwait"; rc=$?
+case "$rc" in
+  0) ;;
+  3) echo "hivemind: a dialog is waiting in pane $pane ($agent): answer it yourself; nothing was typed" >&2; exit 5 ;;
+  *) echo "hivemind: pane $pane ($agent) never went idle within ${maxwait}s; nothing was sent" >&2; exit 1 ;;
+esac
+line="You are $project-$agent. Read $ROOT/.hivemind/handoffs/$agent.md from the top: its START HERE block is your prompt, and $ROOT/.hivemind/team/$agent/ holds your role and the rules. Report to $project-orchestrator. Wait for its first message before any work."
+hm_tmux send-keys -t "$pane" -l "$line"
+hm_tmux send-keys -t "$pane" Enter
+echo "$pane"
