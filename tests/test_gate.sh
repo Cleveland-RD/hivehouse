@@ -132,6 +132,10 @@ git reset -q --hard "$good"; git checkout -q side; c "fix: six files" s1 s2 s3 s
 git merge -q --no-ff -m "chore(join): merge side" side
 out=$(hm-gate-verify commits "$good..HEAD" $COMMON 2>&1); assert_status "a merged branch's own 6-file commit still fails" $? 1
 assert_contains "named as files" "$out" "files: 6"
+git reset -q --hard "$good"; git merge -q --no-ff --no-commit side >/dev/null 2>&1; for k in 1 2 3 4 5 6; do echo "$k" > own$k; done
+git add -A; git commit -qm "chore(join): merge side"
+out=$(hm-gate-verify commits "$good..HEAD" $COMMON 2>&1); assert_status "a merge carrying 6 files of its own fails --max-files 5" $? 1
+assert_contains "the merge itself is named, by its own 6 files" "$out" "$(git rev-parse --short HEAD) files: 6"
 git reset -q --hard "$good"; git branch -q -D side
 git reset -q --hard "$good"; c "update stuff" f3
 hm-gate-verify commits "$good..HEAD" $COMMON >/dev/null 2>&1; assert_status "a free subject fails conventional" $? 1

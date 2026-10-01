@@ -8,8 +8,9 @@
 #     so it is red, not green.
 #   hm-gate-verify commits <base>..<tip> --max-files <n> --style conventional|free --attribution allow|deny [--no-body]
 #     Every flag but --no-body is required, so nothing is loosened by leaving one out. Per commit: a subject, the
-#     conventional form when asked, at most <n> files against its first parent (not counted for a merge, whose files are
-#     its merged commits', each checked in the same range), and under deny no attribution line. A
+#     conventional form when asked, at most <n> files against its first parent (for a merge, only the files it differs
+#     from every parent in, its own content, since the merged commits are each checked in the same range), and under
+#     deny no attribution line. A
 #     body is a warning, and a violation with --no-body. An empty range is red: nothing checked is not a pass.
 # Exit: 0 green or ok, 1 red or a violation, 4 a refused range, 64 usage.
 set -u
@@ -89,11 +90,14 @@ verify_commits() {
     [ -n "$subject" ] || { echo "$short subject: empty"; bad=1; }
     if [ "$style" = conventional ] && ! printf '%s\n' "$subject" | grep -Eq "$CONVENTIONAL"; then
       echo "$short subject: not conventional: $subject"; bad=1; fi
-    # A merge brings in commits the range holds and checks one by one, so its own file count says nothing about them.
+    # A merge brings in commits the range holds and checks one by one, so a merge counts only its own content: the files
+    # it differs from every parent in (`--cc`), which a clean merge has none of and a hand edit or resolution has.
     if [ "$(git rev-list --parents -n 1 "$c" | wc -w)" -le 2 ]; then
       files=$(git diff-tree -r --root --no-commit-id --name-only -m --first-parent "$c" | grep -c .)
-      [ "$files" -le "$max" ] || { echo "$short files: $files, more than $max"; bad=1; }
+    else
+      files=$(git diff-tree -r --cc --no-commit-id --name-only "$c" | grep -c .)
     fi
+    [ "$files" -le "$max" ] || { echo "$short files: $files, more than $max"; bad=1; }
     if [ "$attribution" = deny ]; then
       if printf '%s\n' "$msg" | grep -iEq "$ATTRIBUTION"; then
         echo "$short attribution: an attribution line is not allowed"; bad=1; fi
