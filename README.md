@@ -42,7 +42,9 @@ claude plugin install hivemind@hivemind
 | `/hivemind:handoff` | any agent | write the handoff and START HERE block |
 | `/hivemind:cleanup` | owner | remove what the manifest recorded |
 | `/hivemind:review-plan`, `/hivemind:doc-updater` | any | moved-in skills |
-| `/hivemind:docs-health-check` | owner | documentation sweep, report mode by default |
+| `/hivemind:docs-health-check` | owner | documentation sweep of the current project, report mode by default (a workflow, not a skill) |
+
+`docs-health-check` is a Claude Code workflow: `workflows/docs-health-check.workflow.js`, with no `SKILL.md`. Claude Code's plugin docs say a `workflows/` directory at the plugin root is loaded without a manifest entry and that a plugin workflow runs as `/<plugin>:<meta.name>`. **Unverified here:** it has not been run through a live Claude Code session, only through a stand-in for the workflow runtime (`tests/test_docs_health.sh`). The report is written to `.hivemind/reports/` (git-ignored), so report mode leaves the working tree as it was; when `.hivemind/` is tracked or cannot be written, it goes to `$TMPDIR` outside every repository and the returned path says so; `apply` mode edits the working tree and never commits.
 
 ## State
 
