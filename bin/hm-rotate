@@ -2,7 +2,7 @@
 # Clear an agent's context and send it back to its handoff: /clear, then the pickup line, each only when the pane is idle.
 # hm-rotate <agent> [--still 15] [--max 900] [--settle 8]
 # Exit: 0 rotated, 1 the pane never went idle (nothing sent), 2 no such agent or project, 3 .hivemind tracked,
-# 5 a dialog needs a person (nothing typed), 64 usage. Every outcome that sent nothing is logged to .hivemind/rotate.log.
+# 5 a dialog needs a person (nothing typed), 6 the pane is no longer the agent that was recorded (nothing typed), 64 usage. Every outcome that sent nothing is logged to .hivemind/rotate.log.
 set -u
 . "$(dirname "$0")/hm-lib.sh"
 agent=""; still=15; max=900; settle=8
@@ -26,6 +26,16 @@ export HM_PROJECT="$ROOT"
 hm_tmux display-message -p -t "$pane" '#{pane_id}' >/dev/null 2>&1 || hm_die 2 "the pane of $agent ($pane) is gone"
 project=$(basename "$ROOT")
 note() { printf '%s %s\n' "$(hm_now)" "$*" >> "$STATE/rotate.log"; }
+tget() { jq -r --arg a "$agent" --arg k "$1" '[.agents[]? | select(.name == $a) | .[$k]][0] // empty' "$STATE/team.json" 2>/dev/null; }
+# A pane id is handed out again by a restarted tmux server, and an owner's shell outlives its Claude: type only into the pane
+# and process that were recorded, checked again before every send (the wait for an idle pane can last minutes). A record
+# without identity (an older format) proves nothing, so it is refused too.
+verify() {
+  hm_agent_is "$(tget socket)" "$pane" "$(tget pane_pid)" "$(tget pane_started)" "$(tget claude_pid)" "$(tget claude_started)" && return 0
+  note "identity $agent (nothing sent)"
+  echo "hivemind: the pane $pane is not the one recorded for $agent (or its Claude is gone); nothing was typed" >&2; exit 6
+}
+verify
 level() { local v; v=$("$(dirname "$0")/hm-context" "$agent" 2>/dev/null) && echo "$v%" || echo '?'; }
 shows_clear() {  # the prompt box's input line still holds /clear (the last non-blank line of the pane is the footer)
   hm_pane_text "$pane" | hm_pane_prompt_line | grep -Eq '^(│| )*(>|❯) */clear[[:space:]]*$'
@@ -38,10 +48,10 @@ case "$rc" in
   3) note "dialog $agent (nothing sent)"; echo "hivemind: a dialog is waiting in $agent's pane; nothing was typed" >&2; exit 5 ;;
   *) note "not-idle $agent (nothing sent)"; echo "hivemind: $agent's pane never went idle within ${max}s; nothing was sent" >&2; exit 1 ;;
 esac
-hm_tmux send-keys -t "$pane" -l '/clear'; hm_tmux send-keys -t "$pane" Enter
+verify; hm_tmux send-keys -t "$pane" -l '/clear'; hm_tmux send-keys -t "$pane" Enter
 sleep "$settle"
 if shows_clear; then   # the UI left /clear on the input line: clear it and type it again, once
-  hm_tmux send-keys -t "$pane" C-u
+  verify; hm_tmux send-keys -t "$pane" C-u
   hm_tmux send-keys -t "$pane" -l '/clear'; hm_tmux send-keys -t "$pane" Enter
   sleep "$settle"
 fi
@@ -49,6 +59,6 @@ if ! wait_idle "$pane" 2 "$max"; then
   note "cleared-but-not-idle $agent (pickup line not sent)"
   echo "hivemind: $agent was cleared but its pane did not go idle; the pickup line was not sent" >&2; exit 1
 fi
-hm_tmux send-keys -t "$pane" -l "$(hm_pickup_line "$project" "$ROOT" "$agent")"
+verify; hm_tmux send-keys -t "$pane" -l "$(hm_pickup_line "$project" "$ROOT" "$agent")"
 hm_tmux send-keys -t "$pane" Enter
 note "rotated $agent $before -> $(level)"

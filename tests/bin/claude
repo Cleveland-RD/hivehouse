@@ -4,7 +4,8 @@
 # dialogprompt (a dialog inside the prompt box's rules, above an empty prompt line), quotesdialog (dialog words quoted in the conversation above an empty
 # prompt box: idle), clearbusy (idle until /clear, then never idle again), retryclear (idle, but the first /clear is left
 # on the input line), bare (reads with no prompt at all), busy (never still), ticking (a prompt that keeps being
-# redrawn, so never still). The variable reaches a pane through tmux -e, never inherited.
+# redrawn, so never still), hook (runs the SessionStart hook as a Claude would, then idle), nested (starts a second Claude
+# below this one that runs the hook, as `claude -p` from an agent's own Bash does, then idle). The variable reaches a pane through tmux -e, never inherited.
 # The prompt box is what Claude Code 2.1.x draws: a rule, "❯" + U+00A0 + a dim placeholder, a rule, a footer.
 # the remote-host queries hm-remote-sync makes (no model, no prompt): version, and the plugin's install path and version
 if [ "${1:-}" = --version ]; then echo "2.1.300 (Claude Code)"; exit 0; fi
@@ -19,7 +20,10 @@ box() {  # box [typed text]: with text the input line holds it (no placeholder),
   else printf '\n%s\n❯\xc2\xa0\033[2mTry "fix lint errors"\033[0m\n%s\n  footer line\n' "$RULE" "$RULE"; fi
 }
 dialog() { printf '%s\n Do you trust the files in this folder?\n\n ❯ 1. Yes, I trust this folder\n   2. No, exit\n\n Enter to confirm · Esc to cancel\n' "$RULE"; }
+hookinput='{"session_id":"sp","transcript_path":"/tmp/sp.jsonl","source":"startup"}'
 case "${HM_FAKE_CLAUDE:-idle}" in
+  hook) sleep 3; printf "%s" "$hookinput" | hm-session-hook; box; cat ;;  # after hm-spawn has registered the pane
+  nested) HM_FAKE_CLAUDE=hook bash "$0" >/dev/null 2>&1; box; cat ;;
   busy) while :; do date; sleep 0.3; done ;;
   dialog) dialog; cat ;;
   dialogprompt) printf '\n%s\n Do you want to proceed?\n 1. Yes   2. No   Esc to cancel\n❯\xc2\xa0\n%s\n  footer line\n' "$RULE" "$RULE"; cat ;;

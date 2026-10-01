@@ -46,6 +46,56 @@ hm-rotate cb --still 2 --max 5 --settle 1 >/dev/null 2>&1; assert_status "cleare
 assert_not "no pickup line after a clear that never settled" "$(screen cb | sed -n '/CLEARED/,$p')" "You are proj-cb"
 assert_contains "it is logged" "$(log | tail -1)" "cleared-but-not-idle cb"
 
+# only into the pane and process that were recorded: a recycled pane id, an older record and a dead Claude get nothing typed
+spawn rec
+setteam() { jq --arg a "$1" "(.agents[] | select(.name == \$a)) |= ($2)" .hivemind/team.json > .hivemind/team.json.n && mv .hivemind/team.json.n .hivemind/team.json; }
+getteam() { jq -r --arg a "$1" ".agents[] | select(.name == \$a) | $2" .hivemind/team.json; }
+cleared() { screen rec | grep -c CLEARED; }
+good=$(jq -c --arg a rec '.agents[] | select(.name == $a)' .hivemind/team.json); c0=$(cleared); n=$(log | wc -l | tr -d ' ')
+setteam rec '.pane_pid = "1"'
+hm-rotate rec --still 2 --settle 1 >/dev/null 2>&1; assert_status "another pane process (a recycled id) exits 6" $? 6
+assert_eq "...and nothing was typed" "$(cleared)" "$c0"
+assert_contains "...and it is logged" "$(log | tail -1)" "identity rec"
+setteam rec ".pane_pid = $(printf '%s' "$good" | jq -r .pane_pid | jq -R .) | .pane_started = \"Mon Jan  1 00:00:00 2001\""
+hm-rotate rec --still 2 --settle 1 >/dev/null 2>&1; assert_status "another start time exits 6" $? 6
+assert_eq "...and nothing was typed (start time)" "$(cleared)" "$c0"
+setteam rec 'del(.pane_pid, .pane_started)'
+hm-rotate rec --still 2 --settle 1 >/dev/null 2>&1; assert_status "an older record with no identity exits 6" $? 6
+assert_eq "...and nothing was typed (older record)" "$(cleared)" "$c0"
+setteam rec ". + {pane_pid: $(printf '%s' "$good" | jq -r .pane_pid | jq -R .), pane_started: $(printf '%s' "$good" | jq -r .pane_started | jq -R .), claude_pid: \"99999\", claude_started: \"Mon Jan  1 00:00:00 2001\"}"
+hm-rotate rec --still 2 --settle 1 >/dev/null 2>&1; assert_status "a recorded Claude that is gone exits 6" $? 6
+assert_eq "...and nothing was typed (no Claude)" "$(cleared)" "$c0"
+# the registered Claude process, still alive in the pane, is rotated (the fake Claude is the pane's own process)
+setteam rec ". + {claude_pid: $(printf '%s' "$good" | jq -r .pane_pid | jq -R .), claude_started: $(printf '%s' "$good" | jq -r .pane_started | jq -R .)}"
+hm-rotate rec --still 2 --settle 1 >/dev/null 2>&1; assert_status "the recorded pane and Claude are rotated" $? 0
+setteam rec '.pane_pid = "1"'
+hm-self-rotate rec --still 2 --settle 1 >/dev/null 2>&1; assert_status "self-rotate forks" $? 0
+t=0; while ! grep -q "not the one recorded" .hivemind/rotate.out 2>/dev/null && [ $t -lt 20 ]; do sleep 1; t=$((t + 1)); done
+assert_contains "self-rotate refuses a mismatched pane, nothing typed" "$(cat .hivemind/rotate.out 2>/dev/null)" "not the one recorded"
+rm -f .hivemind/rotate.out
+
+# the identity is checked again just before each send: a pane that changed during the wait for an idle prompt gets nothing
+spawn mid; mpane=$(paneof mid)
+( hm-rotate mid --still 4 --settle 1 --max 30 >/dev/null 2>&1; echo $? > "$T_TMP/mid.rc" ) & midjob=$!
+sleep 1; setteam mid '.pane_pid = "1"'; wait "$midjob"
+assert_eq "an identity that changed during the wait exits 6" "$(cat "$T_TMP/mid.rc")" "6"
+assert_eq "...and nothing was typed" "$(hm_tmux capture-pane -p -J -S - -t "$mpane" | grep -c CLEARED)" "0"
+assert_contains "...and it is logged" "$(log | tail -1)" "identity mid"
+
+# ...also between the clear and its pickup line, and before the retried /clear
+hm_tmux set-environment -g HM_FAKE_CLAUDE idle; spawn mid2; hm_tmux set-environment -g -u HM_FAKE_CLAUDE; m2=$(paneof mid2)
+( hm-rotate mid2 --still 2 --settle 5 --max 30 >/dev/null 2>&1; echo $? > "$T_TMP/mid2.rc" ) & job=$!
+t=0; until hm_tmux capture-pane -p -J -S - -t "$m2" | grep -q CLEARED || [ $t -ge 100 ]; do sleep 0.2; t=$((t + 1)); done
+setteam mid2 '.pane_pid = "1"'; wait "$job"
+assert_eq "an identity that changed after the clear exits 6" "$(cat "$T_TMP/mid2.rc")" "6"
+assert_not "...and the pickup line was not typed after the clear" "$(hm_tmux capture-pane -p -J -S - -t "$m2" | sed -n '/^CLEARED/,$p')" "GOT: You are"
+hm_tmux set-environment -g HM_FAKE_CLAUDE retryclear; spawn mid3; hm_tmux set-environment -g -u HM_FAKE_CLAUDE; m3=$(paneof mid3)
+( hm-rotate mid3 --still 2 --settle 5 --max 30 >/dev/null 2>&1; echo $? > "$T_TMP/mid3.rc" ) & job=$!
+t=0; until hm_tmux capture-pane -p -J -S - -t "$m3" | grep -q '❯.*/clear' || [ $t -ge 100 ]; do sleep 0.2; t=$((t + 1)); done
+setteam mid3 '.pane_pid = "1"'; wait "$job"
+assert_eq "an identity that changed before the retried /clear exits 6" "$(cat "$T_TMP/mid3.rc")" "6"
+assert_eq "...and no second /clear was typed" "$(hm_tmux capture-pane -p -J -S - -t "$m3" | grep -c CLEARED)" "0"
+
 # a tracked .hivemind is refused
 echo x > .hivemind/leak; git add -f .hivemind/leak
 hm-rotate impl --still 2 --settle 1 >/dev/null 2>&1; assert_status "tracked .hivemind refused" $? 3

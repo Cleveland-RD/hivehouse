@@ -35,6 +35,32 @@ hm_pane_key() {  # hm_pane_key <socket> <pane id> -> filename-safe key
   printf '%s' "$1|$2" | shasum | cut -c1-16
 }
 hm_tmux() { if [ -n "${HM_TMUX_SOCKET:-}" ]; then tmux -S "$HM_TMUX_SOCKET" "$@"; else tmux "$@"; fi; }
+# A pane is identified by its process and that process's start time: a pane id alone is handed out again by a restarted
+# tmux server. These three are the only place that is read and compared (the registry's writer and hook use them).
+hm_pane_pid() { tmux -S "$1" display-message -p -t "$2" '#{pane_pid}' 2>/dev/null | grep -E '^[0-9]+$'; }   # hm_pane_pid <socket> <pane>: empty when the server has no such pane
+hm_pane_identity() {  # hm_pane_identity <socket> <pane>: "<pid><TAB><start time>", or fails when the pane cannot be read
+  local pid; pid=$(hm_pane_pid "$1" "$2") || return 1
+  printf '%s\t%s\n' "$pid" "$(hm_lstart "$pid")"
+}
+hm_pane_is() {  # hm_pane_is <socket> <pane> <pid> <started>: 0 it is that pane, 1 the pane is another (or the record is empty), 2 the pane cannot be read
+  local cur; cur=$(hm_pane_pid "$1" "$2") || return 2
+  [ -n "$3" ] && [ -n "$4" ] && [ "$cur" = "$3" ] && [ "$(hm_lstart "$cur")" = "$4" ]
+}
+hm_claude_ancestor() {  # hm_claude_ancestor [pid]: the nearest Claude process at or above pid (default: this process), or fails
+  local p="${1:-$$}" i=0
+  while [ -n "$p" ] && [ "$p" -gt 1 ] 2>/dev/null && [ "$i" -lt 64 ]; do
+    hm_is_claude "$p" && { echo "$p"; return 0; }
+    p=$(ps -o ppid= -p "$p" 2>/dev/null | tr -d ' '); i=$((i + 1))
+  done
+  return 1
+}
+hm_claude_is() {  # hm_claude_is <pid> <started>: that very process (not a reused pid), still Claude
+  [ -n "$1" ] && [ -n "$2" ] && hm_alive "$1" && [ "$(hm_lstart "$1")" = "$2" ] && hm_is_claude "$1"
+}
+hm_agent_is() {  # hm_agent_is <socket> <pane> <pane pid> <pane started> [<claude pid> <claude started>]: 0 the agent is still there, as recorded; 1 it is not; 2 the pane cannot be read
+  hm_pane_is "$1" "$2" "$3" "$4"; local rc=$?; [ "$rc" -eq 0 ] || return "$rc"
+  [ -z "${5:-}" ] || hm_claude_is "$5" "${6:-}"
+}
 hm_socket() { if [ -n "${HM_TMUX_SOCKET:-}" ]; then echo "$HM_TMUX_SOCKET"; else tmux display -p '#{socket_path}'; fi; }
 
 # ---- mkdir locks (macOS has no flock). Used by hm-slot and hm-manifest. -------------------------------------------
@@ -44,6 +70,15 @@ hm_socket() { if [ -n "${HM_TMUX_SOCKET:-}" ]; then echo "$HM_TMUX_SOCKET"; else
 # after re-reading the holder, so exactly one contender removes it. `kill -9` of a holder frees its lock.
 hm_alive()  { ps -p "$1" >/dev/null 2>&1; }
 hm_lstart() { ps -o lstart= -p "$1" 2>/dev/null | sed 's/^ *//;s/ *$//'; }
+hm_is_claude() {  # hm_is_claude <pid>: 0 when the process is Claude Code's, which hivemind never stops
+  local args first second   # by argv: macOS ps reports comm from argv0 as well, so it would be the same reading
+  args=$(ps -o args= -p "$1" 2>/dev/null) || return 1
+  first=${args%% *}; second=${args#* }; second=${second%% *}
+  [ "${first##*/}" = claude ] && return 0
+  case "${first##*/}" in node|bash|sh|zsh) [ "${second##*/}" = claude ] && return 0 ;; esac   # run by an interpreter
+  case "$args" in *@anthropic-ai/claude-code/*) return 0 ;; esac
+  return 1
+}
 hm_dir_age() {  # seconds since the directory was last modified
   local m; m=$(stat -f %m "$1" 2>/dev/null || stat -c %Y "$1" 2>/dev/null) || return 1
   echo $(( $(date +%s) - m ))

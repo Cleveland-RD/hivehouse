@@ -10,6 +10,21 @@ reg="$(hm_registry_dir)/$(hm_pane_key "$socket" "$TMUX_PANE").json"
 [ -f "$reg" ] || exit 0
 project=$(hm_json_get "$reg" .project); agent=$(hm_json_get "$reg" .agent)
 [ -n "$project" ] && [ -n "$agent" ] && [ -d "$project" ] || exit 0
+# The registry file must still describe THIS pane: a restarted tmux server hands out pane ids again, and a file with no
+# identity (an older format) proves nothing. Another pane, or no identity, writes nothing and removes the stale file;
+# a tmux that cannot answer proves nothing either way, so the file stays.
+hm_pane_is "$socket" "$TMUX_PANE" "$(hm_json_get "$reg" .pane_pid)" "$(hm_json_get "$reg" .pane_started)"; same=$?
+[ "$same" -ne 2 ] || exit 0
+[ "$same" -eq 0 ] || { rm -f "$reg"; exit 0; }
+# One rule: the nearest Claude above this hook must be the recorded one. --self recorded the Claude that called it (the pane's own
+# process is the owner's shell, which outlives it); a spawned agent's pane runs claude itself, so its pane process is the record.
+# A recorded Claude that is gone makes the file stale and it is removed. One that is alive but is not this hook's nearest Claude
+# is a nested run (a `claude -p` started from the agent's own Bash, which inherits the pane): it writes nothing and the file
+# stays, for the session it belongs to. /clear keeps the process, so a rotation still passes.
+cpid=$(hm_json_get "$reg" .claude_pid); cstart=$(hm_json_get "$reg" .claude_started)
+[ -n "$cpid" ] || { cpid=$(hm_json_get "$reg" .pane_pid); cstart=$(hm_json_get "$reg" .pane_started); }
+hm_claude_is "$cpid" "$cstart" || { rm -f "$reg"; exit 0; }
+anc=$(hm_claude_ancestor) && [ "$anc" = "$cpid" ] || exit 0
 hm_is_agent_name "$agent" || exit 0
 [ -z "$(git -C "$project" ls-files -- .hivemind 2>/dev/null)" ] || exit 0   # a tracked .hivemind is never written to
 dir="$project/.hivemind/team/$agent"; mkdir -p "$dir" 2>/dev/null || exit 0

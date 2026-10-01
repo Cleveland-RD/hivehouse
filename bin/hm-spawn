@@ -62,11 +62,25 @@ else
 fi
 STATE="$ROOT/.hivemind"; project=$(basename "$ROOT")
 
+identify() {  # identify <pane> <socket>: the pane's identity, and for --self the Claude process that is registering it
+  local ident
+  ident=$(hm_pane_identity "$2" "$1") || { echo "hm-spawn: cannot read pane $1 on $2, so it is not registered" >&2; return 1; }   # a file without identity is never written
+  PANE_PID=${ident%%$'\t'*}; PANE_STARTED=${ident#*$'\t'}; CLAUDE_PID=""; CLAUDE_STARTED=""
+  # --self: the pane's process is the owner's shell, which outlives this Claude, so the Claude process is recorded too. A spawned
+  # agent's pane lives only as long as the command it runs, so its pane identity is the whole of it.
+  if [ "$self" = 1 ]; then
+    CLAUDE_PID=$(hm_claude_ancestor) || { echo "hm-spawn: --self must run inside the Claude session it registers" >&2; return 1; }
+    CLAUDE_STARTED=$(hm_lstart "$CLAUDE_PID")
+  fi
+}
 register() {  # register <pane> <socket>: the registry maps a pane back to its project and agent
   local dir key
+  identify "$1" "$2" || return 1
   dir=$(hm_registry_dir); mkdir -p "$dir"; key=$(hm_pane_key "$2" "$1")
   jq -n --arg project "$ROOT" --arg agent "$agent" --arg pane "$1" --arg socket "$2" --arg now "$(hm_now)" \
-    '{project:$project, agent:$agent, pane:$pane, socket:$socket, created:$now}' > "$dir/$key.json.tmp$$" \
+    --arg ppid "$PANE_PID" --arg pstarted "$PANE_STARTED" --arg cpid "$CLAUDE_PID" --arg cstarted "$CLAUDE_STARTED" \
+    '{project:$project, agent:$agent, pane:$pane, socket:$socket, created:$now, pane_pid:$ppid, pane_started:$pstarted}
+     + (if $cpid != "" then {claude_pid:$cpid, claude_started:$cstarted} else {} end)' > "$dir/$key.json.tmp$$" \
     && mv "$dir/$key.json.tmp$$" "$dir/$key.json"
 }
 upsert_team() {  # upsert_team <json object for the agent>: one entry per agent name
@@ -79,8 +93,9 @@ upsert_team() {  # upsert_team <json object for the agent>: one entry per agent 
 if [ "$self" = 1 ]; then
   # The calling pane is the owner's own: it is registered and recorded in team.json, never on the manifest, because
   # hm-cleanup kills every pane the manifest names.
-  register "$pane" "$socket"
-  upsert_team "$(jq -nc --arg n "$agent" --arg p "$pane" --arg s "$socket" --argjson w "$window" '{name:$n, pane:$p, socket:$s, window:$w}')"
+  register "$pane" "$socket" || exit $?
+  upsert_team "$(jq -nc --arg n "$agent" --arg p "$pane" --arg s "$socket" --argjson w "$window" --arg pp "$PANE_PID" --arg ps "$PANE_STARTED" --arg cp "$CLAUDE_PID" --arg cs "$CLAUDE_STARTED" \
+    '{name:$n, pane:$p, socket:$s, window:$w, pane_pid:$pp, pane_started:$ps} + (if $cp != "" then {claude_pid:$cp, claude_started:$cs} else {} end)')"
   echo "$pane"; exit 0
 fi
 
@@ -103,7 +118,9 @@ if [ ! -f "$STATE/handoffs/$agent.md" ]; then
 fi
 
 session=${session:-hm-$(hm_project_key "$ROOT")}
-cmd=$(printf '%q ' claude --name "$project-$agent" --model "$model" --effort "$effort" --permission-mode "$mode" --allowedTools "$ALLOWED")
+# exec: the pane's own process must BE claude (the hook's one rule for a spawned agent), not a shell that happens to exec its last
+# command; a shell that does not (fish, a startup file that sets a trap, `cmd; :`) would otherwise stay as the pane's process
+cmd="exec $(printf '%q ' claude --name "$project-$agent" --model "$model" --effort "$effort" --permission-mode "$mode" --allowedTools "$ALLOWED")"
 envs=(-e "HM_AGENT=$agent" -e "HM_PROJECT=$ROOT" -e "HIVEMIND_HOME=$(hm_home)")
 [ -n "${HM_TMUX_SOCKET:-}" ] && envs+=(-e "HM_TMUX_SOCKET=$HM_TMUX_SOCKET")
 if hm_tmux has-session -t "=$session" 2>/dev/null; then
@@ -115,8 +132,8 @@ socket=$(hm_tmux display-message -p -t "$pane" '#{socket_path}') || exit $?
 hm-manifest add tmux socket="$socket" pane="$pane" agent="$agent" >/dev/null || exit $?   # first: what is on the manifest can be cleaned up
 register "$pane" "$socket" || exit $?
 upsert_team "$(jq -nc --arg n "$agent" --arg p "$pane" --arg s "$socket" --arg m "$model" --arg e "$effort" --arg mode "$mode" \
-  --arg wt "$wt" --arg b "$branch" --arg sess "$session" --argjson w "$window" \
-  '{name:$n, pane:$p, socket:$s, model:$m, effort:$e, mode:$mode, worktree:$wt, branch:$b, session:$sess, window:$w}')"
+  --arg wt "$wt" --arg b "$branch" --arg sess "$session" --argjson w "$window" --arg pp "$PANE_PID" --arg ps "$PANE_STARTED" \
+  '{name:$n, pane:$p, socket:$s, model:$m, effort:$e, mode:$mode, worktree:$wt, branch:$b, session:$sess, window:$w, pane_pid:$pp, pane_started:$ps}')"
 
 wait_idle "$pane" "$still" "$maxwait"; rc=$?
 case "$rc" in
