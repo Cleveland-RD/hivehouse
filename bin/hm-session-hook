@@ -16,6 +16,12 @@ project=$(hm_json_get "$reg" .project); agent=$(hm_json_get "$reg" .agent)
 hm_pane_is "$socket" "$TMUX_PANE" "$(hm_json_get "$reg" .pane_pid)" "$(hm_json_get "$reg" .pane_started)"; same=$?
 [ "$same" -ne 2 ] || exit 0
 [ "$same" -eq 0 ] || { rm -f "$reg"; exit 0; }
+# --self registered the Claude process too (the pane's own process is a shell that outlives it): only that process, not another
+# Claude started later in the same pane, may write. /clear keeps the process, so a rotation still passes.
+cpid=$(hm_json_get "$reg" .claude_pid)
+if [ -n "$cpid" ]; then
+  anc=$(hm_claude_ancestor) && [ "$anc" = "$cpid" ] && hm_claude_is "$cpid" "$(hm_json_get "$reg" .claude_started)" || { rm -f "$reg"; exit 0; }
+fi
 hm_is_agent_name "$agent" || exit 0
 [ -z "$(git -C "$project" ls-files -- .hivemind 2>/dev/null)" ] || exit 0   # a tracked .hivemind is never written to
 dir="$project/.hivemind/team/$agent"; mkdir -p "$dir" 2>/dev/null || exit 0

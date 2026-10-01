@@ -78,18 +78,28 @@ ghost=$(hm_tmux new-session -d -s ghost -c "$r" -P -F '#{pane_id}' 'sleep 30')
 (cd "$r" && PATH="$T_TMP/shim:$PATH" TMUX_PANE="$ghost" hm-spawn --self --agent ghostly --window 1 >/dev/null 2>&1); assert_status "--self on a pane whose process cannot be read fails" $? 1
 [ -e "$(hm_registry_dir)/$(hm_pane_key "$HM_TMUX_SOCKET" "$ghost").json" ] && bad "a registry file without identity was written" || ok "...and no registry file was written"
 
+# --self runs inside a Claude session: a stand-in whose argv reads as one (an interpreter running a script named claude)
+mkdir -p "$T_TMP/cl"; printf '#!/usr/bin/env bash\nhm-spawn "$@"; echo rc=$? >>"$SELF_OUT"; sleep 30\n' > "$T_TMP/cl/claude"
+noclaude=$(hm_tmux new-session -d -s noclaude -c "$r" -P -F '#{pane_id}' -e "HIVEMIND_HOME=$HIVEMIND_HOME" "hm-spawn --self --agent orchestrator --window 1 >$T_TMP/noclaude.out 2>&1; echo rc=\$? >>$T_TMP/noclaude.out; sleep 30")
+sleep 2
+assert_contains "--self outside a Claude session is refused" "$(cat "$T_TMP/noclaude.out")" "rc=1"
+[ -e "$(hm_registry_dir)/$(hm_pane_key "$HM_TMUX_SOCKET" "$noclaude").json" ] && bad "--self registered without a Claude ancestor" || ok "...and nothing was registered for it"
+
 # register-self (F1): the orchestrator's own pane, no window, no claude, and never on the manifest
-tmux_o=$(hm_tmux new-session -d -s orch -c "$r" -P -F '#{pane_id}' -e "HIVEMIND_HOME=$HIVEMIND_HOME" "hm-spawn --self --agent orchestrator --window 200000 >$T_TMP/self.out 2>&1; sleep 30")
+tmux_o=$(hm_tmux new-session -d -s orch -c "$r" -P -F '#{pane_id}' -e "HIVEMIND_HOME=$HIVEMIND_HOME" -e "SELF_OUT=$T_TMP/self.out" "bash $T_TMP/cl/claude --self --agent orchestrator --window 200000 >$T_TMP/self.out 2>&1")
 sleep 2
 k=$(hm_pane_key "$HM_TMUX_SOCKET" "$tmux_o")
 assert_eq "self: registered" "$(jq -r .agent "$(hm_registry_dir)/$k.json")" "orchestrator"
 assert_eq "self: registered with the pane's identity" "$(jq -r '.pane_pid + "|" + .pane_started' "$(hm_registry_dir)/$k.json")" "$(hm_pane_identity "$HM_TMUX_SOCKET" "$tmux_o" | tr '\t' '|')"
+assert_eq "self: the Claude process is recorded in the registry and team.json alike" "$(jq -r '.claude_pid + "|" + .claude_started' "$(hm_registry_dir)/$k.json")" "$(jq -r '.agents[]|select(.name=="orchestrator")|.claude_pid + "|" + .claude_started' .hivemind/team.json)"
+cpid=$(jq -r .claude_pid "$(hm_registry_dir)/$k.json"); hm_claude_is "$cpid" "$(jq -r .claude_started "$(hm_registry_dir)/$k.json")" && ok "...and it is that live Claude process" || bad "the recorded Claude process is not live Claude"
+assert_eq "a spawned agent records no Claude process (its pane lives as long as its command)" "$(jq -r 'select(.agent=="impl")|.claude_pid // "none"' "$rf")" "none"
 assert_eq "self: team.json" "$(jq -r '.agents[]|select(.name=="orchestrator")|.pane' .hivemind/team.json)" "$tmux_o"
 assert_eq "self: window" "$(jq -r '.agents[]|select(.name=="orchestrator")|.window' .hivemind/team.json)" "200000"
 assert_eq "self: not on the manifest (cleanup would kill the owner's pane)" "$(hm-manifest list --kind tmux | jq -r --arg p "$tmux_o" 'select(.pane==$p)|.pane')" ""
 hm_tmux send-keys -t "$tmux_o" C-c 2>/dev/null
 n1=$(jq '.agents|length' .hivemind/team.json)
-tmux_o2=$(hm_tmux new-session -d -s orch2 -c "$r" -P -F '#{pane_id}' -e "HIVEMIND_HOME=$HIVEMIND_HOME" "hm-spawn --self --agent orchestrator --window 200000 >$T_TMP/self2.out 2>&1; sleep 30")
+tmux_o2=$(hm_tmux new-session -d -s orch2 -c "$r" -P -F '#{pane_id}' -e "HIVEMIND_HOME=$HIVEMIND_HOME" -e "SELF_OUT=$T_TMP/self2.out" "bash $T_TMP/cl/claude --self --agent orchestrator --window 200000 >$T_TMP/self2.out 2>&1")
 sleep 2
 assert_eq "self: idempotent per agent (one orchestrator entry)" "$(jq '[.agents[]|select(.name=="orchestrator")]|length' .hivemind/team.json)" "1"
 assert_eq "self: second call moves the entry to the calling pane" "$(jq -r '.agents[]|select(.name=="orchestrator")|.pane' .hivemind/team.json)" "$tmux_o2"

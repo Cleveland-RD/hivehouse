@@ -69,6 +69,38 @@ reg "$r" implementer; (cd "$r" && printf '%s' "$input" | PATH="$T_TMP/shim:$PATH
 [ -e "$(hm_registry_dir)/$key.json" ] && ok "...and the file stays" || bad "an unanswering tmux removed a good file"
 reg "$r" implementer
 inpane "$r" $P; assert_eq "a valid identity is still written" "$(jq -r .session_id "$r/.hivemind/team/implementer/session.json")" "s1"
+# --self also registered its Claude process: only that process may write, not another Claude started later in the pane
+mkdir -p "$T_TMP/cl"
+cat > "$T_TMP/cl/claude" <<'CL'
+#!/usr/bin/env bash
+# stands in for a Claude session (an interpreter running a script named claude). hold: stay alive and print the pid.
+# run <recorded pid|self> <recorded start|self>: record a --self registry file naming that Claude process, then run the hook
+. "$HM_REPO_ROOT/bin/hm-lib.sh"
+case "$1" in
+  hold) echo $$ > "$2"; sleep 30 ;;
+  run) cp_=$2; cs_=$3; [ "$cp_" != self ] || { cp_=$$; cs_=$(hm_lstart $$); }
+       jq -nc --arg p "$PROJ" --arg i "$PPID_" --arg s "$PSTART" --arg c "$cp_" --arg t "$cs_" \
+         '{project:$p,agent:"implementer",pane_pid:$i,pane_started:$s,claude_pid:$c,claude_started:$t}' > "$REGFILE"
+       printf '%s' "$INPUT" | TMUX="$HM_TMUX_SOCKET,1,0" TMUX_PANE="$P" hm-session-hook ;;
+esac
+CL
+export HM_REPO_ROOT PROJ="$r" PPID_ PSTART P INPUT="$input" REGFILE="$(hm_registry_dir)/$key.json"
+fresh() { rm -f "$r/.hivemind/team/implementer/session.json" "$REGFILE"; }
+fresh; bash "$T_TMP/cl/claude" run self self; assert_status "the registering Claude exits 0" $? 0
+assert_eq "the Claude process that registered may write" "$(jq -r .session_id "$r/.hivemind/team/implementer/session.json" 2>/dev/null)" "s1"
+fresh; bash "$T_TMP/cl/claude" hold "$T_TMP/holdpid" & hold=$!; while [ ! -s "$T_TMP/holdpid" ]; do :; done
+hp=$(cat "$T_TMP/holdpid"); bash "$T_TMP/cl/claude" run "$hp" "$(hm_lstart "$hp")"
+[ -e "$r/.hivemind/team/implementer/session.json" ] && bad "another live Claude in the pane wrote" || ok "another Claude (alive, other pid) writes nothing"
+[ -e "$REGFILE" ] && bad "the file was kept for another Claude" || ok "...and the file is removed"
+fresh; bash "$T_TMP/cl/claude" run "$hp" "Mon Jan  1 00:00:00 2001"
+[ -e "$r/.hivemind/team/implementer/session.json" ] && bad "a Claude with another start time wrote" || ok "another start time writes nothing"
+kill "$hold" 2>/dev/null; wait "$hold" 2>/dev/null
+fresh; bash "$T_TMP/cl/claude" run 99999 "Mon Jan  1 00:00:00 2001"
+[ -e "$r/.hivemind/team/implementer/session.json" ] && bad "a dead Claude's record let a write through" || ok "a recorded Claude that is gone writes nothing"
+fresh; reg "$r" implementer; jq '. + {claude_pid:"1",claude_started:"x"}' "$REGFILE" > "$REGFILE.n" && mv "$REGFILE.n" "$REGFILE"; inpane "$r" $P
+[ -e "$r/.hivemind/team/implementer/session.json" ] && bad "a hook with no Claude ancestor wrote for a --self file" || ok "no Claude ancestor at all writes nothing for a --self file"
+reg "$r" implementer
+
 # the hook file registers it on the three starts
 assert_eq "hooks.json: SessionStart matcher" "$(jq -r '.hooks.SessionStart[0].matcher' "$HM_REPO_ROOT/hooks/hooks.json")" "startup|clear|resume"
 assert_contains "hooks.json: command" "$(jq -r '.hooks.SessionStart[0].hooks[0].command' "$HM_REPO_ROOT/hooks/hooks.json")" 'hm-session-hook'
