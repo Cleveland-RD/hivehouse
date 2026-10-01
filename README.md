@@ -31,6 +31,20 @@ claude plugin marketplace add Cleveland-RD/hivemind
 claude plugin install hivemind@hivemind
 ```
 
+## Optional: i-have-adhd
+
+[i-have-adhd](https://github.com/ayghri/i-have-adhd) shapes output for an ADHD reader. It is not a dependency: when it
+is installed and enabled, the orchestrator reads its rules at the start and after every rotation and follows them in
+every message to the owner; when it is not, nothing changes. hivemind never installs, enables or switches it on.
+
+```
+claude plugin marketplace add ayghri/i-have-adhd
+claude plugin install i-have-adhd@i-have-adhd
+```
+
+In any other session, `/i-have-adhd` turns it on. Its INSTALL.md also describes an always-on mode; with that on, the
+plugin applies itself everywhere and hivemind does not load it a second time.
+
 ## Skills
 
 | Skill | Who runs it | What it does |

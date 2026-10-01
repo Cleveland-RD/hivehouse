@@ -3,7 +3,7 @@ name: start
 description: Run a feature or task with a team of Claude sessions in tmux, from planning through review, gates and cleanup. Use when the owner types /hivemind:start followed by a task.
 argument-hint: <task description>
 disable-model-invocation: true
-allowed-tools: Bash(hm-spawn *) Bash(hm-rotate *) Bash(hm-self-rotate *) Bash(hm-slot status) Bash(hm-slot release *) Bash(hm-context *) Bash(hm-gate-verify *) Bash(hm-settings resolve *) Bash(hm-manifest *) Bash(hm-disk *) Read Edit(./.hivemind/**) Edit(./CLAUDE.md) Edit(./CLAUDE.local.md) AskUserQuestion SendMessage ListAgents
+allowed-tools: Bash(hm-spawn *) Bash(hm-rotate *) Bash(hm-self-rotate *) Bash(hm-slot status) Bash(hm-slot release *) Bash(hm-context *) Bash(hm-gate-verify *) Bash(hm-settings resolve *) Bash(hm-manifest *) Bash(hm-disk *) Bash(hm-adhd) Read Edit(./.hivemind/**) Edit(./CLAUDE.md) Edit(./CLAUDE.local.md) AskUserQuestion SendMessage ListAgents
 ---
 
 # hivemind: start
@@ -26,6 +26,10 @@ If `hm-*` is not found, the plugin is not enabled in this session: say so and st
 Read the task, `CLAUDE.md`, `CLAUDE.local.md`, the memory index, `git status` and `.hivemind/` (handoffs, `team.json`,
 `manifest.jsonl`). If `.hivemind/team.json` has a team, resume it (`ListAgents`, `hm-context --all`) instead of
 starting again.
+
+Then run `hm-adhd`. When it prints a path, the owner uses the i-have-adhd output style: Read that file and follow it
+for every message to the owner, from now on (your pickup line after a rotation names it again). When it prints nothing,
+carry on as usual; never install or enable it.
 
 ## 2. Project facts: look, check, then ask
 

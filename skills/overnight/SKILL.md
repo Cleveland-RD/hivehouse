@@ -4,7 +4,7 @@ description: Run a queue of work unattended on this machine or a named remote ho
 when_to_use: When the owner wants work to continue while they are away, or to move a team to another machine for the night.
 argument-hint: <what to work through>
 disable-model-invocation: true
-allowed-tools: Bash(hm-spawn *) Bash(hm-rotate *) Bash(hm-self-rotate *) Bash(hm-slot status) Bash(hm-slot release *) Bash(hm-context *) Bash(hm-gate-verify *) Bash(hm-settings resolve *) Bash(hm-manifest *) Bash(hm-disk *) Bash(git status *) Bash(git log *) Bash(git diff *) Bash(git rev-parse *) Bash(git show *) Read Edit(./.hivemind/**) Write(./.hivemind/**) AskUserQuestion SendMessage ListAgents CronCreate CronDelete CronList
+allowed-tools: Bash(hm-spawn *) Bash(hm-rotate *) Bash(hm-self-rotate *) Bash(hm-slot status) Bash(hm-slot release *) Bash(hm-context *) Bash(hm-gate-verify *) Bash(hm-settings resolve *) Bash(hm-manifest *) Bash(hm-disk *) Bash(hm-adhd) Bash(git status *) Bash(git log *) Bash(git diff *) Bash(git rev-parse *) Bash(git show *) Read Edit(./.hivemind/**) Write(./.hivemind/**) AskUserQuestion SendMessage ListAgents CronCreate CronDelete CronList
 ---
 
 # hivemind: overnight
@@ -25,6 +25,10 @@ A skill's pre-approval ends at the owner's next message, and every heartbeat bea
 never was. Overnight therefore only runs unattended in auto mode, where the classifier decides each call (step 3).
 
 If `hm-*` is not found, the plugin is not enabled in this session: say so and stop.
+
+Run `hm-adhd`. When it prints a path, the owner uses the i-have-adhd output style: Read that file and follow it
+for every message to the owner, from now on (your pickup line after a rotation names it again). When it prints nothing,
+carry on as usual; never install or enable it. The morning report follows it too.
 
 ## 1. Close every open question
 

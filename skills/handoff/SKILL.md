@@ -62,6 +62,9 @@ The orchestrator's own line, after `hm-self-rotate`, is shorter: it reports to n
 
 `You are <orchestrator>. Read <root>/.hivemind/handoffs/<agent>.md from the top: its START HERE block is your prompt.`
 
+When the owner uses the i-have-adhd output style (`hm-adhd` finds it), the line adds `Read <its SKILL.md> and follow it
+for every message to the owner.`
+
 ### At the rotation threshold
 
 When the orchestrator (or your own check) says the context is at `${user_config.rotate_at_percent}`% or above:
