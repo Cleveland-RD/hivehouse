@@ -118,7 +118,7 @@ case "$rc" in
   3) echo "hivemind: a dialog is waiting in pane $pane ($agent): answer it yourself; nothing was typed" >&2; exit 5 ;;
   *) echo "hivemind: pane $pane ($agent) never went idle within ${maxwait}s; nothing was sent" >&2; exit 1 ;;
 esac
-line="You are $project-$agent. Read $ROOT/.hivemind/handoffs/$agent.md from the top: its START HERE block is your prompt, and $ROOT/.hivemind/team/$agent/ holds your role and the rules. Report to $project-orchestrator. Wait for its first message before any work."
+line=$(hm_pickup_line "$project" "$ROOT" "$agent")
 hm_tmux send-keys -t "$pane" -l "$line"
 hm_tmux send-keys -t "$pane" Enter
 echo "$pane"

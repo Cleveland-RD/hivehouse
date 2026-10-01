@@ -115,3 +115,9 @@ wait_idle() {
   [ "$rc" -eq 3 ] && return 3
   return 1
 }
+
+# The line that starts (hm-spawn) or restarts (hm-rotate) an agent from its handoff: one text, so they cannot drift.
+hm_pickup_line() {  # hm_pickup_line <project name> <project root> <agent>
+  printf 'You are %s-%s. Read %s/.hivemind/handoffs/%s.md from the top: its START HERE block is your prompt, and %s/.hivemind/team/%s/ holds your role and the rules. Report to %s-orchestrator. Wait for its first message before any work.' \
+    "$1" "$3" "$2" "$3" "$2" "$3" "$1"
+}
