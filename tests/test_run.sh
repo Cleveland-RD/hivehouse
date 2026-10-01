@@ -33,4 +33,13 @@ case "$out" in *"RAN c"*) bad "the suite went on after a stopped test";; *) ok "
 printf 'echo "RAN a"\n' > "$stub/fail/test_a.sh"; printf 'exit 1\n' > "$stub/fail/test_b.sh"; printf 'echo "RAN c"\n' > "$stub/fail/test_c.sh"
 out=$(bash "$stub/fail/run.sh"); assert_status "a failing test fails the suite" $? 1
 assert_contains "...which goes on to the next" "$out" "RAN c"
+# test_cleanup.sh guards itself too, before it sources anything: read its first command and run that line alone
+guard='[ "${HM_CLEANUP_TEST:-}" = 1 ] || { echo "SKIP test_cleanup.sh (run by the owner: HM_CLEANUP_TEST=1)"; exit 0; }'
+first=$(grep -v '^#' "$HM_REPO_ROOT/tests/test_cleanup.sh" | grep -v '^[[:space:]]*$' | head -1)
+assert_eq "test_cleanup.sh's first command is its own guard" "$first" "$guard"
+if [ "$first" = "$guard" ]; then   # run the line only when it is the guard, so a broken file runs nothing of its own
+  out=$(env -u HM_CLEANUP_TEST bash -c "$first; echo PAST"); assert_status "...which exits 0 unasked" $? 0
+  assert_eq "...says so and goes no further" "$out" "$SKIP"
+  out=$(env HM_CLEANUP_TEST=1 bash -c "$first; echo PAST"); assert_eq "...and lets HM_CLEANUP_TEST=1 through" "$out" "PAST"
+fi
 [ "$FAILS" -eq 0 ] || exit 1

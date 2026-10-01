@@ -1,7 +1,12 @@
 #!/usr/bin/env bash
+# It stops real processes, so it runs only when the owner asks, however it is started (tests/run.sh skips it too).
+[ "${HM_CLEANUP_TEST:-}" = 1 ] || { echo "SKIP test_cleanup.sh (run by the owner: HM_CLEANUP_TEST=1)"; exit 0; }
 . "$(dirname "$0")/lib.sh"
 . "$HM_REPO_ROOT/bin/hm-lib.sh"
 t_setup   # every process below is recorded with t_track as it starts, so teardown reaps it whatever ends the run
+case "$T_TMP" in /tmp/*|/private/tmp/*)   # then everything below would count as temporary, and the checks mean nothing
+  bad "TMPDIR is under /tmp ($T_TMP): run with TMPDIR set elsewhere, e.g. TMPDIR=\$(getconf DARWIN_USER_TEMP_DIR)"; t_done ;;
+esac
 alive() { kill -0 "$1" 2>/dev/null; }
 count() { hm-manifest list ${1:+--kind "$1"} | wc -l | tr -d ' '; }
 # A temporary place of the test's own, so that the rest of $T_TMP (which sits under the real $TMPDIR) is not temporary
@@ -118,7 +123,7 @@ set -m
   assert_contains "the test itself, an ancestor of the cleanup, is skipped" "$out" "skipped process $$ by=owner (this cleanup or its caller)"
   assert_contains "a process already gone is dropped" "$out" "removed process $dead by=owner (already stopped)"
   assert_eq "kept: the edited, the claude and the caller" "$(count process)" "3"
-  exit "$FAILS"
+  exit $(( FAILS < 127 ? FAILS : 127 ))   # 128 and above means the section was stopped
 ) < /dev/null > "$T_TMP/procs.out" 2>&1 & P=$!   # a background group never touches the terminal, so it cannot stop on it
 set +m
 t_track $P; t_track_group $P
