@@ -69,6 +69,34 @@ rm -rf "$LOCK"; mkdir "$LOCK.takeover"; sleep 30 & s=$!; ls=$(hm_lstart $s); kil
 mkdir "$LOCK"; jq -nc --argjson pid "$s" --arg l "$ls" '{pid:$pid,lstart:$l,created:0}' > "$LOCK/holder.json"
 hm-slot run g -- true 2>/dev/null; assert_status "a fresh takeover guard blocks a takeover" $? 75
 touch -t 202001010000 "$LOCK.takeover"; hm-slot run g -- true; assert_status "an old takeover guard is cleared" $? 0
+# the takeover guard is reclaimed after 30 s and not before (a guard 20 s old blocks, one 60 s old is cleared)
+ago() { date -v-"$1"S +%Y%m%d%H%M.%S; }
+rm -rf "$LOCK" "$LOCK.takeover"; mkdir "$LOCK.takeover"; mkdir "$LOCK"
+jq -nc --argjson pid "$s" --arg l "$ls" '{pid:$pid,lstart:$l,created:0}' > "$LOCK/holder.json"
+touch -t "$(ago 20)" "$LOCK.takeover"; hm-slot run g20 -- true 2>/dev/null; assert_status "a 20 s old takeover guard still blocks" $? 75
+touch -t "$(ago 60)" "$LOCK.takeover"; hm-slot run g60 -- true; assert_status "a 60 s old takeover guard is reclaimed" $? 0
+# a lock with no holder record is busy for 10 s and stale after
+rm -rf "$LOCK" "$LOCK.takeover"; mkdir "$LOCK"
+hm-slot run n0 -- true 2>/dev/null; assert_status "a fresh lock with no holder record is busy" $? 75
+touch -t "$(ago 20)" "$LOCK"; hm-slot run n20 -- true; assert_status "a lock with no holder record, 20 s old, is stale" $? 0
+# the holder is re-read under the guard: a takeover that lost the race to another one backs off (the swap happens just
+# before the guard is taken, so nothing here depends on timing)
+swap_hook=""
+mkdir() { if [ -n "$swap_hook" ] && [ "$1" = "$LOCK.takeover" ]; then local h="$swap_hook"; swap_hook=""; eval "$h"; fi; command mkdir "$@"; }
+sleep 30 & d2=$!; ls2=$(hm_lstart $d2); kill $d2; wait $d2 2>/dev/null
+dead_holder() { rm -rf "$LOCK" "$LOCK.takeover"; command mkdir "$LOCK"; jq -nc --argjson pid "$s" --arg l "$ls" '{pid:$pid,lstart:$l,created:0}' > "$LOCK/holder.json"; }
+mine=$(hm_holder_json $$ '{"label":"me"}')
+dead_holder; swap_hook='hm_holder_json $$ > "$LOCK/holder.json"'
+hm_lock_try "$LOCK" "$mine"; assert_status "a holder that came back to life is not taken over" $? 1
+assert_eq "...and its record is untouched" "$(jq -r .pid "$LOCK/holder.json")" "$$"
+[ ! -e "$LOCK.takeover" ] && ok "...and the guard is released" || bad "the guard was left behind"
+dead_holder; swap_hook='jq -nc --argjson pid "$d2" --arg l "$ls2" "{pid:\$pid,lstart:\$l,created:1}" > "$LOCK/holder.json"'
+hm_lock_try "$LOCK" "$mine"; assert_status "another stale holder written meanwhile: back off" $? 1
+assert_eq "...its record is untouched" "$(jq -r .created "$LOCK/holder.json")" "1"
+rm -rf "$LOCK" "$LOCK.takeover"; command mkdir "$LOCK"; touch -t "$(ago 20)" "$LOCK"; swap_hook='touch "$LOCK"'
+hm_lock_try "$LOCK" "$mine"; assert_status "a record-less lock refreshed meanwhile is no longer stale: back off" $? 1
+[ -d "$LOCK" ] && ok "...and the lock is still there" || bad "the refreshed lock was removed"
+unset -f mkdir; rm -rf "$LOCK" "$LOCK.takeover"
 # usage and A1
 hm-slot bogus 2>/dev/null; assert_status "unknown command is a usage error" $? 64
 hm-slot acquire x 2>/dev/null; assert_status "acquire without --pid is a usage error" $? 64
