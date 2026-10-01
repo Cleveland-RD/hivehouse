@@ -67,7 +67,11 @@ again before adding an agent later. This approval is a plan confirmation, separa
 
 ## 6. Spawn
 
-For each agent, in its own call. The window per role is a setting (`${user_config.window_builder}`,
+First register this pane as the orchestrator, once: `hm-spawn --self --agent <project>-orchestrator`, the name from
+step 4. Step 8's `hm-context --all` and `hm-self-rotate` find you through it. It exits 4 when that name already belongs
+to a pane hivemind spawned; tell the owner rather than choosing another name.
+
+Then for each agent, in its own call. The window per role is a setting (`${user_config.window_builder}`,
 `${user_config.window_reviewer}`), never inferred from a model name:
 
 `hm-spawn --agent <name> --role ${CLAUDE_PLUGIN_ROOT}/roles/<role>.md --rules ${CLAUDE_PLUGIN_ROOT}/rules/RULES.md --model <model> --effort <effort> --mode <resolved permission mode> --window <window> [--worktree <absolute path> --branch <branch> --base <branch>]`
@@ -84,7 +88,9 @@ A new agent waits for its first message. Send it its brief with `SendMessage`, f
 
 - Design before building; product-shaped designs go to the owner.
 - Build, then review at the depth the risk calls for (glance, delta, standard, full bubble), then gate, then you read the
-  gate log yourself: `hm-gate-verify log <file> [--expect <steps>]` and
+  gate log yourself: `hm-gate-verify log <file> --commit <tip>` for a log `hm-gate` wrote, whose header names its steps;
+  a project's own gate script writes no header, so name the steps its log must hold: `hm-gate-verify log <file> --expect
+  <name>,<name>`. Then
   `hm-gate-verify commits <base>..<tip> --max-files <resolved files_per_commit> --style ${user_config.commit_style} --attribution <allow|deny from the resolved setting>`.
   Never call anything green without the log path.
 - Land on the owner's word, then push by full hash with `hm-push <remote> <40-hex hash> <branch>`. A push is an outward
