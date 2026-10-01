@@ -48,8 +48,8 @@ hm_is_claude() {  # hm_is_claude <pid>: 0 when the process is Claude Code's, whi
   local args first second   # by argv: macOS ps reports comm from argv0 as well, so it would be the same reading
   args=$(ps -o args= -p "$1" 2>/dev/null) || return 1
   first=${args%% *}; second=${args#* }; second=${second%% *}
-  [ "$(basename "$first")" = claude ] && return 0
-  case "$(basename "$first")" in node|bash|sh|zsh) [ "$(basename "$second")" = claude ] && return 0 ;; esac   # run by an interpreter
+  [ "${first##*/}" = claude ] && return 0
+  case "${first##*/}" in node|bash|sh|zsh) [ "${second##*/}" = claude ] && return 0 ;; esac   # run by an interpreter
   case "$args" in *@anthropic-ai/claude-code/*) return 0 ;; esac
   return 1
 }

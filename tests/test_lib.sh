@@ -60,9 +60,11 @@ HM_FAKE_CLAUDE=busy bash "$HM_REPO_ROOT/tests/bin/claude" --name probe >/dev/nul
 perl -e 'sleep 300' -- "$T_TMP/node_modules/@anthropic-ai/claude-code/cli.js" & c4=$!
 sleep 300 & n1=$!
 perl -e 'sleep 300' -- --name claude-notes & n2=$!
+bash -c 'exec -a -c sleep 300' & n3=$!   # an argv word that looks like an option (a login shell's -zsh)
 sleep 0.5
 for p in $c1 $c2 $c3 $c4; do hm_is_claude "$p" && ok "seen as claude: $(ps -o args= -p $p | cut -c1-50)" || bad "not seen as claude: $p $(ps -o args= -p $p)"; done
-for p in $n1 $n2; do hm_is_claude "$p" && bad "mistaken for claude: $(ps -o args= -p $p)" || ok "not claude: $(ps -o args= -p $p | cut -c1-50)"; done
+for p in $n1 $n2 $n3; do hm_is_claude "$p" && bad "mistaken for claude: $(ps -o args= -p $p)" || ok "not claude: $(ps -o args= -p $p | cut -c1-50)"; done
+[ -z "$(hm_is_claude $n3 2>&1)" ] && ok "an option-like argv word prints nothing" || bad "hm_is_claude printed an error for an option-like argv word"
 hm_is_claude 999999 && bad "a dead pid is claude" || ok "a dead pid is not claude"
-kill $c1 $c2 $c3 $c4 $n1 $n2 2>/dev/null; wait $c1 $c2 $c3 $c4 $n1 $n2 2>/dev/null
+kill $c1 $c2 $c3 $c4 $n1 $n2 $n3 2>/dev/null; wait $c1 $c2 $c3 $c4 $n1 $n2 $n3 2>/dev/null
 t_done
