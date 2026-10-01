@@ -8,7 +8,7 @@
       "name": "hivemind",
       "source": "./",
       "description": "Run a feature with a team of Claude sessions in tmux.",
-      "version": "0.1.0"
+      "version": "0.1.1"
     }
   ],
   "description": "Run a feature with a team of Claude sessions in tmux."
