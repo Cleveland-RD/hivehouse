@@ -24,7 +24,7 @@ hm-rotate 2>/dev/null; assert_status "usage" $? 64
 
 # a /clear the UI leaves on the input line is cleared and typed again, once
 hm_tmux set-environment -g HM_FAKE_CLAUDE retryclear; spawn retry; hm_tmux set-environment -g -u HM_FAKE_CLAUDE
-hm-rotate retry --still 2 --settle 1 >/dev/null; assert_status "a stuck /clear is retried" $? 0
+hm-rotate retry --still 2 --settle 1 --max 20 >/dev/null; assert_status "a stuck /clear is retried" $? 0
 assert_contains "...and cleared in the end" "$(screen retry)" "CLEARED"
 assert_contains "...and the pickup line followed" "$(screen retry)" "GOT: You are proj-retry"
 
@@ -49,6 +49,8 @@ assert_contains "it is logged" "$(log | tail -1)" "cleared-but-not-idle cb"
 # a tracked .hivemind is refused
 echo x > .hivemind/leak; git add -f .hivemind/leak
 hm-rotate impl --still 2 --settle 1 >/dev/null 2>&1; assert_status "tracked .hivemind refused" $? 3
+hm-self-rotate impl --still 2 --settle 1 >/dev/null 2>&1; assert_status "self-rotate refuses a tracked .hivemind before forking" $? 3
+[ -e .hivemind/rotate.out ] && bad "self-rotate wrote rotate.out into a tracked .hivemind" || ok "...and wrote nothing"
 git rm -qf --cached .hivemind/leak
 
 # hm-self-rotate returns at once and the rotation finishes detached

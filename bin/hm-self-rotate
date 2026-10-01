@@ -7,6 +7,9 @@ set -u
 if [ "${1:-}" != "--detached" ]; then
   [ -n "${1:-}" ] || hm_die 64 "usage: hm-self-rotate <agent> [--still s] [--max s] [--settle s]"
   ROOT=$(hm_project_root) || exit $?
+  if [ -n "$(git -C "$ROOT" ls-files -- .hivemind)" ]; then
+    hm_die 3 "files under .hivemind/ are tracked by git; untrack them before using hivemind here"
+  fi
   mkdir -p "$ROOT/.hivemind" || exit $?
   LOG="$ROOT/.hivemind/rotate.out"
   HM_PROJECT="$ROOT" nohup "$0" --detached "$@" </dev/null >>"$LOG" 2>&1 &
