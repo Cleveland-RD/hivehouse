@@ -8,7 +8,9 @@
 # naming every step it will run and the tree it ran on, which `hm-gate-verify log` reads as the steps that must have a
 # line and `--commit` as the commit a green log vouches for. Each command runs with `bash -c` from the current directory,
 # in its own process group, its output in <file>.d/<name>.log; every step runs after a failure. An interrupt (INT, TERM,
-# HUP) stops the running step's whole group and writes no line for it, so the header names a step the log lacks.
+# HUP) stops the running step's whole group and writes no line for it, so the header names a step the log lacks. With
+# the steps in their own groups (`set -m`), a SIGKILL to the gate's group no longer reaches them: the same trade as a
+# `kill -9` of `hm-slot run`.
 # Not pre-approved for agents (A16): it runs commands, so the whole command line goes through permission.
 # Exit: 0 every step 0, 1 any step failed, 64 usage, 75 the slot is busy (the holder on stderr), 129/130/143 interrupted.
 set -u
@@ -28,9 +30,17 @@ done
 logdir=$(dirname "$log")
 [ -d "$logdir" ] && [ -w "$logdir" ] && { [ ! -e "$log" ] || [ -w "$log" ]; } || hm_die 64 "the gate log cannot be written: $log"
 
-# The tree the steps run on, read before they run (a step may change it) and before the log is written (it may be in the tree).
+# The tree the steps run on, read before they run (a step may change it). The gate's own log and step logs are left out
+# when they are in the tree, so a log an earlier gate left there does not make the next run dirty and its --commit red.
 head=$(git rev-parse --verify -q HEAD 2>/dev/null) || head=none
-dirty=0; [ "$head" != none ] && [ -n "$(git status --porcelain 2>/dev/null)" ] && dirty=1
+dirty=0
+if [ "$head" != none ]; then
+  top=$(git rev-parse --show-toplevel 2>/dev/null); top=$(cd "$top" && pwd -P); here=$(cd "$logdir" && pwd -P)
+  own=()
+  case "$here/" in "$top/"*) rel="${here#"$top"}"; rel="${rel#/}"; rel="${rel:+$rel/}$(basename "$log")"
+    own=(":(top,literal,exclude)$rel" ":(top,literal,exclude)$rel.d") ;; esac
+  [ -n "$(git status --porcelain -- ':/' ${own[@]+"${own[@]}"} 2>/dev/null)" ] && dirty=1
+fi
 
 "$(dirname "$0")/hm-slot" acquire gate --pid $$ || exit $?
 trap '"$(dirname "$0")/hm-slot" release --pid $$ --label gate' EXIT

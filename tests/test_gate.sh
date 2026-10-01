@@ -22,6 +22,13 @@ hm-gate --log "$LOG" -- s 'hm-slot status'; assert_contains "the gate holds the 
 echo stray > stray; hm-gate --log "$LOG" -- d true
 assert_eq "a dirty tree is recorded" "$(head -1 "$LOG")" "# hm-gate steps: d head=$head_now dirty=1"
 rm stray
+# the gate's own log in the tree: a second run is not made dirty by the first run's log and step logs
+mkdir -p sub; for run in 1 2; do (cd sub && hm-gate --log ../gate.log -- e true); done
+assert_eq "a log in the tree does not make the next run dirty" "$(head -1 gate.log)" "# hm-gate steps: e head=$head_now dirty=0"
+hm-gate-verify log gate.log --commit HEAD >/dev/null; assert_status "and its second run vouches for the commit" $? 0
+echo stray > stray; (cd sub && hm-gate --log ../gate.log -- e true)
+assert_eq "a change outside the log is still dirty, from a subdirectory too" "$(head -1 gate.log)" "# hm-gate steps: e head=$head_now dirty=1"
+rm -rf stray gate.log gate.log.d sub
 # every argument is checked before anything runs: a first step that touches a file must not have run
 T="touch '$T_TMP/touched'"
 for args in "-- first \"$T\" a" "-- first \"$T\" ../x true" "-- first \"$T\" a..b true" "-- first \"$T\" 'a b' true" "-- first \"$T\" a true a true" "--" "first \"$T\""; do
