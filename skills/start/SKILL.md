@@ -45,8 +45,10 @@ has already fixed. Write `HM-CLARIFY:` before these questions too.
 
 ## 4. Name yourself
 
-Rename this session `<project>-orchestrator` (project = the repository's directory name). Tell the owner if you cannot
-rename it. Agents are addressed by tmux server and pane id, never by name alone.
+If this session has no name yet, rename it `<project>-orchestrator` (project = the repository's directory name); a name
+the owner gave it stays. Agents are told to report to whatever name it has (step 6's `hm-spawn --self` records it, and
+every pickup line reads it again). Tell the owner if you cannot rename it. Agents are addressed by tmux server and
+pane id, never by name alone.
 
 ## 5. Plan the team, then wait
 

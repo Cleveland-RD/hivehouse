@@ -35,7 +35,7 @@ block is at the top and is the agent's whole prompt after a `/clear`; older bloc
 ```markdown
 ## START HERE — <machine/context>, written <weekday date time> (from `date`) by <project>-<agent> (supersedes every block below)
 
-I am <project>-<agent>. Report ONLY to <project>-orchestrator.
+I am <project>-<agent>. Report ONLY to <orchestrator>.
 Rules: <the 4-6 rules that matter most now, one line each; the rest are in .hivemind/team/<agent>/RULES.md>.
 
 STATE: <idle | mid-task: which>. Branch <b>, worktree <path>, tip <hash>. Pushed / not pushed. Gated / not gated.
@@ -53,7 +53,10 @@ from memory. Verify every hash, path and count against the source before writing
 
 After a clear, the orchestrator sends this (`hm-spawn` and `hm-rotate` send it for you):
 
-`You are <project>-<agent>. Read <root>/.hivemind/handoffs/<agent>.md from the top: its START HERE block is your prompt, and <root>/.hivemind/team/<agent>/ holds your role and the rules. Report to <project>-orchestrator. Wait for its first message before any work.`
+`You are <project>-<agent>. Read <root>/.hivemind/handoffs/<agent>.md from the top: its START HERE block is your prompt, and <root>/.hivemind/team/<agent>/ holds your role and the rules. Report to <orchestrator>. Wait for its first message before any work.`
+
+<orchestrator> is the orchestrator session's own name, read when the line is sent (so a rename is followed), or
+<project>-orchestrator when it cannot be read.
 
 ### At the rotation threshold
 
