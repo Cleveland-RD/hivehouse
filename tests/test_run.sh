@@ -25,4 +25,12 @@ assert_contains "HM_CLEANUP_TEST=1 runs test_cleanup.sh in the whole suite" "$ou
 case "$out" in *SKIP*) bad "HM_CLEANUP_TEST=1 still printed a skip";; *) ok "HM_CLEANUP_TEST=1 prints no skip";; esac
 out=$(env HM_CLEANUP_TEST=1 bash "$stub/run.sh" test_cleanup.sh)
 assert_contains "HM_CLEANUP_TEST=1 runs it when named" "$out" "RAN cleanup"
+# a test stopped by a signal (its trap exits 128+n) stops the suite; a failing one does not
+mkdir "$stub/stop" "$stub/fail"; cp "$HM_REPO_ROOT/tests/run.sh" "$stub/stop/run.sh"; cp "$HM_REPO_ROOT/tests/run.sh" "$stub/fail/run.sh"
+printf 'echo "RAN a"\n' > "$stub/stop/test_a.sh"; printf 'exit 130\n' > "$stub/stop/test_b.sh"; printf 'echo "RAN c"\n' > "$stub/stop/test_c.sh"
+out=$(bash "$stub/stop/run.sh"); assert_status "a test that exits 130 stops the suite with 130" $? 130
+case "$out" in *"RAN c"*) bad "the suite went on after a stopped test";; *) ok "...and no test after it runs";; esac
+printf 'echo "RAN a"\n' > "$stub/fail/test_a.sh"; printf 'exit 1\n' > "$stub/fail/test_b.sh"; printf 'echo "RAN c"\n' > "$stub/fail/test_c.sh"
+out=$(bash "$stub/fail/run.sh"); assert_status "a failing test fails the suite" $? 1
+assert_contains "...which goes on to the next" "$out" "RAN c"
 [ "$FAILS" -eq 0 ] || exit 1
