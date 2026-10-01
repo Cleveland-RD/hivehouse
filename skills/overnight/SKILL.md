@@ -46,7 +46,7 @@ permission mode. Resolve the local mode on its own call:
 `hm-settings resolve permission_mode ${user_config.permission_mode_local}`.
 
 The heartbeat in step 5 needs this session to run in auto mode. If the resolved mode is not `auto`, or this session is
-not running in auto mode, do not set the heartbeat and do not start the night: tell the owner that each beat would sit
+not running in auto mode (if you cannot tell, ask the owner), do not set the heartbeat and do not start the night: tell the owner that each beat would sit
 on a permission prompt with nobody there, and what they must set (`permission_mode_local` to `auto`, and this session
 started in auto mode). Ask whether they want to change that or stop.
 
@@ -87,7 +87,7 @@ Then set the heartbeat with `CronCreate`, every `${user_config.heartbeat_minutes
 Record the `CronCreate` id in your handoff, so a rotated orchestrator can `CronDelete` it (`CronList` also finds it).
 Add a dated line to your handoff for each beat that changed something.
 
-If a call in a beat is refused (a prompt nobody answers, a classifier denial, a permission error): log it in the
+If a call in a beat is refused (a classifier denial or a permission error): log it in the
 handoff with the command and the reason, finish everything else the beat can do, and put it in the morning report. Never
 route around a refusal, never retry it differently, and never stop the night silently.
 
@@ -105,7 +105,7 @@ route around a refusal, never retry it differently, and never stop the night sil
 
 ## 7. Morning
 
-Write the report from `${CLAUDE_SKILL_DIR}/morning-report.md` to `.hivemind/morning-report-<date from `date`>.md`: what landed, what is on a branch only, spend, and the
+Write the report from `${CLAUDE_SKILL_DIR}/morning-report.md` to `.hivemind/morning-report-<YYYY-MM-DD>.md`, the date from `date`: what landed, what is on a branch only, spend, and the
 owner's questions. Delete the heartbeat (`CronDelete`). The return trip of branches and files from a remote host, and
 the remote's cleanup (`hm-remote-sync`, then `hm-cleanup --finish --dry-run` and `hm-cleanup --finish`), happen only
 on the owner's word.
