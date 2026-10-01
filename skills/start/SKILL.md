@@ -100,8 +100,8 @@ A new agent waits for its first message. Send it its brief with `SendMessage`, f
   step whenever CI deploys or migrates on it; ask for that item unless the owner has already said otherwise for it.
 - Agents message each other directly for technical questions; decisions and finished work come to you; only you talk to
   the owner. Answers to the owner are short and plain.
-- One heavy job at a time: `hm-slot run <label> -- <command>` for every suite, gate, build and browser run. Check
-  `hm-slot status` first.
+- One heavy job at a time: `hm-slot run <label> -- <command>` for every suite, build and browser run; `hm-gate` takes
+  the slot itself and is never wrapped in it. Check `hm-slot status` first.
 - Add a dated line to your handoff for each event (decision, landing, rotation, blocker).
 - A paid step needs the owner's word for that run; announce the cost first.
 
