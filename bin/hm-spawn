@@ -7,8 +7,10 @@ set -u
 . "$(dirname "$0")/hm-lib.sh"
 USAGE="usage: hm-spawn --agent <n> --role <file> --rules <file> --model <m> --effort <e> --mode <m> [--worktree <abs> --branch <b> --base <b>] [--session <s>] [--window <tokens>] [--still <s>] [--max-wait <s>]
        hm-spawn --self --agent <n> [--window <tokens>]"
-# The only commands an agent may run without asking (A16): nothing here runs an arbitrary command.
-ALLOWED='Bash(hm-slot status) Bash(hm-slot release *) Bash(hm-context *) Bash(hm-gate-verify *) Bash(hm-settings resolve *) Bash(hm-manifest *) Bash(hm-disk *) Bash(git status *) Bash(git log *) Bash(git diff *) Bash(git rev-parse *) Bash(git show *)'
+# The only commands an agent may run without asking (A16): nothing here runs an arbitrary command, writes a chosen path
+# (no git: --output=<path> writes anywhere; Claude Code already runs the read-only forms unprompted) or edits the
+# manifest (a pre-approved `hm-manifest add` would let cleanup remove a path, pane or pid nobody named).
+ALLOWED='Bash(hm-slot status) Bash(hm-slot release *) Bash(hm-context *) Bash(hm-gate-verify *) Bash(hm-settings resolve *) Bash(hm-disk *)'
 
 agent=""; role=""; rules=""; model=""; effort=""; mode=""; wt=""; branch=""; base=""; session=""; window=200000
 still=5; maxwait=90; self=0; others=0
@@ -38,6 +40,8 @@ if [ "$self" = 1 ]; then
   hm_ensure_state || exit $?
   export HM_PROJECT="$ROOT"
   pane="$TMUX_PANE"
+  hm-manifest list --kind tmux | jq -e --arg a "$agent" 'select(.agent == $a)' >/dev/null \
+    && hm_die 4 "$agent belongs to a pane hivemind spawned; --self would re-point it at this one"
   socket=$(hm_tmux display-message -p -t "$pane" '#{socket_path}') || exit $?
   mode="" ; model=""; effort=""; session=""; branch=""; wt=""
 else
@@ -45,6 +49,8 @@ else
   case "$mode" in plan|dontAsk|default|acceptEdits|auto) ;; bypassPermissions) hm_die 4 "bypassPermissions is never started by hm-spawn" ;; *) hm_die 4 "unknown permission mode: $mode" ;; esac
   [ -f "$role" ] && [ -f "$rules" ] || hm_die 4 "--role and --rules must be files"
   case "$model$effort" in *[!A-Za-z0-9._\[\]-]*) hm_die 4 "bad model or effort" ;; esac
+  case "$model" in -*) hm_die 4 "a model starting with - would be read as an option: $model" ;; esac
+  case "$effort" in -*) hm_die 4 "an effort starting with - would be read as an option: $effort" ;; esac
   if [ -n "$wt" ]; then
     [ -n "$branch" ] && [ -n "$base" ] || hm_die 64 "--worktree needs --branch and --base"
     case "$wt" in /*) ;; *) hm_die 4 "--worktree must be an absolute path" ;; esac
@@ -106,8 +112,8 @@ else
   pane=$(hm_tmux new-session -d -P -F '#{pane_id}' -s "$session" -n "$agent" -c "$cwd" "${envs[@]}" "$cmd") || exit $?
 fi
 socket=$(hm_tmux display-message -p -t "$pane" '#{socket_path}') || exit $?
-register "$pane" "$socket"
-hm-manifest add tmux socket="$socket" pane="$pane" agent="$agent" >/dev/null || exit $?
+hm-manifest add tmux socket="$socket" pane="$pane" agent="$agent" >/dev/null || exit $?   # first: what is on the manifest can be cleaned up
+register "$pane" "$socket" || exit $?
 upsert_team "$(jq -nc --arg n "$agent" --arg p "$pane" --arg s "$socket" --arg m "$model" --arg e "$effort" --arg mode "$mode" \
   --arg wt "$wt" --arg b "$branch" --arg sess "$session" --argjson w "$window" \
   '{name:$n, pane:$p, socket:$s, model:$m, effort:$e, mode:$mode, worktree:$wt, branch:$b, session:$sess, window:$w}')"

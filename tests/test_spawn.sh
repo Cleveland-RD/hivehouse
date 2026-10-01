@@ -3,6 +3,8 @@
 . "$HM_REPO_ROOT/bin/hm-lib.sh"
 t_setup
 r=$(t_repo proj); cd "$r"; echo role > "$T_TMP/impl.md"; echo rules > "$T_TMP/RULES.md"
+# set-environment -g (below) is how a test hands the fake claude its behaviour: hm-spawn passes a pane only what it names
+# (A22), so the server's global environment is the one channel that is not production code.
 # the server starts WITHOUT the machine home, so a pane that has it got it from hm-spawn (A3)
 env -u HIVEMIND_HOME tmux -S "$HM_TMUX_SOCKET" new-session -d -s keep 'sleep 600'
 spawn() { hm-spawn --agent "$1" --role "$T_TMP/impl.md" --rules "$T_TMP/RULES.md" --model sonnet --effort medium --mode auto --still 2 --max-wait 15 "${@:2}"; }
@@ -30,8 +32,8 @@ assert_contains "agent and project handed to the pane" "$screen" "HM_AGENT=impl 
 assert_contains "pickup line sent once idle" "$screen" "Read $r/.hivemind/handoffs/impl.md"
 assert_contains "pickup line names the orchestrator" "$screen" "Report to proj-orchestrator"
 allowed=$(printf '%s\n' "$screen" | grep -A0 'ARGV: Bash(hm-slot status)' | sed 's/^ARGV: //')
-assert_eq "allowed tools are exactly the A16 list" "$allowed" "Bash(hm-slot status) Bash(hm-slot release *) Bash(hm-context *) Bash(hm-gate-verify *) Bash(hm-settings resolve *) Bash(hm-manifest *) Bash(hm-disk *) Bash(git status *) Bash(git log *) Bash(git diff *) Bash(git rev-parse *) Bash(git show *)"
-for banned in hm-spawn hm-rotate hm-self-rotate hm-push hm-cleanup "hm-gate " "hm-slot run" "hm-slot acquire" hm-remote-sync "Bash(*" "Read" "Write"; do
+assert_eq "allowed tools are exactly the A16 list" "$allowed" "Bash(hm-slot status) Bash(hm-slot release *) Bash(hm-context *) Bash(hm-gate-verify *) Bash(hm-settings resolve *) Bash(hm-disk *)"
+for banned in hm-spawn hm-rotate hm-self-rotate hm-push hm-cleanup "hm-gate " "hm-slot run" "hm-slot acquire" hm-remote-sync "Bash(*" "Read" "Write" "Bash(git" "hm-manifest"; do
   case "$allowed" in *"$banned"*) bad "allowed tools must not name $banned" ;; *) ok "allowed tools do not name $banned" ;; esac
 done
 
@@ -53,6 +55,17 @@ pane=$(spawn dlg 2>/dev/null); assert_status "a dialog stops the spawn" $? 5
 assert_eq "no pickup line typed into a dialog" "$(hm_tmux capture-pane -p -J -S - -t "$(jq -r '.agents[]|select(.name=="dlg").pane' .hivemind/team.json)" | grep -c 'Read .*handoffs')" "0"
 hm_tmux set-environment -g -u HM_FAKE_CLAUDE
 
+# model and effort are not options to claude
+spawn m1 --model -x >/dev/null 2>&1; assert_status "a model starting with - refused" $? 4
+hm-spawn --agent m2 --role "$T_TMP/impl.md" --rules "$T_TMP/RULES.md" --model sonnet --effort --dangerous --mode auto >/dev/null 2>&1; assert_status "an effort starting with - refused" $? 4
+
+# the manifest is written before the registry, so a failed registry write still leaves the pane cleanable
+mkdir -p "$(hm_registry_dir)"; chmod 555 "$(hm_registry_dir)"
+spawn late >/dev/null 2>&1; late_rc=$?
+chmod 755 "$(hm_registry_dir)"
+[ "$late_rc" -ne 0 ] && ok "a failed registry write fails the spawn" || bad "a failed registry write was ignored"
+assert_eq "...and the pane is on the manifest" "$(hm-manifest list --kind tmux | jq -r 'select(.agent=="late")|.agent')" "late"
+
 # register-self (F1): the orchestrator's own pane, no window, no claude, and never on the manifest
 tmux_o=$(hm_tmux new-session -d -s orch -c "$r" -P -F '#{pane_id}' -e "HIVEMIND_HOME=$HIVEMIND_HOME" "hm-spawn --self --agent orchestrator --window 200000 >$T_TMP/self.out 2>&1; sleep 30")
 sleep 2
@@ -69,4 +82,9 @@ assert_eq "self: idempotent per agent (one orchestrator entry)" "$(jq '[.agents[
 assert_eq "self: second call moves the entry to the calling pane" "$(jq -r '.agents[]|select(.name=="orchestrator")|.pane' .hivemind/team.json)" "$tmux_o2"
 hm-spawn --self --agent orchestrator --window 1 >/dev/null 2>&1; assert_status "self outside tmux refused" $? 2
 hm-spawn --self --agent orchestrator --window 1 --model m >/dev/null 2>&1; assert_status "self takes no spawn arguments" $? 64
+# --self for a name that belongs to a spawned pane is refused (it would re-point a managed agent at the caller)
+hm_tmux new-session -d -s orchx -c "$r" -e "HIVEMIND_HOME=$HIVEMIND_HOME" "hm-spawn --self --agent impl --window 1 >$T_TMP/selfx.out 2>&1; echo rc=\$? >>$T_TMP/selfx.out; sleep 30"
+sleep 2
+assert_contains "self refused for a managed agent's name" "$(cat "$T_TMP/selfx.out")" "rc=4"
+assert_eq "...and impl's pane is unchanged" "$(jq -r '.agents[]|select(.name=="impl").pane' .hivemind/team.json)" "$(hm-manifest list --kind tmux | jq -r 'select(.agent=="impl")|.pane')"
 cd /; t_teardown; t_done
