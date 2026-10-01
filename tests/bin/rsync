@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# Stand-in for rsync in tests: strips "testhost:" and runs the real rsync locally. No network.
+[ "${HM_FAKE_SSH:-up}" = down ] && exit 255
+out=(); for a in "$@"; do case "$a" in testhost:*) out+=("${a#testhost:}") ;; *) out+=("$a") ;; esac; done
+[ -z "${HM_FAKE_LOG:-}" ] || printf 'rsync: %s\n' "${out[*]}" >> "$HM_FAKE_LOG"
+exec /usr/bin/rsync "${out[@]}"

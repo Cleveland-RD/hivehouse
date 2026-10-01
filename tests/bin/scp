@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# Stand-in for scp in tests: strips "testhost:" and copies locally. No network.
+[ "${HM_FAKE_SSH:-up}" = down ] && exit 255
+args=(); for a in "$@"; do case "$a" in -o|-p) ;; esac; args+=("$a"); done
+out=(); skip=0; for a in "$@"; do
+  if [ "$skip" = 1 ]; then skip=0; continue; fi
+  case "$a" in -o) skip=1 ;; -*) ;; testhost:*) out+=("${a#testhost:}") ;; *:*) echo "fake scp: refusing host in '$a'" >&2; exit 255 ;; *) out+=("$a") ;; esac
+done
+[ -z "${HM_FAKE_LOG:-}" ] || printf 'scp: %s\n' "${out[*]}" >> "$HM_FAKE_LOG"
+exec /bin/cp -- "${out[@]}"

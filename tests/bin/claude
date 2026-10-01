@@ -6,6 +6,11 @@
 # on the input line), bare (reads with no prompt at all), busy (never still), ticking (a prompt that keeps being
 # redrawn, so never still). The variable reaches a pane through tmux -e, never inherited.
 # The prompt box is what Claude Code 2.1.x draws: a rule, "❯" + U+00A0 + a dim placeholder, a rule, a footer.
+# the remote-host queries hm-remote-sync makes (no model, no prompt): version, and the plugin's install path and version
+if [ "${1:-}" = --version ]; then echo "2.1.300 (Claude Code)"; exit 0; fi
+if [ "${1:-}" = plugin ] && [ "${2:-}" = list ]; then
+  jq -nc --arg p "$(cd "$(dirname "$0")/../.." && pwd -P)" --arg v "${HM_FAKE_PLUGIN_VERSION:-0.1.0}" '[{id:"hivemind@hivemind",version:$v,installPath:$p}]'; exit 0
+fi
 for a in "$@"; do printf 'ARGV: %s\n' "$a"; done
 printf 'ENV: HM_AGENT=%s HM_PROJECT=%s HIVEMIND_HOME=%s HM_TMUX_SOCKET=%s\n' "${HM_AGENT:-}" "${HM_PROJECT:-}" "${HIVEMIND_HOME:-}" "${HM_TMUX_SOCKET:-}"
 RULE='────────────────────────────── fake ──'
