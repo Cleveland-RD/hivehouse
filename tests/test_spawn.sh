@@ -78,6 +78,11 @@ ghost=$(hm_tmux new-session -d -s ghost -c "$r" -P -F '#{pane_id}' 'sleep 30')
 (cd "$r" && PATH="$T_TMP/shim:$PATH" TMUX_PANE="$ghost" hm-spawn --self --agent ghostly --window 1 >/dev/null 2>&1); assert_status "--self on a pane whose process cannot be read fails" $? 1
 [ -e "$(hm_registry_dir)/$(hm_pane_key "$HM_TMUX_SOCKET" "$ghost").json" ] && bad "a registry file without identity was written" || ok "...and no registry file was written"
 
+# the pane's own process is claude, whatever shell tmux runs the command with: here a shell that never execs its last command
+printf '#!/bin/bash\nif [ "$1" = -c ]; then exec bash -c "$2; :"; fi\nexec bash "$@"\n' > "$T_TMP/forksh"; chmod +x "$T_TMP/forksh"
+hm_tmux set-option -g default-shell "$T_TMP/forksh"; fpane=$(spawn fk 2>/dev/null); hm_tmux set-option -gu default-shell
+fpid=$(hm_pane_pid "$HM_TMUX_SOCKET" "$fpane"); hm_is_claude "$fpid" && ok "a spawned pane's own process is claude even under a shell that forks" || bad "the pane's process is $(ps -o args= -p "$fpid"), not claude"
+
 # a spawned agent's SessionStart hook writes its session (its pane process is Claude), and a nested Claude below it does not
 hm_tmux set-environment -g HM_FAKE_CLAUDE hook; hpane=$(spawn hk 2>/dev/null); hm_tmux set-environment -g -u HM_FAKE_CLAUDE
 sleep 6

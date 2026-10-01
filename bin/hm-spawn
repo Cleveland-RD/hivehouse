@@ -118,7 +118,9 @@ if [ ! -f "$STATE/handoffs/$agent.md" ]; then
 fi
 
 session=${session:-hm-$(hm_project_key "$ROOT")}
-cmd=$(printf '%q ' claude --name "$project-$agent" --model "$model" --effort "$effort" --permission-mode "$mode" --allowedTools "$ALLOWED")
+# exec: the pane's own process must BE claude (the hook's one rule for a spawned agent), not a shell that happens to exec its last
+# command; a shell that does not (fish, a startup file that sets a trap, `cmd; :`) would otherwise stay as the pane's process
+cmd="exec $(printf '%q ' claude --name "$project-$agent" --model "$model" --effort "$effort" --permission-mode "$mode" --allowedTools "$ALLOWED")"
 envs=(-e "HM_AGENT=$agent" -e "HM_PROJECT=$ROOT" -e "HIVEMIND_HOME=$(hm_home)")
 [ -n "${HM_TMUX_SOCKET:-}" ] && envs+=(-e "HM_TMUX_SOCKET=$HM_TMUX_SOCKET")
 if hm_tmux has-session -t "=$session" 2>/dev/null; then
