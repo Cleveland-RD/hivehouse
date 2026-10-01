@@ -205,6 +205,10 @@ hm_write_session() {  # hm_write_session <project root> <agent> <session id> <tr
 hm_pickup_line() {  # hm_pickup_line <project name> <project root> <agent>
   if [ "$(hm_self_entry "$2" | jq -r '.name // empty' 2>/dev/null)" = "$3" ]; then
     printf 'You are %s. Read %s/.hivemind/handoffs/%s.md from the top: its START HERE block is your prompt.' "$(hm_orchestrator_name "$2")" "$2" "$3"
+    # the owner's output style, when installed, is read again after every clear (a /clear wipes it with the rest)
+    local style; style=$(hm_adhd_skill 2>/dev/null) || return 0
+    if hm_is_typed_path "$style"; then printf ' Read %s and follow it for every message to the owner.' "$style"
+    else echo "hivemind: the i-have-adhd path is not one hivemind will type, so the pickup line leaves it out: $style" >&2; fi
     return
   fi
   printf 'You are %s-%s. Read %s/.hivemind/handoffs/%s.md from the top: its START HERE block is your prompt, and %s/.hivemind/team/%s/ holds your role and the rules. Report to %s. Wait for its first message before any work.' \
@@ -238,6 +242,26 @@ hm_session_transcript() {  # hm_session_transcript <session id>: the one <id>.js
   m=$(find "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/projects" -mindepth 2 -maxdepth 2 -type f -name "$1.jsonl" 2>/dev/null)
   n=$(printf '%s' "$m" | grep -c .)
   [ "$n" -eq 1 ] && printf '%s\n' "$m"
+}
+# The i-have-adhd output style (an optional companion plugin): its SKILL.md when Claude Code lists a plugin of that name,
+# from any marketplace, as enabled and the file is there. Reads `claude plugin list --json` and tests the file, nothing
+# else; never installs, enables or switches it on. When its always-on flag exists the plugin already applies itself to
+# every session, so it is not loaded a second time. Prints the path, or fails.
+hm_adhd_skill() {
+  local flag="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/.i-have-adhd-always" d
+  if [ -e "$flag" ]; then echo "hivemind: i-have-adhd is always on ($flag) and applies itself; not loaded again" >&2; return 1; fi
+  while IFS= read -r d; do
+    [ -n "$d" ] && [ -f "$d/skills/i-have-adhd/SKILL.md" ] && { printf '%s\n' "$d/skills/i-have-adhd/SKILL.md"; return 0; }
+  done <<EOF2
+$(claude plugin list --json 2>/dev/null | jq -r '.[]? | select(((.id // "") | startswith("i-have-adhd@")) and .enabled == true) | .installPath // empty' 2>/dev/null)
+EOF2
+  return 1
+}
+# A path hivemind will type into a pane: one line of letters, digits, '/', '.', '_', '-' and space, at most 256 characters.
+hm_is_typed_path() {  # hm_is_typed_path <path>: 0 when it is one
+  local chars="${HM_LOWER}${HM_UPPER}${HM_DIGITS}/._ -"
+  case "$1" in ''|*[!$chars]*) return 1 ;; esac
+  [ "${#1}" -le 256 ]
 }
 hm_self_entry() {  # hm_self_entry <project root>: the team.json entry hm-spawn --self wrote (only it records a Claude process), or nothing
   jq -c '[.agents[]? | select((.claude_pid // "") != "")][0] // empty' "$1/.hivemind/team.json" 2>/dev/null

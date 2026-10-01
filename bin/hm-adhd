@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# The owner's i-have-adhd output style, when it is installed and enabled: prints its SKILL.md for the orchestrator to read
+# and follow in every message to the owner. hivemind never installs or enables it (hm_adhd_skill reads only
+# `claude plugin list --json` and tests one file). Exit 0 printed the path, 1 there is none to use.
+set -u
+. "$(dirname "$0")/hm-lib.sh"
+hm_adhd_skill

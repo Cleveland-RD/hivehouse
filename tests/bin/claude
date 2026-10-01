@@ -7,9 +7,12 @@
 # redrawn, so never still), hook (runs the SessionStart hook as a Claude would, then idle), nested (starts a second Claude
 # below this one that runs the hook, as `claude -p` from an agent's own Bash does, then idle). The variable reaches a pane through tmux -e, never inherited.
 # The prompt box is what Claude Code 2.1.x draws: a rule, "❯" + U+00A0 + a dim placeholder, a rule, a footer.
-# the remote-host queries hm-remote-sync makes (no model, no prompt): version, and the plugin's install path and version
+# the remote-host queries hm-remote-sync makes (no model, no prompt): version, and the plugin's install path and version;
+# HM_FAKE_PLUGIN_LIST names a file to list instead, and HM_FAKE_PLUGIN_CALLS a file each `plugin list` call is logged to
 if [ "${1:-}" = --version ]; then echo "2.1.300 (Claude Code)"; exit 0; fi
 if [ "${1:-}" = plugin ] && [ "${2:-}" = list ]; then
+  [ -z "${HM_FAKE_PLUGIN_CALLS:-}" ] || printf '%s\n' "$*" >> "$HM_FAKE_PLUGIN_CALLS"
+  if [ -n "${HM_FAKE_PLUGIN_LIST:-}" ]; then cat "$HM_FAKE_PLUGIN_LIST"; exit 0; fi   # a test's own listing
   jq -nc --arg p "$(cd "$(dirname "$0")/../.." && pwd -P)" --arg v "${HM_FAKE_PLUGIN_VERSION:-0.1.0}" '[{id:"hivemind@hivemind",version:$v,installPath:$p}]'; exit 0
 fi
 for a in "$@"; do printf 'ARGV: %s\n' "$a"; done
