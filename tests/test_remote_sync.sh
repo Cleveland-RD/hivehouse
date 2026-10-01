@@ -165,6 +165,24 @@ assert_eq "...and no temporary file is left" "$(ls -A "$rr2/.hivemind/tmp" | gre
 rm -f "$rr2/.hivemind/tmp/.env.remote"
 sync secret testhost "$rr2" .hivemind/tmp/.env.remote >/dev/null 2>&1; assert_status "a clean remote root still takes the secret" $? 0
 
+# memory: a remote symlink is a conflict, never an absent file whose copy lands on the link's target
+mkdir -p "$T_TMP/rmem2" "$T_TMP/memout"; ln -s "$T_TMP/memout/target" "$T_TMP/rmem2/one.md"
+out=$(sync memory testhost "$r/mem" "$T_TMP/rmem2" 2>&1); assert_status "a remote symlink (dangling) in the memory dir is a conflict, exit 1" $? 1
+assert_contains "...named" "$out" "conflict one.md"
+[ ! -e "$T_TMP/memout/target" ] && ok "...and nothing was written through the link" || bad "memory wrote through a remote symlink"
+# files: a directory that is a symlink out of the root, on either side, is refused
+mkdir -p "$T_TMP/filesout"; rr3=$(t_repo remote3); ln -s "$T_TMP/filesout" "$rr3/src"
+LABEL="files: a remote parent directory is a symlink out of the root"; refused 4 files testhost "$rr3" "$T_TMP/list"
+assert_eq "...and nothing was written outside the root" "$(ls -A "$T_TMP/filesout" | wc -l | tr -d ' ')" "0"
+mkdir -p "$T_TMP/localout"; echo id > "$T_TMP/localout/id"; ln -s "$T_TMP/localout" docs; printf 'docs/id\n' > "$T_TMP/lnl"
+LABEL="files: a local parent directory is a symlink out of the repo"; refused 4 files testhost "$rr" "$T_TMP/lnl"
+[ ! -e "$rr/docs/id" ] && ok "...and nothing was shipped" || bad "a file through a local symlinked directory was shipped"
+rm docs
+# branches: the bundle never lands outside the root either
+rr4=$(t_repo remote4); ln -s "$T_TMP/filesout" "$rr4/.hivemind"
+LABEL="branches: .hivemind on the remote is a symlink out of the root"; refused 4 branches testhost "$rr4" feat/one
+assert_eq "...and no bundle was written outside the root" "$(ls -A "$T_TMP/filesout" | wc -l | tr -d ' ')" "0"
+
 # ---- common --------------------------------------------------------------------------------------------------------
 sync check testhost --min-gb 0 --plugin-version 0.1.0 >/dev/null
 mkdir "$T_TMP/norepo"; (cd "$T_TMP/norepo" && hm-remote-sync check testhost --min-gb 0 --plugin-version 0.1.0 >/dev/null 2>&1); assert_status "outside a repo" $? 2

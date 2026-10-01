@@ -111,12 +111,12 @@ branches)
   reach; need_remote_root "$rroot"
   rrun git -C "$rroot" rev-parse --git-dir >/dev/null 2>&1 || hm_die 4 "$rroot is not a git repository on $host"
   mkdir -p "$STATE/tmp"; tmpd=$(mktemp -d "$STATE/tmp/bundle.XXXXXX") || exit 1
-  rbundle="$rroot/.hivemind/tmp/hm-$$.bundle"
+  bdir=$(rsafe_dir "$rroot" .hivemind/tmp) || exit $?
+  rbundle="$bdir/hm-$$.bundle"
   cleanup() { rm -rf "$tmpd"; rrun rm -f "$rbundle" >/dev/null 2>&1; }; trap cleanup EXIT
   refs=(); for b in "${list[@]}"; do refs+=("refs/heads/${b}"); done
   git -C "$ROOT" bundle create "$tmpd/b.bundle" "${refs[@]}" >/dev/null 2>&1 || hm_die 4 "could not bundle: ${list[*]}"
   git -C "$ROOT" bundle verify "$tmpd/b.bundle" >/dev/null 2>&1 || hm_die 4 "the bundle did not verify"
-  rrun mkdir -p "$rroot/.hivemind/tmp" || unreachable
   hm_scp "$tmpd/b.bundle" "$host:$rbundle" >/dev/null 2>&1 || unreachable
   bad=0
   for b in "${list[@]}"; do
@@ -133,15 +133,17 @@ files)
   [ $# -eq 2 ] || hm_die 64 "$USAGE"
   rroot="$1"; lf="$2"
   [ -f "$lf" ] || hm_die 4 "no such list file: $lf"
-  entries=(); while IFS= read -r e || [ -n "$e" ]; do
+  rootreal=$(cd "$ROOT" && pwd -P); entries=(); while IFS= read -r e || [ -n "$e" ]; do
     [ -n "$e" ] || continue
     rel_ok "$e" || hm_die 4 "list entry refused (must be relative, no .., not starting with -): $e"
     [ ! -L "$ROOT/$e" ] || hm_die 4 "list entry is a symlink: $e"
+    case "$(cd "$ROOT/$(dirname "$e")" 2>/dev/null && pwd -P)/" in "$rootreal"/*) ;; *) hm_die 4 "list entry is under a directory that leaves the repo: $e" ;; esac
     [ -f "$ROOT/$e" ] || hm_die 4 "list entry is not a file here: $e"
     entries+=("$e")
   done < "$lf"
   [ ${#entries[@]} -gt 0 ] || hm_die 4 "the list is empty"
   reach; need_remote_root "$rroot"
+  for d in $(printf '%s\n' "${entries[@]}" | while IFS= read -r e; do dirname "$e"; done | sort -u); do rsafe_dir "$rroot" "$d" >/dev/null || exit $?; done
   printf '%s\n' "${entries[@]}" > "$STATE/remote.files.$$"
   hm_rsync --files-from="$STATE/remote.files.$$" -- "$ROOT/" "$host:$rroot/" >/dev/null 2>&1; rc=$?
   rm -f "$STATE/remote.files.$$"
@@ -168,7 +170,8 @@ memory)
   bad=0
   for n in "${names[@]+"${names[@]}"}"; do
     a=$(sha_local "$ldir/$n"); b=$(sha_remote "$rdir/$n")
-    if [ -z "$b" ]; then hm_scp "$ldir/$n" "$host:$rdir/$n" >/dev/null 2>&1 || unreachable; echo "copied $n"
+    if rrun test -L "$rdir/$n"; then echo "conflict $n (a symlink there); the remote file was not overwritten"; bad=1   # absent is never read through a link
+    elif [ -z "$b" ]; then hm_scp "$ldir/$n" "$host:$rdir/$n" >/dev/null 2>&1 || unreachable; echo "copied $n"
     elif [ "$a" = "$b" ]; then echo "same $n"
     else echo "conflict $n (here ${a:0:12}, there ${b:0:12}); the remote file was not overwritten"; bad=1; fi
   done
