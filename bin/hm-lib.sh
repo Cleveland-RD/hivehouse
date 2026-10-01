@@ -87,3 +87,31 @@ hm_lock_release() {  # hm_lock_release <lock> <pid>: removes the lock only when 
   [ -n "$hp" ] && [ "$hp" = "$2" ] && [ "$hl" = "$(hm_lstart "$2")" ] || return 1
   rm -rf "$1"
 }
+
+# ---- idle detection ------------------------------------------------------------------------------------------------
+# TIED TO THE CLAUDE CODE TERMINAL UI. When a release changes how the input prompt is drawn or how a dialog is worded,
+# update HM_DIALOG_TEXT (any of these in the pane means a person must answer) and the prompt pattern in
+# hm_pane_idle_text. A pane is idle when it is still, its last lines show an empty input prompt, and no dialog is up.
+HM_DIALOG_TEXT=("Do you trust" "Yes, proceed" "Esc to cancel" "Do you want to" "Allow this" "Press Enter to continue")
+hm_pane_idle_text() {  # reads a pane's text on stdin: 0 when it shows an empty prompt and no dialog, 1 when it shows
+  local text p     # no prompt, 3 when a dialog is up
+  text=$(cat)
+  for p in "${HM_DIALOG_TEXT[@]}"; do case "$text" in *"$p"*) return 3 ;; esac; done
+  printf '%s\n' "$text" | grep -v '^[[:space:]]*$' | tail -6 | grep -Eq '^[│| ]*(>|❯)[ │|]*$'
+}
+# wait_idle <pane> <seconds still> <max seconds>: 0 idle, 1 timed out, 3 timed out with a dialog on screen (the caller
+# tells the orchestrator; nothing here ever types into a pane).
+wait_idle() {
+  local prev="" cur text still=0 waited=0 rc=1
+  while [ "$waited" -lt "$3" ]; do
+    text=$(hm_tmux capture-pane -p -t "$1" 2>/dev/null) || return 1
+    cur=$(printf '%s' "$text" | shasum)
+    if [ "$cur" = "$prev" ]; then still=$((still + 1)); else still=0; fi
+    prev="$cur"
+    printf '%s\n' "$text" | hm_pane_idle_text; rc=$?
+    [ "$still" -ge "$2" ] && [ "$rc" -eq 0 ] && return 0
+    sleep 1; waited=$((waited + 1))
+  done
+  [ "$rc" -eq 3 ] && return 3
+  return 1
+}

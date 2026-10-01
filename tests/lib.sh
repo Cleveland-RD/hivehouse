@@ -2,7 +2,7 @@
 # Shared test helpers. Every test runs in its own scratch dirs and its own tmux server.
 set -u
 HM_REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
-export PATH="$HM_REPO_ROOT/bin:$PATH"
+export PATH="$HM_REPO_ROOT/tests/bin:$HM_REPO_ROOT/bin:$PATH"   # the fake claude first, so no test can start a real one
 FAILS=0
 T_TMP=""
 t_setup() {

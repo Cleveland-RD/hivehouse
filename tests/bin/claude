@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+# Stand-in for `claude` in tests (tests/lib.sh puts this directory first on PATH). Prints its argv, one per line, then
+# behaves as HM_FAKE_CLAUDE says: idle (default: an empty input prompt, then reads), dialog (a trust dialog, then reads),
+# bare (reads with no prompt at all), busy (never still), dialogprompt (a dialog above an empty prompt), ticking (an
+# empty prompt that keeps being redrawn, so never still). The variable reaches a pane through tmux -e, never inherited.
+for a in "$@"; do printf 'ARGV: %s\n' "$a"; done
+case "${HM_FAKE_CLAUDE:-idle}" in
+  busy) while :; do date; sleep 0.3; done ;;
+  dialog) printf 'Do you trust the files in this folder?\n  1. Yes, proceed\n  2. No\nEsc to cancel\n'; cat ;;
+  bare) cat ;;
+  dialogprompt) printf 'Do you trust the files in this folder?\n  1. Yes, proceed\nEsc to cancel\n\n❯ \n'; cat ;;
+  ticking) while :; do date; printf '❯ \n'; sleep 0.3; done ;;
+  *) printf '\n❯ \n'; cat ;;
+esac

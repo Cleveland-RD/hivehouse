@@ -27,4 +27,15 @@ assert_eq "pane key is stable" "$(hm_pane_key /s %1)" "$(hm_pane_key /s %1)"
 [ "$(hm_pane_key /s %1)" != "$(hm_pane_key /s %2)" ] && ok "pane keys differ by pane" || bad "pane keys differ by pane"
 assert_eq "json_get reads a field" "$(echo '{"a":{"b":7}}' > "$T_TMP/j"; hm_json_get "$T_TMP/j" .a.b)" "7"
 assert_eq "json_get empty when absent" "$(hm_json_get "$T_TMP/j" .zz)" ""
+# wait_idle: still, an empty prompt and no dialog; a pane that is still but not idle is never reported idle
+new_pane() {  # new_pane <fake claude behaviour> -> pane id running the fake claude
+  hm_tmux new-session -d -s "t$RANDOM" -x 200 -y 50 -P -F '#{pane_id}' -e "HM_FAKE_CLAUDE=$1" "claude --name probe"
+}
+pane=$(new_pane idle); wait_idle "$pane" 2 20; assert_status "idle pane is idle" $? 0
+assert_contains "fake claude printed its argv" "$(hm_tmux capture-pane -p -t "$pane")" "ARGV: --name"
+pane=$(new_pane dialog); wait_idle "$pane" 2 6; assert_status "a dialog is never idle, and is told apart" $? 3
+pane=$(new_pane bare); wait_idle "$pane" 2 6; assert_status "still with no prompt is not idle" $? 1
+pane=$(new_pane dialogprompt); wait_idle "$pane" 2 6; assert_status "a dialog above an empty prompt is not idle" $? 3
+pane=$(new_pane ticking); wait_idle "$pane" 2 5; assert_status "an empty prompt that keeps changing is not idle" $? 1
+pane=$(new_pane busy); wait_idle "$pane" 2 5; assert_status "a busy pane is not idle" $? 1
 t_done
