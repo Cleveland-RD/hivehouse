@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# Stand-in for df in tests: with HM_FAKE_DF set, prints a header and one line whose "Available" column is that text, so a test
+# can hand hm-remote-sync a hostile value; without it, the real df.
+if [ -n "${HM_FAKE_DF:-}" ]; then printf 'Filesystem 1024-blocks Used Available Capacity Mounted\nfake 1 1 %s 1%% /\n' "$HM_FAKE_DF"; exit 0; fi
+exec /bin/df "$@"

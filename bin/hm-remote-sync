@@ -60,8 +60,8 @@ check)
   [ -n "$want" ] || hm_die 64 "$USAGE"
   reach
   bad=0; say() { printf '%s\n' "$*"; }; flag() { say "FINDING: $*"; bad=1; }
-  kb=$(rrun sh -c 'df -Pk "$HOME" | tail -1' | awk '{print $4}'); gb=$(( ${kb:-0} / 1024 / 1024 ))
-  say "free: ${gb} GB on $host"; [ "$gb" -ge "$mingb" ] || flag "free disk ${gb} GB is below $mingb GB"
+  kb=$(rrun sh -c 'df -Pk "$HOME" | tail -1' | awk '{print $4}')
+  case "$kb" in ''|*[!0-9]*) flag "the free space on $host could not be read"; gb=0 ;; *) gb=$(( kb / 1024 / 1024 )); say "free: ${gb} GB on $host"; [ "$gb" -ge "$mingb" ] || flag "free disk ${gb} GB is below $mingb GB" ;; esac   # digits only: the remote's text never reaches bash arithmetic
   cv=$(rrun claude --version 2>/dev/null | clean | head -1); say "claude: ${cv:-none}"; [ -n "$cv" ] || flag "claude is not installed on $host"
   plug=$(rrun claude plugin list --json 2>/dev/null | jq -c '[.[] | select((.id // "") | startswith("hivemind@"))][0] // empty' 2>/dev/null)
   ver=$(printf '%s' "$plug" | jq -r '.version // empty' 2>/dev/null | clean); ip=$(printf '%s' "$plug" | jq -r '.installPath // empty' 2>/dev/null)

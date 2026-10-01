@@ -138,6 +138,11 @@ LABEL="memory: a remote dir with a space"; refused 4 memory testhost "$r/mem" "$
 LABEL="secret: a remote root with a space"; refused 4 secret testhost "$T_TMP/sp ace" .hivemind/tmp/.env.remote
 printf 'src/a b.txt\n' > "$T_TMP/spl"; echo s > "src/a b.txt"; LABEL="files: a list entry with a space"; refused 4 files testhost "$rr" "$T_TMP/spl"
 
+# a hostile df answer must never reach bash arithmetic (a[$(cmd)] runs the command)
+rm -f "$T_TMP/PWNED"; HM_FAKE_DF="a[\$(touch\${IFS}$T_TMP/PWNED)]" sync check testhost --min-gb 0 --plugin-version 0.1.0 >"$T_TMP/out" 2>&1; assert_status "a non-numeric free-space answer is a finding, exit 1" $? 1
+[ ! -e "$T_TMP/PWNED" ] && ok "...and no command in it ran" || bad "a command inside the df answer ran locally"
+HM_FAKE_DF=1048576 sync check testhost --min-gb 1 --plugin-version 0.1.0 >/dev/null 2>&1; assert_status "a numeric answer is still used (1 GB meets --min-gb 1)" $? 0
+
 # ---- common --------------------------------------------------------------------------------------------------------
 sync check testhost --min-gb 0 --plugin-version 0.1.0 >/dev/null
 mkdir "$T_TMP/norepo"; (cd "$T_TMP/norepo" && hm-remote-sync check testhost --min-gb 0 --plugin-version 0.1.0 >/dev/null 2>&1); assert_status "outside a repo" $? 2
