@@ -183,6 +183,15 @@ rr4=$(t_repo remote4); ln -s "$T_TMP/filesout" "$rr4/.hivemind"
 LABEL="branches: .hivemind on the remote is a symlink out of the root"; refused 4 branches testhost "$rr4" feat/one
 assert_eq "...and no bundle was written outside the root" "$(ls -A "$T_TMP/filesout" | wc -l | tr -d ' ')" "0"
 
+# secret: a local parent directory that is a symlink out of the project is refused (only the leaf was checked)
+mkdir -p "$T_TMP/secout"; echo 'OUT=1' > "$T_TMP/secout/.env.remote"; mv .hivemind/tmp "$T_TMP/tmp.keep"; ln -s "$T_TMP/secout" .hivemind/tmp
+rr5=$(t_repo remote5); LABEL="secret: the local .hivemind/tmp is a symlink out of the project"; refused 4 secret testhost "$rr5" .hivemind/tmp/.env.remote
+[ ! -e "$rr5/.hivemind/tmp/.env.remote" ] && ok "...and the outside file was not shipped" || bad "a file outside the project was shipped"
+rm .hivemind/tmp; mv "$T_TMP/tmp.keep" .hivemind/tmp
+LABEL="memory: the host drops while looking for a symlink"
+# memory: an unreachable host while looking for a symlink is unreachable (5), not a conflict
+HM_FAKE_DOWN_ON="test -L" refused 5 memory testhost "$r/mem" "$T_TMP/rmem"
+
 # ---- common --------------------------------------------------------------------------------------------------------
 sync check testhost --min-gb 0 --plugin-version 0.1.0 >/dev/null
 mkdir "$T_TMP/norepo"; (cd "$T_TMP/norepo" && hm-remote-sync check testhost --min-gb 0 --plugin-version 0.1.0 >/dev/null 2>&1); assert_status "outside a repo" $? 2

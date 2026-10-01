@@ -5,6 +5,7 @@
 #   files    <host> <remote root> <list file>
 #   memory   <host> <local memory dir> <remote memory dir>
 #   secret   <host> <remote root> <relative path under .hivemind/tmp>
+# Remote paths, list entries and secret paths use only [A-Za-z0-9._/@+_-] (rsync's remote shell splits on a space or ;); anything else is refused (exit 4).
 # Every ssh, scp and rsync goes through hm_ssh, hm_scp, hm_rsync below, which call the tool by name: tests put shims first
 # on PATH, so no test uses a network. After `check`, remote hivemind executables are called by the absolute install path
 # it recorded (A6). Exit: 0 ok, 1 findings (mismatch, conflict, version, space), 2 no project, 3 .hivemind tracked,
@@ -51,6 +52,10 @@ need_remote_root() {  # need_remote_root <path>: absolute, and an existing direc
   rrun test -d "$1" || { [ $? -eq 255 ] && unreachable; hm_die 4 "no such directory on $host: $1"; }
 }
 
+local_parent_ok() {  # local_parent_ok <relative path>: its directory, resolved, lies under the resolved project root (a symlinked directory out of the repo is refused)
+  local root; root=$(cd "$ROOT" && pwd -P)
+  case "$(cd "$ROOT/$(dirname "$1")" 2>/dev/null && pwd -P)/" in "$root"/*) ;; *) hm_die 4 "$1 is under a directory that leaves the repo" ;; esac
+}
 rsafe_dir() {  # rsafe_dir <remote root> <relative dir or .>: walks the directory on the remote, creating what is missing, and refuses a
   # symlink or a non-directory at any step; prints the resolved directory, which must lie under the resolved root (R1)
   local out rc
@@ -133,11 +138,11 @@ files)
   [ $# -eq 2 ] || hm_die 64 "$USAGE"
   rroot="$1"; lf="$2"
   [ -f "$lf" ] || hm_die 4 "no such list file: $lf"
-  rootreal=$(cd "$ROOT" && pwd -P); entries=(); while IFS= read -r e || [ -n "$e" ]; do
+  entries=(); while IFS= read -r e || [ -n "$e" ]; do
     [ -n "$e" ] || continue
     rel_ok "$e" || hm_die 4 "list entry refused (must be relative, no .., not starting with -): $e"
     [ ! -L "$ROOT/$e" ] || hm_die 4 "list entry is a symlink: $e"
-    case "$(cd "$ROOT/$(dirname "$e")" 2>/dev/null && pwd -P)/" in "$rootreal"/*) ;; *) hm_die 4 "list entry is under a directory that leaves the repo: $e" ;; esac
+    local_parent_ok "$e"
     [ -f "$ROOT/$e" ] || hm_die 4 "list entry is not a file here: $e"
     entries+=("$e")
   done < "$lf"
@@ -170,7 +175,8 @@ memory)
   bad=0
   for n in "${names[@]+"${names[@]}"}"; do
     a=$(sha_local "$ldir/$n"); b=$(sha_remote "$rdir/$n")
-    if rrun test -L "$rdir/$n"; then echo "conflict $n (a symlink there); the remote file was not overwritten"; bad=1   # absent is never read through a link
+    rrun test -L "$rdir/$n"; lrc=$?; [ "$lrc" -ne 255 ] || unreachable
+    if [ "$lrc" -eq 0 ]; then echo "conflict $n (a symlink there); the remote file was not overwritten"; bad=1   # absent is never read through a link
     elif [ -z "$b" ]; then hm_scp "$ldir/$n" "$host:$rdir/$n" >/dev/null 2>&1 || unreachable; echo "copied $n"
     elif [ "$a" = "$b" ]; then echo "same $n"
     else echo "conflict $n (here ${a:0:12}, there ${b:0:12}); the remote file was not overwritten"; bad=1; fi
@@ -185,6 +191,7 @@ secret)
   case "$rel" in .hivemind/tmp/*) ;; *) hm_die 4 "a secret goes under .hivemind/tmp/ only: the remote manifest refuses a file entry elsewhere in the project (A18)" ;; esac
   [ ! -L "$ROOT/$rel" ] || hm_die 4 "the secret is a symlink: $rel"
   [ -f "$ROOT/$rel" ] || hm_die 4 "no such file here: $rel"
+  local_parent_ok "$rel"
   ip=$(install_path) || exit $?
   reach; need_remote_root "$rroot"
   base=$(basename "$rel"); ddir=$(rsafe_dir "$rroot" "$(dirname "$rel")") || exit $?
