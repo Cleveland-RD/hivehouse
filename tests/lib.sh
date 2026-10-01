@@ -58,7 +58,23 @@ t_remove_dirs() {  # t_remove_dirs <run dir>: the run's t_outside_tmp dirs, each
   done < "$1/run.dirs"
   return 0
 }
+t_sweep_stale() {  # a run killed outright ran no teardown: the next t_setup finishes it, from what it recorded alone
+  local d p s
+  for d in "${TMPDIR:-/tmp}"/hmtest.*; do
+    # a dir with no owner record (an older run, or one still being set up) or one not ours is never touched
+    [ -d "$d" ] && [ ! -L "$d" ] && [ -O "$d" ] && [ -f "$d/run.owner" ] || continue
+    IFS=$'\t' read -r p s < "$d/run.owner" || continue
+    [ -n "$p" ] && [ -n "$s" ] || continue      # an owner it cannot judge is treated as alive
+    t_same "$p" "$s" && continue                # its test is still running
+    t_reap "$d"                                 # by recorded pid and start time only: no group, no pattern
+    [ -S "$d/tmux.sock" ] && tmux -S "$d/tmux.sock" kill-server 2>/dev/null
+    t_remove_dirs "$d"
+    rm -rf -- "$d" && echo "  (finished a stopped run's leftovers: $d)" >&2
+  done
+  return 0
+}
 t_setup() {
+  t_sweep_stale
   T_TMP="$(mktemp -d "${TMPDIR:-/tmp}/hmtest.XXXXXX")"; T_TMP="$(cd "$T_TMP" && pwd -P)"
   printf '%s\t%s\n' "$$" "$(t_lstart $$)" > "$T_TMP/run.owner"
   export HIVEMIND_HOME="$T_TMP/home"; mkdir -p "$HIVEMIND_HOME"
