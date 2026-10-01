@@ -78,6 +78,16 @@ ghost=$(hm_tmux new-session -d -s ghost -c "$r" -P -F '#{pane_id}' 'sleep 30')
 (cd "$r" && PATH="$T_TMP/shim:$PATH" TMUX_PANE="$ghost" hm-spawn --self --agent ghostly --window 1 >/dev/null 2>&1); assert_status "--self on a pane whose process cannot be read fails" $? 1
 [ -e "$(hm_registry_dir)/$(hm_pane_key "$HM_TMUX_SOCKET" "$ghost").json" ] && bad "a registry file without identity was written" || ok "...and no registry file was written"
 
+# a spawned agent's SessionStart hook writes its session (its pane process is Claude), and a nested Claude below it does not
+hm_tmux set-environment -g HM_FAKE_CLAUDE hook; hpane=$(spawn hk 2>/dev/null); hm_tmux set-environment -g -u HM_FAKE_CLAUDE
+sleep 6
+assert_eq "a spawned agent's own Claude records its session" "$(jq -r .session_id .hivemind/team/hk/session.json 2>/dev/null)" "sp"
+hm_tmux set-environment -g HM_FAKE_CLAUDE nested; npane=$(spawn nst 2>/dev/null); hm_tmux set-environment -g -u HM_FAKE_CLAUDE
+sleep 6
+[ -e .hivemind/team/nst/session.json ] && bad "a nested Claude overwrote a spawned agent's session" || ok "a nested Claude below a spawned agent writes nothing"
+[ -e "$(hm_registry_dir)/$(hm_pane_key "$HM_TMUX_SOCKET" "$(jq -r '.agents[]|select(.name=="nst").pane' .hivemind/team.json)").json" ] \
+  && ok "...and the agent's registry file stays" || bad "a nested Claude removed the agent's registry file"
+
 # --self runs inside a Claude session: a stand-in whose argv reads as one (an interpreter running a script named claude)
 mkdir -p "$T_TMP/cl"; printf '#!/usr/bin/env bash\nhm-spawn "$@"; echo rc=$? >>"$SELF_OUT"; sleep 30\n' > "$T_TMP/cl/claude"
 noclaude=$(hm_tmux new-session -d -s noclaude -c "$r" -P -F '#{pane_id}' -e "HIVEMIND_HOME=$HIVEMIND_HOME" "hm-spawn --self --agent orchestrator --window 1 >$T_TMP/noclaude.out 2>&1; echo rc=\$? >>$T_TMP/noclaude.out; sleep 30")
