@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+set -u
+. "$(dirname "$0")/hm-lib.sh"
+path="$HOME"; min=0; hook=0
+while [ $# -gt 0 ]; do case "$1" in
+  --path) path="$2"; shift 2 ;; --min-gb) min="$2"; shift 2 ;; --hook) hook=1; shift ;;
+  *) hm_die 64 "usage: hm-disk [--path d] [--min-gb n] [--hook]" ;; esac; done
+kb=$(df -Pk "$path" | awk 'NR==2 {print $4}'); gb=$((kb / 1024 / 1024))
+low=0; [ "$gb" -lt "${min%.*}" ] && low=1
+if [ "$hook" = 1 ]; then
+  [ "$low" = 1 ] && jq -nc --arg m "Free disk is ${gb} GB (below ${min} GB). Run /hivemind:cleanup or hm-cleanup --disk before heavy work." \
+    '{hookSpecificOutput:{hookEventName:"SessionStart",additionalContext:$m}}'
+  exit 0
+fi
+echo "free_gb=$gb path=$path"; exit "$low"
