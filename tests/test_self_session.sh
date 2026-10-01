@@ -1,0 +1,64 @@
+#!/usr/bin/env bash
+# hm-spawn --self records the orchestrator's session: its SessionStart hook ran before the registration existed.
+. "$(dirname "$0")/lib.sh"
+. "$HM_REPO_ROOT/bin/hm-lib.sh"
+t_setup
+r=$(t_repo proj); cd "$r"
+mkdir -p "$CLAUDE_CONFIG_DIR/sessions" "$CLAUDE_CONFIG_DIR/projects/-a-proj" "$CLAUDE_CONFIG_DIR/projects/-b-other"
+cp "$HM_REPO_ROOT/tests/fixtures/transcript.jsonl" "$CLAUDE_CONFIG_DIR/projects/-a-proj/sid-a.jsonl"
+# a Claude stand-in: writes its own session record as Claude Code does, runs hm-spawn --self below itself, then, once told
+# to, runs the SessionStart hook as a /clear would
+mkdir -p "$T_TMP/cl"
+cat > "$T_TMP/cl/claude" <<'EOF'
+#!/usr/bin/env bash
+jq -nc --argjson p $$ --arg s "$SID" '{pid:$p, name:"orch", sessionId:$s}' > "$CLAUDE_CONFIG_DIR/sessions/$$.json"
+hm-spawn "$@" 2>"$OUT.err"; echo "rc=$?" >> "$OUT"
+while [ ! -e "$OUT.go" ]; do sleep 0.2; done
+printf '%s' "$HOOK_IN" | hm-session-hook; echo hooked >> "$OUT"
+exec sleep 30
+EOF
+selfrun() {  # selfrun <out> <session id> [hook input]
+  hm_tmux new-session -d -c "$r" -e "HIVEMIND_HOME=$HIVEMIND_HOME" -e "OUT=$1" -e "SID=$2" -e "HOOK_IN=${3:-}" \
+    "bash $T_TMP/cl/claude --self --agent orchestrator >/dev/null"
+  sleep 2
+}
+sj=.hivemind/team/orchestrator/session.json
+hookin=$(jq -nc --arg t "$T_TMP/after.jsonl" '{session_id:"after-clear", transcript_path:$t, source:"clear"}')
+selfrun "$T_TMP/a.out" sid-a "$hookin"
+assert_contains "--self ran" "$(cat "$T_TMP/a.out")" "rc=0"
+assert_eq "--self records its session" "$(jq -r .session_id $sj)" "sid-a"
+assert_eq "...with the one transcript of that name" "$(jq -r .transcript_path $sj)" "$CLAUDE_CONFIG_DIR/projects/-a-proj/sid-a.jsonl"
+assert_eq "...from --self" "$(jq -r .source $sj)" "self"
+assert_eq "...and nothing on stderr" "$(cat "$T_TMP/a.out.err")" ""
+assert_eq "hm-context now reads the orchestrator" "$(hm-context orchestrator)" "50 (window assumed 200000)"
+assert_eq "...and so does --all" "$(hm-context --all)" "orchestrator 50 (window assumed 200000)"
+# a later /clear: the hook writes it again, as for any agent
+cp "$HM_REPO_ROOT/tests/fixtures/transcript.jsonl" "$T_TMP/after.jsonl"
+touch "$T_TMP/a.out.go"; sleep 2
+assert_contains "the hook ran in the registered Claude" "$(cat "$T_TMP/a.out")" "hooked"
+assert_eq "...and replaced the --self record" "$(jq -r '.session_id + " " + .source' $sj)" "after-clear clear"
+
+# no transcript by that name, or two: nothing written, one warning, and an older session's record is not kept
+selfrun "$T_TMP/b.out" sid-none
+assert_contains "no transcript: --self still registers" "$(cat "$T_TMP/b.out")" "rc=0"
+[ ! -e $sj ] && ok "...the earlier session's record is removed" || bad "a record of another session was kept: $(cat $sj)"
+assert_eq "...and it warns once" "$(grep -c 'no single transcript' "$T_TMP/b.out.err")" "1"
+assert_eq "hm-context: unknown, not another session's level" "$(hm-context --all)" "orchestrator ?"
+cp "$HM_REPO_ROOT/tests/fixtures/transcript.jsonl" "$CLAUDE_CONFIG_DIR/projects/-a-proj/sid-two.jsonl"
+cp "$HM_REPO_ROOT/tests/fixtures/transcript.jsonl" "$CLAUDE_CONFIG_DIR/projects/-b-other/sid-two.jsonl"
+selfrun "$T_TMP/c.out" sid-two
+[ ! -e $sj ] && ok "two transcripts of that name: nothing written" || bad "wrote a record from two transcripts"
+assert_eq "...and it warns once" "$(grep -c 'no single transcript' "$T_TMP/c.out.err")" "1"
+cp "$HM_REPO_ROOT/tests/fixtures/transcript.jsonl" "$CLAUDE_CONFIG_DIR/projects/-a-proj/x.jsonl"
+selfrun "$T_TMP/d.out" '*'
+[ ! -e $sj ] && ok "a session id that is a pattern finds nothing" || bad "a pattern session id matched: $(cat $sj)"
+
+# the one writer keeps its guards for both callers
+hm_write_session "$r" "../evil" s t self; assert_status "a bad agent name is not written" $? 1
+hm_write_session "$r" orchestrator "" t self; assert_status "no session id is not written" $? 1
+mkdir -p .hivemind; echo x > .hivemind/leak; git add -f .hivemind/leak
+hm_write_session "$r" orchestrator s t self; assert_status "a tracked .hivemind is not written to" $? 1
+git rm -qf --cached .hivemind/leak
+hm_write_session "$r" orchestrator s t self; assert_status "otherwise written" $? 0
+[ -z "$(ls .hivemind/team/orchestrator | grep tmp)" ] && ok "...with no temporary file left" || bad "a temporary file was left"
+cd /; t_teardown; t_done

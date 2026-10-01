@@ -188,6 +188,18 @@ hm_owner_statusline() {  # hm_owner_statusline <session cwd>
   return 0
 }
 
+# An agent's session record, .hivemind/team/<agent>/session.json {session_id, transcript_path, source, at}: hm-context reads
+# it. The one writer, for the SessionStart hook and for hm-spawn --self. Never writes for a bad agent name or into a tracked
+# .hivemind; the write is atomic. Returns 1 when nothing was written.
+hm_write_session() {  # hm_write_session <project root> <agent> <session id> <transcript path> <source>
+  local dir="$1/.hivemind/team/$2"
+  hm_is_agent_name "$2" && [ -n "$3" ] || return 1
+  [ -z "$(git -C "$1" ls-files -- .hivemind 2>/dev/null)" ] || return 1
+  mkdir -p "$dir" 2>/dev/null || return 1
+  jq -nc --arg s "$3" --arg t "$4" --arg src "$5" --arg at "$(hm_now)" '{session_id:$s, transcript_path:$t, source:$src, at:$at}' \
+    > "$dir/session.json.tmp$$" 2>/dev/null && mv "$dir/session.json.tmp$$" "$dir/session.json" || { rm -f "$dir/session.json.tmp$$"; return 1; }
+}
+
 # The line that starts (hm-spawn) or restarts (hm-rotate) an agent from its handoff: one text, so they cannot drift.
 hm_pickup_line() {  # hm_pickup_line <project name> <project root> <agent>
   printf 'You are %s-%s. Read %s/.hivemind/handoffs/%s.md from the top: its START HERE block is your prompt, and %s/.hivemind/team/%s/ holds your role and the rules. Report to %s. Wait for its first message before any work.' \
@@ -214,6 +226,13 @@ hm_is_session_name() {  # hm_is_session_name <name>: 0 when it is one
 hm_session_record() {  # hm_session_record <pid> <jq path>
   case "$1" in ''|*[!0-9]*) return 0 ;; esac
   jq -j --arg p "$1" "select((.pid | tostring) == \$p) | $2 // empty" "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/sessions/$1.json" 2>/dev/null
+}
+hm_session_transcript() {  # hm_session_transcript <session id>: the one <id>.jsonl under <config dir>/projects/*/, else fails
+  local m n
+  case "$1" in ''|*[!${HM_LOWER}${HM_UPPER}${HM_DIGITS}-]*) return 1 ;; esac
+  m=$(find "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/projects" -mindepth 2 -maxdepth 2 -type f -name "$1.jsonl" 2>/dev/null)
+  n=$(printf '%s' "$m" | grep -c .)
+  [ "$n" -eq 1 ] && printf '%s\n' "$m"
 }
 # The name agents report to: the --self orchestrator's session name as Claude Code has it now (a /rename after --self is
 # followed), else the name recorded at --self, else <project>-orchestrator. One helper for every text that names it.

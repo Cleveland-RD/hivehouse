@@ -100,6 +100,15 @@ if [ "$self" = 1 ]; then
   [ -n "$oname" ] || { oname=$(hm_session_record "$CLAUDE_PID" .name); hm_is_session_name "$oname" || oname=""; }
   upsert_team "$(jq -nc --arg n "$agent" --arg p "$pane" --arg s "$socket" --argjson w "$window" --arg pp "$PANE_PID" --arg ps "$PANE_STARTED" --arg cp "$CLAUDE_PID" --arg cs "$CLAUDE_STARTED" --arg nf "$oname" \
     '{name:$n, pane:$p, socket:$s, window:$w, pane_pid:$pp, pane_started:$ps} + (if $cp != "" then {claude_pid:$cp, claude_started:$cs} else {} end) + (if $nf != "" then {name_full:$nf} else {} end)')"
+  # Its SessionStart hook ran before this registration existed, so it wrote nothing: the session is recorded here, from Claude
+  # Code's own record of this process. The hook writes it again after a /clear.
+  sid=$(hm_session_record "$CLAUDE_PID" .sessionId)
+  if tp=$(hm_session_transcript "$sid"); then
+    hm_write_session "$ROOT" "$agent" "$sid" "$tp" self || echo "hivemind: could not record $agent's session; hm-context reads ? until its next /clear" >&2
+  else   # a record of another session (an earlier orchestrator's) would be read as this one's
+    [ "$(hm_json_get "$STATE/team/$agent/session.json" .session_id)" = "$sid" ] || rm -f "$STATE/team/$agent/session.json"
+    echo "hivemind: no single transcript found for $agent's session; hm-context reads ? until its next /clear" >&2
+  fi
   echo "$pane"; exit 0
 fi
 
