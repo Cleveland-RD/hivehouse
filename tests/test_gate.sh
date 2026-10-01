@@ -49,6 +49,16 @@ for args in "-- first \"$T\" a" "-- first \"$T\" ../x true" "-- first \"$T\" a..
 done
 hm-gate --log "$LOG" -- unit.tests true lint-all true; assert_status "a step name may hold '.' and '-'" $? 0
 assert_eq "and verifies by its header" "$(hm-gate-verify log "$LOG" --expect unit.tests --commit HEAD)" "GREEN (2 steps)"
+# a step name is ASCII under any locale, at every reader: hm-gate's steps, a log's header and lines, an expected name
+for loc in C en_US.UTF-8; do
+  for n in é Aé ß ｈ; do
+    (export LC_ALL=$loc; hm-gate --log "$T_TMP/loc.log" -- "$n" true 2>/dev/null); assert_status "a step [$n] is refused under $loc" $? 64
+    printf '# hm-gate steps: %s head=%s dirty=0\n%s exit 0\n' "$n" "$head_now" "$n" > "$T_TMP/loc.log"
+    (export LC_ALL=$loc; hm-gate-verify log "$T_TMP/loc.log" >/dev/null 2>&1); assert_status "a log naming step [$n] is red under $loc" $? 1
+    (export LC_ALL=$loc; hm-gate-verify log "$T_TMP/loc.log" --expect "$n" >/dev/null 2>&1); assert_status "an expected [$n] is refused under $loc" $? 64
+  done
+done
+rm -f "$T_TMP/loc.log"
 hm-gate -- x true 2>/dev/null; assert_status "no --log is a usage error" $? 64
 rm -f "$T_TMP/touched"; hm-gate --log "$T_TMP/no/such/dir/g.log" -- first "$T" 2>/dev/null; assert_status "a log that cannot be written is refused before the slot" $? 64
 [ ! -e "$T_TMP/touched" ] && [ ! -d "$LOCK" ] && ok "and nothing ran" || bad "and nothing ran"
