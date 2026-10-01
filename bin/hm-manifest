@@ -55,9 +55,9 @@ valid_value() {  # valid_value <field> <value>
   case "$k" in
     pid|port) case "$v" in ''|*[!0-9]*) hm_die 4 "$k must be a number: $v" ;; esac ;;
     pane) case "$v" in %[0-9]*) case "${v#%}" in *[!0-9]*) hm_die 4 "bad pane id: $v" ;; esac ;; *) hm_die 4 "bad pane id: $v" ;; esac ;;
-    agent) case "$v" in ''|*[!A-Za-z0-9._-]*) hm_die 4 "bad agent name: $v" ;; esac ;;
-    base) case "$v" in ''|-*|*[!A-Za-z0-9._/-]*) hm_die 4 "bad branch name: $v" ;; esac ;;
-    host) case "$v" in ''|-*|*[!A-Za-z0-9._@-]*) hm_die 4 "bad host name: $v" ;; esac ;;
+    agent) case "$v" in ''|*[!${HM_LOWER}${HM_UPPER}${HM_DIGITS}._-]*) hm_die 4 "bad agent name: $v" ;; esac ;;
+    base) hm_is_branch_name "$v" || hm_die 4 "bad branch name: $v" ;;
+    host) hm_is_host_name "$v" || hm_die 4 "bad host name: $v" ;;
   esac
 }
 cmd_add() {

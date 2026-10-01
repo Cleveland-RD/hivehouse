@@ -5,7 +5,7 @@
 #   files    <host> <remote root> <list file>
 #   memory   <host> <local memory dir> <remote memory dir>
 #   secret   <host> <remote root> <relative path under .hivemind/tmp>
-# Remote paths, list entries and secret paths use only [A-Za-z0-9._/@+_-] (rsync's remote shell splits on a space or ;); anything else is refused (exit 4).
+# Remote paths, list entries and secret paths use only ASCII letters, digits and ._/@+_- (rsync's remote shell splits on a space or ;); anything else is refused (exit 4).
 # Every ssh, scp and rsync goes through hm_ssh, hm_scp, hm_rsync below, which call the tool by name: tests put shims first
 # on PATH, so no test uses a network. After `check`, remote hivemind executables are called by the absolute install path
 # it recorded (A6). Exit: 0 ok, 1 findings (mismatch, conflict, version, space), 2 no project, 3 .hivemind tracked,
@@ -19,10 +19,10 @@ case "$sub" in check|branches|files|memory|secret) ;; *) hm_die 64 "$USAGE" ;; e
 
 # ---- validation ----------------------------------------------------------------------------------------------------
 has_ctrl() { printf '%s' "$1" | LC_ALL=C grep -q '[[:cntrl:]]'; }
-safe_chars() { case "$1" in *[!A-Za-z0-9._/@+_-]*) return 1 ;; esac; }   # rsync's remote shell splits on a space or ;, so a remote path is limited to this alphabet
+safe_chars() { case "$1" in *[!${HM_LOWER}${HM_UPPER}${HM_DIGITS}._/@+_-]*) return 1 ;; esac; }   # rsync's remote shell splits on a space or ;, so a remote path is limited to this alphabet
 abs_ok() { case "$1" in /*) ;; *) return 1 ;; esac; safe_chars "$1" || return 1; has_ctrl "$1" && return 1; case "/$1/" in */../*|*/./*) return 1 ;; esac; return 0; }
 rel_ok() { [ -n "$1" ] || return 1; case "$1" in /*|-*) return 1 ;; esac; safe_chars "$1" || return 1; has_ctrl "$1" && return 1; case "/$1/" in */../*|*/./*|*//*) return 1 ;; esac; return 0; }
-case "$host" in ''|-*|*[!A-Za-z0-9._@-]*) hm_die 4 "bad host name: $host" ;; esac
+hm_is_host_name "$host" || hm_die 4 "bad host name: $host"
 if [ -n "${HM_REMOTE_HOSTS:-}" ]; then
   case ",$(printf '%s' "$HM_REMOTE_HOSTS" | tr -d ' ')," in *",$host,"*) ;; *) hm_die 4 "$host is not one of the known remote hosts" ;; esac
 fi
@@ -168,7 +168,7 @@ memory)
   abs_ok "$rdir" || hm_die 4 "the remote memory directory must be absolute without . or ..: $rdir"
   names=(); for f in "$ldir"/*.md; do
     [ -f "$f" ] || continue; n=$(basename "$f")
-    case "$n" in *[!A-Za-z0-9._-]*|-*) hm_die 4 "memory file name refused: $n" ;; esac
+    case "$n" in *[!${HM_LOWER}${HM_UPPER}${HM_DIGITS}._-]*|-*) hm_die 4 "memory file name refused: $n" ;; esac
     names+=("$n")
   done
   reach; rrun mkdir -p "$rdir" || unreachable

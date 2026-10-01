@@ -142,9 +142,17 @@ hm_pickup_line() {  # hm_pickup_line <project name> <project root> <agent>
     "$1" "$3" "$2" "$3" "$2" "$3" "$1"
 }
 
+# The ASCII letters and digits, listed and never written as a range: under bash 3.2 a bracket range follows the locale's
+# collation, and in en_US.UTF-8 `[a-z]` takes capitals, é, ß and fullwidth letters too. Every check of a name builds its
+# bracket expression from these, unquoted inside the brackets (the lists hold no pattern character).
+HM_LOWER='abcdefghijklmnopqrstuvwxyz'
+HM_UPPER='ABCDEFGHIJKLMNOPQRSTUVWXYZ'
+HM_DIGITS='0123456789'
+
 # A gate's step name, the one rule hm-gate's steps and hm-gate-verify's expected names and lines are read by: letters,
-# digits, '_', '.' and '-', with no '..' (A13). HM_STEP_NAME_CHARS is a bracket expression's contents, '-' last.
-HM_STEP_NAME_CHARS='A-Za-z0-9_.-'
+# digits, '_', '.' and '-', with no '..' (A13). HM_STEP_NAME_CHARS is a bracket expression's contents, built from the lists
+# above with '-' last, so no reader (grep -E, sed -E or a case) can take it as a range.
+HM_STEP_NAME_CHARS="${HM_UPPER}${HM_LOWER}${HM_DIGITS}_.-"
 HM_STEP_NAME_RULE="letters, digits, '_', '.' and '-' with no '..'"
 hm_is_step_name() {  # hm_is_step_name <name>: 0 when it is one
   printf '%s' "$1" | grep -Eq "^[${HM_STEP_NAME_CHARS}]+\$" || return 1
@@ -153,9 +161,22 @@ hm_is_step_name() {  # hm_is_step_name <name>: 0 when it is one
 }
 
 # An agent's name, the one rule hm-spawn and the session hook read: lower-case letters, digits, '_' and '-', not starting
-# with '_' or '-'. The letters are listed, never a range: under bash 3.2 `[a-z]` follows the locale's collation, and in
-# en_US.UTF-8 it takes capitals too.
+# with '_' or '-'.
 hm_is_agent_name() {  # hm_is_agent_name <name>: 0 when it is one
-  case "$1" in ''|*[!abcdefghijklmnopqrstuvwxyz0123456789_-]*|[-_]*) return 1 ;; esac
+  case "$1" in ''|*[!${HM_LOWER}${HM_DIGITS}_-]*|[-_]*) return 1 ;; esac
+  return 0
+}
+
+# A git branch as hivemind takes one (hm-spawn's --branch and --base, the manifest's base): letters, digits, '.', '_',
+# '/' and '-', not starting with '-', which git would read as an option.
+hm_is_branch_name() {  # hm_is_branch_name <name>: 0 when it is one
+  case "$1" in ''|-*|*[!${HM_LOWER}${HM_UPPER}${HM_DIGITS}._/-]*) return 1 ;; esac
+  return 0
+}
+
+# A remote host as hivemind takes one (hm-remote-sync's host, the manifest's host): letters, digits, '.', '_', '@' and
+# '-', not starting with '-', which ssh would read as an option.
+hm_is_host_name() {  # hm_is_host_name <name>: 0 when it is one
+  case "$1" in ''|-*|*[!${HM_LOWER}${HM_UPPER}${HM_DIGITS}._@-]*) return 1 ;; esac
   return 0
 }

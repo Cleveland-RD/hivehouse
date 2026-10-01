@@ -52,4 +52,13 @@ printf '%s\n' '──────── r ────────' $'❯\xc2\xa
 printf '%s\n' 'old: ❯ /clear' '──────── r ────────' $'❯\xc2\xa0\033[2mTry "x"\033[0m' '──────── r ────────' 'footer' | hm_pane_prompt_line | grep -q '/clear' && bad "an echo above the box was taken for the input line" || ok "an echo above the box is not the input line"
 printf '%s\n' '──────── r ────────' $'❯\xc2\xa0older line' $'❯\xc2\xa0/clear' '──────── r ────────' 'footer' | hm_pane_prompt_line | grep -q '/clear' && ok "the last prompt-marked line in the box is the input line" || bad "the input line is the last prompt-marked line in the box"
 pane=$(new_pane busy); wait_idle "$pane" 2 5; assert_status "a busy pane is not idle" $? 1
+# bash 3.2's letter ranges follow the locale: under en_US.UTF-8 `[a-z]` takes é, ß and capitals. Each check runs under both.
+for loc in C en_US.UTF-8; do
+  for n in impl orchestrator a-b_c 9x; do (export LC_ALL=$loc; hm_is_agent_name "$n"); assert_status "agent name $n under $loc" $? 0; done
+  for n in Upper é ß ｈ ı -x _x "" "a b" a.b; do (export LC_ALL=$loc; hm_is_agent_name "$n"); assert_status "not an agent name: [$n] under $loc" $? 1; done
+  for n in main feat/x-1 Release_2.0; do (export LC_ALL=$loc; hm_is_branch_name "$n"); assert_status "branch name $n under $loc" $? 0; done
+  for n in feat/é maiß -x "" "a b" "a;b"; do (export LC_ALL=$loc; hm_is_branch_name "$n"); assert_status "not a branch name: [$n] under $loc" $? 1; done
+  for n in testhost user@Box-1.local; do (export LC_ALL=$loc; hm_is_host_name "$n"); assert_status "host name $n under $loc" $? 0; done
+  for n in tésthost -oProxyCommand=x "" "a b" a/b; do (export LC_ALL=$loc; hm_is_host_name "$n"); assert_status "not a host name: [$n] under $loc" $? 1; done
+done
 t_done

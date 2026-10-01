@@ -17,6 +17,13 @@ hm-manifest add dir "$T_TMP/x" 2>/dev/null; assert_status "refuses an argument w
 hm-manifest add tmux socket="$T_TMP/s" pane=bad agent=a 2>/dev/null; assert_status "refuses a bad pane id" $? 4
 hm-manifest add process pid=abc 2>/dev/null; assert_status "refuses a non-numeric pid" $? 4
 hm-manifest add remote host=-oProxyCommand=x path=/home/u/x/y 2>/dev/null; assert_status "refuses an option-like host" $? 4
+# bash 3.2's letter ranges follow the locale: under en_US.UTF-8 `[a-z]` takes é, ß and capitals. Each check runs under both.
+for loc in C en_US.UTF-8; do
+  (export LC_ALL=$loc; hm-manifest add tmux socket="$T_TMP/s" pane=%1 agent=é 2>/dev/null); assert_status "refuses a non-ASCII agent under $loc" $? 4
+  (export LC_ALL=$loc; hm-manifest add remote host=hé path=/home/u/x/y 2>/dev/null); assert_status "refuses a non-ASCII host under $loc" $? 4
+  (export LC_ALL=$loc; hm-manifest add worktree path="$T_TMP/wtl" base=ß 2>/dev/null); assert_status "refuses a non-ASCII base under $loc" $? 4
+done
+assert_eq "and recorded none of them" "$(hm-manifest list | grep -c -e é -e ß)" "0"
 sleep 300 & p=$!
 hm-manifest add process pid=$p port=3002 >/dev/null
 line=$(hm-manifest list --kind process)
