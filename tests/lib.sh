@@ -81,6 +81,8 @@ t_setup() {
   printf '%s\t%s\n' "$$" "$(t_lstart $$)" > "$T_TMP/run.owner"
   export HIVEMIND_HOME="$T_TMP/home"; mkdir -p "$HIVEMIND_HOME"
   export HM_TMUX_SOCKET="$T_TMP/tmux.sock"
+  # Claude Code's settings are the run's own, never the machine's: the user's, through CLAUDE_CONFIG_DIR, and managed
+  export CLAUDE_CONFIG_DIR="$T_TMP/claude-config" HM_MANAGED_SETTINGS="$T_TMP/managed-settings.json"; mkdir -p "$CLAUDE_CONFIG_DIR"
   unset HM_PROJECT HM_AGENT TMUX TMUX_PANE
   trap t_teardown EXIT
   trap 'exit 130' INT; trap 'exit 143' TERM; trap 'exit 129' HUP   # exit runs the EXIT trap, so a signal tears down too

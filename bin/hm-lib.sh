@@ -172,6 +172,22 @@ wait_idle() {
   return 1
 }
 
+# The owner's statusLine as Claude Code picks it for a session started in <dir>: managed settings, then the project's
+# local file, then the project's own, then the user's (checked against Claude Code 2.1.286). Prints the statusLine object,
+# or nothing when none is set. HM_MANAGED_SETTINGS names the managed file (tests point it elsewhere).
+hm_managed_settings() {
+  if [ -n "${HM_MANAGED_SETTINGS:-}" ]; then echo "$HM_MANAGED_SETTINGS"
+  elif [ "$(uname)" = Darwin ]; then echo "/Library/Application Support/ClaudeCode/managed-settings.json"
+  else echo "/etc/claude-code/managed-settings.json"; fi
+}
+hm_owner_statusline() {  # hm_owner_statusline <session cwd>
+  local f
+  for f in "$(hm_managed_settings)" "$1/.claude/settings.local.json" "$1/.claude/settings.json" "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/settings.json"; do
+    [ -f "$f" ] && jq -ce '.statusLine | select(type == "object")' "$f" 2>/dev/null && return 0
+  done
+  return 0
+}
+
 # The line that starts (hm-spawn) or restarts (hm-rotate) an agent from its handoff: one text, so they cannot drift.
 hm_pickup_line() {  # hm_pickup_line <project name> <project root> <agent>
   printf 'You are %s-%s. Read %s/.hivemind/handoffs/%s.md from the top: its START HERE block is your prompt, and %s/.hivemind/team/%s/ holds your role and the rules. Report to %s-orchestrator. Wait for its first message before any work.' \
