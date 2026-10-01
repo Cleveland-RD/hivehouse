@@ -10,7 +10,15 @@ tested bash executable in `bin/`.
 
 ## Requirements
 
-tmux ≥ 3.0, jq, git ≥ 2.31, bash (3.2 is enough), ssh/rsync/shasum for remote runs, Claude Code ≥ 2.1.271.
+- tmux ≥ 3.2 (`new-session` and `new-window` take `-e`; hm-spawn hands each pane its environment that way)
+- git ≥ 2.31
+- bash (the macOS 3.2 is enough), jq, perl and shasum (both ship with macOS)
+- ssh and rsync, for remote runs
+- Claude Code ≥ 2.1.271
+
+The idle check reads the Claude Code terminal UI (the prompt box and the dialog wording), checked against 2.1.x. The text it
+looks for is in one place, `HM_DIALOG_TEXT` and `hm_pane_idle_text` in `bin/hm-lib.sh`; update it there when a release
+changes the screen.
 
 `hm-*` executables are on the PATH only inside Claude sessions where the plugin is enabled. To run one by hand, call it
 by its install path (`claude plugin list --json` shows it), for example `<installPath>/bin/hm-slot status`.
