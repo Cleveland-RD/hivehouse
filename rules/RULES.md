@@ -39,8 +39,8 @@ variable is split or globbed differently by each shell. Executables are tested f
 
 ## Shared machine
 
-**One heavy job at a time.** Every test suite, gate, build and browser run goes through `hm-slot run <label> -- <command>`.
-If the slot is busy, wait or report; never run beside the holder. Two heavy jobs starve each other and both fail in ways
+**One heavy job at a time.** Every test suite, build and browser run goes through `hm-slot run <label> -- <command>`.
+`hm-gate` takes the slot itself, so it is never wrapped in `hm-slot run`. If the slot is busy, wait or report; never run beside the holder. Two heavy jobs starve each other and both fail in ways
 that look like bugs.
 
 **Never kill a process you did not start.** Not to free memory, not to free a port. Another session's process is that
