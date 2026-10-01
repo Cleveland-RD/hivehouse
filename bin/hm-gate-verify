@@ -1,0 +1,86 @@
+#!/usr/bin/env bash
+# Read a gate's result and a range's commits; never run anything. Pre-approved for agents (A16): it takes no command.
+#   hm-gate-verify log <file> [--expect <name>,<name>...]
+#     GREEN (<n> steps) only when the file has at least one `<name> exit <n>` line, every one is `exit 0`, and every
+#     expected name has one. A gate that wrote no step line did not run, so it is red, not green.
+#   hm-gate-verify commits <base>..<tip> --max-files <n> --style conventional|free --attribution allow|deny [--no-body]
+#     Every flag but --no-body is required, so nothing is loosened by leaving one out. Per commit: a subject, the
+#     conventional form when asked, at most <n> files against its first parent, and under deny no attribution line. A
+#     body is a warning, and a violation with --no-body. An empty range is red: nothing checked is not a pass.
+# Exit: 0 green or ok, 1 red or a violation, 4 a refused range, 64 usage.
+set -u
+. "$(dirname "$0")/hm-lib.sh"
+STEP='^[A-Za-z0-9_.-]+ exit [0-9]+$'
+CONVENTIONAL='^(feat|fix|refactor|docs|style|test|chore|perf)(\([a-z0-9-]+\))?: .+'
+ATTRIBUTION='^(co-authored-by|claude-session):'
+ATTRIBUTION_TEXT='Generated with [Claude Code]'
+
+verify_log() {
+  local file="" expect="" lines red missing="" n
+  [ $# -ge 1 ] || hm_die 64 "usage: hm-gate-verify log <file> [--expect <names>]"
+  file="$1"; shift
+  while [ $# -gt 0 ]; do case "$1" in
+    --expect) [ -n "${2:-}" ] || hm_die 64 "--expect needs a list of names"; expect="$2"; shift 2 ;;
+    *) hm_die 64 "usage: hm-gate-verify log <file> [--expect <names>]" ;; esac; done
+  [ -s "$file" ] || { echo "RED: no gate log at $file"; exit 1; }
+  lines=$(grep -E "$STEP" "$file")
+  [ -n "$lines" ] || { echo "RED: no steps in $file"; exit 1; }
+  red=$(printf '%s\n' "$lines" | grep -vE ' exit 0$')
+  local names=(); [ -n "$expect" ] && IFS=, read -r -a names <<< "$expect"   # split without globbing
+  for n in ${names[@]+"${names[@]}"}; do
+    # the same rule as hm-gate's step names (A13), so an expected name can only be one a gate could have written
+    printf '%s' "$n" | grep -Eq '^[A-Za-z0-9_.-]+$' && case "$n" in *..*) false ;; esac \
+      || hm_die 64 "an expected name is a step name: $n"
+    printf '%s\n' "$lines" | grep -qE "^$(printf '%s' "$n" | sed 's/[.]/\\./g') exit [0-9]+$" || missing="$missing $n"
+  done
+  if [ -n "$red" ] || [ -n "$missing" ]; then
+    echo "RED:"; [ -n "$red" ] && printf '%s\n' "$red"; [ -n "$missing" ] && echo "missing:$missing"; exit 1
+  fi
+  echo "GREEN ($(printf '%s\n' "$lines" | wc -l | tr -d ' ') steps)"
+}
+
+verify_commits() {
+  local USAGE="usage: hm-gate-verify commits <base>..<tip> --max-files <n> --style conventional|free --attribution allow|deny [--no-body]"
+  local range="${1:-}" max="" style="" attribution="" nobody=0 base tip commits c msg subject body files bad=0 n=0
+  [ -n "$range" ] || hm_die 64 "$USAGE"
+  case "$range" in -*) hm_die 4 "a range may not start with '-': $range" ;; esac
+  shift
+  while [ $# -gt 0 ]; do case "$1" in
+    --max-files) max="${2:-}"; shift 2 ;; --style) style="${2:-}"; shift 2 ;;
+    --attribution) attribution="${2:-}"; shift 2 ;; --no-body) nobody=1; shift ;;
+    *) hm_die 64 "$USAGE" ;; esac; done
+  printf '%s' "$max" | grep -Eq '^[1-9][0-9]*$' || hm_die 64 "$USAGE"
+  case "$style" in conventional|free) ;; *) hm_die 64 "$USAGE" ;; esac
+  case "$attribution" in allow|deny) ;; *) hm_die 64 "$USAGE" ;; esac
+  case "$range" in *...*|..*|*..) hm_die 64 "$USAGE" ;; *..*) ;; *) hm_die 64 "$USAGE" ;; esac
+  base=$(git rev-parse --verify --quiet --end-of-options "${range%%..*}^{commit}") || hm_die 4 "unknown base: ${range%%..*}"
+  tip=$(git rev-parse --verify --quiet --end-of-options "${range#*..}^{commit}") || hm_die 4 "unknown tip: ${range#*..}"
+  commits=$(git rev-list --reverse --end-of-options "$base..$tip") || exit 1
+  [ -n "$commits" ] || { echo "RED: no commits in $range"; exit 1; }
+  for c in $commits; do
+    n=$((n + 1)); short=$(git rev-parse --short "$c")
+    msg=$(git log -1 --format=%B "$c"); subject=$(printf '%s\n' "$msg" | head -1)
+    body=$(printf '%s\n' "$msg" | tail -n +2 | grep -v '^[[:space:]]*$')
+    [ -n "$subject" ] || { echo "$short subject: empty"; bad=1; }
+    if [ "$style" = conventional ] && ! printf '%s\n' "$subject" | grep -Eq "$CONVENTIONAL"; then
+      echo "$short subject: not conventional: $subject"; bad=1; fi
+    files=$(git diff-tree -r --root --no-commit-id --name-only -m --first-parent "$c" | grep -c .)
+    [ "$files" -le "$max" ] || { echo "$short files: $files, more than $max"; bad=1; }
+    if [ "$attribution" = deny ]; then
+      if printf '%s\n' "$msg" | grep -iEq "$ATTRIBUTION" || printf '%s\n' "$msg" | grep -Fq "$ATTRIBUTION_TEXT"; then
+        echo "$short attribution: an attribution line is not allowed"; bad=1; fi
+    fi
+    if [ -n "$body" ]; then
+      if [ "$nobody" -eq 1 ]; then echo "$short body: a body is not allowed"; bad=1
+      else echo "WARN $short body: the commit has a body"; fi
+    fi
+  done
+  [ "$bad" -eq 0 ] || exit 1
+  echo "OK ($n commits)"
+}
+
+case "${1:-}" in
+  log) shift; verify_log "$@" ;;
+  commits) shift; verify_commits "$@" ;;
+  *) hm_die 64 "usage: hm-gate-verify log|commits ..." ;;
+esac
