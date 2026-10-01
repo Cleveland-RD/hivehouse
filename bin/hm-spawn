@@ -29,7 +29,7 @@ while [ $# -gt 0 ]; do
 done
 num() { case "$1" in ''|*[!0-9]*) return 1 ;; esac; }
 [ -n "$agent" ] || hm_die 64 "$USAGE"
-case "$agent" in *[!a-z0-9_-]*|[-_]*) hm_die 4 "bad agent name: $agent" ;; esac
+hm_is_agent_name "$agent" || hm_die 4 "bad agent name: $agent"
 num "$window" && [ "$window" -gt 0 ] || hm_die 4 "--window must be a positive number: $window"
 num "$still" && num "$maxwait" || hm_die 4 "--still and --max-wait must be numbers"
 

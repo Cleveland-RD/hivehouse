@@ -33,6 +33,11 @@ inpane "$r" %7; assert_status "a vanished project exits 0" $? 0
 jq -nc --arg p "$r" '{project:$p,agent:"../escape"}' > "$(hm_registry_dir)/$key.json"
 inpane "$r" %7; assert_status "a path-like agent exits 0" $? 0
 [ -e "$r/.hivemind/escape" ] && bad "a path-like agent name wrote outside team/" || ok "a path-like agent name wrote nothing"
+jq -nc --arg p "$r" '{project:$p,agent:"Upper"}' > "$(hm_registry_dir)/$key.json"
+for loc in C en_US.UTF-8; do
+  (export LC_ALL=$loc; inpane "$r" %7); assert_status "a capital agent name exits 0 under $loc" $? 0
+  [ -e "$r/.hivemind/team/Upper" ] && bad "a capital agent name wrote under $loc" || ok "a capital agent name wrote nothing under $loc"
+done
 # a tracked .hivemind is never written to
 jq -nc --arg p "$r" '{project:$p,agent:"implementer"}' > "$(hm_registry_dir)/$key.json"
 echo '{}' > "$r/.hivemind/team/implementer/other.json"; git -C "$r" add -f .hivemind/team/implementer/other.json

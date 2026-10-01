@@ -46,6 +46,9 @@ spawn x --worktree "$T_TMP/proj-x" --branch b --base -evil >/dev/null 2>&1; asse
 mkdir "$T_TMP/taken"
 spawn y --worktree "$T_TMP/taken" --branch b --base main >/dev/null 2>&1; assert_status "existing unlisted path refused" $? 4
 spawn "../evil" >/dev/null 2>&1; assert_status "bad agent name refused" $? 4
+for loc in C en_US.UTF-8; do   # bash 3.2's [a-z] takes capitals in en_US.UTF-8, so the rule is checked under both
+  (export LC_ALL=$loc; spawn Upper >/dev/null 2>&1); assert_status "a capital in an agent name is refused under $loc" $? 4
+done
 [ ! -e "$r/.hivemind/evil" ] && [ -z "$(hm_tmux list-windows -a -F '#{window_name}' | grep evil)" ] && ok "a refused name wrote and started nothing" || bad "a refused agent name left state behind"
 spawn z --no-claude cat >/dev/null 2>&1; assert_status "no --no-claude (A21)" $? 64
 

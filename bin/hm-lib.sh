@@ -151,3 +151,11 @@ hm_is_step_name() {  # hm_is_step_name <name>: 0 when it is one
   case "$1" in *..*) return 1 ;; esac
   return 0
 }
+
+# An agent's name, the one rule hm-spawn and the session hook read: lower-case letters, digits, '_' and '-', not starting
+# with '_' or '-'. The letters are listed, never a range: under bash 3.2 `[a-z]` follows the locale's collation, and in
+# en_US.UTF-8 it takes capitals too.
+hm_is_agent_name() {  # hm_is_agent_name <name>: 0 when it is one
+  case "$1" in ''|*[!abcdefghijklmnopqrstuvwxyz0123456789_-]*|[-_]*) return 1 ;; esac
+  return 0
+}
