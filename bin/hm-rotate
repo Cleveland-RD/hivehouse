@@ -2,7 +2,7 @@
 # Clear an agent's context and send it back to its handoff: /clear, then the pickup line, each only when the pane is idle.
 # hm-rotate <agent> [--still 15] [--max 900] [--settle 8]
 # Exit: 0 rotated, 1 the pane never went idle (nothing sent), 2 no such agent or project, 3 .hivemind tracked,
-# 5 a dialog needs a person (nothing typed), 64 usage. Every outcome that sent nothing is logged to .hivemind/rotate.log.
+# 5 a dialog needs a person (nothing typed), 6 the pane is no longer the agent that was recorded (nothing typed), 64 usage. Every outcome that sent nothing is logged to .hivemind/rotate.log.
 set -u
 . "$(dirname "$0")/hm-lib.sh"
 agent=""; still=15; max=900; settle=8
@@ -26,6 +26,14 @@ export HM_PROJECT="$ROOT"
 hm_tmux display-message -p -t "$pane" '#{pane_id}' >/dev/null 2>&1 || hm_die 2 "the pane of $agent ($pane) is gone"
 project=$(basename "$ROOT")
 note() { printf '%s %s\n' "$(hm_now)" "$*" >> "$STATE/rotate.log"; }
+tget() { jq -r --arg a "$agent" --arg k "$1" '[.agents[]? | select(.name == $a) | .[$k]][0] // empty' "$STATE/team.json" 2>/dev/null; }
+# A pane id is handed out again by a restarted tmux server, and an owner's shell outlives its Claude: type only into the pane
+# and process that were recorded. A record without identity (an older format) proves nothing, so it is refused too.
+hm_agent_is "$(tget socket)" "$pane" "$(tget pane_pid)" "$(tget pane_started)" "$(tget claude_pid)" "$(tget claude_started)"
+if [ $? -ne 0 ]; then
+  note "identity $agent (nothing sent)"
+  echo "hivemind: the pane $pane is not the one recorded for $agent (or its Claude is gone); nothing was typed" >&2; exit 6
+fi
 level() { local v; v=$("$(dirname "$0")/hm-context" "$agent" 2>/dev/null) && echo "$v%" || echo '?'; }
 shows_clear() {  # the prompt box's input line still holds /clear (the last non-blank line of the pane is the footer)
   hm_pane_text "$pane" | hm_pane_prompt_line | grep -Eq '^(│| )*(>|❯) */clear[[:space:]]*$'
