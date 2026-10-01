@@ -36,7 +36,8 @@ hm_pane_key() {  # hm_pane_key <socket> <pane id> -> filename-safe key
 }
 hm_tmux() { if [ -n "${HM_TMUX_SOCKET:-}" ]; then tmux -S "$HM_TMUX_SOCKET" "$@"; else tmux "$@"; fi; }
 # A pane is identified by its process and that process's start time: a pane id alone is handed out again by a restarted
-# tmux server. These three are the only place that is read and compared (the registry's writer and hook use them).
+# tmux server. These three are the only place that is read and compared (the registry's writer and hook, the manifest
+# and cleanup use them).
 hm_pane_pid() { tmux -S "$1" display-message -p -t "$2" '#{pane_pid}' 2>/dev/null | grep -E '^[0-9]+$'; }   # hm_pane_pid <socket> <pane>: empty when the server has no such pane
 hm_pane_identity() {  # hm_pane_identity <socket> <pane>: "<pid><TAB><start time>", or fails when the pane cannot be read
   local pid; pid=$(hm_pane_pid "$1" "$2") || return 1

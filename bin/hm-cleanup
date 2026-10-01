@@ -100,13 +100,13 @@ do_process() {
 }
 
 do_tmux() {
-  local id="$1" socket="$2" pane="$3" ppid="$4" pstarted="$5" by="$6" cur own
+  local id="$1" socket="$2" pane="$3" ppid="$4" pstarted="$5" by="$6" own
   [ "$mode" = finish ] || { say kept tmux "$pane" "$by" "--finish kills it"; return; }
-  cur=$(tmux -S "$socket" display-message -p -t "$pane" '#{pane_pid}' 2>/dev/null)
-  [ -n "$cur" ] || { drop "$id"; say removed tmux "$pane" "$by" "pane already gone"; return; }
-  if [ -z "$ppid" ] || [ "$cur" != "$ppid" ] || [ "$(hm_lstart "$cur")" != "$pstarted" ]; then
-    say skipped tmux "$pane" "$by" "pane is not the one recorded"; return
-  fi
+  hm_pane_is "$socket" "$pane" "$ppid" "$pstarted"
+  case $? in
+    2) drop "$id"; say removed tmux "$pane" "$by" "pane already gone"; return ;;
+    1) say skipped tmux "$pane" "$by" "pane is not the one recorded"; return ;;
+  esac
   if [ -n "${TMUX:-}" ] && [ "${TMUX_PANE:-}" = "$pane" ]; then
     own="${TMUX%%,*}"; own="$(cd "$(dirname "$own")" 2>/dev/null && pwd -P)/$(basename "$own")"
     [ "$own" = "$socket" ] && { say skipped tmux "$pane" "$by" "the caller's own pane"; return; }
