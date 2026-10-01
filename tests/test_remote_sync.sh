@@ -128,6 +128,16 @@ ln -s /etc/hosts .hivemind/tmp/lnk; LABEL="a symlink as the secret"; refused 4 s
 rm -f "$rec"; LABEL="no check record for the host"; refused 4 secret testhost "$rr" .hivemind/tmp/.env.remote
 HM_FAKE_SSH=down sync secret testhost "$rr" .hivemind/tmp/.env.remote >/dev/null 2>&1; assert_status "secret to an unreachable host exits 5 (record missing: 4 first, so)" $? 4
 
+# ---- remote paths --------------------------------------------------------------------------------------------------
+# rsync's remote shell splits on a space or ; so a remote path is limited to a safe alphabet
+sync check testhost --min-gb 0 --plugin-version 0.1.0 >/dev/null
+mkdir -p "$T_TMP/sp ace" "$T_TMP/x;y"; git -C "$T_TMP/sp ace" init -q; git -C "$T_TMP/x;y" init -q; LABEL="files: a remote root with a space"; refused 4 files testhost "$T_TMP/sp ace" "$T_TMP/list"
+LABEL="files: a remote root with a semicolon"; refused 4 files testhost "$T_TMP/x;y" "$T_TMP/list"
+LABEL="branches: a remote root with a space"; refused 4 branches testhost "$T_TMP/sp ace" feat/one
+LABEL="memory: a remote dir with a space"; refused 4 memory testhost "$r/mem" "$T_TMP/sp ace"
+LABEL="secret: a remote root with a space"; refused 4 secret testhost "$T_TMP/sp ace" .hivemind/tmp/.env.remote
+printf 'src/a b.txt\n' > "$T_TMP/spl"; echo s > "src/a b.txt"; LABEL="files: a list entry with a space"; refused 4 files testhost "$rr" "$T_TMP/spl"
+
 # ---- common --------------------------------------------------------------------------------------------------------
 sync check testhost --min-gb 0 --plugin-version 0.1.0 >/dev/null
 mkdir "$T_TMP/norepo"; (cd "$T_TMP/norepo" && hm-remote-sync check testhost --min-gb 0 --plugin-version 0.1.0 >/dev/null 2>&1); assert_status "outside a repo" $? 2

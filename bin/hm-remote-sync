@@ -18,8 +18,9 @@ case "$sub" in check|branches|files|memory|secret) ;; *) hm_die 64 "$USAGE" ;; e
 
 # ---- validation ----------------------------------------------------------------------------------------------------
 has_ctrl() { printf '%s' "$1" | LC_ALL=C grep -q '[[:cntrl:]]'; }
-abs_ok() { case "$1" in /*) ;; *) return 1 ;; esac; has_ctrl "$1" && return 1; case "/$1/" in */../*|*/./*) return 1 ;; esac; return 0; }
-rel_ok() { [ -n "$1" ] || return 1; case "$1" in /*|-*) return 1 ;; esac; has_ctrl "$1" && return 1; case "/$1/" in */../*|*/./*|*//*) return 1 ;; esac; return 0; }
+safe_chars() { case "$1" in *[!A-Za-z0-9._/@+_-]*) return 1 ;; esac; }   # rsync's remote shell splits on a space or ;, so a remote path is limited to this alphabet
+abs_ok() { case "$1" in /*) ;; *) return 1 ;; esac; safe_chars "$1" || return 1; has_ctrl "$1" && return 1; case "/$1/" in */../*|*/./*) return 1 ;; esac; return 0; }
+rel_ok() { [ -n "$1" ] || return 1; case "$1" in /*|-*) return 1 ;; esac; safe_chars "$1" || return 1; has_ctrl "$1" && return 1; case "/$1/" in */../*|*/./*|*//*) return 1 ;; esac; return 0; }
 case "$host" in ''|-*|*[!A-Za-z0-9._@-]*) hm_die 4 "bad host name: $host" ;; esac
 if [ -n "${HM_REMOTE_HOSTS:-}" ]; then
   case ",$(printf '%s' "$HM_REMOTE_HOSTS" | tr -d ' ')," in *",$host,"*) ;; *) hm_die 4 "$host is not one of the known remote hosts" ;; esac
