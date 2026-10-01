@@ -29,6 +29,15 @@ hm-gate-verify log gate.log --commit HEAD >/dev/null; assert_status "and its sec
 echo stray > stray; (cd sub && hm-gate --log ../gate.log -- e true)
 assert_eq "a change outside the log is still dirty, from a subdirectory too" "$(head -1 gate.log)" "# hm-gate steps: e head=$head_now dirty=1"
 rm -rf stray gate.log gate.log.d sub
+# a tracked file as the log, or as its step-log directory, is refused before the slot and left as it was
+echo edited >> README; before=$(cat README)
+hm-gate --log README -- a "touch '$T_TMP/tracked-ran'" 2>/dev/null; assert_status "a tracked file as --log is refused" $? 64
+assert_eq "and the tracked file is untouched" "$(cat README)" "$before"
+mkdir -p g.log.d; echo kept > g.log.d/f; git add g.log.d/f; git commit -qm "test: a tracked step-log dir"
+hm-gate --log g.log -- a "touch '$T_TMP/tracked-ran'" 2>/dev/null; assert_status "a tracked <log>.d is refused" $? 64
+assert_eq "and its files are untouched" "$(cat g.log.d/f)" "kept"
+[ ! -e "$T_TMP/tracked-ran" ] && [ ! -d "$LOCK" ] && ok "and nothing ran, nor took the slot" || bad "and nothing ran, nor took the slot"
+git reset -q --hard "$head_now"; rm -rf g.log.d g.log
 # every argument is checked before anything runs: a first step that touches a file must not have run
 T="touch '$T_TMP/touched'"
 for args in "-- first \"$T\" a" "-- first \"$T\" ../x true" "-- first \"$T\" a..b true" "-- first \"$T\" 'a b' true" "-- first \"$T\" a true a true" "--" "first \"$T\""; do

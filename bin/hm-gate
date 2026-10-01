@@ -28,6 +28,12 @@ while [ $# -gt 0 ]; do
 done
 logdir=$(dirname "$log")
 [ -d "$logdir" ] && [ -w "$logdir" ] && { [ ! -e "$log" ] || [ -w "$log" ]; } || hm_die 64 "the gate log cannot be written: $log"
+# A log or a step-log directory git tracks is refused: the gate would overwrite a tracked file, and the dirty check below
+# leaves the log out, so a change to that file would go unseen. The exclude then only ever hides the gate's own output.
+for own in "$log" "$log.d"; do
+  GIT_LITERAL_PATHSPECS=1 git ls-files --error-unmatch -- "$own" >/dev/null 2>&1 \
+    && hm_die 64 "the gate log may not be a file git tracks: $own"
+done
 
 # The tree the steps run on, read before they run (a step may change it). The gate's own log and step logs are left out
 # when they are in the tree, so a log an earlier gate left there does not make the next run dirty and its --commit red.
