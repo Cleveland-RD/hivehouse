@@ -6,12 +6,24 @@ jq -nc --arg t "$HM_REPO_ROOT/tests/fixtures/transcript.jsonl" '{session_id:"s",
 echo '{"agents":[{"name":"impl","model":"sonnet"},{"name":"rev","model":"opus","window":1000000}]}' > .hivemind/team.json
 # the last real assistant line with usage is the one that counts: after it come a sidechain's line, a synthetic line with
 # usage and a real line with none, all skipped
-assert_eq "latest usage over the default window" "$(hm-context impl)" "50"
+assert_eq "latest usage over the default window, marked as a guess" "$(hm-context impl)" "50 (window assumed 200000)"
 assert_eq "explicit window" "$(hm-context impl --window 1000000)" "10"
 echo '{"agents":[{"name":"impl","model":"claude-sonnet-5-5[1m]"}]}' > .hivemind/team.json
-assert_eq "a [1m] in the model name does not set the window (A9)" "$(hm-context impl)" "50"
+assert_eq "a [1m] in the model name does not set the window (A9)" "$(hm-context impl)" "50 (window assumed 200000)"
 echo '{"agents":[{"name":"impl","model":"sonnet","window":1000000}]}' > .hivemind/team.json
-assert_eq "the window comes from team.json" "$(hm-context impl)" "10"
+assert_eq "the window comes from team.json, still a guess" "$(hm-context impl)" "10 (window assumed 1000000)"
+# Claude Code's own window (hm-statusline's context.json) counts when it was read in the agent's current session
+echo '{"agents":[{"name":"impl","model":"sonnet"}]}' > .hivemind/team.json
+echo '{"window":1000000,"used_percentage":9,"session_id":"s","at":"t"}' > .hivemind/team/impl/context.json
+assert_eq "the measured window, unmarked" "$(hm-context impl)" "10"
+assert_eq "...and it beats --window" "$(hm-context impl --window 200000)" "10"
+echo '{"window":1000000,"used_percentage":9,"session_id":"an-older-session","at":"t"}' > .hivemind/team/impl/context.json
+assert_eq "a reading from another session is stale: the default, marked" "$(hm-context impl)" "50 (window assumed 200000)"
+echo '{"window":0,"session_id":"s"}' > .hivemind/team/impl/context.json
+assert_eq "a zero window read is no window" "$(hm-context impl)" "50 (window assumed 200000)"
+echo 'not json' > .hivemind/team/impl/context.json
+assert_eq "an unreadable context.json is no window" "$(hm-context impl)" "50 (window assumed 200000)"
+rm .hivemind/team/impl/context.json
 hm-context nobody 2>/dev/null; assert_status "unknown agent" $? 2
 hm-context rev 2>/dev/null; assert_status "an agent with no session record" $? 2
 hm-context impl --window abc 2>/dev/null; assert_status "a bad window is refused" $? 4
@@ -19,7 +31,7 @@ hm-context impl --window 0 2>/dev/null; assert_status "a zero window is refused"
 hm-context 2>/dev/null; assert_status "usage" $? 64
 cp "$r/.hivemind/team/impl/session.json" "$T_TMP/s.json"
 echo '{"agents":[{"name":"impl","model":"sonnet"},{"name":"rev","model":"opus"}]}' > .hivemind/team.json
-assert_eq "--all lists every team member, ? when unknown" "$(hm-context --all | tr '\n' ' ')" "impl 50 rev ? "
+assert_eq "--all lists every team member, ? when unknown" "$(hm-context --all | tr '\n' ' ')" "impl 50 (window assumed 200000) rev ? "
 printf '%s\n' '{"type":"assistant","isSidechain":false,"message":{"model":"<synthetic>","usage":{"input_tokens":0,"output_tokens":0}}}' > "$T_TMP/only-synthetic.jsonl"
 jq -nc --arg t "$T_TMP/only-synthetic.jsonl" '{session_id:"s",transcript_path:$t}' > .hivemind/team/rev/session.json
 hm-context rev 2>/dev/null; assert_status "a transcript with no real usage line is unknown" $? 2

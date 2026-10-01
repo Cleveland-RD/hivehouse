@@ -18,7 +18,7 @@ assert_contains "the log names the agent and the percents (unknown here)" "$(log
 # the percent comes from hm-context when a session is recorded
 jq -nc --arg t "$HM_REPO_ROOT/tests/fixtures/transcript.jsonl" '{session_id:"s",transcript_path:$t}' > .hivemind/team/impl/session.json
 hm-rotate impl --still 2 --settle 1 >/dev/null
-assert_contains "the log carries the level before" "$(log | tail -1)" "rotated impl 50% -> 50%"
+assert_contains "the log carries the level, and says the window was a guess" "$(log | tail -1)" "rotated impl 50% (window assumed 200000) -> 50% (window assumed 200000)"
 hm-rotate nobody 2>/dev/null; assert_status "an unknown agent" $? 2
 hm-rotate 2>/dev/null; assert_status "usage" $? 64
 

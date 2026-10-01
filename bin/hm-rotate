@@ -36,7 +36,10 @@ verify() {
   echo "hivemind: the pane $pane is not the one recorded for $agent (or its Claude is gone); nothing was typed" >&2; exit 6
 }
 verify
-level() { local v; v=$("$(dirname "$0")/hm-context" "$agent" 2>/dev/null) && echo "$v%" || echo '?'; }
+level() {  # "50%", or "50% (window assumed 200000)" when hm-context had to guess the window
+  local v; v=$("$(dirname "$0")/hm-context" "$agent" 2>/dev/null) || { echo '?'; return; }
+  echo "${v%% *}%${v#"${v%% *}"}"
+}
 shows_clear() {  # the prompt box's input line still holds /clear (the last non-blank line of the pane is the footer)
   hm_pane_text "$pane" | hm_pane_prompt_line | grep -Eq '^(│| )*(>|❯) */clear[[:space:]]*$'
 }

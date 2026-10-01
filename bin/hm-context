@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 # Context level from the session transcript (not the pane's status line, which is the owner's own setup).
 # hm-context <agent> [--window <tokens>] | --all.  Exit: 2 no project / no session or usable transcript, 3 .hivemind
-# tracked, 4 bad window, 64 usage. The window is the agent's `window` in team.json (written at spawn), default 200000;
-# it is never inferred from a model name.
+# tracked, 4 bad window, 64 usage. The window is Claude Code's own (context.json, which hm-statusline keeps for a spawned
+# agent), when it was read for the agent's current session; else --window; else the agent's `window` in team.json (written
+# at spawn), default 200000. It is never inferred from a model name. A window that was not measured or given is a guess,
+# and the reading says so: "45 (window assumed 200000)".
 set -u
 . "$(dirname "$0")/hm-lib.sh"
 ROOT=$(hm_project_root) || exit $?
@@ -11,7 +13,7 @@ if [ -n "$(git -C "$ROOT" ls-files -- .hivemind)" ]; then
   hm_die 3 "files under .hivemind/ are tracked by git; untrack them before using hivemind here"
 fi
 pct() {  # pct <agent> [window]
-  local a="$1" win="${2:-}" s t used
+  local a="$1" win="${2:-}" s t used c sid m
   s="$STATE/team/$a/session.json"; [ -f "$s" ] || return 2
   t=$(hm_json_get "$s" .transcript_path); [ -f "$t" ] || return 2
   # the last assistant line that is the main conversation's own and carries usage (a sidechain's or a synthetic line
@@ -20,9 +22,15 @@ pct() {  # pct <agent> [window]
       | .message.usage | (.input_tokens // 0) + (.cache_read_input_tokens // 0) + (.cache_creation_input_tokens // 0) + (.output_tokens // 0)
       | select(. > 0)' "$t" 2>/dev/null | tail -1)
   [ -n "$used" ] || return 2
-  if [ -z "$win" ]; then win=$(jq -r --arg a "$a" '[.agents[]? | select(.name == $a) | .window][0] // empty' "$STATE/team.json" 2>/dev/null); fi
-  win=${win:-200000}
-  echo $(( used * 100 / win ))
+  # Claude Code's reading counts only for the session it was taken in: a rotated or replaced session's file is stale
+  c="$STATE/team/$a/context.json"; sid=$(hm_json_get "$s" .session_id)
+  if [ -n "$sid" ] && [ "$(hm_json_get "$c" .session_id)" = "$sid" ]; then
+    m=$(hm_json_get "$c" .window); case "$m" in ''|*[!0-9]*|0) ;; *) echo $(( used * 100 / m )); return 0 ;; esac
+  fi
+  [ -n "$win" ] && { echo $(( used * 100 / win )); return 0; }
+  win=$(jq -r --arg a "$a" '[.agents[]? | select(.name == $a) | .window][0] // empty' "$STATE/team.json" 2>/dev/null)
+  case "$win" in ''|*[!0-9]*|0) win=200000 ;; esac
+  echo "$(( used * 100 / win )) (window assumed $win)"
 }
 if [ "${1:-}" = "--all" ]; then
   [ -f "$STATE/team.json" ] || hm_die 2 "no team recorded"
