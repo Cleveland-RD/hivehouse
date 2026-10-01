@@ -49,6 +49,11 @@ claude plugin install hivemind@hivemind
 - `<project>/.hivemind/` — handoffs, team, manifest, settings, trash; excluded through the repo's `info/exclude`, never tracked.
 - `${HIVEMIND_HOME:-~/.hivemind}` — per machine: the heavy-job slot and the registry of running teams.
 
+## Tests
+
+`bash tests/run.sh` runs every `tests/test_*.sh`, or the files it is given. `test_cleanup.sh` stops real processes, so
+it is skipped, named or not, unless `HM_CLEANUP_TEST=1` is set: the owner runs it, watching.
+
 ## Evals
 
 Running the evals costs model usage.
