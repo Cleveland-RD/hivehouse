@@ -38,6 +38,8 @@ for args in "-- first \"$T\" a" "-- first \"$T\" ../x true" "-- first \"$T\" a..
   assert_status "refused: $label" $s 64
   [ ! -e "$T_TMP/touched" ] && ok "nothing ran: $label" || bad "nothing ran: $label"
 done
+hm-gate --log "$LOG" -- unit.tests true lint-all true; assert_status "a step name may hold '.' and '-'" $? 0
+assert_eq "and verifies by its header" "$(hm-gate-verify log "$LOG" --expect unit.tests --commit HEAD)" "GREEN (2 steps)"
 hm-gate -- x true 2>/dev/null; assert_status "no --log is a usage error" $? 64
 rm -f "$T_TMP/touched"; hm-gate --log "$T_TMP/no/such/dir/g.log" -- first "$T" 2>/dev/null; assert_status "a log that cannot be written is refused before the slot" $? 64
 [ ! -e "$T_TMP/touched" ] && [ ! -d "$LOCK" ] && ok "and nothing ran" || bad "and nothing ran"

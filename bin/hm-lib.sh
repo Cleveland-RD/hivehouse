@@ -133,3 +133,13 @@ hm_pickup_line() {  # hm_pickup_line <project name> <project root> <agent>
   printf 'You are %s-%s. Read %s/.hivemind/handoffs/%s.md from the top: its START HERE block is your prompt, and %s/.hivemind/team/%s/ holds your role and the rules. Report to %s-orchestrator. Wait for its first message before any work.' \
     "$1" "$3" "$2" "$3" "$2" "$3" "$1"
 }
+
+# A gate's step name, the one rule hm-gate's steps and hm-gate-verify's expected names and lines are read by: letters,
+# digits, '_', '.' and '-', with no '..' (A13). HM_STEP_NAME_CHARS is a bracket expression's contents, '-' last.
+HM_STEP_NAME_CHARS='A-Za-z0-9_.-'
+HM_STEP_NAME_RULE="letters, digits, '_', '.' and '-' with no '..'"
+hm_is_step_name() {  # hm_is_step_name <name>: 0 when it is one
+  printf '%s' "$1" | grep -Eq "^[${HM_STEP_NAME_CHARS}]+\$" || return 1
+  case "$1" in *..*) return 1 ;; esac
+  return 0
+}

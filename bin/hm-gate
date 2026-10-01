@@ -22,8 +22,7 @@ log="$2"; shift 2
 [ $# -gt 0 ] && [ $(($# % 2)) -eq 0 ] || hm_die 64 "$USAGE"
 names=(); cmds=(); seen=" "
 while [ $# -gt 0 ]; do
-  printf '%s' "$1" | grep -Eq '^[A-Za-z0-9_.-]+$' && case "$1" in *..*) false ;; esac \
-    || hm_die 64 "a step name is letters, digits, '_', '.' and '-' with no '..': $1"
+  hm_is_step_name "$1" || hm_die 64 "a step name is $HM_STEP_NAME_RULE: $1"
   case "$seen" in *" $1 "*) hm_die 64 "a step name is given twice: $1" ;; esac
   seen="$seen$1 "; names+=("$1"); cmds+=("$2"); shift 2
 done

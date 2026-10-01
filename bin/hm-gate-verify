@@ -13,8 +13,8 @@
 # Exit: 0 green or ok, 1 red or a violation, 4 a refused range, 64 usage.
 set -u
 . "$(dirname "$0")/hm-lib.sh"
-STEP='^[A-Za-z0-9_.-]+ exit [0-9]+$'
-HEADER='^# hm-gate steps: ([A-Za-z0-9_.,-]+) head=([0-9a-f]{40}|none) dirty=([01])$'
+STEP="^[${HM_STEP_NAME_CHARS}]+ exit [0-9]+\$"
+HEADER="^# hm-gate steps: ([,${HM_STEP_NAME_CHARS}]+) head=([0-9a-f]{40}|none) dirty=([01])\$"
 CONVENTIONAL='^(feat|fix|refactor|docs|style|test|chore|perf)(\([a-z0-9-]+\))?: .+'
 ATTRIBUTION='^[[:space:]]*(co-authored-by|claude-session)[[:space:]]*:|generated with \[?claude code'
 
@@ -40,9 +40,8 @@ verify_log() {
   fi
   local names=(); IFS=, read -r -a names <<< "${hsteps}${hsteps:+${expect:+,}}${expect}"   # split without globbing
   for n in ${names[@]+"${names[@]}"}; do
-    # the same rule as hm-gate's step names (A13), so an expected name can only be one a gate could have written
-    printf '%s' "$n" | grep -Eq '^[A-Za-z0-9_.-]+$' && case "$n" in *..*) false ;; esac \
-      || hm_die 64 "an expected name is a step name: $n"
+    # hm-gate's own rule (hm_is_step_name), so an expected name can only be one a gate could have written
+    hm_is_step_name "$n" || hm_die 64 "an expected name is a step name ($HM_STEP_NAME_RULE): $n"
   done
   lines=$(grep -E "$STEP" "$file")
   [ -n "$lines" ] || { echo "RED: no steps in $file"; exit 1; }
