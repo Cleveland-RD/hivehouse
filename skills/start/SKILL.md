@@ -72,8 +72,8 @@ project is added where a name is shown), so never put the project in it. Step 8'
 `hm-self-rotate` find you through it. It exits 4 when that name already belongs to a pane hivemind spawned; tell the
 owner rather than choosing another name.
 
-Then for each agent, in its own call. The window per role is a setting (`${user_config.window_builder}`,
-`${user_config.window_reviewer}`), never inferred from a model name:
+Then for each agent, in its own call. A spawned agent's context level uses Claude Code's own window; the window per
+role (`${user_config.window_builder}`, `${user_config.window_reviewer}`) is the fallback, never inferred from a model name:
 
 `hm-spawn --agent <name> --role ${CLAUDE_PLUGIN_ROOT}/roles/<role>.md --rules ${CLAUDE_PLUGIN_ROOT}/rules/RULES.md --model <model> --effort <effort> --mode <resolved permission mode> --window <window> [--worktree <absolute path> --branch <branch> --base <branch>]`
 
@@ -105,7 +105,8 @@ A new agent waits for its first message. Send it its brief with `SendMessage`, f
 
 ## 8. Rotate at every check
 
-At each check read every session's context level, yours included: `hm-context --all`. At or above
+At each check read every session's context level, yours included: `hm-context --all`. A level followed by "(window
+assumed N)" was read against a guessed window, not Claude Code's own; say so when you act on it. At or above
 `${user_config.rotate_at_percent}`% the agent updates its START HERE block, says "done", and you run
 `hm-rotate <agent>`. It waits for the pane to be idle, clears, sends the pickup line and logs the levels. Rotate
 yourself last with `hm-self-rotate orchestrator` as your final act of that turn, after updating your own
