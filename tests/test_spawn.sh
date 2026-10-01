@@ -142,4 +142,23 @@ TMUX="/nonexistent/other-server,1,0" TMUX_PANE="$orchpane" spawn elsewhere >/dev
 assert_eq "...goes to the project's own session" "$(jq -r '.agents[]|select(.name=="elsewhere").session' .hivemind/team.json)" "hm-$(hm_project_key "$r")"
 TMUX="$HM_TMUX_SOCKET,1,0" TMUX_PANE="$orchpane" spawn named --session chosen >/dev/null; assert_status "spawn with --session from inside a pane" $? 0
 assert_eq "...--session still wins" "$(jq -r '.agents[]|select(.name=="named").session' .hivemind/team.json)" "chosen"
+# the agent's statusLine is hm-statusline (Claude Code's window for hm-context), which runs the owner's own; the plugin's path
+# and the project's are quoted, so a space in either works
+echo '{"statusLine":{"type":"command","command":"echo OWNER; exit 4","padding":2}}' > "$CLAUDE_CONFIG_DIR/settings.json"
+mkdir -p "$T_TMP/plug in"; cp -R "$HM_REPO_ROOT/bin" "$T_TMP/plug in/"
+sp=$(t_repo "my proj"); cd "$sp"
+spane=$("$T_TMP/plug in/bin/hm-spawn" --agent sl --role "$T_TMP/impl.md" --rules "$T_TMP/RULES.md" --model sonnet --effort medium --mode auto --still 2 --max-wait 15)
+assert_status "spawn with spaces in the plugin's and the project's paths" $? 0
+sset=$(hm_tmux capture-pane -p -J -S - -t "$spane" | grep '^ARGV: {"statusLine"' | sed 's/^ARGV: //')
+assert_eq "--settings carries one statusLine" "$(printf '%s' "$sset" | jq -r '.statusLine.type')" "command"
+assert_eq "...keeping the owner's other keys" "$(printf '%s' "$sset" | jq -r '.statusLine.padding')" "2"
+assert_eq "the owner's statusLine is recorded for the agent" "$(jq -r .command "$sp/.hivemind/team/sl/statusline.json")" "echo OWNER; exit 4"
+scmd=$(printf '%s' "$sset" | jq -r '.statusLine.command')
+out=$(printf '%s' '{"session_id":"q","context_window":{"context_window_size":1000000,"used_percentage":1}}' | /bin/sh -c "$scmd"); rc=$?
+assert_eq "run as Claude Code runs it, it shows the owner's line" "$out" "OWNER"
+assert_status "...with the owner's status" "$rc" 4
+assert_eq "...and keeps the window in the agent's dir" "$(jq -r .window "$sp/.hivemind/team/sl/context.json")" "1000000"
+rm "$CLAUDE_CONFIG_DIR/settings.json"
+"$T_TMP/plug in/bin/hm-spawn" --agent sl2 --role "$T_TMP/impl.md" --rules "$T_TMP/RULES.md" --model sonnet --effort medium --mode auto --still 2 --max-wait 15 >/dev/null
+[ ! -e "$sp/.hivemind/team/sl2/statusline.json" ] && ok "no owner statusLine: none recorded" || bad "an owner statusLine was recorded from nowhere"
 cd /; t_teardown; t_done

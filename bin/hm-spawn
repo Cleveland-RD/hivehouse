@@ -126,7 +126,14 @@ fi
 session=${session:-hm-$(hm_project_key "$ROOT")}
 # exec: the pane's own process must BE claude (the hook's one rule for a spawned agent), not a shell that happens to exec its last
 # command; a shell that does not (fish, a startup file that sets a trap, `cmd; :`) would otherwise stay as the pane's process
-cmd="exec $(printf '%q ' claude --name "$project-$agent" --model "$model" --effort "$effort" --permission-mode "$mode" --allowedTools "$ALLOWED")"
+# The agent's statusLine is hm-statusline, which keeps Claude Code's own window reading for hm-context and then runs the owner's
+# statusLine, resolved here once (its other keys, padding and the like, are kept as the owner set them).
+owner_sl=$(hm_owner_statusline "$cwd")
+if [ -n "$owner_sl" ]; then printf '%s\n' "$owner_sl" > "$STATE/team/$agent/statusline.json"; else rm -f "$STATE/team/$agent/statusline.json"; fi
+rm -f "$STATE/team/$agent/context.json"
+settings=$(jq -nc --argjson o "${owner_sl:-null}" --arg bin "$(cd "$(dirname "$0")" && pwd -P)/hm-statusline" --arg dir "$STATE/team/$agent" \
+  '{statusLine: (($o // {}) + {type: "command", command: ([$bin, $dir] | map(@sh) | join(" "))})}') || exit $?
+cmd="exec $(printf '%q ' claude --name "$project-$agent" --model "$model" --effort "$effort" --permission-mode "$mode" --allowedTools "$ALLOWED" --settings "$settings")"
 envs=(-e "HM_AGENT=$agent" -e "HM_PROJECT=$ROOT" -e "HIVEMIND_HOME=$(hm_home)")
 [ -n "${HM_TMUX_SOCKET:-}" ] && envs+=(-e "HM_TMUX_SOCKET=$HM_TMUX_SOCKET")
 if hm_tmux has-session -t "=$session" 2>/dev/null; then
