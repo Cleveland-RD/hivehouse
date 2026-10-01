@@ -20,7 +20,7 @@ DONE WHEN
 CONSTRAINTS
 - Worktree/branch: <own worktree path and branch, or read-only>
 - Files: <what may be touched, what may not>
-- Commits: <style, files per commit; no push>
+- Commits: <--max-files N, --style <conventional|...>, --attribution <allow|deny>, from the resolved settings; no push>
 - Heavy jobs: through hm-slot; paid steps only on the owner's word (state any price)
 - Rules: .hivemind/team/<agent>/RULES.md and your role file beside it
 
