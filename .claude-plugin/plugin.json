@@ -1,6 +1,6 @@
 {
   "name": "hivemind",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Run a feature with a team of Claude sessions in tmux: plan, build, review, gate, rotate, overnight, clean up.",
   "author": { "name": "Cleveland R&D" },
   "license": "MIT",

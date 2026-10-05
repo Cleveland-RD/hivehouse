@@ -65,6 +65,15 @@ plugin applies itself everywhere and hivemind does not load it a second time.
 - `<project>/.hivemind/` — handoffs, team, manifest, settings, trash; excluded through the repo's `info/exclude`, never tracked.
 - `${HIVEMIND_HOME:-~/.hivemind}` — per machine: the heavy-job slot and the registry of running teams.
 
+## After a restart
+
+A restart of the machine or of tmux takes the team's panes with it. `hm-context --all` then marks each session
+"(not running)", keeping its last level. The orchestrator registers itself again with `hm-spawn --self --agent
+orchestrator`, then runs `hm-spawn --respawn <agent>` for each agent so marked: the agent starts again from its own
+record (model, effort, permission mode, worktree and branch from `team.json`, role and rules from
+`.hivemind/team/<agent>/`) and is sent back to its handoff. A running agent, one whose state cannot be told, and the
+orchestrator itself are never respawned.
+
 ## Tests
 
 `bash tests/run.sh` runs every `tests/test_*.sh`, or the files it is given. `test_cleanup.sh` stops real processes, so

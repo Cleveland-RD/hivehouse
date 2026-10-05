@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.2
+
+- After a restart: `hm-context` marks a session that is no longer running, keeping its last level, and
+  `hm-spawn --respawn <agent>` starts a stopped agent again from its own record and sends it back to its handoff.
+- One check decides whether a team member still runs as recorded, read from its process first: `hm-rotate`,
+  `hm-context` and `hm-spawn --respawn` all use it.
+
 ## 0.1.1
 
 - Context levels use Claude Code's own window for spawned agents; a guessed window is marked as assumed.
