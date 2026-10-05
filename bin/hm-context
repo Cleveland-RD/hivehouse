@@ -4,7 +4,8 @@
 # tracked, 4 bad window, 64 usage. The window is Claude Code's own (context.json, which hm-statusline keeps for a spawned
 # agent), when it was read for the agent's current session; else --window; else the agent's `window` in team.json (written
 # at spawn), default 200000. It is never inferred from a model name. A window that was not measured or given is a guess,
-# and the reading says so: "45 (window assumed 200000)".
+# and the reading says so: "45 (window assumed 200000)". An agent that is no longer running as recorded (after a restart,
+# say) keeps its last level and is marked: "45 (not running)"; one that cannot be told about is not.
 set -u
 . "$(dirname "$0")/hm-lib.sh"
 ROOT=$(hm_project_root) || exit $?
@@ -32,9 +33,10 @@ pct() {  # pct <agent> [window]
   case "$win" in ''|*[!0-9]*|0) win=200000 ;; esac
   echo "$(( used * 100 / win )) (window assumed $win)"
 }
+mark() { hm_team_agent_is "$ROOT" "$1"; [ $? -eq 1 ] && printf ' (not running)'; return 0; }   # mark <agent>
 if [ "${1:-}" = "--all" ]; then
   [ -f "$STATE/team.json" ] || hm_die 2 "no team recorded"
-  for a in $(jq -r '.agents[].name' "$STATE/team.json"); do printf '%s %s\n' "$a" "$(pct "$a" || echo '?')"; done
+  for a in $(jq -r '.agents[].name' "$STATE/team.json"); do printf '%s %s%s\n' "$a" "$(pct "$a" || echo '?')" "$(mark "$a")"; done
   exit 0
 fi
 [ -n "${1:-}" ] || hm_die 64 "usage: hm-context <agent> [--window n] | --all"
@@ -42,4 +44,5 @@ w=""
 if [ "${2:-}" = "--window" ]; then
   w="${3:-}"; case "$w" in ''|*[!0-9]*|0) hm_die 4 "--window must be a positive number: $w" ;; esac
 fi
-pct "$1" "$w" || hm_die 2 "no session or transcript recorded for $1"
+v=$(pct "$1" "$w") || hm_die 2 "no session or transcript recorded for $1"
+printf '%s%s\n' "$v" "$(mark "$1")"
