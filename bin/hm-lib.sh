@@ -62,6 +62,24 @@ hm_agent_is() {  # hm_agent_is <socket> <pane> <pane pid> <pane started> [<claud
   hm_pane_is "$1" "$2" "$3" "$4"; local rc=$?; [ "$rc" -eq 0 ] || return "$rc"
   [ -z "${5:-}" ] || hm_claude_is "$5" "${6:-}"
 }
+# Is a team member still running as team.json recorded it? 0 yes; 1 no; 2 cannot tell (its process is alive but no tmux
+# answers for its pane); 3 not on the team, or recorded with no identity. The one check hm-rotate, hm-context and
+# hm-spawn --respawn make. The recorded process is read first: a missing pane reads to tmux as "cannot be read", the same
+# as a server that does not answer, yet after a restart it is simply gone. A spawned agent's pane process is its Claude;
+# the --self orchestrator's pane is the owner's shell, so its own Claude is what is checked.
+hm_team_agent_is() {  # hm_team_agent_is <project root> <agent>
+  local e socket pane ppid pstarted cpid cstarted
+  # one read, fields joined by the unit separator: a whitespace separator would fold an empty field into its neighbour
+  e=$(jq -r --arg a "$2" '[.agents[]? | select(.name == $a)][0] // empty
+      | [.socket, .pane, .pane_pid, .pane_started, .claude_pid, .claude_started] | map(. // "" | tostring) | join("\u001f")' \
+      "$1/.hivemind/team.json" 2>/dev/null)
+  [ -n "$e" ] || return 3
+  IFS=$'\x1f' read -r socket pane ppid pstarted cpid cstarted <<< "$e"
+  [ -n "$pane" ] && [ -n "$ppid" ] && [ -n "$pstarted" ] || return 3
+  if [ -n "$cpid" ]; then hm_claude_is "$cpid" "$cstarted" || return 1
+  else hm_alive "$ppid" && [ "$(hm_lstart "$ppid")" = "$pstarted" ] || return 1; fi
+  hm_agent_is "$socket" "$pane" "$ppid" "$pstarted" "$cpid" "$cstarted"
+}
 hm_socket() { if [ -n "${HM_TMUX_SOCKET:-}" ]; then echo "$HM_TMUX_SOCKET"; else tmux display -p '#{socket_path}'; fi; }
 
 # ---- mkdir locks (macOS has no flock). Used by hm-slot and hm-manifest. -------------------------------------------
