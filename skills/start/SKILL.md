@@ -25,7 +25,10 @@ If `hm-*` is not found, the plugin is not enabled in this session: say so and st
 
 Read the task, `CLAUDE.md`, `CLAUDE.local.md`, the memory index, `git status` and `.hivemind/` (handoffs, `team.json`,
 `manifest.jsonl`). If `.hivemind/team.json` has a team, resume it (`ListAgents`, `hm-context --all`) instead of
-starting again.
+starting again. After a restart (the machine's or tmux's) the team's panes are gone: `hm-context --all` marks each such
+session "(not running)", yours included. Register yourself again first, `hm-spawn --self --agent orchestrator` (step
+6's form), then `hm-spawn --respawn <agent>` for each agent marked "(not running)": it starts the agent again from its
+own record and sends it back to its handoff. Tell the owner which agents you respawned.
 
 Then run `hm-adhd`. When it prints a path, the owner uses the i-have-adhd output style: Read that file and follow it
 for every message to the owner, from now on (your pickup line after a rotation names it again). When it prints nothing,
