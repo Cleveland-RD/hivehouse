@@ -1,0 +1,391 @@
+#!/usr/bin/env bash
+# The owner's hub: one Claude session in the owner's work folder that knows every project, hands each task to that
+# project's orchestrator, wakes an orchestrator a restart stopped and starts one where none is. It never reads or
+# changes a project's code: everything here is records, tmux and fixed lines. bash 3.2 compatible.
+# The hub's state is <work folder>/.hivemind-hub/: projects.json, hub.json (the hub's own session), tasks.jsonl (the
+# ledger, one event per line), tasks/<id>.md (each task's text), memory/<project>.md (the hub's notes), panes/ (an
+# orchestrator this hub started and that has not registered yet). HM_HUB names the work folder; else the nearest folder
+# at or above the cwd holding .hivemind-hub/.
+# Exit: 2 not found (no hub, project, task or record), 4 refused value or state, 5 a dialog needs a person, 1 never idle,
+# 64 usage.
+set -u
+. "$(dirname "$0")/hm-lib.sh"
+# The ledger's vocabulary, declared once. A note never moves a task's state; done and cancelled close it.
+HUB_EVENTS="asked handed question answered blocked done cancelled note"
+HUB_CLOSED="done cancelled"
+HUB_CLOSED_JSON=$(printf '%s' "$HUB_CLOSED" | jq -Rc 'split(" ")')
+# What an orchestrator's message to the hub begins with, after `TASK <id>:` (the hub and start skills read the same words)
+HUB_REPLIES="HM-CLARIFY HM-PLAN BLOCKED DONE"
+USAGE="usage: hm-hub init
+       hm-hub self [--name <session name>]
+       hm-hub discover
+       hm-hub add <project> --home <folder> [--repo <folder>]...
+       hm-hub remove <project>
+       hm-hub status [<project>] [--json]
+       hm-hub task <project> [--text <text>]          (no --text: the text is read from stdin)
+       hm-hub log <task id> <event> [--note <text>]    events: $HUB_EVENTS
+       hm-hub tasks [<project>] [--open] [--json]
+       hm-hub wake <project> [--model <m>] [--still <s>] [--max-wait <s>]
+       hm-hub start <project> <task id> [--model <m>] [--still <s>] [--max-wait <s>]"
+
+cmd="${1:-}"; [ -n "$cmd" ] || hm_die 64 "$USAGE"; shift
+hub_root() {  # the work folder holding .hivemind-hub/, resolved
+  local d
+  if [ -n "${HM_HUB:-}" ]; then
+    [ -d "$HM_HUB/.hivemind-hub" ] || hm_die 2 "HM_HUB holds no .hivemind-hub/: $HM_HUB"
+    (cd "$HM_HUB" && pwd -P); return
+  fi
+  d=$(pwd -P)
+  while :; do
+    [ -d "$d/.hivemind-hub" ] && [ ! -L "$d/.hivemind-hub" ] && { printf '%s\n' "$d"; return 0; }
+    [ "$d" = / ] && break; d=$(dirname "$d")
+  done
+  hm_die 2 "no hub here: run hm-hub init in your work folder"
+}
+# A project's name follows the agent-name rule (lower-case letters, digits, '_' and '-'): it becomes a tmux session, a
+# task id and part of an orchestrator's session name.
+check_name() { hm_is_agent_name "$1" || hm_die 4 "a project name is lower-case letters, digits, '_' and '-': $1"; }
+LOCK=""
+lock() {  # lock <hub root>: the hub's one lock, around every write of projects.json and tasks.jsonl; released on exit
+  local i=0 j; j=$(hm_holder_json $$)
+  LOCK="$1/.hivemind-hub/lock"
+  until hm_lock_try "$LOCK" "$j"; do i=$((i + 1)); [ "$i" -lt 50 ] || hm_die 4 "the hub is locked by another hm-hub"; sleep 0.1; done
+  trap 'hm_lock_release "$LOCK" $$' EXIT
+}
+abs() {  # abs <hub root> <folder as stored>: relative to the hub, or absolute
+  case "$2" in /*) printf '%s\n' "$2" ;; *) printf '%s/%s\n' "$1" "$2" ;; esac
+}
+stored() {  # stored <hub root> <folder as given>: resolved; kept relative when it sits under the hub
+  local p; p=$(cd "$1" && cd "$2" 2>/dev/null && pwd -P) || return 1
+  case "$p/" in "$1/"*) printf '%s\n' "${p#"$1"/}" ;; *) printf '%s\n' "$p" ;; esac
+}
+kind_of() {  # kind_of <folder>: "repo", "worktree <its repository>", "folder" or "missing"
+  local top common
+  [ -d "$1" ] || { echo missing; return; }
+  top=$(git -C "$1" rev-parse --show-toplevel 2>/dev/null) || { echo folder; return; }
+  [ "$(cd "$top" && pwd -P)" = "$(cd "$1" && pwd -P)" ] || { echo folder; return; }
+  common=$(git -C "$1" rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || { echo folder; return; }
+  common=$(cd "$common" && pwd -P)
+  if [ "$common" = "$(cd "$1" && pwd -P)/.git" ]; then echo repo; else echo "worktree ${common%/.git}"; fi
+}
+project() {  # project <hub root> <name>: the project's entry, or nothing
+  jq -c --arg n "$2" '[.projects[]? | select(.name == $n)][0] // empty' "$1/.hivemind-hub/projects.json" 2>/dev/null
+}
+need_project() {  # need_project <hub root> <name>: sets PROJ (its entry) and HOME_DIR (its home, absolute)
+  check_name "$2"
+  PROJ=$(project "$1" "$2"); [ -n "$PROJ" ] || hm_die 2 "no project named $2 in this hub"
+  HOME_DIR=$(abs "$1" "$(printf '%s' "$PROJ" | jq -r .home)")
+}
+hub_name() {  # hub_name <hub root>: the hub's session name as recorded by hm-hub self, or fails
+  local n; n=$(hm_json_get "$1/.hivemind-hub/hub.json" .name)
+  [ -n "$n" ] && hm_is_session_name "$n" && { printf '%s\n' "$n"; return 0; }
+  return 1
+}
+need_hub_name() { hub_name "$1" || hm_die 2 "the hub has not recorded its own session: run hm-hub self"; }
+task_state() {  # task_state <hub root> <id>: the last event that is not a note, or nothing when the task was never asked
+  jq -r --arg i "$2" 'select(.id == $i and .event != "note") | .event' "$1/.hivemind-hub/tasks.jsonl" 2>/dev/null | tail -1
+}
+append_event() {  # append_event <hub root> <id> <project> <event> <note>: one ledger line, under the caller's lock
+  jq -nc --arg i "$2" --arg p "$3" --arg e "$4" --arg n "$5" --arg at "$(hm_now)" '{id:$i, project:$p, event:$e, at:$at} + (if $n != "" then {note:$n} else {} end)' \
+    >> "$1/.hivemind-hub/tasks.jsonl"
+}
+in_list() { case " $2 " in *" $1 "*) return 0 ;; esac; return 1; }   # in_list <word> <space-separated list of words>
+
+# An orchestrator this hub started (wake, start) is recorded until it registers itself: a second wake or start while
+# that pane still runs would put two orchestrators on one team.
+pending() {  # pending <hub root> <project>: 0 a pane this hub started is still that pane; 1 none; 2 cannot tell
+  local f="$1/.hivemind-hub/panes/$2.json" pid started rc
+  [ -f "$f" ] || return 1
+  # the recorded process first, as hm_team_agent_is reads it: a missing pane reads to tmux as "cannot be read", the same
+  # as a server that does not answer, yet after a restart it is simply gone
+  pid=$(hm_json_get "$f" .pane_pid); started=$(hm_json_get "$f" .pane_started)
+  if [ -z "$pid" ] || ! hm_alive "$pid" || [ "$(hm_lstart "$pid")" != "$started" ]; then rm -f "$f"; return 1; fi
+  hm_pane_is "$(hm_json_get "$f" .socket)" "$(hm_json_get "$f" .pane)" "$pid" "$started"; rc=$?
+  [ "$rc" -eq 1 ] && rm -f "$f"
+  return "$rc"
+}
+orch_state() {  # orch_state <home>: sets O_AGENT, O_NAME, O_SID, O_STATE (running|stopped|unknown|none)
+  local entry
+  O_AGENT=""; O_NAME=""; O_SID=""; O_STATE=none
+  entry=$(hm_self_entry "$1"); [ -n "$entry" ] || return 0
+  O_AGENT=$(printf '%s' "$entry" | jq -r '.name // empty')
+  hm_is_agent_name "$O_AGENT" || { O_AGENT=""; return 0; }
+  O_NAME=$(hm_orchestrator_name "$1" 2>/dev/null)
+  O_SID=$(hm_json_get "$1/.hivemind/team/$O_AGENT/session.json" .session_id)
+  case "$O_SID" in *[!${HM_LOWER}${HM_UPPER}${HM_DIGITS}-]*) O_SID="" ;; esac
+  hm_team_agent_is "$1" "$O_AGENT"; case $? in 0) O_STATE=running ;; 1) O_STATE=stopped ;; *) O_STATE=unknown ;; esac
+}
+num() { case "$1" in ''|*[!0-9]*) return 1 ;; esac; }
+start_opts() {  # parses [--model m] [--still s] [--max-wait s] into MODEL, STILL, MAXWAIT
+  MODEL=""; STILL=5; MAXWAIT=90
+  while [ $# -gt 0 ]; do
+    [ $# -ge 2 ] || hm_die 64 "$USAGE"
+    case "$1" in --model) MODEL="$2" ;; --still) STILL="$2" ;; --max-wait) MAXWAIT="$2" ;; *) hm_die 64 "$USAGE" ;; esac
+    shift 2
+  done
+  num "$STILL" && num "$MAXWAIT" || hm_die 4 "--still and --max-wait must be numbers"
+  case "$MODEL" in *[!${HM_LOWER}${HM_UPPER}${HM_DIGITS}._\[\]-]*|-*) hm_die 4 "bad model: $MODEL" ;; esac
+}
+# open_pane <hub root> <project> <kind> <cwd> <claude args>...: a new window in the project's own tmux session (named after
+# the project), recorded as pending, idle before anything is typed. Sets PANE. The pane is the owner's, like the one an
+# orchestrator registers with --self, so it never goes on a project's manifest (cleanup kills what the manifest names).
+open_pane() {
+  local root="$1" name="$2" kind="$3" cwd="$4" c pane socket ident rc envs
+  shift 4
+  c="exec $(printf '%q ' claude "$@")"
+  envs=(-e "HIVEMIND_HOME=$(hm_home)")
+  [ -n "${HM_TMUX_SOCKET:-}" ] && envs+=(-e "HM_TMUX_SOCKET=$HM_TMUX_SOCKET")
+  if hm_tmux has-session -t "=$name" 2>/dev/null; then
+    pane=$(hm_tmux new-window -d -P -F '#{pane_id}' -t "=$name:" -n orchestrator -c "$cwd" "${envs[@]}" "$c") || exit $?
+  else
+    pane=$(hm_tmux new-session -d -P -F '#{pane_id}' -s "$name" -n orchestrator -c "$cwd" "${envs[@]}" "$c") || exit $?
+  fi
+  socket=$(hm_tmux display-message -p -t "$pane" '#{socket_path}') || exit $?
+  ident=$(hm_pane_identity "$socket" "$pane") || hm_die 4 "cannot read the new pane $pane"
+  mkdir -p "$root/.hivemind-hub/panes"
+  jq -nc --arg p "$pane" --arg s "$socket" --arg i "${ident%%$'\t'*}" --arg t "${ident#*$'\t'}" --arg k "$kind" --arg at "$(hm_now)" \
+    '{pane:$p, socket:$s, pane_pid:$i, pane_started:$t, kind:$k, at:$at}' > "$root/.hivemind-hub/panes/$name.json"
+  wait_idle "$pane" "$STILL" "$MAXWAIT"; rc=$?
+  case "$rc" in
+    0) ;;
+    3) echo "hivemind: a dialog is waiting in pane $pane ($name): answer it yourself; nothing was typed" >&2; exit 5 ;;
+    *) echo "hivemind: pane $pane ($name) never went idle within ${MAXWAIT}s; nothing was sent" >&2; exit 1 ;;
+  esac
+  PANE="$pane"
+}
+type_line() { hm_tmux send-keys -t "$1" -l "$2"; hm_tmux send-keys -t "$1" Enter; }   # type_line <pane> <fixed line>
+
+case "$cmd" in
+init)
+  [ $# -eq 0 ] || hm_die 64 "$USAGE"
+  git rev-parse --git-dir >/dev/null 2>&1 && hm_die 4 "the hub sits above your projects, never inside a repository: run it in your work folder"
+  d=$(pwd -P)
+  mkdir -p "$d/.hivemind-hub/memory" "$d/.hivemind-hub/tasks" || exit $?
+  [ -f "$d/.hivemind-hub/projects.json" ] || echo '{"projects":[]}' > "$d/.hivemind-hub/projects.json"
+  touch "$d/.hivemind-hub/tasks.jsonl"
+  echo "$d/.hivemind-hub" ;;
+
+self)
+  name=""
+  while [ $# -gt 0 ]; do [ $# -ge 2 ] && [ "$1" = --name ] || hm_die 64 "$USAGE"; name="$2"; shift 2; done
+  root=$(hub_root) || exit $?
+  pid=$(hm_claude_ancestor) || hm_die 2 "hm-hub self must run inside the Claude session that is the hub"
+  [ -n "$name" ] || name=$(hm_session_record "$pid" .name)
+  [ -n "$name" ] || hm_die 4 "this session has no name: start the hub with claude --name <name>, or pass --name"
+  hm_is_session_name "$name" || hm_die 4 "a session name hivemind will type is one line of letters, digits, space, - _ . ( ), at most 64: $name"
+  jq -nc --arg n "$name" --arg p "$pid" --arg s "$(hm_lstart "$pid")" --arg sid "$(hm_session_record "$pid" .sessionId)" --arg at "$(hm_now)" \
+    '{name:$n, claude_pid:$p, claude_started:$s, at:$at} + (if $sid != "" then {session_id:$sid} else {} end)' \
+    > "$root/.hivemind-hub/hub.json.tmp$$" && mv "$root/.hivemind-hub/hub.json.tmp$$" "$root/.hivemind-hub/hub.json"
+  echo "$name" ;;
+
+discover)
+  [ $# -eq 0 ] || hm_die 64 "$USAGE"
+  root=$(hub_root) || exit $?
+  for d in "$root"/*/; do
+    d=${d%/}; b=$(basename "$d")
+    [ -L "$d" ] && { printf '%-28s %s\n' "$b" "link (not followed)"; continue; }
+    k=$(kind_of "$d")
+    case "$k" in worktree\ *) w=$(stored "$root" "${k#worktree }") || w="${k#worktree }"; k="worktree of $w" ;; esac
+    extra=""; [ -f "$d/.hivemind/team.json" ] && extra="  team"
+    owner=$(jq -r --arg f "$b" '.projects[]? | select([.repos[]?] | index($f)) | .name' "$root/.hivemind-hub/projects.json" 2>/dev/null | head -1)
+    [ -z "$owner" ] || extra="$extra  in $owner"
+    printf '%-28s %s%s\n' "$b" "$k" "$extra"
+  done ;;
+
+add)
+  name="${1:-}"; [ -n "$name" ] || hm_die 64 "$USAGE"; shift
+  home=""; repos=()
+  while [ $# -gt 0 ]; do
+    [ $# -ge 2 ] || hm_die 64 "$USAGE"
+    case "$1" in --home) home="$2" ;; --repo) repos+=("$2") ;; *) hm_die 64 "$USAGE" ;; esac
+    shift 2
+  done
+  [ -n "$home" ] || hm_die 64 "$USAGE"
+  check_name "$name"
+  root=$(hub_root) || exit $?
+  h=$(stored "$root" "$home") || hm_die 4 "no such folder: $home"
+  case "$(kind_of "$(abs "$root" "$h")")" in
+    repo) ;;
+    worktree\ *) hm_die 4 "$home is a worktree; a project's home is its repository's main folder" ;;
+    *) hm_die 4 "$home is not a git repository; a project's home is the repository its team works from" ;;
+  esac
+  list=("$h")
+  for r in ${repos[@]+"${repos[@]}"}; do
+    s=$(stored "$root" "$r") || hm_die 4 "no such folder: $r"
+    dup=0; for x in "${list[@]}"; do [ "$x" = "$s" ] && dup=1; done
+    [ "$dup" = 1 ] || list+=("$s")
+  done
+  lock "$root"
+  [ -z "$(project "$root" "$name")" ] || hm_die 4 "a project named $name is already in this hub"
+  for s in "${list[@]}"; do
+    o=$(jq -r --arg f "$s" '.projects[]? | select([.repos[]?] | index($f)) | .name' "$root/.hivemind-hub/projects.json" | head -1)
+    [ -z "$o" ] || hm_die 4 "$s already belongs to $o"
+  done
+  f="$root/.hivemind-hub/projects.json"
+  jq --arg n "$name" --arg h "$h" --args '.projects += [{name:$n, home:$h, repos:$ARGS.positional}]' "${list[@]}" < "$f" > "$f.tmp$$" \
+    && mv "$f.tmp$$" "$f" || { rm -f "$f.tmp$$"; exit 1; }
+  echo "$name" ;;
+
+remove)
+  [ $# -eq 1 ] || hm_die 64 "$USAGE"
+  check_name "$1"; root=$(hub_root) || exit $?
+  lock "$root"
+  [ -n "$(project "$root" "$1")" ] || hm_die 2 "no project named $1 in this hub"
+  f="$root/.hivemind-hub/projects.json"
+  jq --arg n "$1" '.projects |= map(select(.name != $n))' "$f" > "$f.tmp$$" && mv "$f.tmp$$" "$f"
+  echo "$1" ;;
+
+status)
+  want=""; json=0
+  while [ $# -gt 0 ]; do case "$1" in --json) json=1 ;; -*) hm_die 64 "$USAGE" ;; *) want="$1" ;; esac; shift; done
+  root=$(hub_root) || exit $?
+  [ -z "$want" ] || { check_name "$want"; [ -n "$(project "$root" "$want")" ] || hm_die 2 "no project named $want in this hub"; }
+  hub=$(jq -c '{name, claude_pid, claude_started}' "$root/.hivemind-hub/hub.json" 2>/dev/null) || hub='{}'
+  [ -n "$hub" ] || hub='{}'
+  # open tasks per project: those whose last event (a note aside) neither closes them
+  opens=$(jq -s --argjson c "$HUB_CLOSED_JSON" '[group_by(.id)[] | {p: .[0].project, s: ([.[] | select(.event != "note")] | last | .event)}
+    | select((.s as $s | $c | index($s)) | not)] | group_by(.p) | map({key: .[0].p, value: length}) | from_entries' "$root/.hivemind-hub/tasks.jsonl")
+  out='[]'
+  for n in $(jq -r '.projects[]?.name' "$root/.hivemind-hub/projects.json"); do
+    [ -z "$want" ] || [ "$n" = "$want" ] || continue
+    hm_is_agent_name "$n" || continue
+    p=$(project "$root" "$n"); home=$(abs "$root" "$(printf '%s' "$p" | jq -r .home)")
+    repos='[]'
+    while IFS= read -r r; do
+      a=$(abs "$root" "$r"); k=$(kind_of "$a"); br=""; ch=""
+      case "$k" in
+        repo|worktree\ *) br=$(git -C "$a" symbolic-ref --short -q HEAD 2>/dev/null || git -C "$a" rev-parse --short HEAD 2>/dev/null)
+                          ch=$(git -C "$a" status --porcelain 2>/dev/null | grep -c .) ;;
+      esac
+      repos=$(printf '%s' "$repos" | jq -c --arg r "$r" --arg k "${k%% *}" --arg b "$br" --arg c "$ch" '. + [{folder:$r, kind:$k} + (if $b != "" then {branch:$b, changed:($c | tonumber)} else {} end)]')
+    done < <(printf '%s' "$p" | jq -r '.repos[]')
+    orch_state "$home"
+    starting='null'
+    if [ "$O_STATE" != running ] && pending "$root" "$n"; then
+      starting=$(jq -c '{pane, kind, at}' "$root/.hivemind-hub/panes/$n.json")
+    fi
+    agents='[]'
+    for a in $(jq -r '.agents[]?.name' "$home/.hivemind/team.json" 2>/dev/null); do
+      hm_is_agent_name "$a" && [ "$a" != "$O_AGENT" ] || continue
+      hm_team_agent_is "$home" "$a"; case $? in 0) st=running ;; 1) st=stopped ;; 2) st=unknown ;; *) st=unrecorded ;; esac
+      agents=$(printf '%s' "$agents" | jq -c --arg a "$a" --arg s "$st" '. + [{name:$a, state:$s}]')
+    done
+    open=$(printf '%s' "$opens" | jq -r --arg p "$n" '.[$p] // 0')
+    out=$(printf '%s' "$out" | jq -c --arg n "$n" --arg h "$home" --argjson r "$repos" --argjson ag "$agents" --argjson st "$starting" \
+      --arg os "$O_STATE" --arg on "$O_NAME" --arg sid "$O_SID" --argjson ot "$open" \
+      '. + [{name:$n, home:$h, repos:$r, orchestrator:({state:$os} + (if $on != "" then {name:$on} else {} end) + (if $sid != "" then {session_id:$sid} else {} end) + (if $st != null then {starting:$st} else {} end)), agents:$ag, open_tasks:$ot}]')
+  done
+  if [ "$json" = 1 ]; then
+    jq -n --arg root "$root" --argjson h "$hub" --argjson p "$out" '{hub:({root:$root} + $h), projects:$p}'
+  else
+    printf '%s' "$out" | jq -r --arg root "$root" --arg hub "$(printf '%s' "$hub" | jq -r '.name // "hub (not recorded: hm-hub self)"')" '
+      def n($k; $w): "\($k) \($w)\(if $k == 1 then "" else "s" end)";
+      (map(.repos[].folder | length) | max // 0) as $fw |
+      "\($hub)  ·  \($root)  ·  \(n(length; "project"))  ·  \(n(map(.open_tasks) | add // 0; "open task"))",
+      (.[] |
+        "",
+        .name,
+        "  orchestrator  \(.orchestrator.state)\(if .orchestrator.name then "  \(.orchestrator.name)" else "" end)\(if .orchestrator.starting then "  (coming up in pane \(.orchestrator.starting.pane))" else "" end)",
+        "  agents        \(if (.agents | length) == 0 then "none" else "\([.agents[] | select(.state == "running")] | length) of \(.agents | length) running\([.agents[] | select(.state != "running") | "\(.name) \(.state)"] | if length > 0 then "  (\(join(", ")))" else "" end)" end)",
+        "  tasks         \(.open_tasks) open",
+        (.repos | to_entries[] | "\(if .key == 0 then "  folders       " else "                " end)\(.value.folder + (" " * ($fw - (.value.folder | length))))  \(.value.kind)\(if .value.branch then "  \(.value.branch)  \(if .value.changed == 0 then "clean" else "\(.value.changed) changed" end)" else "" end)"))'
+  fi ;;
+
+task)
+  name="${1:-}"; [ -n "$name" ] || hm_die 64 "$USAGE"; shift
+  text=""; given=0
+  while [ $# -gt 0 ]; do [ $# -ge 2 ] && [ "$1" = --text ] || hm_die 64 "$USAGE"; text="$2"; given=1; shift 2; done
+  root=$(hub_root) || exit $?
+  need_project "$root" "$name"
+  hn=$(need_hub_name "$root") || exit $?
+  [ "$given" = 1 ] || text=$(cat)
+  [ -n "$(printf '%s' "$text" | tr -d '[:space:]')" ] || hm_die 4 "a task needs its text"
+  lock "$root"
+  n=$(jq -r --arg p "$name" 'select(.project == $p) | .id' "$root/.hivemind-hub/tasks.jsonl" | sort -u | grep -c .)
+  id="$name-$((n + 1))"
+  folders=$(printf '%s' "$PROJ" | jq -r '.home as $h | .repos[] | "\(if . == $h then 1 else 0 end)\t\(.)"' | while IFS=$'\t' read -r ish f; do
+    if [ "$ish" = 1 ]; then printf -- '- %s (home: the team works from here)\n' "$(abs "$root" "$f")"; else printf -- '- %s\n' "$(abs "$root" "$f")"; fi
+  done)
+  {
+    printf '# Task %s\n\n' "$id"
+    printf 'From the owner, through %s. The owner reads and answers you only through %s: send it your questions, your plan,\n' "$hn" "$hn"
+    printf 'blockers and finished work with SendMessage, the first line `TASK %s:` and then one of: %s.\n' "$id" "$(printf '%s' "$HUB_REPLIES" | sed 's/ /, /g')"
+    printf 'A reply that begins `OWNER on TASK %s:` carries the owner'"'"'s own words.\n\n' "$id"
+    printf 'Project folders:\n%s\n\n## The task\n\n%s\n' "$folders" "$text"
+  } > "$root/.hivemind-hub/tasks/$id.md"
+  append_event "$root" "$id" "$name" asked ""
+  echo "$id" ;;
+
+log)
+  [ $# -ge 2 ] || hm_die 64 "$USAGE"
+  id="$1"; ev="$2"; shift 2; note=""
+  while [ $# -gt 0 ]; do [ $# -ge 2 ] && [ "$1" = --note ] || hm_die 64 "$USAGE"; note="$2"; shift 2; done
+  in_list "$ev" "$HUB_EVENTS" || hm_die 4 "unknown event: $ev (events: $HUB_EVENTS)"
+  root=$(hub_root) || exit $?
+  lock "$root"
+  [ -n "$(task_state "$root" "$id")" ] || hm_die 2 "no task $id in this hub"
+  p=$(jq -r --arg i "$id" 'select(.id == $i) | .project' "$root/.hivemind-hub/tasks.jsonl" | head -1)
+  append_event "$root" "$id" "$p" "$ev" "$note"
+  echo "$id $ev" ;;
+
+tasks)
+  want=""; open=0; json=0
+  while [ $# -gt 0 ]; do case "$1" in --open) open=1 ;; --json) json=1 ;; -*) hm_die 64 "$USAGE" ;; *) want="$1" ;; esac; shift; done
+  root=$(hub_root) || exit $?
+  rows=$(jq -s --arg w "$want" --argjson o "$open" --argjson c "$HUB_CLOSED_JSON" '
+    [group_by(.id)[] | select($w == "" or .[0].project == $w)
+     | {id: .[0].id, project: .[0].project, asked: .[0].at,
+        state: ([.[] | select(.event != "note")] | last | .event),
+        updated: (last | .at), last_note: ([.[] | select(.note)] | last | .note // null)}
+     | select($o == 0 or ((.state as $s | $c | index($s)) | not))] | sort_by(.asked)' "$root/.hivemind-hub/tasks.jsonl")
+  if [ "$json" = 1 ]; then printf '%s\n' "$rows"
+  else printf '%s' "$rows" | jq -r '.[] | "\(.id)\t\(.state)\t\(.updated)\(if .last_note then "\t\(.last_note)" else "" end)"'; fi ;;
+
+wake)
+  name="${1:-}"; [ -n "$name" ] || hm_die 64 "$USAGE"; shift
+  start_opts "$@"
+  root=$(hub_root) || exit $?
+  need_project "$root" "$name"
+  hn=$(need_hub_name "$root") || exit $?
+  orch_state "$HOME_DIR"
+  case "$O_STATE" in
+    none) hm_die 2 "no orchestrator is recorded for $name: start one on a task with hm-hub start $name <task id>" ;;
+    running) hm_die 4 "$name's orchestrator is running as $O_NAME: message it instead" ;;
+    unknown) hm_die 4 "cannot tell whether $name's orchestrator is running; nothing was started" ;;
+  esac
+  [ -n "$O_SID" ] || hm_die 2 "$name's orchestrator has no session recorded, so there is no conversation to resume"
+  pending "$root" "$name"; case $? in
+    0) hm_die 4 "$name's orchestrator is already coming up in pane $(hm_json_get "$root/.hivemind-hub/panes/$name.json" .pane)" ;;
+    2) hm_die 4 "cannot tell whether the pane this hub started for $name is still there; nothing was started" ;;
+  esac
+  hm_is_session_name "$O_NAME" || hm_die 4 "$name's orchestrator name is not one hivemind will type"
+  args=(--resume "$O_SID" --name "$O_NAME"); [ -z "$MODEL" ] || args+=(--model "$MODEL")
+  open_pane "$root" "$name" wake "$HOME_DIR" "${args[@]}"
+  type_line "$PANE" "You are $O_NAME, resumed by $hn after a restart. Register again with hm-spawn --self --agent $O_AGENT, run hm-context --all, and run hm-spawn --respawn <agent> for each agent it marks (not running). Then send $hn one line, first word BACK: which agents are back and what you were doing."
+  echo "$PANE" ;;
+
+start)
+  name="${1:-}"; id="${2:-}"; [ -n "$name" ] && [ -n "$id" ] || hm_die 64 "$USAGE"; shift 2
+  start_opts "$@"
+  root=$(hub_root) || exit $?
+  need_project "$root" "$name"
+  hn=$(need_hub_name "$root") || exit $?
+  st=$(task_state "$root" "$id"); [ -n "$st" ] || hm_die 2 "no task $id in this hub"
+  [ "$(jq -r --arg i "$id" 'select(.id == $i) | .project' "$root/.hivemind-hub/tasks.jsonl" | head -1)" = "$name" ] || hm_die 4 "task $id is not $name's"
+  in_list "$st" "$HUB_CLOSED" && hm_die 4 "task $id is $st"
+  orch_state "$HOME_DIR"
+  [ "$O_STATE" = none ] || hm_die 4 "$name already has an orchestrator ($O_STATE): message it, or wake it with hm-hub wake $name"
+  pending "$root" "$name"; case $? in
+    0) hm_die 4 "$name's orchestrator is already coming up in pane $(hm_json_get "$root/.hivemind-hub/panes/$name.json" .pane)" ;;
+    2) hm_die 4 "cannot tell whether the pane this hub started for $name is still there; nothing was started" ;;
+  esac
+  tf="$root/.hivemind-hub/tasks/$id.md"
+  hm_is_typed_path "$tf" || hm_die 4 "the task's path is not one hivemind will type: $tf"
+  args=(--name "$name-orchestrator"); [ -z "$MODEL" ] || args+=(--model "$MODEL")
+  open_pane "$root" "$name" start "$HOME_DIR" "${args[@]}"
+  type_line "$PANE" "/hivemind:start Task $id: read $tf. It came from the owner through $hn."
+  lock "$root"; append_event "$root" "$id" "$name" handed "started $name-orchestrator in pane $PANE"
+  echo "$PANE" ;;
+
+*) hm_die 64 "$USAGE" ;;
+esac

@@ -21,6 +21,12 @@ turns; in auto mode the classifier decides. Never write permission rules into th
 
 If `hm-*` is not found, the plugin is not enabled in this session: say so and stop.
 
+**A task from the owner's hub.** When the task reads `Task <id>: read <file>. It came from the owner through <hub>`,
+read that file first: it holds the task and the project's folders. The owner then talks to you only through the hub.
+Wherever this skill says to ask the owner, show them something or wait for their OK, send it to the hub with
+`SendMessage` instead, first line `TASK <id>: HM-CLARIFY`, `TASK <id>: HM-PLAN`, `TASK <id>: BLOCKED` or
+`TASK <id>: DONE`, and wait for its reply: a reply that begins `OWNER on TASK <id>:` carries the owner's own words.
+
 ## 1. Read before doing anything
 
 Read the task, `CLAUDE.md`, `CLAUDE.local.md`, the memory index, `git status` and `.hivemind/` (handoffs, `team.json`,
