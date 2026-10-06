@@ -1,0 +1,186 @@
+#!/usr/bin/env bash
+# Delegate mode, the part the hub's own commands carry: `away` and `back` print what the owner pastes (never run sudo), status
+# shows "away until", `decide` records what the hub decided for the owner, `hold` keeps it off a project, and `recover` says what
+# is due on each beat with its caps. The delegate file is a fixture here (t_delegate_bin: a scratch copy of bin/ that reads it as
+# this user); the real file, owned by root, is a live check.
+. "$(dirname "$0")/lib.sh"
+. "$HM_REPO_ROOT/bin/hm-lib.sh"
+t_setup
+export HM_SUDO_LOG="$T_TMP/sudo.log"; : > "$HM_SUDO_LOG"
+env -u HIVEMIND_HOME tmux -S "$HM_TMUX_SOCKET" new-session -d -s keep 'sleep 600'
+H="$T_TMP/work"; mkdir -p "$H"; H=$(cd "$H" && pwd -P); P="$H/.hivemind-hub"
+mk() { local d="$H/$1"; mkdir -p "$d"; git -C "$d" init -q -b main; git -C "$d" config user.email t@t; git -C "$d" config user.name t
+       echo x > "$d/README"; git -C "$d" add README; git -C "$d" commit -qm init; }
+hub() { (cd "$H" && hm-hub "$@"); }
+idof() { printf '%s' "${1%%$'\t'*}"; }
+ME=$(id -u); NOW=$(date +%s)
+DD="$T_TMP/dg/area"; DF="$DD/delegate"
+mkdel() {  # mkdel [hub] [until]: the owner's delegate file, as root would have made it
+  mkdir -p "$DD"; chmod 755 "$DD" "$T_TMP/dg"
+  printf 'hivemind-delegate 1\nhub=%s\nuntil=%s\n' "${1:-$H}" "${2:-$((NOW + 3600))}" > "$DF"; chmod 644 "$DF"
+}
+mkdel
+if ! hm_delegate_read "$DF" "$ME" "$NOW" >/dev/null 2>&1; then
+  hm_delegate_read "$DF" "$ME" "$NOW" >/dev/null 2>&1
+  echo "  SKIP the fixture folder is not eligible here: $HM_DELEGATE_WHY"; t_done; exit 0
+fi
+DB=$(t_delegate_bin "$DF"); dhub() { (cd "$H" && "$DB/hm-hub" "$@"); }   # the copy that sees the fixture
+mkcl() {  # mkcl <bin dir>: a stand-in for the hub's Claude, which runs that bin's hm-hub from the hub's folder as its child
+  local d; d=$(mktemp -d "$T_TMP/cl.XXXXXX")
+  printf '#!/usr/bin/env bash\ncd "%s" && "%s/hm-hub" "$@"\n' "$H" "$1" > "$d/claude"; chmod +x "$d/claude"; printf '%s\n' "$d/claude"
+}
+CLP=$(mkcl "$HM_REPO_ROOT/bin"); CLD=$(mkcl "$DB")
+hub init >/dev/null
+for n in alpha beta gamma delta; do mk "$n"; hub add "$n" --home "$n" >/dev/null; done
+bash "$CLP" self --name hub >/dev/null; assert_status "the hub records itself" $? 0
+
+# ---- away: the lines the owner pastes ----
+hub away >/dev/null 2>&1; assert_status "away needs --until" $? 64
+hub away --until sometime >/dev/null 2>&1; assert_status "...a time it can read" $? 64
+hub away --until "$((NOW - 60))" >/dev/null 2>&1; assert_status "...in the future" $? 4
+hub away --until +8d >/dev/null 2>&1; assert_status "...at most 7 days" $? 4
+hub away --until +1h --mcp-allow 'x;y' >/dev/null 2>&1; assert_status "...an MCP list it can print safely" $? 4
+(cd "$T_TMP" && HM_HUB="$H" hm-hub away --until +1h >/dev/null 2>&1); assert_status "the hub is found from the cwd, never from HM_HUB" $? 2
+out=$(hub away --until +2h 2>"$T_TMP/away.err"); assert_status "away" $? 0
+assert_eq "...hivemind ran no sudo" "$(cat "$HM_SUDO_LOG")" ""
+assert_eq "...only mkdir, tee, chown and chmod are named after sudo" "$(printf '%s\n' "$out" | grep -o 'sudo [a-z]*' | sort -u | tr '\n' ' ')" "sudo chmod sudo chown sudo mkdir sudo tee "
+case "$(uname -s)" in
+  Darwin) assert_contains "...the folder, quoted for the shell" "$out" 'sudo mkdir -p -- /Library/Application\ Support/hivemind'
+          assert_contains "...the file made by tee" "$out" '| sudo tee -- /Library/Application\ Support/hivemind/delegate > /dev/null'
+          assert_contains "...owned by root" "$out" 'sudo chown root:wheel -- ' ;;
+  *)      assert_contains "...the folder" "$out" 'sudo mkdir -p -- /etc/hivemind'
+          assert_contains "...the file made by tee" "$out" '| sudo tee -- /etc/hivemind/delegate > /dev/null'
+          assert_contains "...owned by root" "$out" 'sudo chown root:root -- ' ;;
+esac
+assert_contains "...mode 0644" "$out" 'sudo chmod 0644 -- '
+assert_contains "...the content names this hub" "$out" "hub=$H"
+until_epoch=$(printf '%s\n' "$out" | sed -n 's/.*until=\([0-9]*\).*/\1/p' | head -1)
+[ "$until_epoch" -ge $((NOW + 7190)) ] && [ "$until_epoch" -le $((NOW + 7500)) ] && ok "...and the time asked for" || bad "until=$until_epoch is not about +2h"
+assert_contains "...the hub's start line is marked, in bypass, with only its allowed MCP servers" "$out" "HM_AWAY_BYPASS=1 HM_PROJECT=$H HM_AWAY_HUB=$H HM_AWAY_MCP_ALLOW='' claude --name hub --permission-mode bypassPermissions --strict-mcp-config --mcp-config $P/away-mcp.json /hivemind:hub"
+assert_contains "...with the hub's own project and hub folders for the away hook" "$out" "HM_PROJECT=$H HM_AWAY_HUB=$H"
+assert_contains "...before leaving: the one-time bypass warning, when it has not been accepted" "$out" "one-time warning"
+assert_contains "...and the folder trust, when the folder is not trusted" "$out" "not trusted by Claude Code yet"
+printf '{"skipDangerousModePermissionPrompt":true}\n' > "$CLAUDE_CONFIG_DIR/settings.json"
+printf '{"projects":{"%s":{"hasTrustDialogAccepted":true}}}\n' "$T_TMP" > "$CLAUDE_CONFIG_DIR/.claude.json"
+out2=$(hub away --until +1h)
+case "$out2" in *"one-time warning"*) bad "the bypass warning is asked for once it is accepted" ;; *) ok "...not asked again once it is accepted" ;; esac
+case "$out2" in *"not trusted by Claude Code yet"*) bad "a folder under a trusted one is called untrusted" ;; *) ok "...a folder under a trusted one is trusted" ;; esac
+rm -f "$CLAUDE_CONFIG_DIR/settings.json" "$CLAUDE_CONFIG_DIR/.claude.json"
+assert_eq "...its MCP file lets no server in" "$(jq -c . "$P/away-mcp.json")" '{"mcpServers":{}}'
+assert_eq "...at mode 0600" "$(stat -f '%Lp' "$P/away-mcp.json" 2>/dev/null || stat -c '%a' "$P/away-mcp.json")" "600"
+assert_contains "...it says away is capped at 7 days" "$out" "at most 7 days"
+assert_contains "...that a reboot ends it" "$out" "after a reboot"
+assert_contains "...that messages to the hub are information only" "$out" "information only"
+assert_contains "...and that no remote host is used" "$out" "No remote host"
+assert_eq "...the time away began is kept for the screen" "$(jq -r '.since | length' "$P/away.json")" "20"
+jq '.session_id = "sess-hub-1"' "$P/hub.json" > "$P/hub.json.t" && mv "$P/hub.json.t" "$P/hub.json"
+out=$(hub away --until +1d); assert_contains "with a session recorded, the hub is resumed" "$out" "claude --permission-mode bypassPermissions --strict-mcp-config --mcp-config $P/away-mcp.json --resume sess-hub-1"
+printf '{"mcpServers":{"docs":{"command":"docs-mcp","args":["--x"]}}}\n' > "$CLAUDE_CONFIG_DIR/.claude.json"
+out=$(hub away --until +1h --mcp-allow docs,nothere)
+assert_eq "an allowed server's definition is copied into the hub's MCP file" "$(jq -c '.mcpServers | keys' "$P/away-mcp.json")" '["docs"]'
+assert_contains "...one that is not found is said so" "$out" "Not found (not loaded): nothere"
+out=$(hub back); assert_status "back" $? 0
+assert_contains "...prints the line that removes the file" "$out" "sudo rm -f -- "
+case "$out" in *HM_AWAY_BYPASS*|*bypassPermissions*) bad "the restart line after away is marked or in bypass" ;; *) ok "...and a restart line with no marker and no bypass" ;; esac
+assert_contains "...which resumes the hub" "$out" "claude --resume sess-hub-1"
+assert_eq "...and still no sudo ran" "$(cat "$HM_SUDO_LOG")" ""
+
+# ---- status shows away, from the file ----
+case "$(hub status --json | jq -c '.hub | has("away")')" in false) ok "no valid file for this hub: not away" ;; *) bad "away shown with no valid file" ;; esac
+s=$(dhub status --json); assert_eq "with a valid file for this hub, status says until when" "$(printf '%s' "$s" | jq -r .hub.away.until)" "$((NOW + 3600))"
+assert_contains "...and the plain status" "$(dhub status)" "away until"
+mkdel "$T_TMP"; case "$(dhub status --json | jq -c '.hub | has("away")')" in false) ok "a file naming another hub is not this hub's away" ;; *) bad "away shown for another hub's file" ;; esac
+mkdel "$H" "$((NOW - 10))"; case "$(dhub status --json | jq -c '.hub | has("away")')" in false) ok "an expired file is not away" ;; *) bad "away shown for an expired file" ;; esac
+mkdel; chmod 666 "$DF"; case "$(dhub status --json | jq -c '.hub | has("away")')" in false) ok "a file anyone could write is not away" ;; *) bad "away shown for a writable file" ;; esac
+mkdel
+
+# ---- decide: what the hub decided for the owner, word for word, only while away ----
+ta=$(idof "$(hub task alpha --text "Add the export button")"); hub log "$ta" plan >/dev/null
+printf 'Which of the two layouts?\nA or B.\n=== ANSWER ===\nB, as the existing pages do.\n' | hub decide "$ta" --reason "matches the existing pages" >/dev/null 2>&1
+assert_status "decide while the owner is home (no valid delegate file for this hub)" $? 4
+printf 'Which of the two layouts?\nA or B.\n=== ANSWER ===\nB, as the existing pages do.\n' | dhub decide "$ta" --reason "matches the existing pages" >/dev/null; assert_status "decide while away" $? 0
+assert_eq "...the question and answer, word for word" "$(grep -c -e 'Which of the two layouts?' -e 'B, as the existing pages do.' "$P/decisions/$ta.md")" "2"
+assert_contains "...with its reason" "$(cat "$P/decisions/$ta.md")" "matches the existing pages"
+assert_eq "...a decided event" "$(dhub tasks --json | jq -r --arg i "$ta" '.[] | select(.id==$i) | [.state, .needs_owner] | map(tostring) | join(" ")')" "decided false"
+assert_eq "...with its reason in tasks --json" "$(dhub tasks --json | jq -r --arg i "$ta" '.[] | select(.id==$i) | .decisions[0].reason')" "matches the existing pages"
+assert_eq "...the task stays open" "$(dhub tasks --open | grep -c "^$ta")" "1"
+printf 'Q\n' | dhub decide "$ta" --reason r >/dev/null 2>&1; assert_status "a decision with no answer" $? 64
+printf 'Q\n=== ANSWER ===\nA\n' | dhub decide "$ta" --reason "" >/dev/null 2>&1; assert_status "...no reason" $? 64
+printf 'Q\n=== ANSWER ===\nA\n' | dhub decide "$ta" --reason $'two\nlines' >/dev/null 2>&1; assert_status "...a reason of two lines" $? 64
+printf 'Q\n=== ANSWER ===\nA\n' | dhub decide nope-9 --reason r >/dev/null 2>&1; assert_status "...a task nobody asked" $? 2
+hub log "$ta" decided >/dev/null 2>&1; assert_status "log never writes a decision: only decide, which asks the delegate file" $? 4
+tc=$(idof "$(hub task alpha --text "Second")"); hub log "$tc" done >/dev/null
+printf 'Q\n=== ANSWER ===\nA\n' | dhub decide "$tc" --reason r >/dev/null 2>&1; assert_status "...a closed task" $? 4
+hub log "$ta" answered >/dev/null
+
+# ---- recover: what is due on each beat, capped ----
+cp "$P/tasks.jsonl" "$T_TMP/tasks.saved"
+kp=$(hm_tmux list-panes -t keep -F '#{pane_id}' | head -1); ki=$(hm_pane_identity "$HM_TMUX_SOCKET" "$kp")
+mkorch() {  # mkorch <project> <claude pid>: a registered orchestrator on the keep pane
+  local S="$H/$1/.hivemind"; mkdir -p "$S/team/orchestrator"
+  jq -nc --arg k "$HM_TMUX_SOCKET" --arg kp "$kp" --arg p "${ki%%$'\t'*}" --arg s "${ki#*$'\t'}" --arg c "$2" --arg cs "$( [ "$2" = 99999 ] && echo 'Mon Jan  1 00:00:00 2001' || hm_lstart "$2")" --arg n "$1-orchestrator" \
+    '{agents:[{name:"orchestrator", pane:$kp, socket:$k, pane_pid:$p, pane_started:$s, claude_pid:$c, claude_started:$cs, name_full:$n}]}' > "$S/team.json"
+  jq -nc --arg t "$HM_REPO_ROOT/tests/fixtures/transcript.jsonl" '{session_id:"sess-x", transcript_path:$t}' > "$S/team/orchestrator/session.json"
+}
+tb=$(idof "$(hub task beta --text "Work")"); tg=$(idof "$(hub task gamma --text "Held work")"); td=$(idof "$(hub task delta --text "Needs you")"); hub log "$td" plan >/dev/null
+mkorch alpha 99999; mkorch gamma 99999; mkorch delta 99999
+( exec -a claude sleep 600 ) >/dev/null 2>&1 & bpid=$!; disown "$bpid"; t_track "$bpid"; sleep 0.3
+mkorch beta "$bpid"
+# beta's one agent runs in a window of its own
+aw=$(hm_tmux new-window -d -P -F '#{pane_id}' -t keep: -n impl 'sleep 600'); ai=$(hm_pane_identity "$HM_TMUX_SOCKET" "$aw")
+jq --arg k "$HM_TMUX_SOCKET" --arg p "$aw" --arg pp "${ai%%$'\t'*}" --arg ps "${ai#*$'\t'}" '.agents += [{name:"impl", pane:$p, socket:$k, pane_pid:$pp, pane_started:$ps}]' "$H/beta/.hivemind/team.json" > "$T_TMP/tj" && mv "$T_TMP/tj" "$H/beta/.hivemind/team.json"
+rec() { HM_AWAY_BYPASS=1 bash "$CLD" recover "$@" 2>/dev/null; }
+act() { printf '%s' "$1" | jq -r '[.actions[] | "\(.action):\(.project)"] | join(",")'; }
+blk() { printf '%s' "$1" | jq -r '[.blocked[] | "\(.action):\(.project)"] | join(",")'; }
+r=$(hub recover --json); assert_eq "recover with the owner home: nothing is due" "$r" '{"away":false,"actions":[],"blocked":[]}'
+assert_contains "...and says so in plain words" "$(hub recover)" "not away"
+mkdel "$H" "$((NOW + 3600))"
+r=$(rec --json); assert_status "recover while away" $? 0
+assert_eq "...a stopped orchestrator with an open task is woken, alone among these" "$(act "$r")" "wake:alpha,wake:gamma"
+assert_eq "...nothing is blocked" "$(blk "$r")" ""
+assert_eq "...the task it is woken for" "$(printf '%s' "$r" | jq -r '.actions[0].task')" "$ta"
+assert_eq "...a project whose only task waits on the owner is left alone" "$(printf '%s' "$r" | jq -r '[.actions[] | select(.project == "delta")] | length')" "0"
+hub hold gamma >/dev/null; assert_status "hold" $? 0
+assert_eq "...status shows it held" "$(hub status gamma --json | jq -r '.projects[0].held')" "true"
+r=$(rec --json); assert_eq "a held project is never woken" "$(act "$r")" "wake:alpha"
+hub hold gamma --off >/dev/null; assert_eq "...released" "$(hub status gamma --json | jq -r '.projects[0].held')" "false"
+# agents: RESPAWN once, when one goes from running to stopped since the previous beat
+r=$(rec --json); assert_eq "an agent that runs is left alone (first beat)" "$(act "$r" | tr ',' '\n' | grep -c respawn)" "0"
+hm_tmux kill-pane -t "$aw"; sleep 0.5
+r=$(rec --json); assert_eq "an agent that stopped since the last beat: its orchestrator is told" "$(act "$r" | tr ',' '\n' | grep respawn)" "respawn:beta"
+assert_eq "...naming it" "$(printf '%s' "$r" | jq -r '[.actions[] | select(.action == "respawn")][0].agents | join(",")')" "impl"
+r=$(rec --json); assert_eq "...and once: the next beat does not say it again" "$(act "$r" | tr ',' '\n' | grep -c respawn)" "0"
+# a start waiting on a dialog is the owner's
+dp=$(hm_open_window delta orchestrator "$H/delta" "exec claude" -e "HM_FAKE_CLAUDE=dialog" -e "HIVEMIND_HOME=$HIVEMIND_HOME" -e "HM_TMUX_SOCKET=$HM_TMUX_SOCKET"); sleep 1
+di=$(hm_pane_identity "$HM_TMUX_SOCKET" "$dp"); mkdir -p "$P/panes"
+jq -nc --arg p "$dp" --arg s "$HM_TMUX_SOCKET" --arg i "${di%%$'\t'*}" --arg t "${di#*$'\t'}" '{pane:$p, socket:$s, pane_pid:$i, pane_started:$t, kind:"wake", line:"x", typed:false, sender_pid:"1", sender_started:"x", at:"2026-10-06T00:00:00Z"}' > "$P/panes/delta.json"
+r=$(rec --json)
+assert_eq "a wake stopped at a dialog is listed for the owner" "$(printf '%s' "$r" | jq -r '[.actions[] | select(.action == "list" and .project == "delta")] | length')" "1"
+rm -f "$P/panes/delta.json"; hm_tmux kill-pane -t "$dp"
+# the caps count within a rolling 24 hours
+rj="$P/recovery.jsonl"; : > "$rj"
+for i in 1 2 3; do jq -nc --argjson e "$((NOW - 100 * i))" '{epoch:$e, action:"wake", item:"alpha"}' >> "$rj"; done
+r=$(rec --json); assert_eq "woken 3 times in 24 hours and still stopped: blocked, not woken a fourth time" "$(act "$r" | tr ',' '\n' | grep -c wake:alpha)" "0"
+assert_eq "...reported blocked, for the owner" "$(blk "$r" | tr ',' '\n' | grep wake:alpha)" "wake:alpha"
+assert_contains "...with its reason" "$(printf '%s' "$r" | jq -r '[.blocked[] | select(.project == "alpha")][0].reason')" "3 times"
+r=$(rec --json); assert_eq "...and said once: the next beat does not repeat it" "$(blk "$r" | tr ',' '\n' | grep -c wake:alpha)" "0"
+: > "$rj"
+for i in 1 2 3; do jq -nc --argjson e "$((NOW - 90000 - i))" '{epoch:$e, action:"wake", item:"alpha"}' >> "$rj"; done
+r=$(rec --json); assert_eq "wakes older than 24 hours do not count" "$(act "$r" | tr ',' '\n' | grep -c wake:alpha)" "1"
+: > "$rj"
+jq -nc --argjson e "$((NOW - 50))" '{epoch:$e, action:"start", item:"beta"}' >> "$rj"; jq -nc --argjson e "$((NOW - 60))" '{epoch:$e, action:"wake", item:"gamma"}' >> "$rj"
+r=$(rec --json --max-starts 2); assert_eq "the daily cap on sessions started or woken: blocked" "$(act "$r" | tr ',' '\n' | grep -c wake:alpha)" "0"
+assert_contains "...with its reason" "$(printf '%s' "$r" | jq -r '[.blocked[] | select(.project == "alpha")][0].reason')" "daily cap of 2"
+: > "$rj"; r=$(rec --json --max-starts 2); assert_eq "...under the cap it is woken" "$(act "$r" | tr ',' '\n' | grep -c wake:alpha)" "1"
+hub recover --max-starts x >/dev/null 2>&1; assert_status "a daily cap that is a number" $? 4
+t=$(rec); case "$t" in *"wake alpha (task $ta)"*) ok "the plain output names each action" ;; *) bad "plain recover: $t" ;; esac
+# a hub started without the marker does not recover (where this machine shows a process's environment)
+( HM_PROBE=1 bash -c 'exec -a claude sleep 20' ) & pp=$!; t_track "$pp"; sleep 0.5; hm_env_has "$pp" HM_PROBE=1; erc=$?; kill "$pp" 2>/dev/null
+if [ "$erc" -eq 2 ]; then echo "  SKIP this machine does not show a process's environment: the marker's absence cannot be tested here"
+else bash "$CLD" recover --json >/dev/null 2>"$T_TMP/m.err"; assert_status "recover without the away marker" $? 4; assert_contains "...says why" "$(cat "$T_TMP/m.err")" "away marker"; fi
+# the sessions the hub starts or wakes are recorded, for those caps
+: > "$rj"; mk eps; hub add eps --home eps >/dev/null; te=$(idof "$(hub task eps --text "New")")
+hub start eps "$te" --still 2 --max-wait 15 >/dev/null 2>&1; assert_status "a start" $? 0
+assert_eq "...is recorded with its time" "$(jq -s '[.[] | select(.action == "start" and .item == "eps" and (.epoch | type) == "number")] | length' "$rj")" "1"
+assert_eq "...hivemind ran no sudo anywhere" "$(cat "$HM_SUDO_LOG")" ""
+t_done

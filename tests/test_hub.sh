@@ -390,10 +390,17 @@ mk unr; hub add unr --home unr >/dev/null
 hm_tmux set-option -g default-size 200x56   # the captures are 50 lines: a window of the default 24 would scroll the dialog away
 up=$(hm_open_window unr orchestrator "$H/unr" "exec claude" -e "HM_FAKE_CLAUDE=dialogfile" -e "HM_FAKE_DIALOG=$FX/01-trust-folder.ansi"); sleep 1
 utm=$(hm_tmux display-message -p -t "$up" '#{session_name}:#{window_id}.#{pane_id}')
-ulp=$(live unr-orchestrator "$H/unr" "$utm")
+upid=$(hm_tmux display-message -p -t "$up" '#{pane_pid}')   # the pane's own process is the session: its record names that pid
+mkdir -p "$CLAUDE_CONFIG_DIR/sessions"
+jq -nc --argjson p "$upid" --arg n unr-orchestrator --arg c "$H/unr" --arg t "$utm" '{pid:$p, name:$n, cwd:$c, tmux:$t, kind:"interactive"}' > "$CLAUDE_CONFIG_DIR/sessions/$upid.json"
 assert_eq "an orchestrator outside hivemind, on hivemind's own server, as its record says: its dialog is read" "$(jj "$(hub dialog unr)" .pane)" "$up"
 assert_eq "...and status sees the question" "$(hub status unr --json | jq -r '.projects[0].orchestrator.question')" "true"
 ufp=$(jj "$(hub dialog unr)" .fingerprint)
+# the record names this very pane, but the process it names is not inside it (two tmux servers can both have a pane %0)
+mv "$CLAUDE_CONFIG_DIR/sessions/$upid.json" "$T_TMP/upid.saved"; ulp=$(live unr-orchestrator "$H/unr" "$utm")
+hub dialog unr >/dev/null 2>"$T_TMP/u.err"; assert_status "a record whose process is not inside the pane it names" $? 4
+assert_eq "...status does not read it either" "$(hub status unr --json | jq -r '.projects[0].orchestrator.question')" "false"
+kill "$ulp" 2>/dev/null; sleep 0.3; mv "$T_TMP/upid.saved" "$CLAUDE_CONFIG_DIR/sessions/$upid.json"
 hub answer unr --choice 1 --seen "$ufp" >/dev/null 2>&1; assert_status "...and answered" $? 0
 assert_eq "...with the key" "$(hm_tmux capture-pane -p -J -S - -t "$up" | grep -c '^KEY: ENTER')" "1"
 kill "$ulp" 2>/dev/null; sleep 0.3; hm_tmux kill-pane -t "$up"

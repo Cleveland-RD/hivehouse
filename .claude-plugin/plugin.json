@@ -26,6 +26,8 @@
     "overnight_ceiling_usd": { "type": "number", "title": "Spending ceiling per overnight run (USD)", "description": "A project may only lower this", "default": 50, "min": 0 },
     "heartbeat_minutes": { "type": "number", "title": "Overnight heartbeat interval (minutes)", "description": "How often the orchestrator checks context, disk, queue and spend", "default": 30, "min": 1 },
     "hub_auto_start": { "type": "boolean", "title": "Hub names itself and greets", "description": "A plain claude started in the hub's folder names itself hub (or hub-2...) and opens the hub, which takes one model turn; when off, start it with claude --name hub /hivemind:hub", "default": true },
+    "hub_max_starts_per_day": { "type": "number", "title": "Hub: sessions started or woken per day while away", "description": "Delegate mode: the most sessions the hub starts or wakes in 24 hours before it keeps the rest for you. A guideline the hub passes to hm-hub recover, not a guard", "default": 10, "min": 1 },
+    "away_mcp_allow": { "type": "string", "title": "Away: MCP servers an away hub may use", "description": "Comma-separated MCP server names, or mcp__<server>__<tool>, loaded for the hub started by hm-hub away (none by default). Allowing a server allows its write tools too", "default": "" },
     "min_free_gb": { "type": "number", "title": "Free disk (GB) below which cleanup runs", "description": "Below this, sessions get a low-disk warning and cleanup runs", "default": 20, "min": 0 }
   }
 }

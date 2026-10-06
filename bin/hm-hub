@@ -8,14 +8,18 @@
 # so a start stopped at a question is continued rather than made twice), runs/<project>.json (the same for a line `run` types
 # into a running orchestrator's own pane). HM_HUB names the work folder; else the nearest
 # folder at or above the cwd holding .hivemind-hub/.
-# answers.jsonl is the log of dialogs answered through `answer` (a dialog belongs to no task).
+# answers.jsonl is the log of dialogs answered through `answer` (a dialog belongs to no task). Away mode (the owner's
+# delegate file, see bin/hm-lib.sh) adds away.json (when `away` printed its lines), decisions/<task id>.md (what the hub
+# decided for the owner, word for word), holds/<project> (projects the owner keeps the hub away from), recovery.jsonl (the
+# sessions the hub started or woke, and what recover reported, with their times: the caps count within 24 hours) and
+# recovery-state.json (each agent's state at the last beat).
 # Exit: 2 not found (no hub, project, task, agent or record), 4 refused value or state, 5 a dialog needs a person, 1 never idle,
 # 64 usage.
 set -u
 . "$(dirname "$0")/hm-lib.sh"
 # The ledger's vocabulary, declared once. A note never moves a task's state; done and cancelled close it; a plan to
 # approve, a question and a blocker wait on the owner.
-HUB_EVENTS="asked handed plan question answered blocked overnight cleanup done cancelled note"
+HUB_EVENTS="asked handed plan question answered blocked overnight cleanup decided done cancelled note"
 HUB_CLOSED="done cancelled"
 HUB_NEEDS_OWNER="plan question blocked"
 HUB_CLOSED_JSON=$(printf '%s' "$HUB_CLOSED" | jq -Rc 'split(" ")')
@@ -23,7 +27,7 @@ HUB_NEEDS_OWNER_JSON=$(printf '%s' "$HUB_NEEDS_OWNER" | jq -Rc 'split(" ")')
 # The words of the hub's exchange with an orchestrator, held to both skills by tests/test_hub.sh: what an orchestrator's
 # message to the hub begins with, and what the hub's own messages begin with.
 HUB_REPLIES="HM-CLARIFY HM-PLAN BLOCKED DONE BACK"
-HUB_ASKS="TASK OWNER PROGRESS RESPAWN"
+HUB_ASKS="TASK OWNER HUB PROGRESS RESPAWN"
 USAGE="usage: hm-hub init
        hm-hub self [--name <session name>]
        hm-hub discover
@@ -39,6 +43,11 @@ USAGE="usage: hm-hub init
        hm-hub run <project> cleanup <task id> [--disk] [--still <s>] [--max-wait <s>]
        hm-hub continue <project> [--still <s>] [--max-wait <s>]
        hm-hub dialog <project> [<agent>]
+       hm-hub away --until <time> [--mcp-allow <list>]
+       hm-hub back
+       hm-hub decide <task id> --reason <one line>      (stdin: the question, a line === ANSWER ===, the answer)
+       hm-hub hold <project> [--off]
+       hm-hub recover [--json] [--max-starts <n>]
        hm-hub answer <project> [<agent>] --choice <1-9|esc> --seen <fingerprint>
        hm-hub naming --session <session id>"
 
@@ -56,6 +65,25 @@ hub_root() {  # the work folder holding .hivemind-hub/, resolved
   done
   hm_die 2 "no hub here: run hm-hub init in your work folder"
 }
+hub_root_cwd() {  # the work folder holding .hivemind-hub/, found from the cwd alone: HM_HUB is never consulted for away mode
+  local d; d=$(pwd -P)
+  while :; do
+    [ -d "$d/.hivemind-hub" ] && [ ! -L "$d/.hivemind-hub" ] && { printf '%s\n' "$d"; return 0; }
+    [ "$d" = / ] && break; d=$(dirname "$d")
+  done
+  hm_die 2 "no hub here: run hm-hub init in your work folder"
+}
+# delegate_for_hub <hub root>: 0 when the owner's delegate file is valid and names this hub; AWAY_UNTIL is its epoch
+AWAY_UNTIL=""
+delegate_for_hub() {
+  local out hub; AWAY_UNTIL=""
+  out=$(hm_delegate_now) || return 1
+  hub=${out%%$'\t'*}; hub=$(cd "$hub" 2>/dev/null && pwd -P) || return 1
+  [ "$hub" = "$1" ] || return 1
+  AWAY_UNTIL=${out#*$'\t'}
+}
+epoch_local() { date -r "$1" '+%Y-%m-%d %H:%M' 2>/dev/null || date -d "@$1" '+%Y-%m-%d %H:%M'; }   # epoch_local <epoch>
+epoch_iso() { date -u -r "$1" '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null || date -u -d "@$1" '+%Y-%m-%dT%H:%M:%SZ'; }
 # A project's name follows the agent-name rule (lower-case letters, digits, '_' and '-'): it becomes a tmux session, a
 # task id and part of an orchestrator's session name.
 check_name() { hm_is_agent_name "$1" || hm_die 4 "a project name is lower-case letters, digits, '_' and '-': $1"; }
@@ -141,11 +169,20 @@ live_orchestrator() {  # live_orchestrator <hub root> <project> <home> <recorded
   done
   return 1
 }
-# unreg_pane_ok <pane> <the session record's tmux value>: 0 when the pane is on hivemind's own tmux server and is the very pane the
-# record of a session running outside hivemind names (session:@window.%pane). A pane id alone says nothing about which server it
-# is on, so nothing is read from it or sent to it otherwise.
+# unreg_pane_ok <pane> <the session record's tmux value> <its pid>: 0 when the pane is on hivemind's own tmux server, is the very
+# pane the record of a session running outside hivemind names (session:@window.%pane), and that session's process runs inside it
+# (the pane's own process is the process or one of its ancestors). A pane id alone says nothing about which server it is on, and two
+# servers can both have a first pane named alike, so nothing is read from it or sent to it otherwise.
 unreg_pane_ok() {
-  [ -n "$1" ] && [ -n "$2" ] && [ "$(hm_tmux display-message -p -t "$1" '#{session_name}:#{window_id}.#{pane_id}' 2>/dev/null)" = "$2" ]
+  local pp p i=0
+  [ -n "$1" ] && [ -n "$2" ] && [ "$(hm_tmux display-message -p -t "$1" '#{session_name}:#{window_id}.#{pane_id}' 2>/dev/null)" = "$2" ] || return 1
+  pp=$(hm_tmux display-message -p -t "$1" '#{pane_pid}' 2>/dev/null); hm_is_number "$pp" && hm_is_number "${3:-}" || return 1
+  p=$3
+  while [ "$p" -gt 1 ] 2>/dev/null && [ "$i" -lt 64 ]; do
+    [ "$p" = "$pp" ] && return 0
+    p=$(ps -o ppid= -p "$p" 2>/dev/null | tr -d ' '); i=$((i + 1))
+  done
+  return 1
 }
 # orch_state <hub root> <project> <home>: sets O_AGENT, O_NAME, O_SID, O_STATE (running, stopped, unknown, none, or
 # unregistered: a live session outside hivemind, with O_PID and O_PANE), and O_QUESTION (true when a dialog waits on the
@@ -170,7 +207,7 @@ orch_state() {
     if l=$(live_orchestrator "$1" "$2" "$3" "$O_NAME"); then
       O_STATE=unregistered; O_PID=${l%% *}; l=${l#* }; O_NAME=${l%% *}; l=${l#* }; O_PANE=${l%% *}; O_TMUX=${l#* }
       [ "$O_PANE" != - ] || O_PANE=""; [ "$O_TMUX" != - ] || O_TMUX=""
-      [ -n "$O_PANE" ] && unreg_pane_ok "$O_PANE" "$O_TMUX" && hm_pane_question "" "$O_PANE" && O_QUESTION=true
+      [ -n "$O_PANE" ] && unreg_pane_ok "$O_PANE" "$O_TMUX" "$O_PID" && hm_pane_question "" "$O_PANE" && O_QUESTION=true
     fi ;;
   esac
 }
@@ -225,6 +262,8 @@ launch() {
     --arg sp "$$" --arg ss "$(hm_lstart $$)" \
     '{pane:$p, socket:$s, pane_pid:$i, pane_started:$t, kind:$k, line:$l, typed:false, sender_pid:$sp, sender_started:$ss, at:$at} + (if $task != "" then {task:$task} else {} end)' \
     > "$root/.hivemind-hub/panes/$name.json"
+  # the sessions this hub started or woke, with their times: recover's caps count them within 24 hours
+  jq -nc --arg a "$kind" --arg i "$name" --arg e "$(date +%s)" '{epoch:($e | tonumber), action:$a, item:$i}' >> "$root/.hivemind-hub/recovery.jsonl"
   unlock
   finish "$root" "$name"
 }
@@ -267,7 +306,7 @@ dialog_target() {
     elif pending "$root" "$name"; then
       T_SOCKET=$(hm_json_get "$root/.hivemind-hub/panes/$name.json" .socket); T_PANE=$(hm_json_get "$root/.hivemind-hub/panes/$name.json" .pane); T_SESSION="$name-orchestrator"
     elif [ "$O_STATE" = unregistered ]; then
-      unreg_pane_ok "$O_PANE" "$O_TMUX" || hm_die 4 "$O_NAME runs outside hivemind, and pane ${O_PANE:-?} is not on this machine's hivemind tmux server as its session record says: answer it in the pane"
+      unreg_pane_ok "$O_PANE" "$O_TMUX" "$O_PID" || hm_die 4 "$O_NAME runs outside hivemind, and pane ${O_PANE:-?} is not on this machine's hivemind tmux server as its session record says: answer it in the pane"
       T_PANE="$O_PANE"; T_SESSION="$O_NAME"
     fi
     [ -n "$T_PANE" ] || hm_die 4 "$name has no orchestrator screen to read ($O_STATE)"
@@ -372,6 +411,11 @@ status)
   [ -z "$want" ] || { check_name "$want"; [ -n "$(project "$root" "$want")" ] || hm_die 2 "no project named $want in this hub"; }
   hub=$(jq -c '{name, claude_pid, claude_started}' "$root/.hivemind-hub/hub.json" 2>/dev/null) || hub='{}'
   [ -n "$hub" ] || hub='{}'
+  away='null'
+  if delegate_for_hub "$root"; then
+    away=$(jq -nc --argjson u "$AWAY_UNTIL" --arg since "$(hm_json_get "$root/.hivemind-hub/away.json" .since)" '{until:$u} + (if $since != "" then {since:$since} else {} end)')
+  fi
+  hub=$(printf '%s' "$hub" | jq -c --argjson a "$away" 'if $a == null then . else . + {away:$a} end')
   # open tasks per project: those whose last event (a note aside) neither closes them
   opens=$(jq -s --argjson c "$HUB_CLOSED_JSON" '[group_by(.id)[] | {p: .[0].project, s: ([.[] | select(.event != "note")] | last | .event)}
     | select((.s as $s | $c | index($s)) | not)] | group_by(.p) | map({key: .[0].p, value: length}) | from_entries' "$root/.hivemind-hub/tasks.jsonl")
@@ -416,23 +460,25 @@ status)
       agents=$(printf '%s' "$agents" | jq -c --arg a "$a" --arg s "$st" --argjson q "$q" --argjson l "$(level "$a")" '. + [{name:$a, state:$s, question:$q} + $l]')
     done
     open=$(printf '%s' "$opens" | jq -r --arg p "$n" '.[$p] // 0')
+    held=false; [ ! -f "$root/.hivemind-hub/holds/$n" ] || held=true
     out=$(printf '%s' "$out" | jq -c --arg n "$n" --arg h "$home" --argjson r "$repos" --argjson ag "$agents" --argjson st "$starting" \
-      --arg os "$O_STATE" --arg on "$O_NAME" --arg sid "$O_SID" --argjson ot "$open" --argjson oq "$O_QUESTION" --arg opid "$O_PID" --arg opane "$O_PANE" \
+      --argjson held "$held" --arg os "$O_STATE" --arg on "$O_NAME" --arg sid "$O_SID" --argjson ot "$open" --argjson oq "$O_QUESTION" --arg opid "$O_PID" --arg opane "$O_PANE" \
       --argjson ol "$( [ -n "$O_AGENT" ] && [ "$O_STATE" != unregistered ] && level "$O_AGENT" || echo '{}')" \
       '. + [{name:$n, home:$h, repos:$r, orchestrator:({state:$os, question:$oq} + (if $on != "" then {name:$on} else {} end) + (if $sid != "" then {session_id:$sid} else {} end)
             + (if $opid != "" then {pid:($opid | tonumber)} else {} end) + (if $opane != "" then {pane:$opane} else {} end)
-            + $ol + (if $st != null then {starting:$st} else {} end)), agents:$ag, open_tasks:$ot}]')
+            + $ol + (if $st != null then {starting:$st} else {} end)), agents:$ag, open_tasks:$ot, held:$held}]')
   done
   if [ "$json" = 1 ]; then
     jq -n --arg root "$root" --argjson h "$hub" --argjson p "$out" '{hub:({root:$root} + $h), projects:$p}'
   else
-    printf '%s' "$out" | jq -r --arg root "$root" --arg hub "$(printf '%s' "$hub" | jq -r '.name // "hub (not recorded: hm-hub self)"')" '
+    awaytxt=""; [ "$away" = null ] || awaytxt="  ·  away until $(epoch_local "$AWAY_UNTIL")"
+    printf '%s' "$out" | jq -r --arg root "$root" --arg awaytxt "$awaytxt" --arg hub "$(printf '%s' "$hub" | jq -r '.name // "hub (not recorded: hm-hub self)"')" '
       def n($k; $w): "\($k) \($w)\(if $k == 1 then "" else "s" end)";
       (map(.repos[].folder | length) | max // 0) as $fw |
-      "\($hub)  ·  \($root)  ·  \(n(length; "project"))  ·  \(n(map(.open_tasks) | add // 0; "open task"))",
+      "\($hub)  ·  \($root)  ·  \(n(length; "project"))  ·  \(n(map(.open_tasks) | add // 0; "open task"))\($awaytxt)",
       (.[] |
         "",
-        .name,
+        "\(.name)\(if .held then "  (held: the hub starts and wakes nothing here)" else "" end)",
         "  orchestrator  \(if .orchestrator.state == "unregistered" then "running, not registered with hivemind" else .orchestrator.state end)\(if .orchestrator.name then "  \(.orchestrator.name)" else "" end)\(if .orchestrator.pane then " in pane \(.orchestrator.pane)" else "" end)\(if .orchestrator.question then "  (a question on its screen)" else "" end)\(if .orchestrator.starting then (if .orchestrator.starting.typed or .orchestrator.starting.sending then "  (coming up in pane \(.orchestrator.starting.pane))" else "  (waiting in pane \(.orchestrator.starting.pane)\(if .orchestrator.starting.question then " on a question" else "" end): hm-hub continue \(.name))" end) else "" end)",
         "  agents        \(if (.agents | length) == 0 then "none" else "\([.agents[] | select(.state == "running")] | length) of \(.agents | length) running\([.agents[] | select(.state != "running" or .question) | "\(.name) \(if .question then "has a question on its screen" else .state end)"] | if length > 0 then "  (\(join(", ")))" else "" end)" end)",
         "  tasks         \(.open_tasks) open",
@@ -458,7 +504,7 @@ task)
     printf '# Task %s\n\n' "$id"
     printf 'From the owner, through %s. The owner reads and answers you only through %s: send it your questions, your plan,\n' "$hn" "$hn"
     printf 'blockers and finished work with SendMessage, the first line `TASK %s:` and then one of: %s.\n' "$id" "$(printf '%s' "$HUB_REPLIES" | sed 's/ /, /g')"
-    printf 'A reply that begins `OWNER on TASK %s:` carries the owner'"'"'s own words.\n\n' "$id"
+    printf 'A reply that begins `OWNER on TASK %s:` carries the owner'"'"'s own words. One that begins `HUB on TASK %s:` is the hub'"'"'s own decision, made for the owner while they are away.\n\n' "$id" "$id"
     printf 'Project folders:\n%s\n\n## The task\n\n%s\n' "$folders" "$text"
   } > "$root/.hivemind-hub/tasks/$id.md"
   append_event "$root" "$id" "$name" asked ""
@@ -469,6 +515,7 @@ log)
   id="$1"; ev="$2"; shift 2; note=""
   while [ $# -gt 0 ]; do [ $# -ge 2 ] && [ "$1" = --note ] || hm_die 64 "$USAGE"; note="$2"; shift 2; done
   in_list "$ev" "$HUB_EVENTS" || hm_die 4 "unknown event: $ev (events: $HUB_EVENTS)"
+  [ "$ev" != decided ] || hm_die 4 "a decision is recorded with hm-hub decide, which asks the owner's delegate file"
   root=$(hub_root) || exit $?
   lock "$root"
   [ -n "$(task_state "$root" "$id")" ] || hm_die 2 "no task $id in this hub"
@@ -484,7 +531,8 @@ tasks)
     [group_by(.id)[] | select($w == "" or .[0].project == $w)
      | {id: .[0].id, project: .[0].project, asked: .[0].at,
         state: ([.[] | select(.event != "note")] | last | .event),
-        updated: (last | .at), last_note: ([.[] | select(.note)] | last | .note // null)}
+        updated: (last | .at), last_note: ([.[] | select(.note)] | last | .note // null),
+        decisions: [.[] | select(.event == "decided") | {at, reason: (.note // "")}]}
      | .needs_owner = (.state as $s | $ow | index($s) != null)
      | select($o == 0 or ((.state as $s | $c | index($s)) | not))] | sort_by(.asked)' "$root/.hivemind-hub/tasks.jsonl")
   if [ "$json" = 1 ]; then printf '%s\n' "$rows"
@@ -678,6 +726,224 @@ continue)
   jq --arg sp "$$" --arg ss "$(hm_lstart $$)" '.sender_pid = $sp | .sender_started = $ss' "$f" > "$f.tmp$$" && mv "$f.tmp$$" "$f"
   unlock
   finish "$root" "$name" ;;
+
+away)
+  # Prints what the owner pastes to turn delegate mode on: the sudo lines that make the root-owned delegate file, and the
+  # hub's own start line (marked, in bypass, with only its allowed MCP servers). hivemind never runs sudo itself, so a changed
+  # script cannot take the password, and the owner sees what runs as root. The hub is found from the cwd alone.
+  until=""; allow=""
+  while [ $# -gt 0 ]; do
+    [ $# -ge 2 ] || hm_die 64 "$USAGE"
+    case "$1" in --until) until="$2" ;; --mcp-allow) allow="$2" ;; *) hm_die 64 "$USAGE" ;; esac
+    shift 2
+  done
+  [ -n "$until" ] || hm_die 64 "$USAGE"
+  root=$(hub_root_cwd) || exit $?
+  hm_is_typed_path "$root" || hm_die 4 "the hub's folder is not a path hivemind will print into a command: $root"
+  case "$allow" in *[!${HM_LOWER}${HM_UPPER}${HM_DIGITS}_,.:-]*) hm_die 4 "--mcp-allow is a comma-separated list of server or tool names" ;; esac
+  now=$(date +%s)
+  case "$until" in
+    *[!0-9]*)
+      case "$until" in
+        +[0-9]*[mhd]) n=${until#+}; u=${n##*[0-9]}; n=${n%"$u"}
+          case "$u" in m) epoch=$((now + n * 60)) ;; h) epoch=$((now + n * 3600)) ;; d) epoch=$((now + n * 86400)) ;; esac ;;
+        *) epoch=$(perl -MTime::Local -e '
+             my $t = shift; $t =~ s/T/ /;
+             if ($t =~ /^(\d{4})-(\d\d)-(\d\d)(?: (\d\d):(\d\d))?$/) { print timelocal(0, $5 // 0, $4 // 0, $3, $2 - 1, $1) } else { exit 1 }' "$until") || hm_die 64 "--until is an epoch, +<n>m|h|d, or YYYY-MM-DD[ HH:MM] (local time): $until" ;;
+      esac ;;
+    *) epoch="$until" ;;
+  esac
+  hm_is_number "$epoch" || hm_die 64 "--until is an epoch, +<n>m|h|d, or YYYY-MM-DD[ HH:MM] (local time): $until"
+  [ "$epoch" -gt "$now" ] || hm_die 4 "--until is not in the future"
+  [ "$epoch" -le $((now + 604800)) ] || hm_die 4 "away is at most 7 days: the hub's heartbeat does not outlive that"
+  file=$(hm_delegate_path); dir=$(dirname "$file"); grp=root; [ "$(uname -s)" != Darwin ] || grp=wheel
+  mcp="$root/.hivemind-hub/away-mcp.json"
+  cdir="${CLAUDE_CONFIG_DIR:-${HOME:-/}/.claude}"; cj="${CLAUDE_CONFIG_DIR:-${HOME:-/}}/.claude.json"
+  ( umask 077; jq -n '{mcpServers:{}}' > "$mcp.tmp$$" ) && mv "$mcp.tmp$$" "$mcp" && chmod 600 "$mcp"
+  missing=""
+  if [ -n "$allow" ]; then
+    for e in $(printf '%s' "$allow" | tr ',' ' '); do
+      srv=$e; case "$e" in mcp__*__*) srv=${e#mcp__}; srv=${srv%%__*} ;; esac
+      def=$(jq -c --arg s "$srv" --arg r "$root" '(.mcpServers[$s] // .projects[$r].mcpServers[$s]) // empty' "$cj" 2>/dev/null | head -1)
+      [ -n "$def" ] || def=$(jq -c --arg s "$srv" '.mcpServers[$s] // empty' "$root/.mcp.json" 2>/dev/null | head -1)
+      if [ -n "$def" ]; then
+        ( umask 077; jq --arg s "$srv" --argjson d "$def" '.mcpServers[$s] = $d' "$mcp" > "$mcp.tmp$$" ) && mv "$mcp.tmp$$" "$mcp" && chmod 600 "$mcp"
+      else missing="$missing $srv"; fi
+    done
+  fi
+  jq -nc --arg s "$(epoch_iso "$now")" --argjson u "$epoch" '{since:$s, until:$u}' > "$root/.hivemind-hub/away.json"
+  sid=$(hm_json_get "$root/.hivemind-hub/hub.json" .session_id)
+  case "$sid" in ''|*[!${HM_LOWER}${HM_UPPER}${HM_DIGITS}-]*) sid="" ;; esac
+  echo "# Away until $(epoch_local "$epoch") (at most 7 days). Paste these lines in a terminal: hivemind never runs sudo, and what runs as root is only this."
+  printf 'sudo mkdir -p -- %q\n' "$dir"
+  printf "printf '%%s\\\\n' %q %q %q | sudo tee -- %q > /dev/null\n" 'hivemind-delegate 1' "hub=$root" "until=$epoch" "$file"
+  printf 'sudo chown root:%s -- %q %q\n' "$grp" "$dir" "$file"
+  printf 'sudo chmod 0755 -- %q\n' "$dir"
+  printf 'sudo chmod 0644 -- %q\n' "$file"
+  echo "# Then exit the running hub (so two do not share the folder) and start it again with these lines: marked, in bypass, with only its allowed MCP servers."
+  printf 'cd %q\n' "$root"
+  if [ -n "$sid" ]; then
+    printf 'HM_AWAY_BYPASS=1 HM_PROJECT=%q HM_AWAY_HUB=%q HM_AWAY_MCP_ALLOW=%q claude --permission-mode bypassPermissions --strict-mcp-config --mcp-config %q --resume %q\n' "$root" "$root" "$allow" "$mcp" "$sid"
+  else
+    printf 'HM_AWAY_BYPASS=1 HM_PROJECT=%q HM_AWAY_HUB=%q HM_AWAY_MCP_ALLOW=%q claude --name hub --permission-mode bypassPermissions --strict-mcp-config --mcp-config %q /hivemind:hub\n' "$root" "$root" "$allow" "$mcp"
+  fi
+  # what Claude Code asks once, by hand, before the owner leaves: nobody is there to answer it later
+  if [ "$(jq -r '.skipDangerousModePermissionPrompt // false' "$cdir/settings.json" 2>/dev/null)" != true ]; then
+    echo "# Before leaving: Claude Code shows a one-time warning the first time it runs in bypass mode. Start claude --permission-mode bypassPermissions once and choose 'Yes, I accept' (it then writes skipDangerousModePermissionPrompt to $cdir/settings.json): nobody can answer it while you are away."
+  fi
+  trusted=0; t=$root
+  while :; do
+    [ "$(jq -r --arg p "$t" '.projects[$p].hasTrustDialogAccepted // false' "$cj" 2>/dev/null)" = true ] && { trusted=1; break; }
+    [ "$t" = / ] && break; t=$(dirname "$t")
+  done
+  [ "$trusted" = 1 ] || echo "# Before leaving: $root (or a folder above it) is not trusted by Claude Code yet. Start claude there once and accept the folder-trust dialog: it shows for every untrusted folder."
+  echo "# Away mode needs permission_mode_local set to auto (the hub resolves it); a stricter value keeps its sessions out of bypass."
+  echo "# MCP servers allowed for the hub: ${allow:-none}.${missing:+ Not found (not loaded):$missing.}"
+  echo "# Nothing runs while the machine is off: after a reboot, start the hub again with the lines above."
+  echo "# A message from another session to the hub, while you are away, is information only; to instruct it, type into it (Remote Control, say)."
+  echo "# No remote host is used while away: overnight work runs on this machine."
+  echo "# When you are back, run hm-hub back." ;;
+
+back)
+  [ $# -eq 0 ] || hm_die 64 "$USAGE"
+  root=$(hub_root_cwd) || exit $?
+  hm_is_typed_path "$root" || hm_die 4 "the hub's folder is not a path hivemind will print into a command: $root"
+  file=$(hm_delegate_path)
+  sid=$(hm_json_get "$root/.hivemind-hub/hub.json" .session_id)
+  case "$sid" in ''|*[!${HM_LOWER}${HM_UPPER}${HM_DIGITS}-]*) sid="" ;; esac
+  echo "# Away ends when this file is gone. Paste the line in a terminal:"
+  printf 'sudo rm -f -- %q\n' "$file"
+  echo "# Then exit the hub and start it again without bypass, so each action it takes asks you again:"
+  printf 'cd %q\n' "$root"
+  if [ -n "$sid" ]; then printf 'claude --resume %q\n' "$sid"; else echo 'claude --name hub /hivemind:hub'; fi ;;
+
+decide)
+  # A decision the hub made for the owner, recorded word for word. Only while the owner's delegate file is valid for this
+  # hub. stdin: the question as the orchestrator asked it, a line "=== ANSWER ===", the answer as sent back.
+  id="${1:-}"; [ -n "$id" ] || hm_die 64 "$USAGE"; shift
+  reason=""
+  while [ $# -gt 0 ]; do [ $# -ge 2 ] && [ "$1" = --reason ] || hm_die 64 "$USAGE"; reason="$2"; shift 2; done
+  case "$reason" in ''|*$'\n'*) hm_die 64 "a decision's reason is one line" ;; esac
+  root=$(hub_root_cwd) || exit $?
+  delegate_for_hub "$root" || hm_die 4 "the owner is not away (no valid delegate file for this hub): the owner decides"
+  text=$(cat)
+  case "$text" in *$'\n=== ANSWER ===\n'*) ;; *) hm_die 64 "stdin is the question, a line === ANSWER ===, then the answer" ;; esac
+  question=${text%%$'\n=== ANSWER ===\n'*}; answer=${text#*$'\n=== ANSWER ===\n'}
+  [ -n "$(printf '%s' "$question" | tr -d '[:space:]')" ] && [ -n "$(printf '%s' "$answer" | tr -d '[:space:]')" ] || hm_die 64 "a decision needs its question and its answer"
+  lock "$root"
+  st=$(task_state "$root" "$id"); [ -n "$st" ] || hm_die 2 "no task $id in this hub"
+  in_list "$st" "$HUB_CLOSED" && hm_die 4 "task $id is $st"
+  p=$(jq -r --arg i "$id" 'select(.id == $i) | .project' "$root/.hivemind-hub/tasks.jsonl" | head -1)
+  mkdir -p "$root/.hivemind-hub/decisions"
+  {
+    printf '## %s: %s\n\n### Question\n\n%s\n\n### Answer\n\n%s\n\n' "$(hm_now)" "$reason" "$question" "$answer"
+  } >> "$root/.hivemind-hub/decisions/$id.md"
+  append_event "$root" "$id" "$p" decided "$reason"
+  echo "$id decided" ;;
+
+hold)
+  name="${1:-}"; [ -n "$name" ] || hm_die 64 "$USAGE"; shift
+  off=0; case "${1:-}" in --off) off=1; shift ;; esac
+  [ $# -eq 0 ] || hm_die 64 "$USAGE"
+  root=$(hub_root) || exit $?
+  need_project "$root" "$name"
+  lock "$root"
+  mkdir -p "$root/.hivemind-hub/holds"
+  if [ "$off" = 1 ]; then rm -f "$root/.hivemind-hub/holds/$name"; echo "$name released"
+  else hm_now > "$root/.hivemind-hub/holds/$name"; echo "$name held"; fi ;;
+
+recover)
+  # What the hub does on each beat while the owner is away: the actions due, each capped within a rolling 24 hours, and
+  # what is blocked for the owner. It carries nothing out itself. Only while the owner's delegate file is valid for this
+  # hub and this session carries the away marker; with no delegate file it prints that nothing is due.
+  json=0; max=10
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --json) json=1; shift ;;
+      --max-starts) [ $# -ge 2 ] || hm_die 64 "$USAGE"; max="$2"; shift 2 ;;
+      *) hm_die 64 "$USAGE" ;;
+    esac
+  done
+  hm_is_number "$max" || hm_die 4 "--max-starts must be a number"
+  root=$(hub_root_cwd) || exit $?
+  if ! delegate_for_hub "$root"; then
+    if [ "$json" = 1 ]; then echo '{"away":false,"actions":[],"blocked":[]}'; else echo "not away: nothing to recover"; fi
+    exit 0
+  fi
+  cpid=$(hm_claude_ancestor) || hm_die 4 "recover runs inside the hub's own session"
+  hm_env_has "$cpid" HM_AWAY_BYPASS=1; mrc=$?
+  case "$mrc" in
+    0) ;;
+    1) hm_die 4 "this session was not started with the away marker (hm-hub away prints its start line): recover is for the hub that was" ;;
+    *) echo "hivemind: warning: this session's launch environment cannot be read here, so the away marker was not checked" >&2 ;;
+  esac
+  now=$(date +%s); since=$((now - 86400))
+  lock "$root"
+  rj="$root/.hivemind-hub/recovery.jsonl"; touch "$rj"
+  rs="$root/.hivemind-hub/recovery-state.json"; [ -s "$rs" ] || echo '{}' > "$rs"
+  states=$(jq -c . "$rs" 2>/dev/null) || states='{}'
+  # tasks that can go on without the owner: open, and not waiting on them
+  work=$(jq -s --argjson c "$HUB_CLOSED_JSON" --argjson ow "$HUB_NEEDS_OWNER_JSON" '[group_by(.id)[]
+    | {p: .[0].project, id: .[0].id, s: ([.[] | select(.event != "note")] | last | .event)}
+    | select((.s as $s | ($c + $ow) | index($s)) | not)]' "$root/.hivemind-hub/tasks.jsonl")
+  starts=$(jq -s --argjson s "$since" '[.[] | select(.epoch > $s and (.action == "start" or .action == "wake"))] | length' "$rj")
+  actions='[]'; blocked='[]'
+  for n in $(jq -r '.projects[]?.name' "$root/.hivemind-hub/projects.json"); do
+    hm_is_agent_name "$n" || continue
+    [ ! -f "$root/.hivemind-hub/holds/$n" ] || continue
+    need_project "$root" "$n"
+    orch_state "$root" "$n" "$HOME_DIR"
+    task=$(printf '%s' "$work" | jq -r --arg p "$n" '[.[] | select(.p == $p)][0].id // empty')
+    prevag=$(printf '%s' "$states" | jq -c --arg p "$n" '.[$p] // {}')
+    nowag='{}'; newly='[]'
+    for a in $(jq -r '.agents[]?.name' "$HOME_DIR/.hivemind/team.json" 2>/dev/null); do
+      hm_is_agent_name "$a" && [ "$a" != "$O_AGENT" ] || continue
+      hm_team_agent_is "$HOME_DIR" "$a"; case $? in 0) st=running ;; 1) st=stopped ;; *) st=unknown ;; esac
+      nowag=$(printf '%s' "$nowag" | jq -c --arg a "$a" --arg s "$st" '. + {($a): $s}')
+      if [ "$st" = stopped ] && [ "$(printf '%s' "$prevag" | jq -r --arg a "$a" '.[$a] // empty')" = running ]; then
+        newly=$(printf '%s' "$newly" | jq -c --arg a "$a" '. + [$a]')
+      fi
+    done
+    states=$(printf '%s' "$states" | jq -c --arg p "$n" --argjson v "$nowag" '. + {($p): $v}')
+    # a start or wake waiting on a dialog is the owner's: listed, never capped
+    if [ "$O_STATE" != running ] && pending "$root" "$n"; then
+      if hm_pane_question "$(hm_json_get "$root/.hivemind-hub/panes/$n.json" .socket)" "$(hm_json_get "$root/.hivemind-hub/panes/$n.json" .pane)"; then
+        actions=$(printf '%s' "$actions" | jq -c --arg p "$n" '. + [{action:"list", project:$p, why:"a dialog waits on the screen of a session this hub started"}]')
+      fi
+      continue
+    fi
+    if [ "$O_STATE" = stopped ] && [ -n "$task" ]; then
+      tries=$(jq -s --arg i "$n" --argjson s "$since" '[.[] | select(.epoch > $s and .action == "wake" and .item == $i)] | length' "$rj")
+      seenblock=$(jq -s --arg i "$n" --argjson s "$since" '[.[] | select(.epoch > $s and .action == "blocked-wake" and .item == $i)] | length' "$rj")
+      if [ "$tries" -ge 3 ]; then
+        [ "$seenblock" -gt 0 ] || {
+          blocked=$(printf '%s' "$blocked" | jq -c --arg p "$n" --arg t "$task" '. + [{action:"wake", project:$p, task:$t, reason:"woken 3 times in 24 hours and still stopped"}]')
+          jq -nc --arg i "$n" --argjson e "$now" '{epoch:$e, action:"blocked-wake", item:$i}' >> "$rj"; }
+      elif [ "$starts" -ge "$max" ]; then
+        [ "$seenblock" -gt 0 ] || {
+          blocked=$(printf '%s' "$blocked" | jq -c --arg p "$n" --arg t "$task" --argjson m "$max" '. + [{action:"wake", project:$p, task:$t, reason:"the daily cap of \($m) sessions started or woken is reached"}]')
+          jq -nc --arg i "$n" --argjson e "$now" '{epoch:$e, action:"blocked-wake", item:$i}' >> "$rj"; }
+      else
+        actions=$(printf '%s' "$actions" | jq -c --arg p "$n" --arg t "$task" '. + [{action:"wake", project:$p, task:$t}]')
+      fi
+    elif [ "$O_STATE" = running ] && [ "$newly" != '[]' ]; then
+      tries=$(jq -s --arg i "$n" --argjson s "$since" '[.[] | select(.epoch > $s and .action == "respawn" and .item == $i)] | length' "$rj")
+      if [ "$tries" -ge 3 ]; then
+        blocked=$(printf '%s' "$blocked" | jq -c --arg p "$n" --arg t "$task" --argjson a "$newly" '. + [{action:"respawn", project:$p, agents:$a, reason:"RESPAWN sent 3 times in 24 hours"}]')
+      else
+        actions=$(printf '%s' "$actions" | jq -c --arg p "$n" --argjson a "$newly" '. + [{action:"respawn", project:$p, agents:$a}]')
+        jq -nc --arg i "$n" --argjson e "$now" '{epoch:$e, action:"respawn", item:$i}' >> "$rj"
+      fi
+    fi
+  done
+  printf '%s\n' "$states" > "$rs.tmp$$" && mv "$rs.tmp$$" "$rs"
+  unlock
+  if [ "$json" = 1 ]; then
+    jq -nc --argjson u "$AWAY_UNTIL" --argjson a "$actions" --argjson b "$blocked" '{away:true, until:$u, actions:$a, blocked:$b}'
+  else
+    printf '%s' "$actions" | jq -r '.[] | "\(.action) \(.project)\(if .task then " (task \(.task))" else "" end)\(if .agents then " (agents: \(.agents | join(", ")))" else "" end)\(if .why then ": \(.why)" else "" end)"'
+    printf '%s' "$blocked" | jq -r '.[] | "blocked \(.action) \(.project): \(.reason)"'
+  fi ;;
 
 naming)
   # hm-hub naming --session <id>: what Claude Code records about this hub's own session ({found, name, source}) and a name
