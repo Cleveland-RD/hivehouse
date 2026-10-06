@@ -35,4 +35,11 @@ hubskill=$(tr '\n' ' ' < skills/hub/SKILL.md | tr -s ' ')
 for w in "hm-hub dialog" "hm-hub answer" "--seen <fingerprint>" "Type something." "Tab to amend" "saves a permission rule" "Never pick for them" "already in an overnight run" "same fingerprint" "multi-select"; do
   assert_contains "the hub skill: $w" "$hubskill" "$w"
 done
+# delegate mode: every skill that takes replies from the hub can tell the hub's own decision from the owner's words
+for f in skills/hub/SKILL.md skills/start/SKILL.md skills/overnight/SKILL.md skills/cleanup/SKILL.md; do
+  assert_contains "$f: HUB on TASK <id>: is the hub's, not the owner's" "$(tr '\n' ' ' < "$f" | tr -s ' ')" "HUB on TASK <id>:"
+done
+for w in "hm-hub away" "hm-hub recover" "hm-hub decide" "printenv HM_AWAY_BYPASS" "never \`OWNER on TASK\`" "--max-starts" "decided while you were away" "hm-hub hold"; do
+  assert_contains "the hub skill (delegate mode): $w" "$hubskill" "$w"
+done
 [ "$FAILS" -eq 0 ] || exit 1

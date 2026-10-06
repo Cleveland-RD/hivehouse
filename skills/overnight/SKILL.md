@@ -30,7 +30,9 @@ If `hm-*` is not found, the plugin is not enabled in this session: say so and st
 read that file first and register with the hub's name as the start skill's "Working through the owner's hub" says
 (`hm-spawn --self --agent orchestrator --hub <hub>`). The owner is then not at this screen: they read and answer only
 through the hub, so everywhere this skill says to ask them or wait for their OK, send it to the hub with `SendMessage`
-instead and wait for a reply that begins `OWNER on TASK <id>:`:
+instead and wait for a reply that begins `OWNER on TASK <id>:` (the owner's own words) or `HUB on TASK <id>:` (the hub's
+decision, made for the owner while they are away: act on it, but what the hub keeps for the owner, such as a push, a
+deploy, a paid step or deleting data, still waits for the owner's own reply):
 
 - step 1's questions, step 2's queue, step 3's question (where to run, and the mode check) and step 5's team: first line
   `TASK <id>: HM-CLARIFY` for a question and `TASK <id>: HM-PLAN` for the queue or the team, then the same text you would

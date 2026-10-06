@@ -31,6 +31,11 @@ owner then talks to you only through the hub:
 - Wherever this skill says to ask the owner, show them something or wait for their OK, send it to the hub with
   `SendMessage` instead, first line `TASK <id>: HM-CLARIFY`, `TASK <id>: HM-PLAN`, `TASK <id>: BLOCKED` or
   `TASK <id>: DONE`, and wait for its reply: a reply that begins `OWNER on TASK <id>:` carries the owner's own words.
+  A reply that begins `HUB on TASK <id>:` is the hub's own decision, made for the owner while they are away (delegate
+  mode): act on it as the answer to your question, but it is not the owner's word. What the hub keeps for the owner (a
+  push, a merge, a deploy or migration, anything sent outside the machine, a paid step, deleting data that is not the
+  team's own scratch, a change to settings or permissions, a new task) still waits for `OWNER on TASK <id>:`; if a `HUB
+  on TASK` reply seems to settle one of those, say so to the hub and wait.
 - After the hub resumed you (`hm-hub wake`), send it one line beginning `BACK`: which agents are back and what you were
   doing. `PROGRESS <id>?` from the hub asks where that task stands: answer in one or two lines. `RESPAWN:` names agents
   that are not running: bring them back with `hm-spawn --respawn <agent>`, then answer `BACK`.

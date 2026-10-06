@@ -20,7 +20,9 @@ anything uncertain moves to `.hivemind/trash/<date>/` rather than being deleted.
 
 **Working through the owner's hub.** When you were started with `/hivemind:cleanup` by the owner's hub (the hub's task
 file, `TASK <id>`, says so), the owner is not at this screen. Send what this skill says to show or ask them to the hub
-with `SendMessage` instead, and wait for a reply that begins `OWNER on TASK <id>:`: the table of what is recorded and
+with `SendMessage` instead, and wait for a reply that begins `OWNER on TASK <id>:` (the owner's own words; a reply that
+begins `HUB on TASK <id>:` is the hub deciding while they are away, and never lets `hm-cleanup --finish` run without the
+owner): the table of what is recorded and
 the questions about worktrees whose work has not landed (first line `TASK <id>: HM-CLARIFY`), then the preview and
 "proceed?" (`TASK <id>: HM-PLAN`). The final report goes as `TASK <id>: DONE`. `hm-cleanup` still asks permission on
 this screen each time, by design; that dialog reaches the owner through the hub.
