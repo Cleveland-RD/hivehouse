@@ -89,6 +89,36 @@ stop; printf 'not json' > "$S/team/impl/session.json"
 np=$(respawn impl --resume); assert_status "a session file that is not JSON" $? 0
 sc=$(screen "$np"); case "$sc" in *"ARGV: --resume"*) bad "resumed from a broken record" ;; *) ok "a broken record: started without --resume" ;; esac
 
+echo "-- --resume never opens a second process on a conversation a live Claude already holds (the owner resumed it by hand)"
+mkdir -p "$T_TMP/cl" "$CLAUDE_CONFIG_DIR/sessions"; printf '#!/usr/bin/env bash\nfor i in $(seq 120); do sleep 1; done\n' > "$T_TMP/cl/claude"
+bash "$T_TMP/cl/claude" & HOLDER=$!; t_track "$HOLDER"
+sleep 120 & NOTCLAUDE=$!; t_track "$NOTCLAUDE"; sleep 0.3
+rec() { jq -nc --argjson p "$1" --arg s "$2" '{pid:$p,sessionId:$s}' > "$CLAUDE_CONFIG_DIR/sessions/$1.json"; }
+stop; setsession sess-abc-123
+rec "$HOLDER" sess-abc-123
+np=$(respawn impl --resume); assert_status "a live Claude holds the recorded session" $? 0
+sc=$(screen "$np"); case "$sc" in *"ARGV: --resume"*) bad "opened a second process on a held session" ;; *) ok "...started without --resume" ;; esac
+assert_contains "...and typed the pickup line" "$sc" "GOT: You are proj-impl. Read $HANDOFF"
+stop; rec "$HOLDER" some-other-session
+np=$(respawn impl --resume); sc=$(screen "$np"); assert_contains "a live Claude holding another session does not block it" "$sc" "ARGV: sess-abc-123"
+stop; rm -f "$CLAUDE_CONFIG_DIR/sessions/$HOLDER.json"; rec "$NOTCLAUDE" sess-abc-123
+np=$(respawn impl --resume); sc=$(screen "$np"); assert_contains "a live process that is not Claude does not block it" "$sc" "ARGV: sess-abc-123"
+stop; rm -f "$CLAUDE_CONFIG_DIR/sessions/$NOTCLAUDE.json"; rec 99999999 sess-abc-123
+np=$(respawn impl --resume); sc=$(screen "$np"); assert_contains "a record of a dead process does not block it" "$sc" "ARGV: sess-abc-123"
+stop; rm -f "$CLAUDE_CONFIG_DIR/sessions/99999999.json"; printf 'not json' > "$CLAUDE_CONFIG_DIR/sessions/1.json"
+np=$(respawn impl --resume); sc=$(screen "$np"); assert_contains "a broken session record does not block it" "$sc" "ARGV: sess-abc-123"
+rm -f "$CLAUDE_CONFIG_DIR/sessions/1.json"
+
+echo "-- hm_mode_rank and hm-settings agree on the five local modes (they merge when A7 lands)"
+rk=$(t_repo ranks); mkdir -p "$rk/.hivemind"
+agree=0; total=0
+for x in plan dontAsk default acceptEdits auto; do for y in plan dontAsk default acceptEdits auto; do
+  printf '{"permission_mode":"%s"}\n' "$x" > "$rk/.hivemind/settings.json"
+  got=$(cd "$rk" && hm-settings resolve permission_mode "$y" 2>/dev/null)
+  if [ "$(hm_mode_rank "$x")" -lt "$(hm_mode_rank "$y")" ]; then want=$x; else want=$y; fi
+  total=$((total + 1)); [ "$got" = "$want" ] && agree=$((agree + 1)) || bad "project $x, owner $y: hm-settings gave [$got], hm_mode_rank says [$want]"
+done; done
+assert_eq "all 25 pairs agree" "$agree/$total" "25/25"
 echo "-- both together, and the usage"
 stop; setsession sess-abc-123
 jq '(.agents[]|select(.name=="impl").mode) = "auto"' "$S/team.json" > "$S/team.json.t" && mv "$S/team.json.t" "$S/team.json"   # back to auto, so default is stricter

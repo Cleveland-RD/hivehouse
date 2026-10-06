@@ -189,11 +189,12 @@ if [ -n "$owner_sl" ]; then printf '%s\n' "$owner_sl" > "$STATE/team/$agent/stat
 rm -f "$STATE/team/$agent/context.json"
 settings=$(jq -nc --argjson o "${owner_sl:-null}" --arg bin "$(cd "$(dirname "$0")" && pwd -P)/hm-statusline" --arg dir "$STATE/team/$agent" \
   '{statusLine: (($o // {}) + {type: "command", command: ([$bin, $dir] | map(@sh) | join(" "))})}') || exit $?
-# --resume: the agent's own recorded session, when it is still there; otherwise today's respawn from the handoff
+# --resume: the agent's own recorded session, when it is still there and no live Claude already holds it (the owner resumed it by hand:
+# a second process on one conversation would fork it); otherwise today's respawn from the handoff
 resume_id=""
 if [ "$resume" = 1 ]; then
   sid=$(hm_json_get "$STATE/team/$agent/session.json" .session_id)
-  hm_session_transcript "$sid" >/dev/null && resume_id=$sid
+  hm_session_transcript "$sid" >/dev/null && ! hm_session_holder "$sid" >/dev/null && resume_id=$sid
 fi
 extra=(); [ -z "$resume_id" ] || extra=(--resume "$resume_id")
 cmd="exec $(printf '%q ' claude ${extra[@]+"${extra[@]}"} --name "$project-$agent" --model "$model" --effort "$effort" --permission-mode "$mode" --allowedTools "$ALLOWED" --settings "$settings")"

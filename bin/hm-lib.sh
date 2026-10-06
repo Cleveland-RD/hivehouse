@@ -162,8 +162,11 @@ hm_lock_release() {  # hm_lock_release <lock> <pid>: removes the lock only when 
 HM_DIALOG_TEXT=("Do you trust" "Yes, proceed" "Esc to cancel" "Do you want to" "Allow this" "Press Enter to continue" "Enter to confirm" "I trust this folder")
 # Claude Code's working line, above the prompt box while it works: a spinner glyph, a verb and an ellipsis, then the elapsed time
 # and a detail in parentheses: "✳ Effecting… (3s · thinking)", "✽ Processing… (5m 29s · ↓ 7.2k tokens)" (hours as "1h 2m 3s",
-# which no capture has shown yet). Anything else is not a working line. Read by hm_pane_working_seconds.
-HM_WORKING_RE='^[[:space:]]*(✳|✶|✻|✽|✢|·|\*) [A-Za-z-]+(…|\.\.\.) \(([0-9]+h )?([0-9]+m )?[0-9]+s( ·[^)]*)?\)[[:space:]]*$'
+# which no capture has shown yet). It starts at column 0: an indented line is reply text quoting one. Anything else is not a working
+# line. What Claude Code may draw between the spinner and the prompt box is HM_WORKING_TRAILER_RE (a tip under the spinner, and the
+# right-aligned notices seen in real captures); any other line there makes the screen unknown. Read by hm_pane_working_seconds.
+HM_WORKING_RE='^(✳|✶|✻|✽|✢|·|\*) [A-Za-z-]+(…|\.\.\.) \(([0-9]+h )?([0-9]+m )?[0-9]+s( ·[^)]*)?\)[[:space:]]*$'
+HM_WORKING_TRAILER_RE='^[[:space:]]*(⎿[[:space:]]+Tip: .*|Cursor disconnected|tmux focus-events off .*)$'
 hm_pane_clean() {  # a pane captured with -e on stdin: drop dim runs (the placeholder), other escapes, and no-break spaces
   perl -pe 's/\e\[(?:[01];)?2m.*?(?:\e\[(?:0|22)?m|$)//g; s/\e\[[0-9;?]*[A-Za-z]//g; s/\xc2\xa0/ /g'
 }
@@ -187,13 +190,16 @@ hm_pane_idle_text() {  # a cleaned pane on stdin: 0 an empty prompt and no dialo
   printf '%s\n' "$text" | grep -v '^[[:space:]]*$' | tail -6 | grep -Eq '^(│| )*(>|❯)( |│)*$'
 }
 hm_pane_working_seconds() {  # a pane on stdin: the elapsed seconds on Claude Code's working line, or fails ("unknown": no such line)
-  # Only one of the four lines just above the prompt box counts: a working line quoted further up the conversation, or one in
-  # the footer, is not the session's own. Not seeing the box is unknown too. An unknown screen is never working and never hung.
-  local text top line ts t secs=0
+  # The working line must be the last non-blank line above the prompt box, apart from HM_WORKING_TRAILER_RE lines under it: a line
+  # quoted in the conversation, one in the footer, or one with other text after it is not the session's own. Not seeing the box is
+  # unknown too. An unknown screen is never working and never hung.
+  local text top lines line ts t secs=0
   text=$(hm_pane_clean)
   [ "$(printf '%s\n' "$text" | grep -cE '^[[:space:]]*(─){4,}')" -ge 2 ] || return 1
   top=$(printf '%s\n' "$text" | grep -nE '^[[:space:]]*(─){4,}' | tail -2 | head -1 | cut -d: -f1)
-  line=$(printf '%s\n' "$text" | head -n "$((top - 1))" | grep -v '^[[:space:]]*$' | tail -4 | grep -E "$HM_WORKING_RE" | tail -1)
+  lines=$(printf '%s\n' "$text" | head -n "$((top - 1))" | grep -v '^[[:space:]]*$')
+  while [ -n "$lines" ] && printf '%s\n' "$lines" | tail -1 | grep -qE "$HM_WORKING_TRAILER_RE"; do lines=$(printf '%s\n' "$lines" | sed '$d'); done
+  line=$(printf '%s\n' "$lines" | tail -1 | grep -E "$HM_WORKING_RE")
   [ -n "$line" ] || return 1
   ts=$(printf '%s' "$line" | sed -E 's/^[^(]*\(([0-9hms ]*s)( ·[^)]*)?\)[[:space:]]*$/\1/')
   for t in $ts; do
@@ -299,6 +305,17 @@ hm_session_record() {  # hm_session_record <pid> <jq path>
   case "$1" in ''|*[!0-9]*) return 0 ;; esac
   jq -j --arg p "$1" "select((.pid | tostring) == \$p) | $2 // empty" "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/sessions/$1.json" 2>/dev/null
 }
+# A live Claude process already holding a conversation, from Claude Code's own session records: prints its pid, or fails when none
+# is. Records of dead processes, of processes that are not Claude, and files that are not JSON are no answer.
+hm_session_holder() {  # hm_session_holder <session id>
+  local f p
+  for f in "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/sessions/*.json; do
+    [ -f "$f" ] || continue
+    p=$(jq -r --arg s "$1" 'select(.sessionId == $s) | .pid // empty' "$f" 2>/dev/null) || continue
+    [ -n "$p" ] && hm_is_claude "$p" && { printf '%s\n' "$p"; return 0; }
+  done
+  return 1
+}
 hm_session_transcript() {  # hm_session_transcript <session id>: the one <id>.jsonl under <config dir>/projects/*/, else fails
   local m n
   case "$1" in ''|*[!${HM_LOWER}${HM_UPPER}${HM_DIGITS}-]*) return 1 ;; esac
@@ -365,13 +382,14 @@ hm_is_agent_name() {  # hm_is_agent_name <name>: 0 when it is one
   return 0
 }
 
-# A git branch as hivemind takes one (hm-spawn's --branch and --base, the manifest's base): letters, digits, '.', '_',
-# '/' and '-', not starting with '-', which git would read as an option.
 # How strict a permission mode is, for "only ever stricter": plan and dontAsk are the same, bypassPermissions the loosest. Fails for
 # anything else. (hm-settings keeps its own copy, which refuses bypassPermissions as a local value.)
 hm_mode_rank() {  # hm_mode_rank <mode>
   case "$1" in plan|dontAsk) echo 0 ;; default) echo 1 ;; acceptEdits) echo 2 ;; auto) echo 3 ;; bypassPermissions) echo 4 ;; *) return 1 ;; esac
 }
+
+# A git branch as hivemind takes one (hm-spawn's --branch and --base, the manifest's base): letters, digits, '.', '_',
+# '/' and '-', not starting with '-', which git would read as an option.
 hm_is_branch_name() {  # hm_is_branch_name <name>: 0 when it is one
   case "$1" in ''|-*|*[!${HM_LOWER}${HM_UPPER}${HM_DIGITS}._/-]*) return 1 ;; esac
   return 0

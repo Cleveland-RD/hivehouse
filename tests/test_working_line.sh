@@ -41,6 +41,24 @@ out=$(printf '✳ Effecting… (3s · thinking)\n' | hm_pane_working_seconds); [
 out=$(hm_pane_clean < "$W/06-working-7s.ansi" | sed 's/^\(.*\)✶ Effecting… (6s · thinking)/see: ✶ Effecting… (6s · thinking)/' | hm_pane_working_seconds); [ $? -ne 0 ] && [ -z "$out" ] && ok "a working line that does not start its line is unknown (hand-built)" || bad "mid-line working text: [$out]"
 { hm_pane_clean < "$W/06-working-7s.ansi" | awk '/^[[:space:]]*(─){4,}/ { n++; if (n == 2) exit } { print }'; } > "$T_TMP/onerule.ansi"
 out=$(secs "$T_TMP/onerule.ansi"); [ $? -ne 0 ] && [ -z "$out" ] && ok "a screen with only one rule is unknown (hand-built: the capture cut at its second rule)" || bad "one rule: [$out]"
+# repl <replacement lines...> -> a file: the 7s capture with its working line replaced by those lines (hand-built)
+repl() { local f="$T_TMP/repl.$$.ansi"; printf '%s\n' "$@" > "$T_TMP/repl.lines"; hm_pane_clean < "$W/06-working-7s.ansi" | awk -v rf="$T_TMP/repl.lines" '/Effecting… \(6s/ { while ((getline l < rf) > 0) print l; next } { print }' > "$f"; echo "$f"; }
+unknown() { local out rc; out=$(secs "$1"); rc=$?; [ "$rc" -ne 0 ] && [ -z "$out" ] && ok "unknown: $2" || bad "$2: rc $rc out [$out]"; }
+echo "-- the working line starts its line and is the last thing above the box (A10, R1 of the review)"
+# the reviewer's probe: the real idle capture with a reply that quotes a spinner line, indented as reply text is, above the box
+n=$(hm_pane_clean < "$D/07-idle-after-answer.ansi" | grep -cE '^[[:space:]]*(─){4,}')
+hm_pane_clean < "$D/07-idle-after-answer.ansi" | awk -v n="$n" '/^[[:space:]]*(─){4,}/ { k++; if (k == n - 1) { print "  The spinner line looks like this:"; print "  ✳ Effecting… (6s · thinking)" } } { print }' > "$T_TMP/probe.ansi"
+grep -q '^  ✳ Effecting' "$T_TMP/probe.ansi" && ok "(the probe holds the quoted spinner line above the box)" || bad "the probe was not built"
+unknown "$T_TMP/probe.ansi" "an indented spinner line quoted in a reply above an idle prompt (hand-built from the real idle capture)"
+unknown "$(repl '  ✳ Effecting… (6s · thinking)')" "an indented spinner line is not the session's own"
+unknown "$(repl '✳ Effecting… (6s · thinking)' '  some reply text')" "text between the spinner and the box"
+unknown "$(repl '✳ Effecting… (6s · thinking)' '  ⎿  Tip: x' '  more text')" "a trailer followed by other text"
+unknown "$(repl '  ⎿  Tip: use /help')" "a trailer with no spinner"
+unknown "$(repl 'Cursor disconnected')" "a notice with no spinner"
+assert_eq "a Tip line under the spinner (hand-built)" "$(secs "$(repl '✳ Effecting… (6s · thinking)' '  ⎿  Tip: use /help for more')")" "6"
+assert_eq "Cursor disconnected under the spinner (hand-built)" "$(secs "$(repl '✳ Effecting… (6s · thinking)' '                      Cursor disconnected')")" "6"
+assert_eq "the focus-events notice under the spinner (hand-built)" "$(secs "$(repl '✳ Effecting… (6s · thinking)' "                tmux focus-events off · add 'set -g focus-events on' to ~/.tmux.conf and reattach for focus tracking")")" "6"
+assert_eq "a Tip line and a notice together (hand-built)" "$(secs "$(repl '✳ Effecting… (6s · thinking)' '  ⎿  Tip: x' '          Cursor disconnected')")" "6"
 echo "-- only the line above the prompt box counts"
 # hand-built: a working line quoted in the conversation, far above the box, on an idle screen
 { printf '✳ Effecting… (3s · thinking)\n'; for i in 1 2 3 4 5 6; do printf 'conversation line %s\n' $i; done; cat "$D/07-idle-after-answer.ansi"; } > "$T_TMP/quoted.ansi"
@@ -52,5 +70,5 @@ echo "-- it reads a raw or a cleaned pane alike"
 assert_eq "a cleaned pane" "$(hm_pane_clean < "$W/06-working-4s.ansi" | hm_pane_working_seconds)" "3"
 echo "-- the pattern sits beside HM_DIALOG_TEXT"
 a=$(grep -n '^HM_DIALOG_TEXT=' "$HM_REPO_ROOT/bin/hm-lib.sh" | cut -d: -f1); b=$(grep -n '^HM_WORKING_RE=' "$HM_REPO_ROOT/bin/hm-lib.sh" | cut -d: -f1)
-[ -n "$a" ] && [ -n "$b" ] && [ "$((b - a))" -le 4 ] && [ "$b" -ge "$a" ] && ok "HM_WORKING_RE is within four lines of HM_DIALOG_TEXT" || bad "HM_WORKING_RE ($b) is not beside HM_DIALOG_TEXT ($a)"
+[ -n "$a" ] && [ -n "$b" ] && [ "$((b - a))" -le 12 ] && [ "$b" -ge "$a" ] && ok "HM_WORKING_RE is within twelve lines of HM_DIALOG_TEXT" || bad "HM_WORKING_RE ($b) is not beside HM_DIALOG_TEXT ($a)"
 t_done
