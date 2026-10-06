@@ -7,6 +7,9 @@ import type { HubAgent, HubProject, HubTask, HubView } from '../types'
 // what waits on the owner and of every project's orchestrator, and a guard that keeps the hub off the projects' files.
 // Everything shown is read from hm-hub; the one thing done here is the Resume press, which runs `hm-hub wake`.
 const PANE = 'hivemind-hub'
+// The command that opens the screen. Never a skill's name: Claude Code refuses a command named as one of the plugin's own
+// skills (/hub is the skill, /hivemind:hub), and tests/test_hub_screen.sh holds it to that.
+const COMMAND = 'hub-screen'
 const EVERY_MS = 20_000
 const WAKE_TIMEOUT_MS = 150_000 // hm-hub wake waits up to 90 s for the resumed session to be idle
 
@@ -141,7 +144,12 @@ export const register: Register = (on, options) => {
   // ---- the screen ---------------------------------------------------------------------------------------------------
   on('session.start', async ($, e, next) => {
     if (await hubRoot($)) {
-      await $.command.register({ name: 'hub', description: 'Show the hub: what waits on you, and every project' })
+      // a refused command must not keep the screen shut: it opens anyway, and says why the command is missing
+      try {
+        await $.command.register({ name: COMMAND, description: 'Show the hub: what waits on you, and every project' })
+      } catch (err) {
+        $.ui.toast(`hub screen: /${COMMAND} is not available (${err instanceof Error ? err.message : String(err)})`)
+      }
       void refresh($)
       $.clock.every(EVERY_MS, () => {
         void refresh($)
@@ -151,7 +159,7 @@ export const register: Register = (on, options) => {
     return next(e)
   })
 
-  on('command.run', { command: 'hub' }, async $ => {
+  on('command.run', { command: COMMAND }, async $ => {
     void refresh($)
     await $.ui.open({ id: PANE, title: 'Hub' })
     return { text: 'Hub screen opened.' }
@@ -212,11 +220,12 @@ export const register: Register = (on, options) => {
             ) : (
               <Box flexDirection="row">
                 {agents.map(a => (
+                  // a space after each: two hollow dots side by side read as one wide sign
                   <Text key={`a-${p.name}-${a.name}`} color={agentColor(a)}>
-                    {a.state === 'running' ? '●' : a.state === 'stopped' ? '○' : '?'}
+                    {`${a.state === 'running' ? '●' : a.state === 'stopped' ? '○' : '?'} `}
                   </Text>
                 ))}
-                <Text color="white">{`  ${up} of ${agents.length}`}</Text>
+                <Text color="white">{` ${up} of ${agents.length}`}</Text>
               </Box>
             ),
             ...(away.length > 0
@@ -260,14 +269,19 @@ export const register: Register = (on, options) => {
     // the engine's pane background is grey in an ANSI theme: paint the whole body in the terminal's own black
     return (
       <Box flexDirection="column" backgroundColor="black" width={body} minHeight={e.viewport?.rows ?? 0} paddingX={1}>
+        {/* the folder gives way from its left, so the time always shows */}
         <Box flexDirection="row" justifyContent="space-between">
-          <Box flexDirection="row">
+          <Box flexDirection="row" flexShrink={1}>
             <Text bold color="white">
               HUB
             </Text>
-            <Text color="gray">{where ? `  ·  ${where}` : ''}</Text>
+            <Text color="gray" wrap="truncate-start">
+              {where ? `  ·  ${where}` : ''}
+            </Text>
           </Box>
-          <Text color="gray">{v.updatedAt ? clock(v.updatedAt) : 'reading…'}</Text>
+          <Box flexShrink={0} paddingLeft={2}>
+            <Text color="gray">{v.updatedAt ? clock(v.updatedAt) : 'reading…'}</Text>
+          </Box>
         </Box>
         {rule}
         {v.error ? <Text color="red">{v.error}</Text> : null}

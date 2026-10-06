@@ -5,6 +5,10 @@
 real=$(command -v claude 2>/dev/null)
 . "$(dirname "$0")/lib.sh"
 t_setup
+# Claude Code refuses a command named as one of the plugin's own skills, which the kit cannot see: the name is held here
+cmd=$(sed -n "s/^const COMMAND = '\\([^']*\\)'.*/\\1/p" "$HM_REPO_ROOT/hooks/hub.tsx")
+[ -n "$cmd" ] && ok "the screen's command is declared once: /$cmd" || bad "no COMMAND in hooks/hub.tsx"
+[ -e "$HM_REPO_ROOT/skills/$cmd" ] && bad "/$cmd is also a skill's name, which Claude Code refuses" || ok "...and is no skill's name"
 if [ -z "$real" ] || ! "$real" plugin test --help >/dev/null 2>&1; then
   echo "  SKIP claude plugin test is not available here"; t_done; exit 0
 fi

@@ -90,7 +90,7 @@ An orchestrator's message starts with what it is: `TASK <id>: HM-CLARIFY`, `HM-P
 
 ## 6. The hub's screen
 
-`/hub` opens a pane beside the conversation (it opens by itself in a wide terminal): what waits on the owner, then each
+`/hub-screen` opens a pane beside the conversation (it opens by itself in a wide terminal): what waits on the owner, then each
 project's orchestrator, agents, tasks and folders, read from `hm-hub status` every 20 seconds. Its **Resume** button,
 shown on a stopped orchestrator with the number of sessions it brings back, runs `hm-hub wake` when the owner presses
 it: that press is the owner's yes. Wait for the orchestrator's `BACK` as after any wake. In this session the screen's

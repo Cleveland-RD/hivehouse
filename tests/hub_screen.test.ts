@@ -36,8 +36,13 @@ const PANE = {
   props: { title: 'Hub', isFocused: true, bodyColumns: 60, placement: 'dock', scroll: { offset: 0, bodyRows: 60 }, view: {} },
 } as const
 
+// The plugin's skills, whose names Claude Code refuses to a command the plugin registers (it refused /hub for /hivemind:hub)
+const SKILLS = ['bubble-review', 'cleanup', 'doc-updater', 'gate', 'handoff', 'hub', 'overnight', 'review-plan', 'start']
+
 // The hub's folder holds .hivemind-hub/; every other path is itself, except one record that is a link into a project.
-function world(on: On, runs: string[][]) {
+// opened: the panes asked for; commands: the names registered, refused as Claude Code refuses them (all of them when
+// refuseAll is set).
+function world(on: On, runs: string[][], opened: string[] = [], commands: string[] = [], refuseAll = false) {
   on('session.cwd', async () => ({ value: ROOT }))
   on('fs.stat', async (_$, e) => {
     if (e.path === `${ROOT}/.hivemind-hub`) return { value: { kind: 'dir', size: 0, mtimeMs: 0, isLink: false, realPath: e.path } }
@@ -55,8 +60,15 @@ function world(on: On, runs: string[][]) {
   })
   on('tool.call', async () => ({ result: 'ran' }) as never)
   on('session.start', async (_$, e) => ({ cwd: e.cwd }))
-  on('command.register', async (_$, e) => ({ value: { command: e.name } }))
-  on('ui.open', async () => ({ value: { isPlaced: true } }))
+  on('command.register', async (_$, e) => {
+    if (refuseAll || SKILLS.includes(e.name)) return { deny: `"/${e.name}" refused: it is the plugin's /hivemind:${e.name}` }
+    commands.push(e.name)
+    return { value: { command: e.name } }
+  })
+  on('ui.open', async (_$, e) => {
+    opened.push(e.id)
+    return { value: { isPlaced: true } }
+  })
   on('ui.toast', async () => ({ value: undefined }))
 }
 
@@ -81,12 +93,16 @@ test('the hub keeps off the projects: edits outside its records and git writes a
 
 test('the screen: what needs the owner first, then each project, and Resume wakes a stopped orchestrator', async ($, on) => {
   const runs: string[][] = []
+  const opened: string[] = []
+  const commands: string[] = []
   const clock = mock.clock(on, { now: NOW })
   mock.env(on, { HOME: '/home' })
-  world(on, runs)
+  world(on, runs, opened, commands)
   await $.session.start({ cwd: ROOT, surface: 'terminal', isInteractive: true })
   await clock.settle()
   expect(runs.map(r => r[1])).toEqual(expect.arrayContaining(['status', 'tasks']))
+  expect(commands).toEqual(['hub-screen'])
+  expect(opened).toEqual(['hivemind-hub'])
 
   const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
   expect(await ui.find({ type: 'Text', text: 'NEEDS YOU' })).toBeDefined()
@@ -104,4 +120,15 @@ test('the screen: what needs the owner first, then each project, and Resume wake
   expect(wake?.slice(1)).toEqual(['wake', 'app', '--model', 'opus'])
   expect(wake?.[0]).toMatch(/\/bin\/hm-hub$/)
   await ui.unmount()
+})
+
+test('a command Claude Code refuses does not keep the screen shut', async ($, on) => {
+  const runs: string[][] = []
+  const opened: string[] = []
+  const clock = mock.clock(on, { now: NOW })
+  world(on, runs, opened, [], true)
+  await $.session.start({ cwd: ROOT, surface: 'terminal', isInteractive: true })
+  await clock.settle()
+  expect(runs.map(r => r[1])).toEqual(expect.arrayContaining(['status', 'tasks']))
+  expect(opened).toEqual(['hivemind-hub'])
 })
