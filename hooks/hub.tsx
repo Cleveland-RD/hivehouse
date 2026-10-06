@@ -324,6 +324,13 @@ export const register: Register = (on, options) => {
               ) : null}
             </Box>
           ) : null}
+          {offered
+            .filter(o => o.detail !== '')
+            .map(o => (
+              <Text key={`dd-${key}-${o.n}`} color="gray" wrap="truncate-end">
+                {`${o.n}. ${o.label} ${o.detail}`}
+              </Text>
+            ))}
           {d.options.some(o => !o.offered) || offered.length === 0 ? (
             <Text color="yellow">
               {d.options.length === 0 ? 'answer it in the pane' : `${d.options.filter(o => !o.offered).map(o => o.label).join(', ') || 'this dialog'}: answer it in the pane`}

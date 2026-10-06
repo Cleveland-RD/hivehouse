@@ -212,6 +212,8 @@ test('the screen: what needs the owner first, then each project, and Resume wake
   expect(await ui.find({ type: 'Text', text: /Do you want to proceed\?/ })).toBeDefined()
   expect((await ui.find({ key: 'answer-app/rev-1' }))?.text).toContain('1 Yes')
   expect((await ui.find({ key: 'answer-app/rev-2' }))?.text).toContain('(saves a rule)')
+  // a wrapped option's second line is shown under the buttons, whole
+  expect(await ui.find({ type: 'Text', text: /2\. Yes, and always allow access to \/tmp\/work from this project/ })).toBeDefined()
   expect(await ui.find({ key: 'answer-app/rev-esc' })).toBeDefined()
   // an option that needs the owner's own text has no button: it is answered in the pane
   expect(await ui.find({ key: 'answer-app/rev-3' })).toBeUndefined()
