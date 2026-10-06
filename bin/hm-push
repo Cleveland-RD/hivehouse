@@ -1,9 +1,10 @@
-#!/usr/bin/env bash
+#!/bin/bash -p
 # hm-push <remote> <40-hex hash> <branch>: push one commit to one branch, fast-forward only, by full hash.
 # Never forces. The remote must be the NAME of a configured remote (no URL, no path). Exit: 0 pushed or already there,
 # 2 not inside a repository, 4 refused (nothing pushed), 5 the remote could not be read (nothing pushed), 64 usage.
 set -u
 . "$(dirname "$0")/hm-lib.sh"
+hm_refuse_away hm-push
 [ $# -ge 3 ] || hm_die 64 "usage: hm-push <remote> <40-hex hash> <branch>"
 [ $# -eq 3 ] || hm_die 4 "hm-push takes exactly three arguments; there is no way to pass options (no --force)"
 remote="$1"; hash="$2"; branch="$3"

@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/bin/bash -p
 # Prepare a remote host for an overnight run. Never pre-approved for agents (A4). Subcommands, each idempotent:
 #   check    <host> --min-gb <n> --plugin-version <v>
 #   branches <host> <remote root> [<branch> ...]
@@ -12,6 +12,7 @@
 # 4 refused, 5 host unreachable, 64 usage.
 set -u
 . "$(dirname "$0")/hm-lib.sh"
+hm_refuse_away hm-remote-sync
 USAGE="usage: hm-remote-sync check <host> --min-gb n --plugin-version v | branches <host> <root> [branch...] | files <host> <root> <list> | memory <host> <local dir> <remote dir> | secret <host> <root> <relative path>"
 [ $# -ge 2 ] || hm_die 64 "$USAGE"
 sub="$1"; host="$2"; shift 2

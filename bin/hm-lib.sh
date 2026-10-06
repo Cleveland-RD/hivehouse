@@ -3,6 +3,11 @@
 # or HM_* environment set by hm-spawn.
 # A command substitution does not stop its caller: write x=$(hm_project_root) || exit $?, never a bare x=$(...).
 hm_die()  { echo "hivemind: $2" >&2; exit "$1"; }
+# A session hivemind launched in bypass while the owner is away carries HM_AWAY_BYPASS=1 (A31). Whatever leaves the machine or ends the
+# run for good is refused to it. This is a second layer: a Bash command can unset the variable for itself, so hm-away-hook is the guard.
+hm_refuse_away() {  # hm_refuse_away <what>: exit 4 when this process is in a marked session
+  [ "${HM_AWAY_BYPASS:-}" != 1 ] || hm_die 4 "hivemind's away mode refuses $1 while the owner is away (HM_AWAY_BYPASS is set); tell the owner what you needed"
+}
 hm_home() { printf '%s\n' "${HIVEMIND_HOME:-$HOME/.hivemind}"; }
 hm_now()  { /bin/date -u +%Y-%m-%dT%H:%M:%SZ; }
 hm_project_root() {

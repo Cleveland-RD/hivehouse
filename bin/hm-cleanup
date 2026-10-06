@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/bin/bash -p
 # Remove only what the manifest recorded. Never runs a command from it: what to do is derived from the entry's kind,
 # and every entry is judged again when it is acted on (A5, A18), since a line is only as safe as the check made when
 # it is read. Newest entries first; an entry acted on is dropped, one kept or skipped stays.
@@ -21,6 +21,7 @@ while [ $# -gt 0 ]; do
   shift
 done
 [ -n "$mode" ] || hm_die 64 "$USAGE"
+[ "$mode" != finish ] || hm_refuse_away "hm-cleanup --finish"
 hm_ensure_state || exit $?
 ROOT=$(hm_project_root) || exit $?
 STATE="$ROOT/.hivemind"; FILE="$STATE/manifest.jsonl"; LOCK="$STATE/cleanup.lock"
