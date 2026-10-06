@@ -37,7 +37,16 @@ const STATUS = {
       name: 'four',
       home: `${ROOT}/four`,
       repos: [{ folder: 'four', kind: 'repo', branch: 'main', changed: 0 }],
-      orchestrator: { state: 'none', question: false, starting: { pane: '%12', kind: 'start', at: '2026-10-05T11:59:00Z', typed: false, question: true, task: 'four-1' } },
+      orchestrator: { state: 'none', question: false, starting: { pane: '%12', kind: 'start', at: '2026-10-05T11:59:00Z', typed: false, sending: false, question: true, task: 'four-1' } },
+      agents: [],
+      open_tasks: 1,
+    },
+    {
+      // a start whose line is still on the way: coming up, nothing for the owner to do
+      name: 'five',
+      home: `${ROOT}/five`,
+      repos: [{ folder: 'five', kind: 'repo', branch: 'main', changed: 0 }],
+      orchestrator: { state: 'none', question: false, starting: { pane: '%14', kind: 'start', at: '2026-10-05T11:59:50Z', typed: false, sending: true, question: false, task: 'five-1' } },
       agents: [],
       open_tasks: 1,
     },
@@ -67,8 +76,17 @@ const ran = (exitCode: number, stdout: string, stderr = '') => ({ value: { exitC
 // The hub's folder holds .hivemind-hub/; every other path is itself, except one record that is a link into a project.
 // opened: the panes asked for; commands: the names registered, refused as Claude Code refuses them (all of them when
 // refuseAll is set).
-// shown: whether Claude Code lists the screen as open and shown (its own record of the plugin's panes).
-function world(on: On, runs: string[][], opened: string[] = [], commands: string[] = [], refuseAll = false, shown = { now: true }) {
+// shown: whether Claude Code lists the screen as open and shown (its own record of the plugin's panes). session: what
+// Claude Code records of this session (hm-hub naming) and how many turns it has had; slash: the slash commands run.
+type Session = { turns: number; naming?: { found: boolean; name: string; source: string; free: string } }
+function world(on: On, runs: string[][], opened: string[] = [], commands: string[] = [], refuseAll = false, shown = { now: true },
+  session: Session = { turns: 3 }, slash: string[][] = []) {
+  on('session.turns', async () => ({ value: session.turns }))
+  on('session.id', async () => ({ value: 'sess-hub' }))
+  on('command.run', async (_$, e) => {
+    slash.push([e.command, e.args ?? ''])
+    return { text: '' } as never
+  })
   on('session.cwd', async () => ({ value: ROOT }))
   on('fs.stat', async (_$, e) => {
     if (e.path === `${ROOT}/.hivemind-hub`) return { value: { kind: 'dir', size: 0, mtimeMs: 0, isLink: false, realPath: e.path } }
@@ -83,6 +101,7 @@ function world(on: On, runs: string[][], opened: string[] = [], commands: string
     if (sub === 'status') return ran(0, JSON.stringify(STATUS))
     if (sub === 'tasks') return ran(0, JSON.stringify(TASKS))
     if (sub === 'wake' || sub === 'continue') return ran(0, '%7\n')
+    if (sub === 'naming' && session.naming) return ran(0, JSON.stringify(session.naming))
     return ran(64, '', 'hivemind: usage')
   })
   on('tool.call', async () => ({ result: 'ran' }) as never)
@@ -160,6 +179,9 @@ test('the screen: what needs the owner first, then each project, and Resume wake
   expect((await ui.find({ key: 'resume-app' }))?.text).toContain('Resume · 2 sessions')
   expect(await ui.find({ key: 'resume-two' })).toBeUndefined()
   expect(await ui.find({ key: 'resume-tri' })).toBeUndefined()
+  // a start still sending its line is coming up: no Continue, nothing waiting on the owner
+  expect(await ui.find({ key: 'continue-five' })).toBeUndefined()
+  expect(await ui.find({ type: 'Text', text: /coming up/ })).toBeDefined()
 
   await ui.press({ key: 'resume-app' })
   const wake = runs.find(r => r[1] === 'wake')
@@ -204,4 +226,38 @@ test('a command Claude Code refuses does not keep the screen shut', async ($, on
   await clock.settle()
   expect(runs.map(r => r[1])).toEqual(expect.arrayContaining(['status', 'tasks']))
   expect(opened).toEqual(['hivemind-hub'])
+})
+
+const UNNAMED = { found: true, name: 'Read the docs', source: 'auto', free: 'hub' }
+
+test('a plain claude in the hub folder names itself and opens the hub', async ($, on) => {
+  const ran: string[][] = []
+  const clock = mock.clock(on, { now: NOW })
+  world(on, [], [], [], false, { now: true }, { turns: 0, naming: UNNAMED }, ran)
+  await $.session.start({ cwd: ROOT, surface: 'terminal', isInteractive: true })
+  await clock.settle()
+  expect(ran).toEqual([['rename', 'hub'], ['hivemind:hub', '']])
+})
+
+// each test's world is its own: hooks a test registers stay for the rest of that test
+const leftAlone = (why: string, session: Session) =>
+  test(`a session ${why} is left as it is`, async ($, on) => {
+    const ran: string[][] = []
+    const clock = mock.clock(on, { now: NOW })
+    world(on, [], [], [], false, { now: true }, session, ran)
+    await $.session.start({ cwd: ROOT, surface: 'terminal', isInteractive: true })
+    await clock.settle()
+    expect(ran).toEqual([])
+  })
+leftAlone('the owner named', { turns: 0, naming: { ...UNNAMED, name: 'hub', source: 'user' } })
+leftAlone('resumed or reloaded (it has had turns)', { turns: 4, naming: UNNAMED })
+leftAlone('Claude Code keeps no record of', { turns: 0, naming: { ...UNNAMED, found: false } })
+
+test('the setting turns the naming off', { options: { hub_auto_start: false } }, async ($, on) => {
+  const ran: string[][] = []
+  const clock = mock.clock(on, { now: NOW })
+  world(on, [], [], [], false, { now: true }, { turns: 0, naming: UNNAMED }, ran)
+  await $.session.start({ cwd: ROOT, surface: 'terminal', isInteractive: true })
+  await clock.settle()
+  expect(ran).toEqual([])
 })

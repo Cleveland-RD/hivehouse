@@ -95,6 +95,23 @@ async function act($: EngineInterface, project: string, args: string[], done: st
   }
 }
 
+// A plain claude in the hub's folder becomes the hub: named (orchestrators reply to the hub by name, and Claude Code lets
+// only a slash command name a session) and greeted. Only a fresh session Claude Code records as unnamed: a name the owner
+// gave is theirs, a resumed or reloaded session has had turns, and a session with no record is left as it is.
+async function nameAndGreet($: EngineInterface, root: string): Promise<void> {
+  try {
+    if ((await $.session.turns()) > 0) return
+    const r = await $.process.run([hmHub($), 'naming', '--session', await $.session.id()], { cwd: root, timeoutMs: 30_000 })
+    if (r.exitCode !== 0) return
+    const n = JSON.parse(r.stdout) as { found?: boolean; source?: string; free?: string }
+    if (!n.found || n.source === 'user' || !n.free) return
+    await $.command.run({ command: 'rename', args: n.free })
+    await $.command.run({ command: 'hivemind:hub' })
+  } catch (err) {
+    $.ui.toast(`hub: this session could not name itself (${err instanceof Error ? err.message : String(err)}); type /rename hub`)
+  }
+}
+
 // ---- the guard ------------------------------------------------------------------------------------------------------
 // The hub changes no project: in the hub's session an edit inside its work folder (apart from its own records) or inside
 // any project's folder is refused. A path is judged by where it really is (links and `..` resolved); a file that does
@@ -162,6 +179,7 @@ export const register: Register = (on, options) => {
   const mode = typeof options.permission_mode_local === 'string' ? options.permission_mode_local : ''
   // the level at which hivemind rotates a session: a level at or above it is drawn as a warning
   const rotateAt = typeof options.rotate_at_percent === 'number' ? options.rotate_at_percent : 50
+  const autoStart = options.hub_auto_start !== false
 
   // A guard that fails lets the call go on (its .catch): it is best effort, and a broken guard must not stop the work.
   on('tool.call', { tool: 'Edit' }, async ($, e, next) => {
@@ -184,7 +202,10 @@ export const register: Register = (on, options) => {
 
   // ---- the screen ---------------------------------------------------------------------------------------------------
   on('session.start', async ($, e, next) => {
-    if (await hubRoot($)) {
+    const root = await hubRoot($)
+    if (root) {
+      // queued: a slash command runs once the session is idle, after this start
+      if (autoStart) void nameAndGreet($, root)
       // a refused command must not keep the screen shut: it opens anyway, and says why the command is missing
       try {
         await $.command.register({ name: COMMAND, description: 'Show the hub: what waits on you, and every project' })
@@ -234,7 +255,7 @@ export const register: Register = (on, options) => {
         needs.push({ key: `q-${p.name}-${a.name}`, glyph: '?', color: 'yellow', who: `${p.name} · ${a.name}`, words: 'a question on its screen', when: '' })
       }
       const s = o.starting
-      if (s && !s.typed) {
+      if (s && !s.typed && !s.sending) {
         needs.push({
           key: `s-${p.name}`,
           glyph: '?',
@@ -407,7 +428,7 @@ export const register: Register = (on, options) => {
 function orchestratorLook(p: HubProject): { dot: string; word: string; color: string } {
   const o = p.orchestrator ?? { state: 'none' }
   if (o.starting && o.state !== 'running') {
-    return o.starting.typed ? { dot: '◐', word: 'coming up', color: 'cyan' } : { dot: '◐', word: 'waiting on you', color: 'magenta' }
+    return o.starting.typed || o.starting.sending ? { dot: '◐', word: 'coming up', color: 'cyan' } : { dot: '◐', word: 'waiting on you', color: 'magenta' }
   }
   const looks: Record<HubProject['orchestrator']['state'], { dot: string; word: string; color: string }> = {
     running: { dot: '●', word: 'running', color: 'green' },

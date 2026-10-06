@@ -19,9 +19,10 @@ export type HubOrchestrator = {
   session_id?: string
   context?: number
   context_assumed?: boolean
-  // a session this hub started (wake, start) that has not registered yet; typed false: its first line is still to be sent
-  // (hm-hub continue sends it), question: a dialog waits on its screen
-  starting?: { pane: string; kind: string; at: string; typed?: boolean; question?: boolean; task?: string }
+  // a session this hub started (wake, start) that has not registered yet. typed: its first line was sent; sending: an hm-hub
+  // is still waiting to send it (coming up); neither: it stopped, waiting on the owner (hm-hub continue sends it);
+  // question: a dialog waits on its screen
+  starting?: { pane: string; kind: string; at: string; typed?: boolean; sending?: boolean; question?: boolean; task?: string }
 }
 
 export type HubFolder = { folder: string; kind: string; branch?: string; changed?: number }
