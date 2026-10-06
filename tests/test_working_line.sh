@@ -38,6 +38,9 @@ for l in '✳ Effecting… (soon)' '✳ Effecting…' '✳ Effecting (3s)' 'Effe
 done
 out=$(printf '' | hm_pane_working_seconds); [ $? -ne 0 ] && [ -z "$out" ] && ok "an empty pane is unknown" || bad "empty pane: [$out]"
 out=$(printf '✳ Effecting… (3s · thinking)\n' | hm_pane_working_seconds); [ $? -ne 0 ] && ok "no prompt box on the screen is unknown" || bad "no box: [$out]"
+out=$(hm_pane_clean < "$W/06-working-7s.ansi" | sed 's/^\(.*\)✶ Effecting… (6s · thinking)/see: ✶ Effecting… (6s · thinking)/' | hm_pane_working_seconds); [ $? -ne 0 ] && [ -z "$out" ] && ok "a working line that does not start its line is unknown (hand-built)" || bad "mid-line working text: [$out]"
+{ hm_pane_clean < "$W/06-working-7s.ansi" | awk '/^[[:space:]]*(─){4,}/ { n++; if (n == 2) exit } { print }'; } > "$T_TMP/onerule.ansi"
+out=$(secs "$T_TMP/onerule.ansi"); [ $? -ne 0 ] && [ -z "$out" ] && ok "a screen with only one rule is unknown (hand-built: the capture cut at its second rule)" || bad "one rule: [$out]"
 echo "-- only the line above the prompt box counts"
 # hand-built: a working line quoted in the conversation, far above the box, on an idle screen
 { printf '✳ Effecting… (3s · thinking)\n'; for i in 1 2 3 4 5 6; do printf 'conversation line %s\n' $i; done; cat "$D/07-idle-after-answer.ansi"; } > "$T_TMP/quoted.ansi"

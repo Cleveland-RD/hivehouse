@@ -193,7 +193,7 @@ settings=$(jq -nc --argjson o "${owner_sl:-null}" --arg bin "$(cd "$(dirname "$0
 resume_id=""
 if [ "$resume" = 1 ]; then
   sid=$(hm_json_get "$STATE/team/$agent/session.json" .session_id)
-  [ -n "$sid" ] && hm_session_transcript "$sid" >/dev/null && resume_id=$sid
+  hm_session_transcript "$sid" >/dev/null && resume_id=$sid
 fi
 extra=(); [ -z "$resume_id" ] || extra=(--resume "$resume_id")
 cmd="exec $(printf '%q ' claude ${extra[@]+"${extra[@]}"} --name "$project-$agent" --model "$model" --effort "$effort" --permission-mode "$mode" --allowedTools "$ALLOWED" --settings "$settings")"

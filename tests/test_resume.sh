@@ -48,9 +48,21 @@ respawn impl --mode bypassPermissions >/dev/null 2>&1; assert_status "--mode byp
 np=$(respawn impl --mode auto); assert_status "--mode auto with bypass recorded is stricter" $? 0
 assert_eq "...recorded as auto" "$(mode)" "auto"
 stop
+# plan and dontAsk are the same strictness; default is stricter than acceptEdits, which is stricter than auto; an unknown recorded mode cannot be judged
+setmode dontAsk; respawn impl --mode plan >/dev/null 2>&1; assert_status "--mode plan with dontAsk recorded (the same strictness) is refused" $? 4
+setmode acceptEdits; np=$(respawn impl --mode default); assert_status "--mode default with acceptEdits recorded is accepted" $? 0
+stop; setmode auto; np=$(respawn impl --mode acceptEdits); assert_status "--mode acceptEdits with auto recorded is accepted" $? 0
+stop; setmode weird; respawn impl --mode auto >/dev/null 2>&1; assert_status "an unknown recorded mode cannot be judged: refused" $? 4
+setmode auto
 echo "-- --resume"
 printf '# impl handoff\n\n## START HERE\n\nmid-task\n' > "$HANDOFF"
 setsession sess-abc-123
+np=$(respawn impl); assert_status "no --resume: a recorded session is not resumed" $? 0
+sc=$(screen "$np"); case "$sc" in *"ARGV: --resume"*) bad "resumed without --resume" ;; *) ok "...started without --resume" ;; esac
+assert_contains "...and typed the pickup line" "$sc" "GOT: You are proj-impl. Read $HANDOFF"
+stop
+np=$(hm-spawn --respawn impl --still 2 --max-wait 15 --resume); assert_status "--resume as the last argument" $? 0
+stop
 np=$(respawn impl --resume); assert_status "--resume with a recorded session" $? 0
 sc=$(screen "$np")
 assert_contains "claude is started with --resume" "$sc" "ARGV: --resume"
