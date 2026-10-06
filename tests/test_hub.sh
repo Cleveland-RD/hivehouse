@@ -219,9 +219,9 @@ assert_eq "...and handed once" "$(jq -r --arg i "$t5" 'select(.id == $i and .eve
 # ---- run: the two owner-only skills, typed into a running orchestrator's own pane (on the server it is recorded on) ----
 mk ru; hub add ru --home ru >/dev/null; RU="$H/ru/.hivemind"; mkdir -p "$RU"
 SB="$T_TMP/b.sock"   # a second tmux server: a registered orchestrator's pane is not always on hivemind's own
-ru_pane() {  # ru_pane <fake claude mode>: a fresh pane on that server, recorded as ru's orchestrator (a stand-in process for its Claude)
+ru_pane() {  # ru_pane <fake claude mode> [capture to draw]: a fresh pane on that server, recorded as ru's orchestrator (a stand-in process for its Claude)
   tmux -S "$SB" kill-server 2>/dev/null; sleep 0.3
-  RUPANE=$(env -u HIVEMIND_HOME tmux -S "$SB" new-session -d -P -F '#{pane_id}' -s rub -c "$H/ru" -e "HM_FAKE_CLAUDE=$1" 'exec claude --name ru-orchestrator') || return 1
+  RUPANE=$(env -u HIVEMIND_HOME tmux -S "$SB" new-session -d -x 200 -y 56 -P -F '#{pane_id}' -s rub -c "$H/ru" -e "HM_FAKE_CLAUDE=$1" -e "HM_FAKE_DIALOG=${2:-}" 'exec claude --name ru-orchestrator') || return 1
   t_track "$(tmux -S "$SB" display -p '#{pid}')"
   ( exec -a claude sleep 300 ) >/dev/null 2>&1 & RUCLAUDE=$!; disown "$RUCLAUDE"; t_track "$RUCLAUDE"; sleep 0.3
   local i; i=$(hm_pane_identity "$SB" "$RUPANE")
@@ -297,6 +297,78 @@ op=$(hub start ov "$to" --overnight --still 2 --max-wait 15 2>/dev/null); assert
 assert_contains "...its first line is the overnight line" "$(hm_tmux capture-pane -p -J -S - -t "$op")" "GOT: /hivemind:overnight Task $to: read $P/tasks/$to.md. It came from the owner through hub."
 case "$(hm_tmux capture-pane -p -J -S - -t "$op")" in *"/hivemind:start"*) bad "an overnight start also typed the start line" ;; *) ok "...not the start line" ;; esac
 assert_eq "...the task is handed" "$(hub tasks --json | jq -r --arg i "$to" '.[] | select(.id==$i) | .state')" "handed"
+
+# ---- dialog and answer: a dialog on a session's screen is read, and answered with the one key the owner chose ----
+FX="$HM_REPO_ROOT/tests/fixtures/dialogs"
+jj() { printf '%s' "$1" | jq -r "$2"; }
+nkeys() { rscreen | grep -c '^KEY:'; }          # every key that reached the orchestrator's pane
+seq_of() { rscreen | grep '^KEY:' | tr '\n' ' '; }
+ZERO=0000000000000000000000000000000000000000
+ru_pane dialogfile "$FX/03-bash-permission.ansi"; sleep 1
+dj=$(hub dialog ru); assert_status "dialog" $? 0
+assert_eq "...the session it is on" "$(jj "$dj" .session)" "ru-orchestrator"
+assert_eq "...its pane" "$(jj "$dj" .pane)" "$RUPANE"
+assert_eq "...its options" "$(jj "$dj" '[.options[].n] | join(",")')" "1,2,3"
+assert_contains "...its text" "$(jj "$dj" .text)" "touch made-by-test.txt"
+dfp=$(jj "$dj" .fingerprint)
+hub dialog nope >/dev/null 2>&1; assert_status "dialog for no project" $? 2
+hub dialog ru ghost >/dev/null 2>&1; assert_status "...an agent that is not on the team" $? 2
+hub answer ru --choice 1 >/dev/null 2>&1; assert_status "answer needs the fingerprint it was shown" $? 64
+hub answer ru --seen "$dfp" >/dev/null 2>&1; assert_status "...and a choice" $? 64
+hub answer ru --choice x --seen "$dfp" >/dev/null 2>&1; assert_status "...a choice that is a digit or esc" $? 64
+hub answer ru --choice 1 --seen abc >/dev/null 2>&1; assert_status "...a fingerprint that is one" $? 64
+hub answer ru ghost --choice 1 --seen "$dfp" >/dev/null 2>&1; assert_status "an agent that is not in team.json" $? 2
+hub answer ru --choice 7 --seen "$dfp" >/dev/null 2>&1; assert_status "an option the dialog does not have" $? 64
+hub answer ru --choice 1 --seen "$ZERO" >/dev/null 2>"$T_TMP/a.err"; assert_status "a screen that is not the one the owner saw" $? 4
+assert_contains "...says to look again" "$(cat "$T_TMP/a.err")" "the dialog changed"
+assert_eq "...nothing was sent by any refusal" "$(nkeys)" "0"
+ao=$(hub answer ru --choice 1 --seen "$dfp" 2>"$T_TMP/a.err"); assert_status "answer" $? 0
+assert_eq "...exactly one key, the digit" "$(seq_of)" "KEY: 1 "
+assert_eq "...and says the dialog went away" "$(jj "$ao" .dialog_gone)" "true"
+assert_eq "...with the option's text" "$(jj "$ao" .option)" "Yes"
+assert_eq "...logged with the session and the option" "$(jq -r '[.event, .project, .session, .option] | join("|")' "$P/answers.jsonl" | tail -1)" "answered-dialog|ru|ru-orchestrator|Yes"
+hub answer ru --choice 1 --seen "$dfp" >/dev/null 2>"$T_TMP/a.err"; assert_status "answering again, with no dialog on the screen" $? 4
+assert_contains "...says there is none, not that it changed" "$(cat "$T_TMP/a.err")" "no dialog is on"
+hub dialog ru >/dev/null 2>&1; assert_status "...dialog says so too" $? 4
+assert_eq "...nothing more was sent" "$(nkeys)" "1"
+# Escape, where the dialog offers it
+ru_pane dialogfile "$FX/04-write-permission.ansi"; sleep 1
+efp=$(jj "$(hub dialog ru)" .fingerprint)
+hub answer ru --choice esc --seen "$efp" >/dev/null 2>&1; assert_status "esc" $? 0
+assert_eq "...one Escape" "$(seq_of)" "KEY: ESC "
+# a question that needs the owner's own text is never answered by the hub
+ru_pane dialogfile "$FX/05-ask-user-question.ansi"; sleep 1
+qfp=$(jj "$(hub dialog ru)" .fingerprint)
+hub answer ru --choice 3 --seen "$qfp" >/dev/null 2>"$T_TMP/a.err"; assert_status "an option that needs the owner's own text" $? 4
+assert_contains "...says to answer in the pane" "$(cat "$T_TMP/a.err")" "in the pane"
+hub answer ru --choice 4 --seen "$qfp" >/dev/null 2>&1; assert_status "...nor the chat option" $? 4
+assert_eq "...nothing was sent" "$(nkeys)" "0"
+hub answer ru --choice 2 --seen "$qfp" >/dev/null 2>&1; assert_status "an offered option" $? 0
+assert_eq "...its digit" "$(seq_of)" "KEY: 2 "
+# an unnumbered menu: arrow keys to the chosen row, then Enter as the last key
+ru_pane dialogfile "$FX/01-trust-folder.ansi"; sleep 1
+tfp=$(jj "$(hub dialog ru)" .fingerprint)
+hub answer ru --choice 2 --seen "$tfp" >/dev/null 2>&1; assert_status "a menu: the second row" $? 0
+assert_eq "...one Down, then Enter" "$(seq_of)" "KEY: DOWN KEY: ENTER "
+ru_pane dialogfile "$FX/01-trust-folder.ansi"; sleep 1
+hub answer ru --choice 1 --seen "$tfp" >/dev/null 2>&1; assert_status "a menu: the row the cursor is on" $? 0
+assert_eq "...Enter only" "$(seq_of)" "KEY: ENTER "
+ru_pane dialogfile "$FX/01c-trust-after-down.ansi"; sleep 1
+hub answer ru --choice 1 --seen "$(jj "$(hub dialog ru)" .fingerprint)" >/dev/null 2>&1; assert_status "a menu: a row above the cursor" $? 0
+assert_eq "...one Up, then Enter" "$(seq_of)" "KEY: UP KEY: ENTER "
+# a dialog on an agent's screen: the same, on that agent's pane
+ru_pane idle
+APANE=$(env -u HIVEMIND_HOME tmux -S "$SB" new-window -d -P -F '#{pane_id}' -t rub: -n impl -e "HM_FAKE_CLAUDE=dialogfile" -e "HM_FAKE_DIALOG=$FX/03-bash-permission.ansi" 'exec claude')
+ai=$(hm_pane_identity "$SB" "$APANE")
+jq --arg k "$SB" --arg p "$APANE" --arg pp "${ai%%$'\t'*}" --arg ps "${ai#*$'\t'}" '.agents += [{name:"impl", pane:$p, socket:$k, pane_pid:$pp, pane_started:$ps}]' "$RU/team.json" > "$RU/team.json.t" && mv "$RU/team.json.t" "$RU/team.json"
+sleep 1
+hub dialog ru >/dev/null 2>&1; assert_status "an orchestrator with no dialog" $? 4
+adj=$(hub dialog ru impl); assert_status "an agent's dialog" $? 0
+assert_eq "...its session and pane" "$(jj "$adj" '[.session, .pane] | join(" ")')" "impl $APANE"
+hub answer ru impl --choice 1 --seen "$(jj "$adj" .fingerprint)" >/dev/null 2>&1; assert_status "answered on the agent's pane" $? 0
+assert_eq "...its digit arrived there" "$(tmux -S "$SB" capture-pane -p -J -S - -t "$APANE" | grep -c '^KEY: 1$')" "1"
+assert_eq "...and not on the orchestrator's" "$(nkeys)" "0"
+tmux -S "$SB" kill-server 2>/dev/null
 
 # ---- the hub names its own session: Claude Code's record of it, and a name no other running session has ----
 mine=$(live "" "$H"); jq '.sessionId = "sess-hub" | .nameSource = "auto" | .name = "Read the docs"' "$CLAUDE_CONFIG_DIR/sessions/$mine.json" > "$T_TMP/m.json" && mv "$T_TMP/m.json" "$CLAUDE_CONFIG_DIR/sessions/$mine.json"

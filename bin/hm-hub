@@ -8,7 +8,8 @@
 # so a start stopped at a question is continued rather than made twice), runs/<project>.json (the same for a line `run` types
 # into a running orchestrator's own pane). HM_HUB names the work folder; else the nearest
 # folder at or above the cwd holding .hivemind-hub/.
-# Exit: 2 not found (no hub, project, task or record), 4 refused value or state, 5 a dialog needs a person, 1 never idle,
+# answers.jsonl is the log of dialogs answered through `answer` (a dialog belongs to no task).
+# Exit: 2 not found (no hub, project, task, agent or record), 4 refused value or state, 5 a dialog needs a person, 1 never idle,
 # 64 usage.
 set -u
 . "$(dirname "$0")/hm-lib.sh"
@@ -37,6 +38,8 @@ USAGE="usage: hm-hub init
        hm-hub run <project> overnight <task id> [--still <s>] [--max-wait <s>]
        hm-hub run <project> cleanup <task id> [--disk] [--still <s>] [--max-wait <s>]
        hm-hub continue <project> [--still <s>] [--max-wait <s>]
+       hm-hub dialog <project> [<agent>]
+       hm-hub answer <project> [<agent>] --choice <1-9|esc> --seen <fingerprint>
        hm-hub naming --session <session id>"
 
 cmd="${1:-}"; [ -n "$cmd" ] || hm_die 64 "$USAGE"; shift
@@ -240,6 +243,33 @@ finish() {
   esac
   unlock
   echo "$pane"
+}
+# dialog_target <hub root> <project> <agent or empty>: the screen a dialog is read from and answered on. Sets T_SOCKET, T_PANE
+# and T_SESSION. The orchestrator by default: its registered pane, else the pane this hub started for it and it has not
+# registered from (a start's first dialog), else the pane of one running outside hivemind. An agent must be on the team
+# (exit 2) and running (exit 4). Needs HOME_DIR, so call it after need_project.
+dialog_target() {
+  local root="$1" name="$2" want="$3" entry
+  T_SOCKET=""; T_PANE=""; T_SESSION=""
+  orch_state "$root" "$name" "$HOME_DIR"
+  if [ -z "$want" ] || [ "$want" = "$O_AGENT" ]; then
+    entry=$(hm_self_entry "$HOME_DIR")
+    if [ "$O_STATE" = running ] && [ -n "$entry" ]; then
+      T_SOCKET=$(printf '%s' "$entry" | jq -r '.socket // empty'); T_PANE=$(printf '%s' "$entry" | jq -r '.pane // empty'); T_SESSION="$O_NAME"
+    elif pending "$root" "$name"; then
+      T_SOCKET=$(hm_json_get "$root/.hivemind-hub/panes/$name.json" .socket); T_PANE=$(hm_json_get "$root/.hivemind-hub/panes/$name.json" .pane); T_SESSION="$name-orchestrator"
+    elif [ "$O_STATE" = unregistered ]; then
+      T_PANE="$O_PANE"; T_SESSION="$O_NAME"
+    fi
+    [ -n "$T_PANE" ] || hm_die 4 "$name has no orchestrator screen to read ($O_STATE)"
+  else
+    hm_is_agent_name "$want" || hm_die 4 "an agent name is lower-case letters, digits, '_' and '-': $want"
+    entry=$(jq -c --arg a "$want" '[.agents[]? | select(.name == $a)][0] // empty' "$HOME_DIR/.hivemind/team.json" 2>/dev/null)
+    [ -n "$entry" ] || hm_die 2 "no agent named $want on $name's team"
+    hm_team_agent_is "$HOME_DIR" "$want"; [ $? -eq 0 ] || hm_die 4 "$want is not running: there is no screen to read"
+    T_SOCKET=$(printf '%s' "$entry" | jq -r '.socket // empty'); T_PANE=$(printf '%s' "$entry" | jq -r '.pane // empty'); T_SESSION="$want"
+    [ -n "$T_PANE" ] || hm_die 4 "$want has no pane recorded"
+  fi
 }
 type_line() { hm_tmux_on "${3:-}" send-keys -t "$1" -l "$2"; hm_tmux_on "${3:-}" send-keys -t "$1" Enter; }   # type_line <pane> <fixed line> [socket]
 overnight_line() { printf '/hivemind:overnight Task %s: read %s. It came from the owner through %s.' "$1" "$2" "$3"; }   # overnight_line <task id> <task file> <hub name>
@@ -538,6 +568,77 @@ run)
     > "$rf"
   unlock
   finish "$root" "$name" runs ;;
+
+dialog)
+  name="${1:-}"; [ -n "$name" ] || hm_die 64 "$USAGE"; shift
+  agent=""; if [ $# -gt 0 ]; then agent="$1"; shift; fi
+  [ $# -eq 0 ] || hm_die 64 "$USAGE"
+  root=$(hub_root) || exit $?
+  need_project "$root" "$name"
+  dialog_target "$root" "$name" "$agent"
+  d=$(hm_pane_dialog "$T_SOCKET" "$T_PANE"); rc=$?
+  case "$rc" in
+    0) ;;
+    3) hm_die 4 "no dialog is on $T_SESSION's screen (pane $T_PANE)" ;;
+    *) hm_die 4 "cannot read $T_SESSION's pane $T_PANE" ;;
+  esac
+  printf '%s' "$d" | jq -c --arg p "$name" --arg s "$T_SESSION" --arg pane "$T_PANE" '{project:$p, session:$s, pane:$pane} + .' ;;
+
+answer)
+  # one key for a dialog the owner chose an option of: the digit of a numbered dialog, Escape, or, for a menu without digits,
+  # arrow keys to the chosen row and Enter as the last key of that choice. Never text, never Enter on its own. The screen is
+  # read again under the lock and must be the one the owner was shown (its fingerprint).
+  name="${1:-}"; [ -n "$name" ] || hm_die 64 "$USAGE"; shift
+  agent=""; case "${1:-}" in ''|--*) ;; *) agent="$1"; shift ;; esac
+  choice=""; seen=""
+  while [ $# -gt 0 ]; do
+    [ $# -ge 2 ] || hm_die 64 "$USAGE"
+    case "$1" in --choice) choice="$2" ;; --seen) seen="$2" ;; *) hm_die 64 "$USAGE" ;; esac
+    shift 2
+  done
+  case "$choice" in esc|[1-9]) ;; *) hm_die 64 "$USAGE" ;; esac
+  case "$seen" in ''|*[!0-9a-f]*) hm_die 64 "$USAGE" ;; esac
+  [ "${#seen}" -eq 40 ] || hm_die 64 "$USAGE"
+  root=$(hub_root) || exit $?
+  need_project "$root" "$name"
+  lock "$root"
+  dialog_target "$root" "$name" "$agent"
+  d=$(hm_pane_dialog "$T_SOCKET" "$T_PANE"); rc=$?
+  case "$rc" in
+    0) ;;
+    3) hm_die 4 "no dialog is on $T_SESSION's screen (pane $T_PANE): nothing was sent" ;;
+    *) hm_die 4 "cannot read $T_SESSION's pane $T_PANE: nothing was sent" ;;
+  esac
+  [ "$(printf '%s' "$d" | jq -r .fingerprint)" = "$seen" ] || hm_die 4 "the dialog changed; look again: nothing was sent"
+  keys=()
+  if [ "$choice" = esc ]; then
+    [ "$(printf '%s' "$d" | jq -r .esc)" = true ] || hm_die 4 "this dialog does not offer Escape: answer it in the pane"
+    keys=(Escape); label="Esc"
+  else
+    opt=$(printf '%s' "$d" | jq -c --argjson n "$choice" '[.options[] | select(.n == $n)][0] // empty')
+    [ -n "$opt" ] || hm_die 64 "this dialog has no option $choice"
+    [ "$(printf '%s' "$opt" | jq -r .offered)" = true ] || hm_die 4 "option $choice needs your own text: answer it in the pane"
+    label=$(printf '%s' "$opt" | jq -r .label)
+    case "$(printf '%s' "$d" | jq -r .kind)" in
+      numbered) keys=("$choice") ;;
+      menu)
+        cur=$(printf '%s' "$d" | jq -r '.cursor // empty'); hm_is_number "$cur" || hm_die 4 "cannot tell which row the cursor is on: answer it in the pane"
+        delta=$((choice - cur))
+        while [ "$delta" -gt 0 ]; do keys+=(Down); delta=$((delta - 1)); done
+        while [ "$delta" -lt 0 ]; do keys+=(Up); delta=$((delta + 1)); done
+        keys+=(Enter) ;;
+      *) hm_die 4 "the options of this dialog could not be read: answer it in the pane" ;;
+    esac
+  fi
+  for k in "${keys[@]}"; do hm_tmux_on "$T_SOCKET" send-keys -t "$T_PANE" "$k"; sleep 0.2; done
+  jq -nc --arg p "$name" --arg s "$T_SESSION" --arg c "$choice" --arg o "$label" --arg at "$(hm_now)" \
+    '{event:"answered-dialog", project:$p, session:$s, choice:$c, option:$o, at:$at}' >> "$root/.hivemind-hub/answers.jsonl"
+  gone=false
+  for _ in 1 2 3 4 5; do
+    sleep 1
+    hm_pane_dialog "$T_SOCKET" "$T_PANE" >/dev/null; [ $? -eq 3 ] && { gone=true; break; }
+  done
+  jq -nc --arg s "$T_SESSION" --arg c "$choice" --arg o "$label" --argjson g "$gone" '{answered:true, session:$s, choice:$c, option:$o, dialog_gone:$g}' ;;
 
 continue)
   name="${1:-}"; [ -n "$name" ] || hm_die 64 "$USAGE"; shift
