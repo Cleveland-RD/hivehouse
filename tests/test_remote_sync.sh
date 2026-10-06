@@ -208,4 +208,13 @@ echo x > .hivemind/leak; git add -f .hivemind/leak
 sync check testhost --min-gb 0 --plugin-version 0.1.0 >/dev/null 2>&1; assert_status "a tracked .hivemind is refused" $? 3
 git rm -qf --cached .hivemind/leak
 grep -n 'ssh \|scp \|rsync ' "$HM_REPO_ROOT/bin/hm-remote-sync" | grep -vE '^[0-9]+:\s*#|hm_(ssh|scp|rsync)\(\)' | grep -E '(^[0-9]+:[[:space:]]*|[;&|({]|\$\()[[:space:]]*(ssh|scp|rsync) ' >/dev/null && bad "a bare ssh/scp/rsync call outside the hm_* functions" || ok "every ssh/scp/rsync goes through hm_ssh/hm_scp/hm_rsync"
+# ---- the away marker: a second layer behind hm-away-hook, which is the guard (a Bash command can unset the variable for itself)
+n=$(wc -l < "$HM_FAKE_LOG")
+for args in "check testhost --min-gb 0 --plugin-version 0.1.0" "branches testhost $rr" "files testhost $rr /dev/null" "memory testhost $T_TMP $T_TMP/m" "secret testhost $rr x" "" "bogus"; do
+  HM_AWAY_BYPASS=1 hm-remote-sync $args >"$T_TMP/out" 2>"$T_TMP/err"; rc=$?
+  [ "$rc" -eq 4 ] && ok "the away marker refuses: hm-remote-sync ${args:-<no arguments>}" || bad "hm-remote-sync $args: exit $rc, expected 4"
+done
+assert_contains "...saying it is hivemind's away mode" "$(cat "$T_TMP/err")" "away mode"
+assert_eq "...and nothing reached ssh, scp or rsync" "$(wc -l < "$HM_FAKE_LOG")" "$n"
+HM_AWAY_BYPASS=0 sync check testhost --min-gb 0 --plugin-version 0.1.0 >/dev/null 2>&1; assert_status "a marker other than 1 does not refuse" $? 0
 cd /; t_teardown; t_done

@@ -75,6 +75,14 @@ pushes=$(grep -E '^[^#]*git (-c [^ ]+ )*push' "$HM_REPO_ROOT/bin/hm-push")
 assert_eq "bin/hm-push has exactly one push, with no option but -q" "$(printf '%s\n' "$pushes" | wc -l | tr -d ' ')" "1"
 case "$pushes" in *force*|*--mirror*|*--delete*|*" +"*|*" -f"*) bad "the push line carries a forcing option: $pushes" ;; *) ok "the push line carries no forcing option" ;; esac
 
+# the away marker: a second layer behind hm-away-hook, which is the guard (a Bash command can unset the variable for itself)
+before=$(git --git-dir="$bare" for-each-ref refs/heads)
+HM_AWAY_BYPASS=1 hm-push up "$h1" away-blocked >"$T_TMP/out" 2>"$T_TMP/err"; assert_status "the away marker refuses a valid push" $? 4
+assert_contains "...saying it is hivemind's away mode" "$(cat "$T_TMP/err")" "away mode"
+assert_eq "...and nothing reached the remote" "$(git --git-dir="$bare" for-each-ref refs/heads)" "$before"
+HM_AWAY_BYPASS=1 hm-push >/dev/null 2>&1; assert_status "...even with no arguments" $? 4
+HM_AWAY_BYPASS=0 hm-push up "$h1" away-ok >/dev/null 2>&1; assert_status "a marker other than 1 does not refuse" $? 0
+
 # outside a repository: exit 2
 mkdir "$T_TMP/norepo"; (cd "$T_TMP/norepo" && hm-push up "$h1" feat/x >/dev/null 2>&1); assert_status "outside a repo" $? 2
 cd /; t_teardown; t_done
