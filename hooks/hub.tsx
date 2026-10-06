@@ -97,7 +97,8 @@ async function act($: EngineInterface, project: string, args: string[], done: st
 
 // A plain claude in the hub's folder becomes the hub: named (orchestrators reply to the hub by name, and Claude Code lets
 // only a slash command name a session) and greeted. Only a fresh session Claude Code records as unnamed: a name the owner
-// gave is theirs, a resumed or reloaded session has had turns, and a session with no record is left as it is.
+// gave is theirs, a resumed or reloaded session has had turns, and a session with no record, or with nobody at its prompt
+// (`claude -p`, the SDK), is left as it is.
 async function nameAndGreet($: EngineInterface, root: string): Promise<void> {
   try {
     if ((await $.session.turns()) > 0) return
@@ -205,7 +206,7 @@ export const register: Register = (on, options) => {
     const root = await hubRoot($)
     if (root) {
       // queued: a slash command runs once the session is idle, after this start
-      if (autoStart) void nameAndGreet($, root)
+      if (autoStart && e.isInteractive) void nameAndGreet($, root)
       // a refused command must not keep the screen shut: it opens anyway, and says why the command is missing
       try {
         await $.command.register({ name: COMMAND, description: 'Show the hub: what waits on you, and every project' })

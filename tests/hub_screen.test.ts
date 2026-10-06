@@ -240,18 +240,19 @@ test('a plain claude in the hub folder names itself and opens the hub', async ($
 })
 
 // each test's world is its own: hooks a test registers stay for the rest of that test
-const leftAlone = (why: string, session: Session) =>
+const leftAlone = (why: string, session: Session, isInteractive = true) =>
   test(`a session ${why} is left as it is`, async ($, on) => {
     const ran: string[][] = []
     const clock = mock.clock(on, { now: NOW })
     world(on, [], [], [], false, { now: true }, session, ran)
-    await $.session.start({ cwd: ROOT, surface: 'terminal', isInteractive: true })
+    await $.session.start({ cwd: ROOT, surface: isInteractive ? 'terminal' : null, isInteractive })
     await clock.settle()
     expect(ran).toEqual([])
   })
 leftAlone('the owner named', { turns: 0, naming: { ...UNNAMED, name: 'hub', source: 'user' } })
 leftAlone('resumed or reloaded (it has had turns)', { turns: 4, naming: UNNAMED })
 leftAlone('Claude Code keeps no record of', { turns: 0, naming: { ...UNNAMED, found: false } })
+leftAlone('nobody is at the prompt of (claude -p, the SDK)', { turns: 0, naming: UNNAMED }, false)
 
 test('the setting turns the naming off', { options: { hub_auto_start: false } }, async ($, on) => {
   const ran: string[][] = []
