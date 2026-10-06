@@ -85,7 +85,7 @@ do_process() {
   local id="$1" pid="$2" started="$3" command="$4" pgid="$5" by="$6" target how i
   [ "$mode" = finish ] || { say kept process "$pid" "$by" "--finish stops it"; return; }
   hm_alive "$pid" || { drop "$id"; say removed process "$pid" "$by" "already stopped"; return; }
-  if [ "$(hm_lstart "$pid")" != "$started" ] || [ "$(ps -o command= -p "$pid")" != "$command" ]; then
+  if ! hm_lstart_is "$pid" "$started" || [ "$(ps -o command= -p "$pid")" != "$command" ]; then
     say skipped process "$pid" "$by" "identity changed"; return
   fi
   hm_is_claude "$pid" && { say skipped process "$pid" "$by" "a Claude process"; return; }

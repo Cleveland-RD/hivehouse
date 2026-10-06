@@ -209,6 +209,10 @@ fs=$!; t_track "$fs"; sleep 3
 st=$(hub status five --json | jq -c '.projects[0].orchestrator.starting')
 assert_eq "while its line is on the way it is being sent, not waiting" "$(printf '%s' "$st" | jq -r '[.typed, .sending] | map(tostring) | join(" ")')" "false true"
 case "$(hub status five)" in *"hm-hub continue"*) bad "the plain status offers continue for a start still being sent" ;; *) ok "...the plain status offers no continue" ;; esac
+# A83: a record 0.2.0 wrote (the sender's start time in the caller's locale) names the same sender
+spf="$P/panes/five.json"; spid=$(jq -r .sender_pid "$spf")
+jq --arg s "$(/bin/ps -o lstart= -p "$spid" | sed 's/^ *//;s/ *$//')" '.sender_started = $s' "$spf" > "$spf.t" && mv "$spf.t" "$spf"
+assert_eq "...also when its record is in the caller's locale" "$(hub status five --json | jq -r '.projects[0].orchestrator.starting.sending')" "true"
 hub continue five --still 1 --max-wait 5 >/dev/null 2>"$T_TMP/c5.err"; assert_status "...and continue refuses it" $? 4
 wait "$fs"
 assert_contains "the start itself finished" "$(cat "$T_TMP/five.out")" "rc=0"

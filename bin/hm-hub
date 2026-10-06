@@ -93,7 +93,7 @@ epoch_iso() { date -u -r "$1" '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null || date -u -d "@
 away_hub_caller() {
   local cpid mrc
   cpid=$(hm_claude_ancestor) || hm_die 4 "this runs inside the hub's own session"
-  [ "$cpid" = "$(hm_json_get "$1/.hivemind-hub/hub.json" .claude_pid)" ] && [ "$(hm_lstart "$cpid")" = "$(hm_json_get "$1/.hivemind-hub/hub.json" .claude_started)" ] \
+  [ "$cpid" = "$(hm_json_get "$1/.hivemind-hub/hub.json" .claude_pid)" ] && hm_lstart_is "$cpid" "$(hm_json_get "$1/.hivemind-hub/hub.json" .claude_started)" \
     || hm_die 4 "this runs only inside the hub session hub.json records (hm-hub self records it): this Claude is another session"
   hm_env_has "$cpid" HM_AWAY_BYPASS=1; mrc=$?
   case "$mrc" in
@@ -248,7 +248,7 @@ start_opts() {  # start_opts <model allowed 0|1> [--model m] [--mode m] [--still
 }
 # sending <record>: 0 while the hm-hub that owns the record's line (a start, a wake or a continue) is still waiting to send
 # it: the pane is then coming up, not waiting on the owner, and nothing else may send its line
-sending() { local p; p=$(hm_json_get "$1" .sender_pid); [ -n "$p" ] && hm_alive "$p" && [ "$(hm_lstart "$p")" = "$(hm_json_get "$1" .sender_started)" ]; }
+sending() { local p; p=$(hm_json_get "$1" .sender_pid); [ -n "$p" ] && hm_alive "$p" && hm_lstart_is "$p" "$(hm_json_get "$1" .sender_started)"; }
 # project_mode <home>: the owner's --mode, made stricter by the project's own .hivemind/settings.json (and auto raised to bypass only
 # while the owner is away, A7), as
 # hm-spawn's agents get it (hm-settings); the hub's folder is no repository, so it is resolved in the project's home

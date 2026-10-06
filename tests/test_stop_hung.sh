@@ -68,6 +68,17 @@ t0=$(date +%s); hm_stop_hung "$PID" "$STARTED" "$HM_TMUX_SOCKET" "$PANE" 6; asse
 t1=$(date +%s); [ $((t1 - t0)) -ge 10 ] && ok "...after the 10 s wait" || bad "gave up after $((t1 - t0)) s"
 unset -f kill
 kill -9 "$PID" 2>/dev/null
+# A83: a start time 0.2.0 recorded, in the caller's locale, is still that process's
+if locale -a 2>/dev/null | grep -qix en_GB.UTF-8; then
+  frozen "$W/06-working-7s.ansi"
+  loc=$(LC_ALL=en_GB.UTF-8 /bin/ps -o lstart= -p "$PID" | sed 's/^ *//;s/ *$//')
+  [ "$loc" != "$STARTED" ] && ok "(en_GB prints this start time differently: $loc / $STARTED)" || bad "en_GB prints the same as C: the next check proves nothing"
+  kill() { :; }
+  LC_ALL=en_GB.UTF-8 hm_stop_hung "$PID" "$loc" "$HM_TMUX_SOCKET" "$PANE" 6; assert_status "a record in the caller's locale: still running after KILL is rc 3" $? 3
+  unset -f kill
+  LC_ALL=en_GB.UTF-8 hm_stop_hung "$PID" "$loc" "$HM_TMUX_SOCKET" "$PANE" 6; assert_status "a record in the caller's locale is stopped" $? 0
+  alive "$PID" "$STARTED" && bad "it is still alive" || ok "...it is gone"
+else echo "  SKIP the en_GB.UTF-8 locale is not installed"; fi
 # a pid that is another process by the time of the KILL is not killed: hm_claude_is is replaced by one that says the process
 # changed from its second call on (a pid reused during the wait, which a stand-in cannot force); the process ignores TERM
 frozen "$W/06-working-7s.ansi" trap
