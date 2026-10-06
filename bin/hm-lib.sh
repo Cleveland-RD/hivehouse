@@ -146,7 +146,7 @@ hm_lstart_is() {
   local s
   [ -n "${1:-}" ] && [ -n "${2:-}" ] || return 1
   [ "$(hm_lstart "$1")" = "$2" ] && return 0
-  s=$(hm_lstart_local "$1"); [ -n "$s" ] && [ "$s" = "$2" ]
+  s=$(hm_lstart_local "$1"); [ "$s" = "$2" ]
 }
 # hm_lstart_shape <time>: its form without the values (digits to 0, words to a, spaces squeezed): "a a 0 0:0:0 0" is C, "a 0 a 0:0:0 0"
 # en_GB, "a. 0 a. 0:0:0 0" fr_FR. A lock told apart from pid reuse by shape (hm_lock_stale).

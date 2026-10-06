@@ -26,6 +26,7 @@ hm_lstart_is "$p" "$FR"; assert_status "a form of a third locale" $? 1
 hm_lstart_is "$p" ""; assert_status "an empty record" $? 1
 hm_lstart_is "" "$C"; assert_status "an empty pid" $? 1
 sleep 300 >/dev/null 2>&1 & q=$!; qC=$(LC_ALL=C /bin/ps -o lstart= -p "$q" | trim); qL=$(/bin/ps -o lstart= -p "$q" | trim); kill "$q"; wait "$q" 2>/dev/null
+hm_lstart_is "$q" ""; assert_status "a dead pid and an empty record (both read empty)" $? 1
 hm_lstart_is "$q" "$qC"; assert_status "a dead pid, C form" $? 1
 hm_lstart_is "$q" "$qL"; assert_status "a dead pid, caller's-locale form" $? 1
 n=$( (set -x; hm_lstart_is "$p" "$C") 2>&1 | grep -c '/bin/ps -o lstart')
