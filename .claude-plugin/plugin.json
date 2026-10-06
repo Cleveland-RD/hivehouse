@@ -1,6 +1,6 @@
 {
   "name": "hivemind",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "description": "Run a feature with a team of Claude sessions in tmux: plan, build, review, gate, rotate, overnight, clean up.",
   "author": { "name": "Cleveland R&D" },
   "license": "MIT",
@@ -25,6 +25,7 @@
     "rotate_at_percent": { "type": "number", "title": "Context level that triggers a handoff", "description": "Percent of the context window at which an agent hands off and is cleared", "default": 50, "min": 10, "max": 95 },
     "overnight_ceiling_usd": { "type": "number", "title": "Spending ceiling per overnight run (USD)", "description": "A project may only lower this", "default": 50, "min": 0 },
     "heartbeat_minutes": { "type": "number", "title": "Overnight heartbeat interval (minutes)", "description": "How often the orchestrator checks context, disk, queue and spend", "default": 30, "min": 1 },
+    "hub_auto_start": { "type": "boolean", "title": "Hub names itself and greets", "description": "A plain claude started in the hub's folder names itself hub (or hub-2...) and opens the hub, which takes one model turn; when off, start it with claude --name hub /hivemind:hub", "default": true },
     "min_free_gb": { "type": "number", "title": "Free disk (GB) below which cleanup runs", "description": "Below this, sessions get a low-disk warning and cleanup runs", "default": 20, "min": 0 }
   }
 }

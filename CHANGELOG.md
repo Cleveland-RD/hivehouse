@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.2.0
+
+- Requires Claude Code 2.1.291 or later.
+- The owner's hub: one session in the work folder, above every project, hands each task to that project's
+  orchestrator and carries the owner's words both ways (`hm-hub`, `/hivemind:hub`). Once `hm-hub init` has set the
+  folder up, a plain interactive `claude` there names itself `hub` and opens the hub (`hub_auto_start`). A project can
+  span several folders. The hub wakes an orchestrator a restart stopped, resuming its own conversation, and starts one
+  where none is, each on the owner's word, in the owner's local permission mode made stricter by the project's
+  settings. An orchestrator running outside hivemind is found from Claude Code's session records, never doubled.
+- `hm-spawn --self --hub <hub>`: the orchestrator's pickup line names the hub, so the link survives a rotation; a later
+  registration keeps it (`--no-hub` drops it).
+- A start stopped at a question on its screen is kept and continued (`hm-hub continue`) once the owner answers it; a
+  dialog on any orchestrator's or agent's screen is reported.
+- The hub's screen (`/hub-screen`): what waits on the owner, then every project's orchestrator, agents, tasks and
+  folders, with Resume and Continue. In the hub's session, edits inside the work folder or a project are refused.
+- A dialog that has been still is reported at once instead of after the whole wait.
+- README: a section for an agent installing hivemind from its link.
+
 ## 0.1.2
 
 - After a restart: `hm-context` marks a session that is no longer running, keeping its last level, and
