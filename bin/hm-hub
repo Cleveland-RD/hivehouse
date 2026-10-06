@@ -823,12 +823,17 @@ away)
   if [ "$(jq -r '.skipDangerousModePermissionPrompt // false' "$cdir/settings.json" 2>/dev/null)" != true ]; then
     echo "# Before leaving: Claude Code shows a one-time warning the first time it runs in bypass mode. Start claude --permission-mode bypassPermissions once and choose 'Yes, I accept' (it then writes skipDangerousModePermissionPrompt to $cdir/settings.json): nobody can answer it while you are away."
   fi
-  trusted=0; t=$root
-  while :; do
-    [ "$(jq -r --arg p "$t" '.projects[$p].hasTrustDialogAccepted // false' "$cj" 2>/dev/null)" = true ] && { trusted=1; break; }
-    [ "$t" = / ] && break; t=${t%/*}; [ -n "$t" ] || t=/
-  done
-  [ "$trusted" = 1 ] || echo "# Before leaving: $root (or a folder above it) is not trusted by Claude Code yet. Start claude there once and accept the folder-trust dialog: it shows for every untrusted folder."
+  # the hub's folder and every listed project's home and repositories: a folder Claude Code does not trust stops its session at the
+  # trust dialog, which nobody answers while the owner is away (a repository, or a worktree, is judged by its main repository's own entry)
+  seen=" "
+  while IFS= read -r t; do
+    [ -n "$t" ] || continue
+    case "$t" in /*) ;; *) t="$root/$t" ;; esac
+    hm_claude_trusts "$t" && continue
+    case "$seen" in *" $HM_TRUST_KEY "*) continue ;; esac
+    seen="$seen$HM_TRUST_KEY "
+    echo "# Before leaving: $t is not trusted by Claude Code yet (it looks for $HM_TRUST_KEY in $cj). Start claude in $HM_TRUST_KEY once and accept the folder-trust dialog: it shows for every untrusted folder."
+  done < <({ printf '%s\n' "$root"; jq -r '.projects[]? | .home, (.repos[]?)' "$root/.hivemind-hub/projects.json" 2>/dev/null; })
   echo "# Away mode needs permission_mode_local set to auto (the hub resolves it); a stricter value keeps its sessions out of bypass."
   echo "# MCP servers allowed for the hub: ${allow:-none}.${missing:+ Not found (not loaded):$missing.}"
   echo "# Nothing runs while the machine is off: after a reboot, start the hub again with the lines above."

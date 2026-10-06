@@ -76,6 +76,11 @@ assert_contains "...and the folder trust, when the folder is not trusted" "$out"
 printf '{"skipDangerousModePermissionPrompt":true}\n' > "$CLAUDE_CONFIG_DIR/settings.json"
 printf '{"projects":{"%s":{"hasTrustDialogAccepted":true}}}\n' "$T_TMP" > "$CLAUDE_CONFIG_DIR/.claude.json"
 out2=$(hub away --until +1h)
+assert_contains "...a project's repository does not inherit it: it is named, with the fix" "$out2" "$H/alpha is not trusted by Claude Code yet"
+assert_contains "......saying what to start and where" "$out2" "Start claude in $H/alpha once and accept"
+case "$out2" in *"$H is not trusted"*) bad "the hub's plain folder under a trusted one is called untrusted" ;; *) ok "......and the hub's own folder, under the trusted one, is not" ;; esac
+jq -nc --arg t "$T_TMP" --arg h "$H" '{projects: ({($t):{hasTrustDialogAccepted:true}} + ([$h+"/alpha",$h+"/beta",$h+"/gamma",$h+"/delta"] | map({(.):{hasTrustDialogAccepted:true}}) | add))}' > "$CLAUDE_CONFIG_DIR/.claude.json"
+out2=$(hub away --until +1h)
 case "$out2" in *"one-time warning"*) bad "the bypass warning is asked for once it is accepted" ;; *) ok "...not asked again once it is accepted" ;; esac
 case "$out2" in *"not trusted by Claude Code yet"*) bad "a folder under a trusted one is called untrusted" ;; *) ok "...a folder under a trusted one is trusted" ;; esac
 rm -f "$CLAUDE_CONFIG_DIR/settings.json" "$CLAUDE_CONFIG_DIR/.claude.json"

@@ -584,6 +584,28 @@ hm_env_has() {
   return 1
 }
 
+# ---- folder trust: what Claude Code asks before it works in a folder -------------------------------------------------------------
+# hm_claude_trusts <dir>: 0 when Claude Code will not show its folder-trust dialog there; sets HM_TRUST_KEY to the folder whose entry in
+# <config dir>/.claude.json (.projects[<folder>].hasTrustDialogAccepted) decides it. Measured on Claude Code 2.1.291: a plain folder is
+# trusted when it or any folder above it is; a git repository does NOT inherit from a folder above it, and a worktree is judged by its
+# MAIN repository's entry (accepting the dialog in a worktree writes that key, not the worktree's).
+hm_claude_json() { printf '%s\n' "${CLAUDE_CONFIG_DIR:-${HOME:-/}}/.claude.json"; }
+hm_claude_trusts() {
+  local d common t cj; cj=$(hm_claude_json)
+  d=$(cd "$1" 2>/dev/null && pwd -P) || d=$1
+  HM_TRUST_KEY=$d
+  if common=$(git -C "$d" rev-parse --path-format=absolute --git-common-dir 2>/dev/null) && [ -n "$common" ]; then
+    case "$common" in */.git) HM_TRUST_KEY=${common%/.git} ;; *) HM_TRUST_KEY=$(git -C "$d" rev-parse --show-toplevel 2>/dev/null) || HM_TRUST_KEY=$d ;; esac
+    [ "$(jq -r --arg p "$HM_TRUST_KEY" '.projects[$p].hasTrustDialogAccepted // false' "$cj" 2>/dev/null)" = true ]
+    return
+  fi
+  t=$d
+  while :; do
+    [ "$(jq -r --arg p "$t" '.projects[$p].hasTrustDialogAccepted // false' "$cj" 2>/dev/null)" = true ] && return 0
+    [ "$t" = / ] && return 1; t=${t%/*}; [ -n "$t" ] || t=/
+  done
+}
+
 # ---- bypass: granted only while the owner is away -----------------------------------------------------------------------
 # bypassPermissions is started by hivemind only when ALL of these hold: the owner's root-owned delegate file is valid, the project's
 # home is listed in the hub that file names (A6), and the caller's own Claude carries the away marker in its launch environment

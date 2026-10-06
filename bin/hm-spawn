@@ -170,6 +170,8 @@ if [ -n "$wt" ]; then
     "$HM_BIN/hm-manifest" add worktree path="$wt" base="$base" >/dev/null || exit $?
   fi
   cwd="$wt"
+  # Claude Code judges a worktree by its main repository's entry, not the worktree's: an untrusted one stops the agent at the trust dialog
+  hm_claude_trusts "$wt" || echo "hm-spawn: $agent will stop at Claude Code's folder-trust dialog: a worktree is trusted through its main repository's entry ($HM_TRUST_KEY in $(hm_claude_json)), which has no hasTrustDialogAccepted yet. Start claude once in $HM_TRUST_KEY and accept it; until then the agent waits there." >&2
 fi
 mkdir -p "$STATE/team/$agent" "$STATE/handoffs"
 # a respawn's role and rules are these very copies
