@@ -124,7 +124,7 @@ pending() {  # pending <hub root> <project>: 0 a pane this hub started is still 
 # the team recorded, or when it sits in the project's home with "orchestrator" in its name. This hub's own session and a
 # pane this hub started are never it.
 live_orchestrator() {  # live_orchestrator <hub root> <project> <home> <recorded name>: prints "<pid> <name> <pane>", or fails
-  local f e pid name cwd tm hubpid skip
+  local f e pid name cwd tm raw hubpid skip
   hubpid=$(hm_json_get "$1/.hivemind-hub/hub.json" .claude_pid); skip=$(hm_json_get "$1/.hivemind-hub/panes/$2.json" .pane_pid)
   for f in "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/sessions/*.json; do
     [ -f "$f" ] || continue
@@ -134,18 +134,25 @@ live_orchestrator() {  # live_orchestrator <hub root> <project> <home> <recorded
     if [ "$name" = "$2-orchestrator" ] || { [ -n "$4" ] && [ "$name" = "$4" ]; } \
        || { [ "$cwd" = "$3" ] && case "$name" in *orchestrator*) true ;; *) false ;; esac; }; then
       hm_is_session_name "$name" || name="?"
+      raw=$tm; case "$raw" in *[[:space:]]*) raw="" ;; esac
       tm="%${tm##*%}"; case "$tm" in %*[!0-9]*|%) tm="" ;; esac
-      printf '%s %s %s\n' "$pid" "$name" "$tm"; return 0
+      printf '%s %s %s %s\n' "$pid" "$name" "${tm:--}" "${raw:--}"; return 0
     fi
   done
   return 1
+}
+# unreg_pane_ok <pane> <the session record's tmux value>: 0 when the pane is on hivemind's own tmux server and is the very pane the
+# record of a session running outside hivemind names (session:@window.%pane). A pane id alone says nothing about which server it
+# is on, so nothing is read from it or sent to it otherwise.
+unreg_pane_ok() {
+  [ -n "$1" ] && [ -n "$2" ] && [ "$(hm_tmux display-message -p -t "$1" '#{session_name}:#{window_id}.#{pane_id}' 2>/dev/null)" = "$2" ]
 }
 # orch_state <hub root> <project> <home>: sets O_AGENT, O_NAME, O_SID, O_STATE (running, stopped, unknown, none, or
 # unregistered: a live session outside hivemind, with O_PID and O_PANE), and O_QUESTION (true when a dialog waits on the
 # screen of a running orchestrator's pane).
 orch_state() {
   local entry l
-  O_AGENT=""; O_NAME=""; O_SID=""; O_STATE=none; O_PID=""; O_PANE=""; O_QUESTION=false
+  O_AGENT=""; O_NAME=""; O_SID=""; O_STATE=none; O_PID=""; O_PANE=""; O_TMUX=""; O_QUESTION=false
   entry=$(hm_self_entry "$3")
   if [ -n "$entry" ]; then
     O_AGENT=$(printf '%s' "$entry" | jq -r '.name // empty')
@@ -161,8 +168,9 @@ orch_state() {
   fi
   case "$O_STATE" in none|stopped)
     if l=$(live_orchestrator "$1" "$2" "$3" "$O_NAME"); then
-      O_STATE=unregistered; O_PID=${l%% *}; l=${l#* }; O_NAME=${l%% *}; O_PANE=${l#* }
-      [ -n "$O_PANE" ] && hm_pane_question "" "$O_PANE" && O_QUESTION=true
+      O_STATE=unregistered; O_PID=${l%% *}; l=${l#* }; O_NAME=${l%% *}; l=${l#* }; O_PANE=${l%% *}; O_TMUX=${l#* }
+      [ "$O_PANE" != - ] || O_PANE=""; [ "$O_TMUX" != - ] || O_TMUX=""
+      [ -n "$O_PANE" ] && unreg_pane_ok "$O_PANE" "$O_TMUX" && hm_pane_question "" "$O_PANE" && O_QUESTION=true
     fi ;;
   esac
 }
@@ -259,6 +267,7 @@ dialog_target() {
     elif pending "$root" "$name"; then
       T_SOCKET=$(hm_json_get "$root/.hivemind-hub/panes/$name.json" .socket); T_PANE=$(hm_json_get "$root/.hivemind-hub/panes/$name.json" .pane); T_SESSION="$name-orchestrator"
     elif [ "$O_STATE" = unregistered ]; then
+      unreg_pane_ok "$O_PANE" "$O_TMUX" || hm_die 4 "$O_NAME runs outside hivemind, and pane ${O_PANE:-?} is not on this machine's hivemind tmux server as its session record says: answer it in the pane"
       T_PANE="$O_PANE"; T_SESSION="$O_NAME"
     fi
     [ -n "$T_PANE" ] || hm_die 4 "$name has no orchestrator screen to read ($O_STATE)"
@@ -543,6 +552,7 @@ run)
   [ "$(jq -r --arg i "$id" 'select(.id == $i) | .project' "$root/.hivemind-hub/tasks.jsonl" | head -1)" = "$name" ] || hm_die 4 "task $id is not $name's"
   in_list "$st" "$HUB_CLOSED" && hm_die 4 "task $id is $st"
   in_list "$st" "$HUB_NEEDS_OWNER" && hm_die 4 "task $id waits on the owner ($st): nothing is run until it is answered"
+  [ "$skill" != overnight ] || [ "$st" != overnight ] || hm_die 4 "task $id is already in an overnight run: nothing was typed"
   orch_state "$root" "$name" "$HOME_DIR"
   case "$O_STATE" in
     running) ;;
@@ -618,12 +628,13 @@ answer)
     opt=$(printf '%s' "$d" | jq -c --argjson n "$choice" '[.options[] | select(.n == $n)][0] // empty')
     [ -n "$opt" ] || hm_die 64 "this dialog has no option $choice"
     [ "$(printf '%s' "$opt" | jq -r .offered)" = true ] || hm_die 4 "option $choice needs your own text: answer it in the pane"
-    label=$(printf '%s' "$opt" | jq -r .label)
+    label=$(printf '%s' "$opt" | jq -r .label); optn=$(printf '%s' "$opt" | jq -r .n)
+    hm_is_number "$optn" || hm_die 4 "cannot read the number of option $choice: answer it in the pane"
     case "$(printf '%s' "$d" | jq -r .kind)" in
-      numbered) keys=("$choice") ;;
+      numbered) keys=("$optn") ;;
       menu)
         cur=$(printf '%s' "$d" | jq -r '.cursor // empty'); hm_is_number "$cur" || hm_die 4 "cannot tell which row the cursor is on: answer it in the pane"
-        delta=$((choice - cur))
+        delta=$((optn - cur))
         while [ "$delta" -gt 0 ]; do keys+=(Down); delta=$((delta - 1)); done
         while [ "$delta" -lt 0 ]; do keys+=(Up); delta=$((delta + 1)); done
         keys+=(Enter) ;;
@@ -633,6 +644,7 @@ answer)
   for k in "${keys[@]}"; do hm_tmux_on "$T_SOCKET" send-keys -t "$T_PANE" "$k"; sleep 0.2; done
   jq -nc --arg p "$name" --arg s "$T_SESSION" --arg c "$choice" --arg o "$label" --arg at "$(hm_now)" \
     '{event:"answered-dialog", project:$p, session:$s, choice:$c, option:$o, at:$at}' >> "$root/.hivemind-hub/answers.jsonl"
+  unlock   # the wait below can take seconds: a log or a task meanwhile must not find the hub locked
   gone=false
   for _ in 1 2 3 4 5; do
     sleep 1

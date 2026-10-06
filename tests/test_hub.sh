@@ -157,10 +157,10 @@ hub start two two-1 >/dev/null 2>&1; assert_status "never started on a closed ta
 # ---- an orchestrator already running outside hivemind is found, never doubled ----
 # Claude Code keeps a record of every running session (<config>/sessions/<pid>.json: its name, folder and tmux pane)
 mk tri; hub add tri --home tri >/dev/null; t3=$(idof "$(hub task tri --text "Fix it")")
-live() {  # live <name> <cwd>: a running process named claude, with Claude Code's record of it
+live() {  # live <name> <cwd> [<tmux value>]: a running process named claude, with Claude Code's record of it
   ( exec -a claude sleep 60 ) >/dev/null 2>&1 & local p=$!; disown "$p"; t_track "$p"; sleep 0.2   # its output never holds the \$(...)
   mkdir -p "$CLAUDE_CONFIG_DIR/sessions"
-  jq -nc --argjson p "$p" --arg n "$1" --arg c "$2" '{pid:$p, name:$n, cwd:$c, tmux:"work:@3.%77", kind:"interactive"}' > "$CLAUDE_CONFIG_DIR/sessions/$p.json"
+  jq -nc --argjson p "$p" --arg n "$1" --arg c "$2" --arg t "${3:-work:@3.%77}" '{pid:$p, name:$n, cwd:$c, tmux:$t, kind:"interactive"}' > "$CLAUDE_CONFIG_DIR/sessions/$p.json"
   echo "$p"
 }
 # this hub's own session is never a project's orchestrator, whatever it is called
@@ -263,6 +263,8 @@ assert_contains "...the fixed line" "$(rscreen)" "GOT: /hivemind:overnight Task 
 assert_eq "...typed once" "$(rscreen | grep -c 'GOT: /hivemind:overnight')" "1"
 assert_eq "...the task is in an overnight run, not waiting on the owner" "$(hub tasks --json | jq -r --arg i "$r1" '.[] | select(.id==$i) | [.state, .needs_owner] | map(tostring) | join(" ")')" "overnight false"
 assert_eq "...and still open" "$(hub tasks --open | grep -c "^$r1")" "1"
+hub run ru overnight "$r1" --still 2 --max-wait 10 >/dev/null 2>&1; assert_status "a task already in an overnight run is not run again" $? 4
+assert_eq "...nothing more was typed" "$(rscreen | grep -c 'GOT: /hivemind:overnight')" "1"
 hub run ru cleanup "$r1" --still 2 --max-wait 15 >/dev/null 2>&1; assert_status "run cleanup" $? 0
 assert_eq "...its fixed line" "$(rscreen | grep -c 'GOT: /hivemind:cleanup$')" "1"
 assert_eq "...the task's state" "$(hub tasks --json | jq -r --arg i "$r1" '.[] | select(.id==$i) | .state')" "cleanup"
@@ -319,6 +321,10 @@ hub answer ru --choice x --seen "$dfp" >/dev/null 2>&1; assert_status "...a choi
 hub answer ru --choice 1 --seen abc >/dev/null 2>&1; assert_status "...a fingerprint that is one" $? 64
 hub answer ru ghost --choice 1 --seen "$dfp" >/dev/null 2>&1; assert_status "an agent that is not in team.json" $? 2
 hub answer ru --choice 7 --seen "$dfp" >/dev/null 2>&1; assert_status "an option the dialog does not have" $? 64
+hub answer ru --choice 1.0 --seen "$dfp" >/dev/null 2>&1; assert_status "a choice that is not one digit or esc (1.0)" $? 64
+hub answer ru --choice ' 1' --seen "$dfp" >/dev/null 2>&1; assert_status "...( 1)" $? 64
+hub answer ru --choice 11 --seen "$dfp" >/dev/null 2>&1; assert_status "...(11)" $? 64
+assert_eq "...nothing was sent by any of them" "$(nkeys)" "0"
 hub answer ru --choice 1 --seen "$ZERO" >/dev/null 2>"$T_TMP/a.err"; assert_status "a screen that is not the one the owner saw" $? 4
 assert_contains "...says to look again" "$(cat "$T_TMP/a.err")" "the dialog changed"
 assert_eq "...nothing was sent by any refusal" "$(nkeys)" "0"
@@ -370,6 +376,36 @@ assert_eq "...its digit arrived there" "$(tmux -S "$SB" capture-pane -p -J -S - 
 assert_eq "...and not on the orchestrator's" "$(nkeys)" "0"
 tmux -S "$SB" kill-server 2>/dev/null
 
+# the hub is not locked while answer waits to see the dialog go away
+ru_pane dialog; sleep 1
+sfp=$(jj "$(hub dialog ru)" .fingerprint)
+( cd "$H" && hm-hub answer ru --choice 1 --seen "$sfp" > "$T_TMP/slow.out" 2>&1 ) & sa=$!; t_track "$sa"; sleep 1
+t0=$(date +%s); hub log "$r1" note --note "while answer waits" >/dev/null 2>&1; lrc=$?; t1=$(date +%s)
+assert_status "a log while answer waits for the dialog to go away" "$lrc" 0
+[ $((t1 - t0)) -le 2 ] && ok "...is not held up by the wait" || bad "the log waited $((t1 - t0)) s for the lock"
+wait "$sa"; assert_eq "...and the answer reports the dialog is still there" "$(jq -r .dialog_gone "$T_TMP/slow.out")" "false"
+tmux -S "$SB" kill-server 2>/dev/null
+# a session running outside hivemind: its pane is read only where its record says it is
+mk unr; hub add unr --home unr >/dev/null
+hm_tmux set-option -g default-size 200x56   # the captures are 50 lines: a window of the default 24 would scroll the dialog away
+up=$(hm_open_window unr orchestrator "$H/unr" "exec claude" -e "HM_FAKE_CLAUDE=dialogfile" -e "HM_FAKE_DIALOG=$FX/01-trust-folder.ansi"); sleep 1
+utm=$(hm_tmux display-message -p -t "$up" '#{session_name}:#{window_id}.#{pane_id}')
+ulp=$(live unr-orchestrator "$H/unr" "$utm")
+assert_eq "an orchestrator outside hivemind, on hivemind's own server, as its record says: its dialog is read" "$(jj "$(hub dialog unr)" .pane)" "$up"
+assert_eq "...and status sees the question" "$(hub status unr --json | jq -r '.projects[0].orchestrator.question')" "true"
+ufp=$(jj "$(hub dialog unr)" .fingerprint)
+hub answer unr --choice 1 --seen "$ufp" >/dev/null 2>&1; assert_status "...and answered" $? 0
+assert_eq "...with the key" "$(hm_tmux capture-pane -p -J -S - -t "$up" | grep -c '^KEY: ENTER')" "1"
+kill "$ulp" 2>/dev/null; sleep 0.3; hm_tmux kill-pane -t "$up"
+up=$(hm_open_window unr orchestrator "$H/unr" "exec claude" -e "HM_FAKE_CLAUDE=dialogfile" -e "HM_FAKE_DIALOG=$FX/01-trust-folder.ansi"); sleep 1
+ulp=$(live unr-orchestrator "$H/unr" "elsewhere:@0.$up")
+hub dialog unr >/dev/null 2>"$T_TMP/u.err"; assert_status "a record that names another session or window than the pane's" $? 4
+assert_contains "...says to answer in the pane" "$(cat "$T_TMP/u.err")" "answer it in the pane"
+assert_eq "...status does not read it" "$(hub status unr --json | jq -r '.projects[0].orchestrator.question')" "false"
+hub answer unr --choice 1 --seen "$ufp" >/dev/null 2>&1; assert_status "...and nothing is sent to it" $? 4
+assert_eq "...no key reached it" "$(hm_tmux capture-pane -p -J -S - -t "$up" | grep -c '^KEY:')" "0"
+kill "$ulp" 2>/dev/null; sleep 0.3
+
 # ---- the hub names its own session: Claude Code's record of it, and a name no other running session has ----
 mine=$(live "" "$H"); jq '.sessionId = "sess-hub" | .nameSource = "auto" | .name = "Read the docs"' "$CLAUDE_CONFIG_DIR/sessions/$mine.json" > "$T_TMP/m.json" && mv "$T_TMP/m.json" "$CLAUDE_CONFIG_DIR/sessions/$mine.json"
 n=$(hub naming --session sess-hub); assert_status "naming" $? 0
@@ -412,5 +448,5 @@ out=$(hk "$T_TMP"); assert_eq "nothing elsewhere" "$out" ""
 # ---- remove ----
 hub remove two >/dev/null; assert_status "remove" $? 0
 hub remove two >/dev/null 2>&1; assert_status "remove what is not there" $? 2
-assert_eq "...the others stay" "$(jq -r '[.projects[].name] | join(",")' "$P/projects.json")" "app,tri,five,ru,ov"
+assert_eq "...the others stay" "$(jq -r '[.projects[].name] | join(",")' "$P/projects.json")" "app,tri,five,ru,ov,unr"
 cd /; t_teardown; t_done
