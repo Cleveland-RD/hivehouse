@@ -107,7 +107,8 @@ name:
 `hm-spawn --agent <name> --role ${CLAUDE_PLUGIN_ROOT}/roles/<role>.md --rules ${CLAUDE_PLUGIN_ROOT}/rules/RULES.md --model <model> --effort <effort> --mode <resolved permission mode> --window <window> [--worktree <absolute path> --branch <branch> --base <branch>]`
 
 Agents that build get their own worktree beside the project (never inside it). `hm-spawn` refuses
-`bypassPermissions`; never try to get around that. It copies the role and rules into `.hivemind/team/<agent>/`, creates
+`bypassPermissions` except while the owner is away (delegate mode, from the hub), when the resolved mode itself is
+`bypassPermissions` and `hm-spawn` checks it again; never try to get around that, and never pass it by hand. It copies the role and rules into `.hivemind/team/<agent>/`, creates
 the handoff, records the pane and manifest entries, and waits for the pane to be idle before sending the pickup line.
 If it stops because a dialog (for example a workspace-trust prompt) is showing, tell the owner; never answer a dialog on
 an agent's behalf. Never `/model` or `/effort` inside a pane: they save the owner's global default.

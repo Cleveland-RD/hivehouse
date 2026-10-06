@@ -69,13 +69,14 @@ This machine or a named remote host (offer the hosts in `${user_config.remote_ho
 permission mode. Resolve the local mode on its own call:
 `hm-settings resolve permission_mode ${user_config.permission_mode_local}`.
 
-The heartbeat in step 5 needs this session to run in auto mode. If the resolved mode is not `auto`, or this session is
-not running in auto mode (if you cannot tell, ask the owner), do not set the heartbeat and do not start the night: tell the owner that each beat would sit
+The heartbeat in step 5 needs this session to run in auto mode, or in bypass while the owner is away (the hub's delegate
+mode starts it so and `hm-settings` then resolves to `bypassPermissions`). If the resolved mode is neither `auto` nor that,
+or this session is not running in one of those modes (if you cannot tell, ask the owner), do not set the heartbeat and do not start the night: tell the owner that each beat would sit
 on a permission prompt with nobody there, and what they must set (`permission_mode_local` to `auto`, and this session
 started in auto mode). Ask whether they want to change that or stop.
 
 Bypass permissions only on a host listed in `${user_config.dedicated_hosts}`, and only when the owner confirms it this
-time; a previous night's yes does not carry. `hm-spawn` refuses bypass on its own (exit 4). A bypass session on a remote
+time; a previous night's yes does not carry. `hm-spawn` refuses bypass on its own (exit 4), except the delegate-mode case above, which it checks against the owner's file. A bypass session on a remote
 host is started by `hm-remote-sync start-agent`, which asks permission each time.
 
 ## 4. Remote host (skip on this machine)

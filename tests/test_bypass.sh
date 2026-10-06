@@ -70,6 +70,8 @@ assert_eq "...at mode 0600" "$(stat -f '%Lp' "$H/app/.hivemind/team/b1/away-mcp.
 sp "$NCP" b2 bypassPermissions >/dev/null 2>&1; true
 sp0 "$NCP" b3 bypassPermissions >/dev/null; assert_status "...an unmarked Claude is refused" $? 4
 assert_contains "......says why" "$(cat "$T_TMP/sp.err")" "away marker"
+env -i HM_AWAY_BYPASS=1 HM_PROJECT="$H/app" "$NODEBIN" "$NCP" "$DB/hm-spawn" --agent b7 --role "$T_TMP/role.md" --rules "$T_TMP/RULES.md" --model sonnet --effort medium --mode bypassPermissions --still 2 --max-wait 10 >/dev/null 2>"$T_TMP/sp.err"; assert_status "...a marked Claude whose environment cannot be read is refused" $? 4
+assert_contains "......says so" "$(cat "$T_TMP/sp.err")" "cannot be read"
 PROJ=other sp "$NCO" b4 bypassPermissions >/dev/null; assert_status "...a project that is not the hub's is refused" $? 4
 mkdel "$((NOW - 10))"; sp "$NCP" b5 bypassPermissions >/dev/null; assert_status "...an expired delegate file is refused" $? 4
 assert_contains "......says why" "$(cat "$T_TMP/sp.err")" "delegate file"; mkdel
@@ -85,6 +87,7 @@ hm_tmux kill-pane -t "$(jq -r '.agents[] | select(.name=="b1") | .pane' "$H/app/
 mkdel "$((NOW - 10))"
 HM_PROJECT="$H/app" "${M[@]}" node "$NCP" "$DB/hm-spawn" --respawn b1 --still 2 --max-wait 15 >/dev/null 2>"$T_TMP/sp.err"; assert_status "respawning a bypass agent after away has ended is refused" $? 4
 rp=$(HM_PROJECT="$H/app" "${M[@]}" node "$NCP" "$DB/hm-spawn" --respawn b1 --mode auto --still 2 --max-wait 15 2>/dev/null); assert_status "...unless it comes back in a stricter mode" $? 0
+[ ! -e "$H/app/.hivemind/team/b1/away-mcp.json" ] && ok "......and the away MCP file of its bypass days is gone" || bad "a stale away MCP file stays for an agent no longer in bypass"
 sc=$(screen "$rp"); assert_contains "......in that mode" "$sc" "ARGV: auto"
 assert_contains "......with no marker" "$sc" "ENV2: HM_AWAY_BYPASS= HM_AWAY_HUB= HM_AWAY_MCP_ALLOW="
 mkdel
@@ -100,6 +103,9 @@ TMUX_PANE="$kp" HM_PROJECT="$H/app" "${M[@]}" node "$NCP" "$DB/hm-spawn" --self 
 # ---- hm-hub: only the hub the owner's file names, in its own marked Claude, and never through --mode ----
 rm -f "$H/app/.hivemind/team.json"; rm -rf "$H/app/.hivemind/team"
 hh() { local who=$1; shift; (cd "$H" && "${M[@]}" node "$who" "$DB/hm-hub" "$@" 2>"$T_TMP/hh.err"); }
+# a delegate file that names ANOTHER hub, which also lists this project: the hub that runs this hm-hub is not the one the owner meant
+H2="$T_TMP/work2"; mkdir -p "$H2/.hivemind-hub"; H2=$(cd "$H2" && pwd -P)
+jq -nc --arg h "$H/app" '{projects:[{name:"app", home:$h, repos:[$h]}]}' > "$H2/.hivemind-hub/projects.json"
 hh0() { (cd "$H" && env node "$NCH" "$DB/hm-hub" "$@" 2>"$T_TMP/hh.err"); }
 t1=$(hh "$NCH" task app --text "First"); t1=${t1%%$'\t'*}
 hh "$NCH" start app "$t1" --mode bypassPermissions --still 2 --max-wait 15 >/dev/null; assert_status "hm-hub start --mode bypassPermissions is refused, whoever asks" $? 4
@@ -108,6 +114,10 @@ up=$(hh0 start app "$t1" --mode auto --still 2 --max-wait 15); assert_status "a 
 sc=$(screen "$up"); assert_contains "...auto" "$sc" "ARGV: auto"
 assert_contains "...with no marker" "$sc" "ENV2: HM_AWAY_BYPASS= HM_AWAY_HUB= HM_AWAY_MCP_ALLOW="
 hm_tmux kill-pane -t "$up"; sleep 0.5
+printf 'hivemind-delegate 1\nhub=%s\nuntil=%s\nmcp=docs\n' "$H2" "$((NOW + 3600))" > "$DF"
+hh "$NCH" start app "$t1" --mode auto --still 2 --max-wait 15 >/dev/null; assert_status "a delegate file that names another hub gives this hub no bypass" $? 4
+assert_contains "...says so" "$(cat "$T_TMP/hh.err")" "does not name this hub"
+mkdel
 hp=$(hh "$NCH" start app "$t1" --mode auto --still 2 --max-wait 15); assert_status "a marked hub starts an orchestrator while the owner is away" $? 0
 sc=$(screen "$hp")
 assert_contains "...in bypass" "$sc" "ARGV: bypassPermissions"
