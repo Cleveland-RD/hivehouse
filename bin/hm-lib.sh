@@ -436,6 +436,77 @@ hm_pane_dialog() {  # hm_pane_dialog <socket, or empty for hivemind's own server
   printf '%s\n' "$t" | hm_dialog_parse
 }
 
+# ---- the away switch: a file only root can have written ----------------------------------------------------------------
+# Delegate mode (the hub decides for the owner while they are away) is on exactly while this file is valid. It sits where
+# a session running as the owner's user cannot have written it, and the owner makes it with sudo from lines `hm-hub away`
+# prints (hivemind never runs sudo). The predicate takes the path and the owner it requires; production passes only the
+# fixed path and root (hm_delegate_now), and nothing in the environment or a setting changes the path, the owner or the
+# content: a way to change them would be a way round the check. Valid means: the file, its folder and every folder above it
+# are not links (lstat) and not writable by group or others; the file and its folder are owned by the required user, the
+# folders above by the required user or root (with root required, root alone); the content is exactly
+#   hivemind-delegate 1 / hub=<absolute path> / until=<epoch seconds>
+# with `until` in the future and at most 7 days ahead (a CronCreate heartbeat does not outlive that). HM_DELEGATE_WHY is set
+# to the first check that failed.
+hm_delegate_path() {  # the fixed path: under /Library on macOS (/etc is a link there), /etc on Linux
+  case "$(uname -s)" in Darwin) echo '/Library/Application Support/hivemind/delegate' ;; *) echo '/etc/hivemind/delegate' ;; esac
+}
+hm_stat3() {  # hm_stat3 <path>: "<uid> <octal mode> <type>" of the path itself (lstat, /usr/bin/stat in either form), or fails
+  local out
+  if /usr/bin/stat --version >/dev/null 2>&1; then out=$(/usr/bin/stat -c '%u %a %F' -- "$1" 2>/dev/null)
+  else out=$(/usr/bin/stat -f '%u %Lp %HT' "$1" 2>/dev/null); fi
+  [ -n "$out" ] || return 1
+  printf '%s\n' "$out"
+}
+hm_path_trusted() {  # hm_path_trusted <path> <file|dir> <uid> <strict|loose>: not a link, the right kind, owned (loose: or by root), not group- or world-writable
+  local st u m t g o
+  st=$(hm_stat3 "$1") || { HM_DELEGATE_WHY="$1 cannot be read"; return 1; }
+  read -r u m t <<< "$st"
+  case "$t" in *[Ss]ymbolic*) HM_DELEGATE_WHY="$1 is a link"; return 1 ;; esac
+  case "$2:$t" in file:*[Rr]egular*|dir:*[Dd]irectory*) ;; *) HM_DELEGATE_WHY="$1 is not a $2"; return 1 ;; esac
+  if [ "$u" != "$3" ] && { [ "$4" != loose ] || [ "$u" != 0 ]; }; then HM_DELEGATE_WHY="$1 is owned by uid $u"; return 1; fi
+  m=${m: -3}; g=${m:1:1}; o=${m:2:1}
+  if [ $((g & 2)) -ne 0 ] || [ $((o & 2)) -ne 0 ]; then HM_DELEGATE_WHY="$1 is writable by group or others (mode $m)"; return 1; fi
+  return 0
+}
+hm_delegate_read() {  # hm_delegate_read <path> <uid> [<now>]: prints "<hub><TAB><until>" when the file is valid; 1 when it is not
+  local f="$1" want="$2" now="${3:-$(date +%s)}" d p hub until i
+  HM_DELEGATE_WHY=""
+  case "$f" in /*) ;; *) HM_DELEGATE_WHY="the path is not absolute"; return 1 ;; esac
+  hm_is_number "$want" && hm_is_number "$now" || { HM_DELEGATE_WHY="bad uid or time"; return 1; }
+  hm_path_trusted "$f" file "$want" strict || return 1
+  d=$(dirname "$f"); hm_path_trusted "$d" dir "$want" strict || return 1
+  p=$(dirname "$d"); i=0
+  while :; do
+    hm_path_trusted "$p" dir "$want" loose || return 1
+    [ "$p" = / ] && break
+    p=$(dirname "$p"); i=$((i + 1)); [ "$i" -lt 64 ] || { HM_DELEGATE_WHY="the path is too deep"; return 1; }
+  done
+  if [ "$(grep -c '' "$f")" -ne 3 ] || grep -q $'\r' "$f"; then HM_DELEGATE_WHY="the content is not three lines"; return 1; fi
+  [ "$(sed -n 1p "$f")" = 'hivemind-delegate 1' ] || { HM_DELEGATE_WHY="the first line is not 'hivemind-delegate 1'"; return 1; }
+  hub=$(sed -n 2p "$f"); until=$(sed -n 3p "$f")
+  case "$hub" in hub=/*) hub=${hub#hub=} ;; *) HM_DELEGATE_WHY="line 2 is not hub=<absolute path>"; return 1 ;; esac
+  hm_is_typed_path "$hub" || { HM_DELEGATE_WHY="the hub path is not one hivemind will type"; return 1; }
+  case "$until" in until=*) until=${until#until=} ;; *) HM_DELEGATE_WHY="line 3 is not until=<epoch>"; return 1 ;; esac
+  hm_is_number "$until" || { HM_DELEGATE_WHY="until is not a number"; return 1; }
+  [ "$until" -gt "$now" ] || { HM_DELEGATE_WHY="the file has expired"; return 1; }
+  [ "$until" -le $((now + 604800)) ] || { HM_DELEGATE_WHY="until is more than 7 days ahead"; return 1; }
+  printf '%s\t%s\n' "$hub" "$until"
+}
+hm_delegate_now() { hm_delegate_read "$(hm_delegate_path)" 0; }
+# hm_env_has <pid> <NAME=value>: 0 the process was launched with it; 1 its environment is visible and lacks it; 2 no
+# environment is visible at all (the caller says so and does not pretend to have checked). Linux reads /proc/<pid>/environ,
+# which is exact. macOS `ps -E` prints the arguments and the environment on one line: an argument that spells the marker
+# could fool it, so it is matched as a whole word, and only after the command's own words.
+hm_env_has() {
+  local pid="$1" want="$2" env
+  if [ -r "/proc/$pid/environ" ]; then
+    tr '\0' '\n' < "/proc/$pid/environ" | grep -qxF -- "$want"; return $(( $? == 0 ? 0 : 1 ))
+  fi
+  env=$(ps -E -ww -p "$pid" -o command= 2>/dev/null | tr ' ' '\n')
+  printf '%s\n' "$env" | grep -qE '^(PATH|HOME|USER|SHELL)=' || return 2
+  printf '%s\n' "$env" | grep -qxF -- "$want"; return $(( $? == 0 ? 0 : 1 ))
+}
+
 # A permission mode hivemind starts a session in (hm-spawn's and hm-hub's --mode): never bypassPermissions.
 HM_PERMISSION_MODES="plan dontAsk default acceptEdits auto"
 hm_check_mode() {  # hm_check_mode <mode> <who>: exits 4 unless hivemind may start a session in that mode

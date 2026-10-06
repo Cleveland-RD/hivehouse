@@ -100,6 +100,17 @@ t_repo() {  # t_repo <name> -> prints path of a fresh git repo with one commit
   echo x > "$d/README"; git -C "$d" add README; git -C "$d" commit -qm init
   echo "$d"
 }
+# t_delegate_bin <delegate file>: a scratch copy of bin/ in which the one production line that names the delegate file and
+# its required owner reads <delegate file> as this user instead, so the executables can be tested with a fixture. The
+# line is replaced only if it is found exactly once; production has no override of its own. Prints the copy's folder.
+t_delegate_bin() {
+  local d="$T_TMP/delegate-bin" n
+  rm -rf "$d"; mkdir -p "$d"; cp -R "$HM_REPO_ROOT/bin/." "$d/"
+  n=$(grep -c '^hm_delegate_now() { hm_delegate_read "$(hm_delegate_path)" 0; }$' "$d/hm-lib.sh")
+  [ "$n" = 1 ] || { echo "t_delegate_bin: the production line matched $n times" >&2; return 1; }
+  awk -v f="$1" -v u="$(id -u)" '/^hm_delegate_now\(\) \{ hm_delegate_read / { print "hm_delegate_now() { hm_delegate_read \"" f "\" " u "; }"; next } { print }' "$d/hm-lib.sh" > "$d/hm-lib.sh.new" && mv "$d/hm-lib.sh.new" "$d/hm-lib.sh"
+  printf '%s\n' "$d"
+}
 ok()   { printf '  ok   %s\n' "$1"; }
 bad()  { printf '  FAIL %s\n' "$1"; FAILS=$((FAILS + 1)); }
 assert_eq()       { if [ "$2" = "$3" ]; then ok "$1"; else bad "$1: expected [$3] got [$2]"; fi; }
