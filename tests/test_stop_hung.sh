@@ -25,9 +25,9 @@ hm_stop_hung "$PID" "Mon Jan  1 00:00:00 2001" "$HM_TMUX_SOCKET" "$PANE" 6; asse
 alive "$PID" "$STARTED" && ok "...the process is untouched" || bad "a process with another start time was stopped"
 hm_stop_hung "$PID" "$STARTED" "$HM_TMUX_SOCKET" "$PANE" 5; assert_status "the screen moved since it was read (5s read, 6s now)" $? 2
 alive "$PID" "$STARTED" && ok "...the process is untouched" || bad "a session whose screen moved was stopped"
-idle=$(hm_tmux new-window -d -P -F '#{pane_id}' -t keep: -n i "exec bash -c \"cat '$D/07-idle-after-answer.ansi'; exec sleep 600\""); sleep 1
-hm_stop_hung "$PID" "$STARTED" "$HM_TMUX_SOCKET" "$idle" 6; assert_status "a pane that shows no working line is unknown" $? 2
-alive "$PID" "$STARTED" && ok "...the process is untouched" || bad "an unknown screen was stopped"
+sv=("$PANE" "$PID" "$STARTED"); frozen "$D/07-idle-after-answer.ansi"; ip=$PANE; ipid=$PID; istart=$STARTED; PANE=${sv[0]}; PID=${sv[1]}; STARTED=${sv[2]}
+hm_stop_hung "$ipid" "$istart" "$HM_TMUX_SOCKET" "$ip" 6; assert_status "a pane that shows no working line is unknown" $? 2
+alive "$ipid" "$istart" && ok "...the process is untouched" || bad "an unknown screen was stopped"
 sleep 600 >/dev/null 2>&1 & sl=$!; t_track "$sl"; sls=$(hm_lstart "$sl")
 hm_stop_hung "$sl" "$sls" "$HM_TMUX_SOCKET" "$PANE" 6; assert_status "a process that is not Claude" $? 1
 alive "$sl" "$sls" && ok "...is never stopped" || bad "a process that is not Claude was stopped"
@@ -50,6 +50,24 @@ t0=$(date +%s); hm_stop_hung "$PID" "$STARTED" "$HM_TMUX_SOCKET" "$PANE" 6; asse
 t1=$(date +%s)
 alive "$PID" "$STARTED" && bad "it survived" || ok "...is killed"
 [ $((t1 - t0)) -ge 10 ] && ok "...after the 10 s wait" || bad "killed after only $((t1 - t0)) s"
+# the Claude must be the pane's own process or run under it: a screen read from one pane never stops another live Claude
+frozen "$W/06-working-7s.ansi"
+( exec -a claude sleep 600 ) >/dev/null 2>&1 & OTH=$!; t_track "$OTH"; sleep 0.3; OTHS=$(hm_lstart "$OTH")
+hm_stop_hung "$OTH" "$OTHS" "$HM_TMUX_SOCKET" "$PANE" 6; assert_status "a Claude that is not under the pane whose screen was read" $? 1
+alive "$OTH" "$OTHS" && ok "...is left running" || bad "a Claude that is not under the pane was stopped"
+printf 'cat "$1"; (exec -a claude sleep 600) & echo $! > "$2"; wait; exec sleep 600\n' > "$T_TMP/orch.sh"
+OP=$(hm_tmux new-window -d -P -F '#{pane_id}' -t keep: -n o "exec bash '$T_TMP/orch.sh' '$W/06-working-7s.ansi' '$T_TMP/oc.pid'"); sleep 1
+OCP=$(cat "$T_TMP/oc.pid"); t_track "$OCP"; OCS=$(hm_lstart "$OCP")
+hm_stop_hung "$OCP" "$OCS" "$HM_TMUX_SOCKET" "$OP" 6; assert_status "a Claude running under the pane's shell (a --self orchestrator)" $? 0
+alive "$OCP" "$OCS" && bad "it is still alive" || ok "...is stopped"
+hm_stop_hung "$PID" "$STARTED" "$HM_TMUX_SOCKET" "%99999" 6; assert_status "a pane that is not there" $? 1
+alive "$PID" "$STARTED" && ok "...stops nothing" || bad "a process was stopped for a pane that is not there"
+# rc 3: a stop that does not take. kill is a function that does nothing, so TERM and KILL both leave the process running
+kill() { :; }
+t0=$(date +%s); hm_stop_hung "$PID" "$STARTED" "$HM_TMUX_SOCKET" "$PANE" 6; assert_status "still running after TERM, the wait and KILL" $? 3
+t1=$(date +%s); [ $((t1 - t0)) -ge 10 ] && ok "...after the 10 s wait" || bad "gave up after $((t1 - t0)) s"
+unset -f kill
+kill -9 "$PID" 2>/dev/null
 # a pid that is another process by the time of the KILL is not killed: hm_claude_is is replaced by one that says the process
 # changed from its second call on (a pid reused during the wait, which a stand-in cannot force); the process ignores TERM
 frozen "$W/06-working-7s.ansi" trap

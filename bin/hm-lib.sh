@@ -71,19 +71,30 @@ hm_claude_is() {  # hm_claude_is <pid> <started>: that very process (not a reuse
 # The one place hivemind stops a process it did not just start: a Claude whose working line has not moved for 15 minutes (A10), by
 # `hm-hub recover`, while the owner's delegate file is valid and the hub carries the away marker. It is never a pattern or a name:
 # only the recorded pid, while that pid still has its recorded start time and is still Claude, and never a Claude above the caller
-# (the hub's own). hm_stop_hung <pid> <started> <socket> <pane> <secs>: 0 stopped (or no longer that process); 1 not that process,
-# nothing sent; 2 the pane no longer shows a working line of <secs>, nothing sent; 3 still running after KILL. Before TERM the pid,
-# the start time and the screen are read again; TERM, up to 10 s for it to end, then KILL only if the pid is still that process.
+# (the hub's own), and only a Claude that has the pane's own process at or above it: the screen read is the pane's, so a record that ties
+# one pane's frozen screen to another live Claude stops nothing. hm_stop_hung <pid> <started> <socket> <pane> <secs>: 0 stopped (or no
+# longer that process); 1 not that process, or not under that pane, nothing sent; 2 the pane no longer shows a working line of <secs>,
+# nothing sent; 3 still running after KILL. Before TERM the pid, the start time, the pane and the screen are read again; TERM, up to
+# 10 s for it to end, then KILL only if the pid is still that process.
+hm_under() {  # hm_under <pid> <ancestor pid>: 0 when the process is that one or has it above it
+  local p="$1" i=0
+  while [ -n "$p" ] && [ "$p" -gt 1 ] 2>/dev/null && [ "$i" -lt 64 ]; do
+    [ "$p" = "$2" ] && return 0
+    p=$(/bin/ps -o ppid= -p "$p" 2>/dev/null); p=${p//[[:space:]]/}; i=$((i + 1))
+  done
+  return 1
+}
 hm_stop_hung() {
-  local pid="${1:-}" started="${2:-}" i
+  local pid="${1:-}" started="${2:-}" i pp
   hm_is_number "$pid" && [ "$pid" -gt 1 ] && hm_is_number "${5:-}" || return 1
   hm_claude_is "$pid" "$started" || return 1
   [ "$(hm_claude_ancestor "$$")" != "$pid" ] || return 1
+  pp=$(hm_pane_pid "$3" "$4") && hm_under "$pid" "$pp" || return 1
   [ "$(hm_pane_text "$4" "$3" | hm_pane_working_seconds)" = "$5" ] || return 2
   kill -TERM "$pid" 2>/dev/null
-  for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do hm_alive "$pid" || return 0; sleep 0.5; done
+  for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do hm_alive "$pid" || return 0; /bin/sleep 0.5; done
   hm_claude_is "$pid" "$started" || return 0
-  kill -KILL "$pid" 2>/dev/null; sleep 0.5
+  kill -KILL "$pid" 2>/dev/null; /bin/sleep 0.5
   hm_alive "$pid" && [ "$(hm_lstart "$pid")" = "$started" ] && return 3
   return 0
 }
