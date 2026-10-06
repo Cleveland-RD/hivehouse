@@ -55,7 +55,7 @@ hm_pane_identity() {  # hm_pane_identity <socket> <pane>: "<pid><TAB><start time
 }
 hm_pane_is() {  # hm_pane_is <socket> <pane> <pid> <started>: 0 it is that pane, 1 the pane is another (or the record is empty), 2 the pane cannot be read
   local cur; cur=$(hm_pane_pid "$1" "$2") || return 2
-  [ -n "$3" ] && [ -n "$4" ] && [ "$cur" = "$3" ] && [ "$(hm_lstart "$cur")" = "$4" ]
+  [ -n "$3" ] && [ -n "$4" ] && [ "$cur" = "$3" ] && hm_lstart_is "$cur" "$4"
 }
 hm_claude_ancestor() {  # hm_claude_ancestor [pid]: the nearest Claude process at or above pid (default: this process), or fails
   local p="${1:-$$}" i=0
@@ -66,7 +66,7 @@ hm_claude_ancestor() {  # hm_claude_ancestor [pid]: the nearest Claude process a
   return 1
 }
 hm_claude_is() {  # hm_claude_is <pid> <started>: that very process (not a reused pid), still Claude
-  [ -n "$1" ] && [ -n "$2" ] && hm_alive "$1" && [ "$(hm_lstart "$1")" = "$2" ] && hm_is_claude "$1"
+  [ -n "$1" ] && [ -n "$2" ] && hm_alive "$1" && hm_lstart_is "$1" "$2" && hm_is_claude "$1"
 }
 # The one place hivemind stops a process it did not just start: a Claude whose working line has not moved for 15 minutes (A10), by
 # `hm-hub recover`, while the owner's delegate file is valid and the hub carries the away marker. It is never a pattern or a name:
@@ -95,7 +95,7 @@ hm_stop_hung() {
   for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do hm_alive "$pid" || return 0; /bin/sleep 0.5; done
   hm_claude_is "$pid" "$started" || return 0
   kill -KILL "$pid" 2>/dev/null; /bin/sleep 0.5
-  hm_alive "$pid" && [ "$(hm_lstart "$pid")" = "$started" ] && return 3
+  hm_alive "$pid" && hm_lstart_is "$pid" "$started" && return 3
   return 0
 }
 hm_agent_is() {  # hm_agent_is <socket> <pane> <pane pid> <pane started> [<claude pid> <claude started>]: 0 the agent is still there, as recorded; 1 it is not; 2 the pane cannot be read
@@ -124,7 +124,7 @@ hm_team_agent_is() {  # hm_team_agent_is <project root> <agent>
 # process first: a missing pane reads to tmux as "cannot be read", the same as a server that does not answer, yet after a
 # restart it is simply gone. hm_team_agent_is (a spawned agent) and hm-hub (a pane the hub started) both read it here.
 hm_recorded_pane_is() {
-  [ -n "$3" ] && hm_alive "$3" && [ "$(hm_lstart "$3")" = "$4" ] || return 1
+  [ -n "$3" ] && hm_alive "$3" && hm_lstart_is "$3" "$4" || return 1
   hm_pane_is "$1" "$2" "$3" "$4"
 }
 hm_socket() { if [ -n "${HM_TMUX_SOCKET:-}" ]; then echo "$HM_TMUX_SOCKET"; else tmux display -p '#{socket_path}'; fi; }
@@ -138,6 +138,19 @@ hm_alive()  { /bin/ps -p "$1" >/dev/null 2>&1; }
 # ps prints a start time in the caller's locale (mar.  6 oct. in fr_FR, Tue Oct  6 in C): one fixed format, or a time recorded under
 # one locale never matches under another and a live session reads as gone
 hm_lstart() { local s; s=$(LC_ALL=C /bin/ps -o lstart= -p "$1" 2>/dev/null); s=${s#"${s%%[![:space:]]*}"}; printf '%s\n' "${s%"${s##*[![:space:]]}"}"; }   # built-ins only: the away checks read it
+# A83: a start time recorded by 0.2.0 is in the caller's locale, one recorded now is C. hm_lstart_local reads the caller's form;
+# hm_lstart_is <pid> <recorded>: 0 when the recorded time is that process's in the C form, else (one more ps, only then) in the
+# caller's form. Pid reuse still needs the same second, so this is no looser than one fixed form. Every comparison uses it.
+hm_lstart_local() { local s; s=$(/bin/ps -o lstart= -p "$1" 2>/dev/null); s=${s#"${s%%[![:space:]]*}"}; printf '%s\n' "${s%"${s##*[![:space:]]}"}"; }
+hm_lstart_is() {
+  local s
+  [ -n "${1:-}" ] && [ -n "${2:-}" ] || return 1
+  [ "$(hm_lstart "$1")" = "$2" ] && return 0
+  s=$(hm_lstart_local "$1"); [ -n "$s" ] && [ "$s" = "$2" ]
+}
+# hm_lstart_shape <time>: its form without the values (digits to 0, words to a, spaces squeezed): "a a 0 0:0:0 0" is C, "a 0 a 0:0:0 0"
+# en_GB, "a. 0 a. 0:0:0 0" fr_FR. A lock told apart from pid reuse by shape (hm_lock_stale).
+hm_lstart_shape() { printf '%s' "$1" | LC_ALL=C sed -E 's/[0-9]+/0/g; s/[^ 0:.]+/a/g; s/ +/ /g; s/^ //; s/ $//'; }
 hm_is_claude() {  # hm_is_claude <pid>: 0 when the process is Claude Code's, which hivemind stops only in hm_stop_hung (below)
   local args first second   # by argv: macOS ps reports comm from argv0 as well, so it would be the same reading
   args=$(/bin/ps -o args= -p "$1" 2>/dev/null) || return 1
@@ -151,17 +164,32 @@ hm_dir_age() {  # seconds since the directory was last modified
   local m; m=$(stat -f %m "$1" 2>/dev/null || stat -c %Y "$1" 2>/dev/null) || return 1
   echo $(( $(date +%s) - m ))
 }
+# A holder record names its process's start time twice: `lstart` in the caller's locale, as 0.2.0 reads it, and `lstart_c` in C. The
+# slot is shared by every project on the machine, and a session keeps running the plugin version it was started with until it is
+# restarted, so after any upgrade 0.2.0 and 0.3.0 meet in one lock: a 0.2.0 reader that finds a C-form lstart reads a live holder as
+# gone and takes its lock. A 0.3.0 reader accepts either field.
 hm_holder_json() {  # hm_holder_json <pid> [extra json object] -> the holder record
   local x="${2:-}"; [ -n "$x" ] || x='{}'
-  jq -nc --argjson pid "$1" --arg l "$(hm_lstart "$1")" --argjson c "$(date +%s)" --argjson x "$x" \
-    '{pid:$pid,lstart:$l,created:$c} + $x'
+  jq -nc --argjson pid "$1" --arg l "$(hm_lstart_local "$1")" --arg lc "$(hm_lstart "$1")" --argjson c "$(date +%s)" --argjson x "$x" \
+    '{pid:$pid,lstart:$l,lstart_c:$lc,created:$c} + $x'
 }
-hm_lock_stale() {  # hm_lock_stale <lock>: 0 when the holder is gone
-  local h="$1/holder.json" pid ls age
-  pid=$(hm_json_get "$h" .pid); ls=$(hm_json_get "$h" .lstart)
+# hm_lock_stale <lock>: 0 when the holder is gone. A dead pid is stale whatever the record says. A live pid is the holder when either
+# record matches it. Otherwise the lock is taken from it only when a record is in a form hivemind writes (the C form's shape or the
+# caller's locale's) and names another time: pid reuse. Any other shape (another locale's, junk, empty) is busy: not knowing is
+# never a reason to take a live holder's lock.
+hm_lock_stale() {
+  local h="$1/holder.json" pid ls lc age r cs ls_shape
+  pid=$(hm_json_get "$h" .pid); ls=$(hm_json_get "$h" .lstart); lc=$(hm_json_get "$h" .lstart_c)
   if [ -z "$pid" ]; then age=$(hm_dir_age "$1") || return 1; [ "$age" -gt 10 ]; return; fi
   hm_alive "$pid" || return 0
-  [ "$(hm_lstart "$pid")" != "$ls" ]
+  hm_lstart_is "$pid" "$lc" && return 1
+  hm_lstart_is "$pid" "$ls" && return 1
+  cs=$(hm_lstart_shape "$(hm_lstart "$$")"); ls_shape=$(hm_lstart_shape "$(hm_lstart_local "$$")")
+  for r in "$lc" "$ls"; do
+    [ -n "$r" ] || continue
+    case "$(hm_lstart_shape "$r")" in "$cs"|"$ls_shape") return 0 ;; esac
+  done
+  return 1
 }
 hm_lock_try() {  # hm_lock_try <lock> <holder json>: 0 taken, 1 busy
   local lock="$1" json="$2" guard age snap
@@ -185,9 +213,9 @@ hm_lock_try() {  # hm_lock_try <lock> <holder json>: 0 taken, 1 busy
   rmdir "$guard" 2>/dev/null; return 1
 }
 hm_lock_release() {  # hm_lock_release <lock> <pid>: removes the lock only when the record is that process's own
-  local hp hl
-  hp=$(hm_json_get "$1/holder.json" .pid); hl=$(hm_json_get "$1/holder.json" .lstart)
-  [ -n "$hp" ] && [ "$hp" = "$2" ] && [ "$hl" = "$(hm_lstart "$2")" ] || return 1
+  local hp hl hc
+  hp=$(hm_json_get "$1/holder.json" .pid); hl=$(hm_json_get "$1/holder.json" .lstart); hc=$(hm_json_get "$1/holder.json" .lstart_c)
+  [ -n "$hp" ] && [ "$hp" = "$2" ] && { hm_lstart_is "$2" "$hc" || hm_lstart_is "$2" "$hl"; } || return 1
   rm -rf "$1"
 }
 
