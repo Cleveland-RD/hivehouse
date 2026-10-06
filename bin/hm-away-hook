@@ -113,7 +113,7 @@ msg_check() {
   hubpid=$(hm_json_get "$HUB/.hivemind-hub/hub.json" .claude_pid); hubst=$(hm_json_get "$HUB/.hivemind-hub/hub.json" .claude_started)
   hubname=$(hm_json_get "$HUB/.hivemind-hub/hub.json" .name)
   add_id "$hubname" "$hubpid" "$hubst"
-  proj=$(cd -P "$HM_PROJECT" 2>/dev/null && pwd -P) || deny "the project (HM_PROJECT) cannot be read"
+  proj=$(cd -P "$HM_PROJECT" 2>/dev/null && pwd -P) || proj=""   # an unreadable project has no team: only the hub and main pass
   if [ "$proj" = "$HUB" ]; then
     while IFS= read -r h; do
       [ -n "$h" ] || continue
