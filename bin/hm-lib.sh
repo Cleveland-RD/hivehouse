@@ -351,6 +351,91 @@ hm_is_host_name() {  # hm_is_host_name <name>: 0 when it is one
   return 0
 }
 
+# ---- reading a dialog (the hub shows it to the owner, who answers through hm-hub answer) ------------------------------
+# TIED TO THE CLAUDE CODE TERMINAL UI (captured from 2.1.291; tests/fixtures/dialogs/). A dialog replaces the prompt box: a
+# rule, its text, then options and a footer line ("Esc to cancel", "Enter to confirm", "Enter to select"). Permission and
+# AskUserQuestion dialogs number their options "1. Yes", and a digit selects and confirms; the folder-trust dialog does not:
+# its rows are moved to with the arrow keys and confirmed with Enter, the "❯" marking the row the cursor is on. The region is
+# found from the footer up to the topmost rule above it, stopping at what the conversation looks like (a tool line, the
+# user's echoed prompt); lines are right-trimmed, so a screen's padding never changes its fingerprint.
+HM_DIALOG_FOOTER='Esc to cancel|Enter to confirm|Enter to select|Press Enter to continue'
+# options the hub never offers: they need the owner's own text, or are keys rather than choices
+HM_DIALOG_NOT_OFFERED='^(Type something\.?|Chat about this)$'
+IFS= read -r -d '' HM_DIALOG_PERL <<'PERL' || true
+use strict; use warnings; use utf8; use JSON::PP;
+binmode(STDIN, ':utf8'); binmode(STDOUT, ':utf8');
+my ($footer_re, $not_offered_re) = @ARGV;
+my @l = map { my $s = $_; $s =~ s/\s+$//; $s } <STDIN>;
+my $last = $#l; $last-- while $last >= 0 && $l[$last] eq '';
+my $F = -1;
+for my $i (reverse 0 .. $last) { if ($l[$i] =~ /(?:$footer_re)/) { $F = $i; last } }
+$F = $last if $F < 0;
+exit 3 if $F < 0;
+my ($start, $seen_rule) = (-1, 0);
+for (my $i = $F - 1; $i >= 0; $i--) {
+  my $s = $l[$i];
+  if ($s =~ /^\s*─{4,}/) { $start = $i; $seen_rule = 1; next }
+  last if $seen_rule && ($s =~ /^\s*(?:⏺|✻|✳|✽|⎿)/ || $s =~ /^❯ (?!\d\.\s)/);
+}
+$start = ($F - 12 > 0 ? $F - 12 : 0) if $start < 0;
+my @r = @l[$start .. $F];
+my (@runs, $run);
+for my $i (0 .. $#r) {
+  next unless $r[$i] =~ /^\s*(❯)?\s*(\d)\.\s+(\S.*)$/;
+  my ($cur, $n, $label) = ($1, $2, $3);
+  if ($n == 1) { $run = []; push @runs, $run }
+  elsif (!$run || $n != $run->[-1]{n} + 1) { next }
+  push @$run, { n => $n + 0, label => $label, line => $i, cursor => ($cur ? 1 : 0) };
+}
+my ($kind, @opts, $cursor) = ('none');
+if (@runs) {
+  $kind = 'numbered';
+  for my $o (@{ $runs[-1] }) {
+    my @detail;
+    for (my $k = $o->{line} + 1; $k <= $#r; $k++) {
+      last if $r[$k] eq '' || $r[$k] =~ /^\s*─{4,}/ || $r[$k] =~ /^\s*(?:❯\s*)?\d\.\s/ || $k == $#r;
+      last unless $r[$k] =~ /^\s{4,}\S/;
+      (my $t = $r[$k]) =~ s/^\s+//; push @detail, $t;
+    }
+    my $detail = join(' ', @detail);
+    $cursor = $o->{n} if $o->{cursor};
+    push @opts, { n => $o->{n}, label => $o->{label}, detail => $detail,
+      offered => ($o->{label} =~ /$not_offered_re/i ? JSON::PP::false : JSON::PP::true),
+      saves_rule => (("$o->{label} $detail" =~ /always allow|don't ask again|switch to accept edits/i) ? JSON::PP::true : JSON::PP::false) };
+  }
+} else {
+  my $ci = -1;
+  for my $i (reverse 0 .. $#r) { if ($r[$i] =~ /^\s*❯\s+\S/) { $ci = $i; last } }
+  if ($ci >= 0) {
+    my ($a, $b) = ($ci, $ci);
+    $a-- while $a > 0 && $r[$a - 1] =~ /^   \S/;
+    $b++ while $b < $#r && $r[$b + 1] =~ /^   \S/;
+    $kind = 'menu';
+    for my $i ($a .. $b) {
+      (my $t = $r[$i]) =~ s/^\s*(?:❯\s*)?//;
+      push @opts, { n => $i - $a + 1, label => $t, detail => '', offered => JSON::PP::true, saves_rule => JSON::PP::false };
+      $cursor = $i - $a + 1 if $i == $ci;
+    }
+  }
+}
+my $esc = ($l[$F] =~ /Esc to cancel/) ? JSON::PP::true : JSON::PP::false;
+print JSON::PP->new->canonical->encode({ kind => $kind, text => join("\n", @r), options => \@opts,
+  cursor => (defined $cursor ? $cursor + 0 : undef), esc => $esc });
+PERL
+hm_dialog_parse() {  # a pane captured with -e on stdin: JSON {kind, text, options, cursor, esc, fingerprint}; 3 when no dialog is up
+  local text json fp
+  text=$(perl -pe 's/\e\][^\a\e]*(?:\a|\e\\)//g' | hm_pane_clean)
+  printf '%s\n' "$text" | hm_pane_idle_text; [ $? -eq 3 ] || return 3
+  json=$(printf '%s\n' "$text" | perl -e "$HM_DIALOG_PERL" -- "$HM_DIALOG_FOOTER" "$HM_DIALOG_NOT_OFFERED") || return 3
+  fp=$(printf '%s' "$json" | jq -r '.text' | shasum | cut -d' ' -f1)
+  printf '%s' "$json" | jq -c --arg f "$fp" '. + {fingerprint:$f}'
+}
+hm_pane_dialog() {  # hm_pane_dialog <socket, or empty for hivemind's own server> <pane>: hm_dialog_parse of that pane; 1 when it cannot be read
+  local t
+  t=$(hm_tmux_on "$1" capture-pane -p -e -J -t "$2" 2>/dev/null) || return 1
+  printf '%s\n' "$t" | hm_dialog_parse
+}
+
 # A permission mode hivemind starts a session in (hm-spawn's and hm-hub's --mode): never bypassPermissions.
 HM_PERMISSION_MODES="plan dontAsk default acceptEdits auto"
 hm_check_mode() {  # hm_check_mode <mode> <who>: exits 4 unless hivemind may start a session in that mode

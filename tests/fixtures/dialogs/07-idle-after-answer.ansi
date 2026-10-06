@@ -1,0 +1,50 @@
+  17. The [94mgrep[39m command searches for text patterns in files.                                          
+  18. Regular expressions enable powerful pattern matching in terminal commands.                                                                                
+  19. The [94mfind[39m command locates files based on various criteria.                              
+  20. SSH allows secure remote access to terminals on other computers.                               
+  21. The [94mchmod[39m command changes file and directory permissions.                                      
+  22. The [94msudo[39m command executes commands with superuser privileges.                                                                                             
+  23. Package managers like apt, brew, and pacman install software via terminals.      
+  24. The [94mman[39m command displays manual pages for terminal commands.                                                                                              
+  25. Aliases allow users to create shortcuts for frequently used commands.                          
+  26. The [94m.bashrc[39m file stores configuration and customizations for Bash shells.                      
+  27. Script files with shebangs can be executed directly from terminals.              
+  28. Terminal bells (the beep sound) signal task completion in some contexts.                       
+  29. The [94mps[39m command displays running processes in a terminal.                                       
+  30. The [94mkill[39m command terminates processes by their process ID.                                     
+  31. Standard input, output, and error streams (stdin, stdout, stderr) are fundamental to terminals.                                                           
+  32. Job control allows backgrounding and foregrounding processes in terminals.                     
+  33. The [94m&[39m symbol at the end of a command runs it in the background.                                                                                           
+  34. Terminal scroll-back buffers store previous output for review.                                 
+  35. Copy-paste functionality in terminals may behave differently than in graphical applications.   
+  36. The [94mclear[39m command clears the terminal screen.                                               
+  37. The [94mecho[39m command prints text to the terminal.                                                                                                             
+  38. Shell variables store values that can be referenced in commands.                               
+  39. Subshells allow nested shell environments within a terminal session.                                                                                      
+  40. The [94msource[39m command executes commands from a file in the current shell.                         
+  41. Terminal escape sequences control cursor movement and text formatting.                         
+  42. The [94mdate[39m command displays the current date and time in a terminal.                             
+  43. Wildcards like [94m*[39m and [94m?[39m match multiple filenames in terminal commands.                          
+  44. The [94mtest[39m command (or [94m[ ][39m syntax) evaluates conditions in shell scripts.                        
+  45. The [94mfor[39m loop iterates over lists of items in terminal scripts.                                 
+  46. The [94mif[39m statement provides conditional logic in shell commands.                                 
+  47. Functions can be defined and called within terminal sessions.                                  
+  48. The [94mread[39m command allows scripts to accept user input from terminals.                           
+  49. Output can be captured in variables using command substitution ([94m$()[39m or backticks).     
+  50. The [94mxargs[39m command builds arguments from stdin for other commands.                              
+  51. The [94msed[39m command performs stream editing on text in terminals.                                  
+  52. The [94mawk[39m command processes text data column-by-column in terminals.                             
+  53. The [94mwc[39m command counts lines, words, and characters in terminal input.             
+  54. The [94msort[39m command arranges lines of text in alphabetical order.                                 
+  55. The [94muniq[39m command removes duplicate consecutive lines from terminal output.                  
+  56. Terminal sessions can be logged for auditing or documentation purposes.                        
+  57. The [94mexport[39m command makes variables available to child processes in terminals.                  
+  58. The [94mhistory[39m command displays previously executed commands in a terminal.                       
+  59. Terminal multiplexer panes allow multiple command lines to be viewed simultaneously.           
+  60. Modern terminals support mouse input for selecting text and clicking buttons.       
+                                                                                                                                                              
+[37m─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── dialog-capture ─
+[39m❯                                                                               
+[37m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [36m/tmp/work[37m [32mmaster[37m [2m[Haiku 4.5][0m[37m [32mctx:23%
+[39m  [37m⏸ manual mode on · ← 2 agents[39m                                                                                                                                 
