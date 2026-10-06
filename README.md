@@ -57,7 +57,7 @@ Where a step says **ask**, ask the person and wait: never decide it for them.
 5. **Tell the person what they got:** `/hivemind:start <task>` runs a team on a task inside a project; `claude` in the
    work folder is the hub. Nothing runs until they ask.
 
-Never: start agents or sessions the person did not ask for, use `bypassPermissions` (hivemind refuses it), install the
+Never: start agents or sessions the person did not ask for, start a session in `bypassPermissions` (hivemind does it only while the owner is away, through the owner's delegate file), install the
 optional i-have-adhd plugin unasked, or push anything.
 
 ## Optional: i-have-adhd

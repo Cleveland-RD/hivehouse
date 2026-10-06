@@ -85,7 +85,7 @@ folders). Add only what the owner confirmed: `hm-hub add <project> --home <folde
    - **unknown**: say so, and ask the owner to look at the project's tmux window.
 
 `--mode` is the owner's local permission mode, the one hivemind's agents run in; `hm-hub` makes it stricter where a
-project's own `.hivemind/settings.json` says so, never looser. Start the hub in that mode too: sessions in different modes
+project's own `.hivemind/settings.json` says so; only while the owner is away does `auto` become `bypassPermissions` (`hm-hub away`). Start the hub in that mode too: sessions in different modes
 hold each other's messages for an approval nobody sees.
 
 ### Running overnight or cleanup for a project
