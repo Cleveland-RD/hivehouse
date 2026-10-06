@@ -5,17 +5,19 @@ import type { HubAgent, HubProject, HubTask, HubView } from '../types'
 
 // The owner's hub (bin/hm-hub, skills/hub): in the session started in the hub's own folder, and only there, a screen of
 // what waits on the owner and of every project's orchestrator, and a guard that keeps the hub off the projects' files.
-// Everything shown is read from hm-hub; the one thing done here is the Resume press, which runs `hm-hub wake`.
+// Everything shown is read from hm-hub; the only things done here are the Resume and Continue presses, which run
+// `hm-hub wake` and `hm-hub continue`.
 const PANE = 'hivemind-hub'
 // The command that opens the screen. Never a skill's name: Claude Code refuses a command named as one of the plugin's own
 // skills (/hub is the skill, /hivemind:hub), and tests/test_hub_screen.sh holds it to that.
 const COMMAND = 'hub-screen'
 const EVERY_MS = 20_000
-const WAKE_TIMEOUT_MS = 150_000 // hm-hub wake waits up to 90 s for the resumed session to be idle
+const WAKE_TIMEOUT_MS = 150_000 // hm-hub waits up to 90 s for a started session to be idle
 
 const EMPTY: HubView = { root: '', hubName: '', projects: [], tasks: [], updatedAt: 0, error: '' }
 const view = atom({ plugin: 'hivemind', key: 'hubView' } as const, EMPTY)
-const resuming = atom({ plugin: 'hivemind', key: 'hubResuming' } as const, '')
+// the project a press is acting on, one at a time
+const acting = atom({ plugin: 'hivemind', key: 'hubResuming' } as const, '')
 
 // The session is the hub when its own folder holds .hivemind-hub/ (a folder, not a link): hm-session-hook's rule.
 let hubRootOnce: Promise<string | null> | null = null
@@ -61,34 +63,42 @@ async function refresh($: EngineInterface): Promise<void> {
   }
 }
 
+// One poller per module, which reads hm-hub only while the screen is open and shown (Claude Code's own record of this
+// plugin's panes, so a pane the owner closed or tabbed away from costs nothing until it is back).
+let poller: { cancel: () => void } | null = null
+function startPolling($: EngineInterface): void {
+  if (poller) return
+  poller = $.clock.every(EVERY_MS, () => {
+    void tick($)
+  })
+}
+async function tick($: EngineInterface): Promise<void> {
+  if ((await $.ui.panes()).some(pane => pane.id === PANE && pane.isShown)) await refresh($)
+}
+
 function lastLine(text: string): string {
   return (text.trim().split('\n').pop() ?? '').replace(/^hivemind: /, '')
 }
 
-// The Resume press: the owner's own word to wake that project's orchestrator (hm-hub wake), one at a time.
-async function resume($: EngineInterface, project: string, model: string): Promise<void> {
+// A press is the owner's own word for that one action: Resume wakes a stopped orchestrator (hm-hub wake), Continue sends
+// a started one its first line once the owner has answered the question on its screen (hm-hub continue).
+async function act($: EngineInterface, project: string, args: string[], done: string): Promise<void> {
   const root = await hubRoot($)
-  if (!root || (await read($, resuming))) return
-  await update($, resuming, () => project)
+  if (!root || (await read($, acting))) return
+  await update($, acting, () => project)
   try {
-    const r = await $.process.run([hmHub($), 'wake', project, ...(model ? ['--model', model] : [])], {
-      cwd: root,
-      timeoutMs: WAKE_TIMEOUT_MS,
-    })
-    $.ui.toast(
-      r.exitCode === 0
-        ? `${project}: its orchestrator is coming up in pane ${r.stdout.trim()}; it reports back when its team is up`
-        : `${project}: not resumed. ${lastLine(r.stderr)}`,
-    )
+    const r = await $.process.run([hmHub($), ...args], { cwd: root, timeoutMs: WAKE_TIMEOUT_MS })
+    $.ui.toast(r.exitCode === 0 ? `${project}: ${done} (pane ${r.stdout.trim()})` : `${project}: ${lastLine(r.stderr)}`)
   } finally {
-    await update($, resuming, () => '')
+    await update($, acting, () => '')
     await refresh($)
   }
 }
 
 // ---- the guard ------------------------------------------------------------------------------------------------------
-// The hub writes only its own records. A path is judged by where it really is (links and `..` resolved); a file that
-// does not exist yet, by its folder.
+// The hub changes no project: in the hub's session an edit inside its work folder (apart from its own records) or inside
+// any project's folder is refused. A path is judged by where it really is (links and `..` resolved); a file that does
+// not exist yet, by its folder. Everything else (Claude Code's own memory and plans, scratch files) is the session's.
 async function realPath($: EngineInterface, path: string): Promise<string | null> {
   try {
     return (await $.fs.stat(path, { resolve: true })).realPath ?? null
@@ -100,46 +110,77 @@ async function realPath($: EngineInterface, path: string): Promise<string | null
   }
 }
 
-async function isHubRecord($: EngineInterface, root: string, path: string): Promise<boolean> {
-  const abs = path.startsWith('/') ? path : `${root}/${path}`
-  const [p, r] = await Promise.all([realPath($, abs), realPath($, `${root}/.hivemind-hub`)])
-  return p !== null && r !== null && p.startsWith(`${r}/`)
+async function projectFolders($: EngineInterface, root: string): Promise<string[]> {
+  try {
+    const text = await $.fs.read(`${root}/.hivemind-hub/projects.json`)
+    const list = (JSON.parse(typeof text === 'string' ? text : '{}') as { projects?: { home?: string; repos?: string[] }[] }).projects ?? []
+    return list.flatMap(p => [p.home ?? '', ...(p.repos ?? [])]).filter(f => f !== '').map(f => (f.startsWith('/') ? f : `${root}/${f}`))
+  } catch {
+    return []
+  }
 }
+
+const inside = (path: string, dir: string | null) => dir !== null && (path === dir || path.startsWith(`${dir}/`))
 
 const KEEP_OFF = 'the hub never changes a project: hand this to the project\'s orchestrator'
 
-// Why an edit of this path is refused in the hub, or null when it may go on (not the hub, or one of its own records).
+// Why an edit of this path is refused in the hub, or null when it may go on.
 async function editRefusal($: EngineInterface, path: string): Promise<string | null> {
   const root = await hubRoot($)
-  if (!root || (await isHubRecord($, root, path))) return null
-  return `${KEEP_OFF} (${path})`
+  if (!root) return null
+  const abs = path.startsWith('/') ? path : `${root}/${path}`
+  const real = (await realPath($, abs)) ?? abs
+  if (inside(real, await realPath($, `${root}/.hivemind-hub`))) return null
+  const folders = await Promise.all([root, ...(await projectFolders($, root))].map(f => realPath($, f)))
+  return folders.some(f => inside(real, f)) ? `${KEEP_OFF} (${path})` : null
 }
+
 // git commands that change a repository; read-only ones (status, log, diff, show) pass. Best effort: a shell can always
 // spell a command another way, which is why the skill says so too.
 const GIT_WRITES =
   /(^|[;&|(`]|\s)git(\s+-C\s+\S+)?\s+(commit|push|merge|rebase|reset|checkout|switch|restore|stash|cherry-pick|revert|tag|am|apply|clean|rm|mv|add|worktree|pull|branch\s+-[dDmMf])\b/
 
+// A command with the words it only carries taken out: a heredoc's body and quoted strings are the owner's text, passed
+// word for word (a task, a note), never a command the shell runs.
+function commandsOnly(command: string): string {
+  const kept: string[] = []
+  let until = ''
+  for (const line of command.split('\n')) {
+    if (until) {
+      if (line.trim() === until) until = ''
+      continue
+    }
+    const opens = /<<-?\s*(['"]?)([A-Za-z_][A-Za-z0-9_]*)\1/.exec(line)
+    if (opens) until = opens[2] ?? ''
+    kept.push(line)
+  }
+  return kept.join('\n').replace(/'[^']*'/g, "''").replace(/"(?:[^"\\]|\\.)*"/g, '""')
+}
+
 export const register: Register = (on, options) => {
-  const model = typeof options.model_orchestrator === 'string' ? options.model_orchestrator : ''
+  // the mode orchestrators run in, as the hub's own sessions do: cross-session messages wait for approval across modes
+  const mode = typeof options.permission_mode_local === 'string' ? options.permission_mode_local : ''
   // the level at which hivemind rotates a session: a level at or above it is drawn as a warning
   const rotateAt = typeof options.rotate_at_percent === 'number' ? options.rotate_at_percent : 50
+
+  // A guard that fails lets the call go on (its .catch): it is best effort, and a broken guard must not stop the work.
   on('tool.call', { tool: 'Edit' }, async ($, e, next) => {
     const deny = await editRefusal($, e.file_path)
     return deny ? { deny } : next(e)
-  })
+  }).catch(($, e, next) => next(e))
   on('tool.call', { tool: 'Write' }, async ($, e, next) => {
     const deny = await editRefusal($, e.file_path)
     return deny ? { deny } : next(e)
-  })
+  }).catch(($, e, next) => next(e))
   on('tool.call', { tool: 'NotebookEdit' }, async ($, e, next) => {
     const deny = await editRefusal($, e.notebook_path)
     return deny ? { deny } : next(e)
-  })
+  }).catch(($, e, next) => next(e))
   on('tool.call', { tool: 'Bash' }, async ($, e, next) => {
     const root = await hubRoot($)
-    if (!root || !GIT_WRITES.test(e.command)) return next(e)
+    if (!root || !GIT_WRITES.test(commandsOnly(e.command))) return next(e)
     return { deny: `${KEEP_OFF} (a git command that changes a repository)` }
-  })
+  }).catch(($, e, next) => next(e))
 
   // ---- the screen ---------------------------------------------------------------------------------------------------
   on('session.start', async ($, e, next) => {
@@ -151,9 +192,7 @@ export const register: Register = (on, options) => {
         $.ui.toast(`hub screen: /${COMMAND} is not available (${err instanceof Error ? err.message : String(err)})`)
       }
       void refresh($)
-      $.clock.every(EVERY_MS, () => {
-        void refresh($)
-      })
+      startPolling($)
       void $.ui.open({ id: PANE, title: 'Hub' })
     }
     return next(e)
@@ -161,6 +200,7 @@ export const register: Register = (on, options) => {
 
   on('command.run', { command: COMMAND }, async $ => {
     void refresh($)
+    startPolling($)
     await $.ui.open({ id: PANE, title: 'Hub' })
     return { text: 'Hub screen opened.' }
   })
@@ -168,14 +208,51 @@ export const register: Register = (on, options) => {
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const { Box, Text, Button } = $.ui.resolve(e)
     const v = { ...EMPTY, ...((await read($, view)) ?? {}) } // a hot reload can hand back an older shape
-    const busy = (await read($, resuming)) ?? ''
+    const busy = (await read($, acting)) ?? ''
     const now = await $.clock.now()
     const body = Math.max(36, e.props.bodyColumns ?? 60)
     const inner = body - 2
     const home = (await $.env.get('HOME')) ?? ''
     const where = home && v.root.startsWith(home) ? `~${v.root.slice(home.length)}` : v.root
-    const needs = v.tasks.filter(t => t.needs_owner)
     const rule = <Text color="gray">{'─'.repeat(inner)}</Text>
+    const resumeArgs = (p: string) => ['wake', p, ...(mode ? ['--mode', mode] : [])]
+
+    // What waits on the owner: tasks hm-hub marks so, and questions on screens nobody watches.
+    type Need = { key: string; glyph: string; color: string; who: string; words: string; when: string; action?: JSX.Element }
+    const needs: Need[] = []
+    if (v.updatedAt && !v.hubName) {
+      needs.push({ key: 'hub', glyph: '!', color: 'red', who: 'hub', words: 'has not recorded its session, so nobody can reply to it', when: '' })
+    }
+    for (const t of v.tasks.filter(t => t.needs_owner)) {
+      const w = waitLook(t.state)
+      needs.push({ key: t.id, glyph: w.glyph, color: w.color, who: t.id, words: w.words, when: ago(t.updated, now) })
+    }
+    for (const p of v.projects) {
+      const o = p.orchestrator ?? { state: 'none' }
+      if (o.question) needs.push({ key: `q-${p.name}`, glyph: '?', color: 'yellow', who: p.name, words: 'its orchestrator has a question on its screen', when: '' })
+      for (const a of (p.agents ?? []).filter(a => a.question)) {
+        needs.push({ key: `q-${p.name}-${a.name}`, glyph: '?', color: 'yellow', who: `${p.name} · ${a.name}`, words: 'a question on its screen', when: '' })
+      }
+      const s = o.starting
+      if (s && !s.typed) {
+        needs.push({
+          key: `s-${p.name}`,
+          glyph: '?',
+          color: 'yellow',
+          who: p.name,
+          words: s.question ? `a question on the screen of pane ${s.pane}: answer it, then Continue` : `waiting in pane ${s.pane} for its first line`,
+          when: ago(s.at, now),
+          action:
+            busy === p.name ? (
+              <Text color="cyan">continuing…</Text>
+            ) : (
+              <Button key={`continue-${p.name}`} onPress={() => void act($, p.name, ['continue', p.name], 'its first line was sent')}>
+                Continue
+              </Button>
+            ),
+        })
+      }
+    }
 
     const row = (label: string, ...lines: JSX.Element[]) => (
       <Box flexDirection="row" paddingLeft={1}>
@@ -194,6 +271,8 @@ export const register: Register = (on, options) => {
       const agents = p.agents ?? []
       const up = agents.filter(a => a.state === 'running').length
       const away = agents.filter(a => a.state !== 'running')
+      // what Resume brings back: the orchestrator, and each agent hm-spawn --respawn takes (one proven stopped)
+      const back = 1 + agents.filter(a => a.state === 'stopped').length
       const doneToday = v.tasks.filter(t => t.project === p.name && t.state === 'done' && sameDay(t.updated, now)).length
       const canResume = o.state === 'stopped' && Boolean(o.session_id) && !o.starting
       return (
@@ -208,6 +287,7 @@ export const register: Register = (on, options) => {
             'orchestrator',
             <Box flexDirection="row">
               <Text color="white">{o.name ?? (o.state === 'none' ? 'none yet' : '?')}</Text>
+              {o.state === 'unregistered' && o.pane ? <Text color="gray">{`  pane ${o.pane}`}</Text> : null}
               {typeof o.context === 'number' ? (
                 <Text color={o.context_assumed ? 'gray' : o.context >= rotateAt ? 'yellow' : 'green'}>{`  ${o.context}%`}</Text>
               ) : null}
@@ -245,7 +325,7 @@ export const register: Register = (on, options) => {
               </Text>
             )),
           )}
-          {busy === p.name ? (
+          {busy === p.name && canResume ? (
             <Box paddingLeft={15}>
               <Text color="cyan">resuming…</Text>
             </Box>
@@ -254,11 +334,9 @@ export const register: Register = (on, options) => {
               <Button
                 key={`resume-${p.name}`}
                 variant="primary"
-                onPress={() => {
-                  void resume($, p.name, model)
-                }}
+                onPress={() => void act($, p.name, resumeArgs(p.name), 'its orchestrator is coming up; it reports back when its team is up')}
               >
-                {`Resume · ${1 + away.length} session${away.length === 0 ? '' : 's'}`}
+                {`Resume · ${back} session${back === 1 ? '' : 's'}`}
               </Button>
             </Box>
           ) : null}
@@ -290,21 +368,21 @@ export const register: Register = (on, options) => {
             <Text bold color="magenta">
               NEEDS YOU
             </Text>
-            {needs.map(t => {
-              const w = waitLook(t.state)
-              return (
-                <Box key={`n-${t.id}`} flexDirection="row" justifyContent="space-between" paddingLeft={1}>
-                  <Box flexDirection="row">
-                    <Text color={w.color}>{`${w.glyph} `}</Text>
+            {needs.map(n => (
+              <Box key={`n-${n.key}`} flexDirection="column" paddingLeft={1}>
+                <Box flexDirection="row" justifyContent="space-between">
+                  <Box flexDirection="row" flexShrink={1}>
+                    <Text color={n.color}>{`${n.glyph} `}</Text>
                     <Text bold color="white">
-                      {t.id}
+                      {n.who}
                     </Text>
-                    <Text color="white">{`  ${w.words}`}</Text>
+                    <Text color="white" wrap="wrap">{`  ${n.words}`}</Text>
                   </Box>
-                  <Text color="gray">{ago(t.updated, now)}</Text>
+                  <Text color="gray">{n.when}</Text>
                 </Box>
-              )
-            })}
+                {n.action ? <Box paddingLeft={2}>{n.action}</Box> : null}
+              </Box>
+            ))}
           </Box>
         ) : null}
         {v.updatedAt && v.projects.length === 0 && !v.error ? (
@@ -328,12 +406,15 @@ export const register: Register = (on, options) => {
 // ---- looks ------------------------------------------------------------------------------------------------------------
 function orchestratorLook(p: HubProject): { dot: string; word: string; color: string } {
   const o = p.orchestrator ?? { state: 'none' }
-  if (o.starting && o.state !== 'running') return { dot: '◐', word: 'coming up', color: 'cyan' }
+  if (o.starting && o.state !== 'running') {
+    return o.starting.typed ? { dot: '◐', word: 'coming up', color: 'cyan' } : { dot: '◐', word: 'waiting on you', color: 'magenta' }
+  }
   const looks: Record<HubProject['orchestrator']['state'], { dot: string; word: string; color: string }> = {
     running: { dot: '●', word: 'running', color: 'green' },
     stopped: { dot: '○', word: 'stopped', color: 'yellow' },
     unknown: { dot: '?', word: 'cannot tell', color: 'red' },
     none: { dot: '◌', word: 'no team', color: 'gray' },
+    unregistered: { dot: '◑', word: 'not registered', color: 'magenta' },
   }
   return looks[o.state] ?? looks.unknown
 }
