@@ -18,6 +18,7 @@ if [ "${1:-}" = plugin ] && [ "${2:-}" = list ]; then
 fi
 for a in "$@"; do printf 'ARGV: %s\n' "$a"; done
 printf 'ENV: HM_AGENT=%s HM_PROJECT=%s HIVEMIND_HOME=%s HM_TMUX_SOCKET=%s\n' "${HM_AGENT:-}" "${HM_PROJECT:-}" "${HIVEMIND_HOME:-}" "${HM_TMUX_SOCKET:-}"
+printf 'ENV2: HM_AWAY_BYPASS=%s HM_AWAY_HUB=%s HM_AWAY_MCP_ALLOW=%s\n' "${HM_AWAY_BYPASS:-}" "${HM_AWAY_HUB:-}" "${HM_AWAY_MCP_ALLOW:-}"
 RULE='────────────────────────────── fake ──'
 box() {  # box [typed text]: with text the input line holds it (no placeholder), as when the UI left a command there
   if [ -n "${1:-}" ]; then printf '\n%s\n❯\xc2\xa0%s\n%s\n  footer line\n' "$RULE" "$1" "$RULE"

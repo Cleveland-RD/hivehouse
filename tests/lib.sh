@@ -119,6 +119,19 @@ t_env_probe() {  # t_env_probe <NAME=value> [argument]...: the arguments become 
   if command -v codesign >/dev/null 2>&1 && codesign -dv "$n" 2>&1 | grep -q 'Platform identifier'; then return 1; fi
   ( env "$v" "$n" -e 'setTimeout(() => {}, 60000)' "$@" >/dev/null 2>&1 & echo $! )
 }
+# t_node_claude <cwd> [<hm-hub to register the hub with>]: a node script named claude, which runs its arguments as a command in <cwd>
+# (after `hm-hub self --name hub`, when a hm-hub is given), with this test's environment as defaults under whatever the launch gives
+# it. Launched as `[VAR=x] node <script> <command>...`, it is a Claude whose launch environment ps -E can show. Prints its path.
+t_node_claude() {
+  local d e; d=$(mktemp -d "$T_TMP/ncl.XXXXXX")
+  e=$(jq -nc --arg PATH "$PATH" --arg HOME "$HOME" --arg HIVEMIND_HOME "${HIVEMIND_HOME:-}" --arg HM_TMUX_SOCKET "${HM_TMUX_SOCKET:-}" --arg CLAUDE_CONFIG_DIR "${CLAUDE_CONFIG_DIR:-}" --arg HM_MANAGED_SETTINGS "${HM_MANAGED_SETTINGS:-}" '$ARGS.named')
+  if [ -n "${2:-}" ]; then
+    printf 'const { spawnSync } = require("child_process")\nconst env = Object.assign({}, %s, process.env)\nspawnSync(%s, ["self", "--name", "hub"], { cwd: %s, stdio: "ignore", env })\nconst r = spawnSync(process.argv[2], process.argv.slice(3), { cwd: %s, stdio: "inherit", env })\nprocess.exit(r.status === null ? 1 : r.status)\n' "$e" "\"$2\"" "\"$1\"" "\"$1\"" > "$d/claude"
+  else
+    printf 'const { spawnSync } = require("child_process")\nconst env = Object.assign({}, %s, process.env)\nconst r = spawnSync(process.argv[2], process.argv.slice(3), { cwd: %s, stdio: "inherit", env })\nprocess.exit(r.status === null ? 1 : r.status)\n' "$e" "\"$1\"" > "$d/claude"
+  fi
+  printf '%s\n' "$d/claude"
+}
 ok()   { printf '  ok   %s\n' "$1"; }
 bad()  { printf '  FAIL %s\n' "$1"; FAILS=$((FAILS + 1)); }
 assert_eq()       { if [ "$2" = "$3" ]; then ok "$1"; else bad "$1: expected [$3] got [$2]"; fi; }
