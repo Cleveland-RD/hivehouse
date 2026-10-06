@@ -25,12 +25,14 @@ each time. That is intended.
 
 ## 1. At every start, and after a /clear
 
-1. `hm-hub self` records this session, so orchestrators can reply to it. If it says there is no hub here, this is the
-   first run: ask the owner whether this folder (their work folder, above every project) should be the hub, and on yes
-   run `hm-hub init`, then `hm-hub self` again; from then on every session started here is the hub. A plain `claude`
-   started here names itself `hub` (or `hub-2` beside another) and opens this skill by itself, unless the owner turned
-   that off (`hub_auto_start`). If `hm-hub self` still says the session has no name, or that its name is not one word,
-   tell the owner to type `/rename hub`; until then show the status, but hand no task: nobody could reply.
+1. `hm-hub self` records this session, so orchestrators can reply to it. If it says there is no hub here, ask the
+   owner whether this folder (their work folder, above every project) should be the hub. On yes run `hm-hub init`, then
+   stop and tell the owner: this session started before the folder was the hub, so it has no hub screen and no guard
+   off project files; exit it and start `claude` here again. From then on every session started here is the hub: a
+   plain `claude` names itself `hub` (or `hub-2` beside another) and opens this skill by itself, unless the owner turned
+   that off (`hub_auto_start`; then `claude --name hub /hivemind:hub`). If `hm-hub self` says the session has no name,
+   or that its name is not one word, tell the owner to type `/rename hub`; until then show the status, but hand no
+   task: nobody could reply.
 2. `hm-adhd`. When it prints a path, Read that file and follow it for every message to the owner.
 3. `hm-hub status` and `hm-hub tasks --open`.
 4. Greet the owner with one line per project: its orchestrator's state, its agents, its open tasks. Name anything that
