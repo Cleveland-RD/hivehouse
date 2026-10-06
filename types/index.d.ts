@@ -46,11 +46,19 @@ export type HubTask = {
   needs_owner: boolean
 }
 
+// A dialog on a session's screen, as `hm-hub dialog` reads it. offered: the hub may answer with this option (one that needs
+// the owner's own text is not); saves_rule: choosing it saves a permission rule; fingerprint: the screen the owner was
+// shown, which `hm-hub answer` checks before it sends a key.
+export type HubDialogOption = { n: number; label: string; detail: string; offered: boolean; saves_rule: boolean }
+export type HubDialog = { kind: 'numbered' | 'menu' | 'none'; text: string; options: HubDialogOption[]; cursor: number | null; esc: boolean; fingerprint: string }
+
 export type HubView = {
   root: string
   hubName: string
   projects: HubProject[]
   tasks: HubTask[]
+  // by session: "<project>" for its orchestrator, "<project>/<agent>" for an agent
+  dialogs: Record<string, HubDialog>
   updatedAt: number
   error: string
 }

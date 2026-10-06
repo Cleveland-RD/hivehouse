@@ -64,6 +64,30 @@ const TASKS = [
   { id: 'app-3', project: 'app', asked: '2026-10-05T11:15:00Z', state: 'overnight', updated: '2026-10-05T11:30:00Z', last_note: null, needs_owner: false },
   { id: 'app-4', project: 'app', asked: '2026-10-05T11:16:00Z', state: 'cleanup', updated: '2026-10-05T11:31:00Z', last_note: null, needs_owner: false },
 ]
+// What `hm-hub dialog` reads on a screen with a question: a permission dialog on the agent rev's, a menu with no digits on
+// the first screen of a start (four), and, for the tests to change, what `hm-hub answer` replies
+const FP = 'a'.repeat(40)
+const DIALOGS: Record<string, unknown> = {
+  'app rev': {
+    project: 'app', session: 'rev', pane: '%3', kind: 'numbered', esc: true, cursor: 1, fingerprint: FP,
+    text: '──────\n Bash command\n touch made-by-test.txt\n Do you want to proceed?\n ❯ 1. Yes\n   2. Yes, and always allow access to /tmp/work from\n   3. No\n Esc to cancel · Tab to amend',
+    options: [
+      { n: 1, label: 'Yes', detail: '', offered: true, saves_rule: false },
+      { n: 2, label: 'Yes, and always allow access to /tmp/work from', detail: 'this project', offered: true, saves_rule: true },
+      { n: 3, label: 'Type something.', detail: '', offered: false, saves_rule: false },
+    ],
+  },
+  four: {
+    project: 'four', session: 'four-orchestrator', pane: '%12', kind: 'menu', esc: true, cursor: 1, fingerprint: 'b'.repeat(40),
+    text: ' Accessing workspace:\n /tmp/work\n ❯ No, exit\n   Yes, I trust this folder\n Enter to confirm · Esc to cancel',
+    options: [
+      { n: 1, label: 'No, exit', detail: '', offered: true, saves_rule: false },
+      { n: 2, label: 'Yes, I trust this folder', detail: '', offered: true, saves_rule: false },
+    ],
+  },
+}
+const ANSWER = { code: 0, stdout: '{"answered":true,"session":"rev","choice":"1","option":"Yes","dialog_gone":true}', stderr: '' }
+const TOASTS: string[] = []
 const PANE = {
   plugin: 'hivemind',
   component: 'Pane',
@@ -103,6 +127,11 @@ function world(on: On, runs: string[][], opened: string[] = [], commands: string
     if (sub === 'status') return ran(0, JSON.stringify(STATUS))
     if (sub === 'tasks') return ran(0, JSON.stringify(TASKS))
     if (sub === 'wake' || sub === 'continue') return ran(0, '%7\n')
+    if (sub === 'dialog') {
+      const d = DIALOGS[e.argv.slice(2).join(' ')]
+      return d ? ran(0, JSON.stringify(d)) : ran(4, '', 'hivemind: no dialog is on that screen')
+    }
+    if (sub === 'answer') return ran(ANSWER.code, ANSWER.stdout, ANSWER.stderr)
     if (sub === 'naming' && session.naming) return ran(0, JSON.stringify(session.naming))
     return ran(64, '', 'hivemind: usage')
   })
@@ -118,7 +147,10 @@ function world(on: On, runs: string[][], opened: string[] = [], commands: string
     return { value: { isPlaced: true } }
   })
   on('ui.panes', async () => ({ value: shown.now ? [{ id: 'hivemind-hub', title: 'Hub', isShown: true, isFocused: false, isPlaced: true }] : [] }))
-  on('ui.toast', async () => ({ value: undefined }))
+  on('ui.toast', async (_$, e) => {
+    TOASTS.push(e.text)
+    return { value: undefined }
+  })
 }
 
 test('the hub keeps off the projects, and off nothing else', async ($, on) => {
@@ -176,6 +208,17 @@ test('the screen: what needs the owner first, then each project, and Resume wake
   // an overnight run and a cleanup the hub started are shown on the project's task row, and wait on nobody
   expect(await ui.find({ type: 'Text', text: /1 overnight run · 1 cleanup/ })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /stopped/ })).toBeDefined()
+  // a dialog on an agent's screen: its text, and a button for each option the hub may answer with, Esc where it is offered
+  expect(await ui.find({ type: 'Text', text: /Do you want to proceed\?/ })).toBeDefined()
+  expect((await ui.find({ key: 'answer-app/rev-1' }))?.text).toContain('1 Yes')
+  expect((await ui.find({ key: 'answer-app/rev-2' }))?.text).toContain('(saves a rule)')
+  expect(await ui.find({ key: 'answer-app/rev-esc' })).toBeDefined()
+  // an option that needs the owner's own text has no button: it is answered in the pane
+  expect(await ui.find({ key: 'answer-app/rev-3' })).toBeUndefined()
+  expect(await ui.find({ type: 'Text', text: /Type something\.: answer it in the pane/ })).toBeDefined()
+  // the first dialog of a start: a menu with no digits, and Continue stays beside it
+  expect((await ui.find({ key: 'answer-four-2' }))?.text).toContain('Yes, I trust this folder')
+  expect(await ui.find({ key: 'continue-four' })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /51%/ })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /no team/ })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /not registered/ })).toBeDefined()
@@ -194,6 +237,24 @@ test('the screen: what needs the owner first, then each project, and Resume wake
 
   await ui.press({ key: 'continue-four' })
   expect(runs.find(r => r[1] === 'continue')?.slice(1)).toEqual(['continue', 'four'])
+
+  // a press answers with the option's number and the fingerprint the screen showed, for that session only
+  await ui.press({ key: 'answer-app/rev-1' })
+  expect(runs.find(r => r[1] === 'answer')?.slice(1)).toEqual(['answer', 'app', 'rev', '--choice', '1', '--seen', FP])
+  expect(TOASTS.some(t => t.includes('answered "Yes"'))).toBe(true)
+  await ui.press({ key: 'answer-four-2' })
+  expect(runs.filter(r => r[1] === 'answer').pop()?.slice(1)).toEqual(['answer', 'four', '--choice', '2', '--seen', 'b'.repeat(40)])
+  await ui.press({ key: 'answer-app/rev-esc' })
+  expect(runs.filter(r => r[1] === 'answer').pop()?.slice(1)).toEqual(['answer', 'app', 'rev', '--choice', 'esc', '--seen', FP])
+
+  // a refusal (the screen changed under the owner) is told, and the screen reads hm-hub again
+  ANSWER.code = 4
+  ANSWER.stdout = ''
+  ANSWER.stderr = 'hivemind: the dialog changed; look again: nothing was sent'
+  const reads = runs.filter(r => r[1] === 'status').length
+  await ui.press({ key: 'answer-app/rev-2' })
+  expect(TOASTS.some(t => t.includes('the dialog changed; look again'))).toBe(true)
+  expect(runs.filter(r => r[1] === 'status').length).toBeGreaterThan(reads)
   await ui.unmount()
 })
 

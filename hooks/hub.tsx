@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
-import type { HubAgent, HubProject, HubTask, HubView } from '../types'
+import type { HubAgent, HubDialog, HubProject, HubTask, HubView } from '../types'
 
 // The owner's hub (bin/hm-hub, skills/hub): in the session started in the hub's own folder, and only there, a screen of
 // what waits on the owner and of every project's orchestrator, and a guard that keeps the hub off the projects' files.
@@ -13,8 +13,9 @@ const PANE = 'hivemind-hub'
 const COMMAND = 'hub-screen'
 const EVERY_MS = 20_000
 const WAKE_TIMEOUT_MS = 150_000 // hm-hub waits up to 90 s for a started session to be idle
+const ANSWER_TIMEOUT_MS = 30_000 // hm-hub answer sends its keys and then watches a few seconds
 
-const EMPTY: HubView = { root: '', hubName: '', projects: [], tasks: [], updatedAt: 0, error: '' }
+const EMPTY: HubView = { root: '', hubName: '', projects: [], tasks: [], dialogs: {}, updatedAt: 0, error: '' }
 const view = atom({ plugin: 'hivemind', key: 'hubView' } as const, EMPTY)
 // the project a press is acting on, one at a time
 const acting = atom({ plugin: 'hivemind', key: 'hubResuming' } as const, '')
@@ -47,11 +48,13 @@ async function refresh($: EngineInterface): Promise<void> {
     if (status.exitCode !== 0) throw new Error(lastLine(status.stderr) || `hm-hub status exited ${status.exitCode}`)
     const s = JSON.parse(status.stdout) as { hub?: { root?: string; name?: string }; projects?: HubProject[] }
     const t = tasks.exitCode === 0 ? (JSON.parse(tasks.stdout) as HubTask[]) : []
+    const projects = s.projects ?? []
     const next: HubView = {
       root: s.hub?.root ?? root,
       hubName: s.hub?.name ?? '',
-      projects: s.projects ?? [],
+      projects,
       tasks: t,
+      dialogs: await readDialogs($, root, projects),
       updatedAt: await $.clock.now(),
       // the projects still draw when only the ledger could not be read, and the screen says so
       error: tasks.exitCode === 0 ? '' : `tasks not read: ${lastLine(tasks.stderr) || `hm-hub tasks exited ${tasks.exitCode}`}`,
@@ -61,6 +64,30 @@ async function refresh($: EngineInterface): Promise<void> {
     const error = err instanceof Error ? err.message : String(err)
     await update($, view, v => ({ ...(v ?? EMPTY), error, updatedAt: v?.updatedAt ?? 0 }))
   }
+}
+
+// The dialogs on the screens hm-hub reports a question on: each session's text and options, as `hm-hub dialog` reads them
+// (the screen's buttons answer with the fingerprint shown here). A dialog hm-hub cannot read is left out: the screen then
+// says to answer it in the pane.
+async function readDialogs($: EngineInterface, root: string, projects: HubProject[]): Promise<Record<string, HubDialog>> {
+  const asks: { key: string; args: string[] }[] = []
+  for (const p of projects) {
+    const o = p.orchestrator
+    if (o?.question || o?.starting?.question) asks.push({ key: p.name, args: ['dialog', p.name] })
+    for (const a of (p.agents ?? []).filter(a => a.question)) asks.push({ key: `${p.name}/${a.name}`, args: ['dialog', p.name, a.name] })
+  }
+  const out: Record<string, HubDialog> = {}
+  await Promise.all(
+    asks.map(async ask => {
+      try {
+        const r = await $.process.run([hmHub($), ...ask.args], { cwd: root, timeoutMs: 30_000 })
+        if (r.exitCode === 0) out[ask.key] = JSON.parse(r.stdout) as HubDialog
+      } catch {
+        // unreadable: the screen says to answer it in the pane
+      }
+    }),
+  )
+  return out
 }
 
 // One poller per module, which reads hm-hub only while the screen is open and shown (Claude Code's own record of this
@@ -89,6 +116,33 @@ async function act($: EngineInterface, project: string, args: string[], done: st
   try {
     const r = await $.process.run([hmHub($), ...args], { cwd: root, timeoutMs: WAKE_TIMEOUT_MS })
     $.ui.toast(r.exitCode === 0 ? `${project}: ${done} (pane ${r.stdout.trim()})` : `${project}: ${lastLine(r.stderr)}`)
+  } finally {
+    await update($, acting, () => '')
+    await refresh($)
+  }
+}
+
+// A press on a dialog's option is the owner's own word for that one answer: hm-hub answer checks the screen is still the one
+// shown (its fingerprint) and sends the one key. A refusal (the dialog changed) is told, and the screen reads again.
+async function answerDialog($: EngineInterface, project: string, agent: string, choice: string, seen: string): Promise<void> {
+  const root = await hubRoot($)
+  if (!root || (await read($, acting))) return
+  const who = agent ? `${project} · ${agent}` : project
+  await update($, acting, () => (agent ? `${project}/${agent}` : project))
+  try {
+    const r = await $.process.run([hmHub($), 'answer', project, ...(agent ? [agent] : []), '--choice', choice, '--seen', seen], { cwd: root, timeoutMs: ANSWER_TIMEOUT_MS })
+    if (r.exitCode === 0) {
+      let option = choice
+      let gone = true
+      try {
+        const a = JSON.parse(r.stdout) as { option?: string; dialog_gone?: boolean }
+        option = a.option ?? choice
+        gone = a.dialog_gone !== false
+      } catch {
+        // the key was sent; only its words are unknown
+      }
+      $.ui.toast(`${who}: answered "${option}"${gone ? '' : ' (the dialog is still on its screen)'}`)
+    } else $.ui.toast(`${who}: ${lastLine(r.stderr)}`)
   } finally {
     await update($, acting, () => '')
     await refresh($)
@@ -240,7 +294,44 @@ export const register: Register = (on, options) => {
     const resumeArgs = (p: string) => ['wake', p, ...(mode ? ['--mode', mode] : [])]
 
     // What waits on the owner: tasks hm-hub marks so, and questions on screens nobody watches.
-    type Need = { key: string; glyph: string; color: string; who: string; words: string; when: string; action?: JSX.Element }
+    type Need = { key: string; glyph: string; color: string; who: string; words: string; when: string; action?: JSX.Element; dialog?: JSX.Element | null }
+    // A dialog's text, and one button per option the hub may answer with. An option that needs the owner's own text, and a
+    // dialog hm-hub could not read, are answered in the pane.
+    const dialogBlock = (key: string, project: string, agent: string): JSX.Element | null => {
+      const d = v.dialogs[key]
+      if (!d) return null
+      const lines = d.text.split('\n').filter(l => !/^[\s─╌]*$/.test(l)).slice(-14)
+      const offered = d.options.filter(o => o.offered)
+      const answer = (choice: string) => () => void answerDialog($, project, agent, choice, d.fingerprint)
+      return (
+        <Box flexDirection="column" paddingLeft={3}>
+          {lines.map((l, i) => (
+            <Text key={`dl-${key}-${i}`} color="gray" wrap="truncate-end">
+              {l}
+            </Text>
+          ))}
+          {offered.length > 0 || d.esc ? (
+            <Box flexDirection="row" flexWrap="wrap" columnGap={1}>
+              {offered.map(o => (
+                <Button key={`answer-${key}-${o.n}`} onPress={answer(String(o.n))}>
+                  {`${o.n} ${o.label}${o.saves_rule ? ' (saves a rule)' : ''}`}
+                </Button>
+              ))}
+              {d.esc ? (
+                <Button key={`answer-${key}-esc`} onPress={answer('esc')}>
+                  Esc
+                </Button>
+              ) : null}
+            </Box>
+          ) : null}
+          {d.options.some(o => !o.offered) || offered.length === 0 ? (
+            <Text color="yellow">
+              {d.options.length === 0 ? 'answer it in the pane' : `${d.options.filter(o => !o.offered).map(o => o.label).join(', ') || 'this dialog'}: answer it in the pane`}
+            </Text>
+          ) : null}
+        </Box>
+      )
+    }
     const needs: Need[] = []
     if (v.updatedAt && !v.hubName) {
       needs.push({ key: 'hub', glyph: '!', color: 'red', who: 'hub', words: 'has not recorded its session, so nobody can reply to it', when: '' })
@@ -251,9 +342,9 @@ export const register: Register = (on, options) => {
     }
     for (const p of v.projects) {
       const o = p.orchestrator ?? { state: 'none' }
-      if (o.question) needs.push({ key: `q-${p.name}`, glyph: '?', color: 'yellow', who: p.name, words: 'its orchestrator has a question on its screen', when: '' })
+      if (o.question) needs.push({ key: `q-${p.name}`, glyph: '?', color: 'yellow', who: p.name, words: 'its orchestrator has a question on its screen', when: '', dialog: dialogBlock(p.name, p.name, '') })
       for (const a of (p.agents ?? []).filter(a => a.question)) {
-        needs.push({ key: `q-${p.name}-${a.name}`, glyph: '?', color: 'yellow', who: `${p.name} · ${a.name}`, words: 'a question on its screen', when: '' })
+        needs.push({ key: `q-${p.name}-${a.name}`, glyph: '?', color: 'yellow', who: `${p.name} · ${a.name}`, words: 'a question on its screen', when: '', dialog: dialogBlock(`${p.name}/${a.name}`, p.name, a.name) })
       }
       const s = o.starting
       if (s && !s.typed && !s.sending) {
@@ -264,6 +355,7 @@ export const register: Register = (on, options) => {
           who: p.name,
           words: s.question ? `a question on the screen of pane ${s.pane}: answer it, then Continue` : `waiting in pane ${s.pane} for its first line`,
           when: ago(s.at, now),
+          dialog: s.question ? dialogBlock(p.name, p.name, '') : null,
           action:
             busy === p.name ? (
               <Text color="cyan">continuing…</Text>
@@ -406,6 +498,7 @@ export const register: Register = (on, options) => {
                   </Box>
                   <Text color="gray">{n.when}</Text>
                 </Box>
+                {n.dialog ?? null}
                 {n.action ? <Box paddingLeft={2}>{n.action}</Box> : null}
               </Box>
             ))}
