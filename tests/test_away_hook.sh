@@ -132,6 +132,8 @@ denied "S3 .claude.json in the config dir (redirect)" "echo x > $CD/.claude.json
 denied "S3 hooks/ in the config dir (cp)" "cp a $CD/hooks/x.sh"
 ln -s "$CD/settings.json" "$T_TMP/lnk-settings"; ln -s "$T_TMP/loop2" "$T_TMP/loop1"; ln -s "$T_TMP/loop1" "$T_TMP/loop2"
 ln -s "$T_TMP/lnk-settings" "$T_TMP/lnk-chain"; : > "$T_TMP/harmless"; ln -s "$T_TMP/harmless" "$T_TMP/lnk-harmless"
+ln -s settings.json "$CD/lnk-rel"
+denied "S3 a redirect through a relative symlink to settings.json" "echo x > $CD/lnk-rel"
 denied "S3 a redirect through a symlink to settings.json" "echo x > $T_TMP/lnk-settings"
 denied "S3 a redirect through a chain of symlinks" "echo x > $T_TMP/lnk-chain"
 denied "S3 a link loop" "echo x > $T_TMP/loop1"
