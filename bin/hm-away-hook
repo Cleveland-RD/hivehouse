@@ -8,7 +8,7 @@
 # away_mcp_allow, comma-separated, may be empty). Without the marker it exits 0 at once, before anything is read. With it,
 # anything it cannot read or parse is a denial.
 # Matching is by tokens and is not complete (a script the session wrote, `$'\x67'it push` and `g${e}it push` get through).
-[ "${HM_AWAY_BYPASS:-}" = 1 ] || exit 0
+[ "${HM_AWAY_BYPASS:-}" = 1 ] || { cat >/dev/null; exit 0; }
 set -u
 # Any exit that is not 0 or an explicit denial (a bash error, an unset variable, a missing library) is a denial too: Claude Code
 # treats exit 1 as "no decision" and would let the tool run.
@@ -37,14 +37,25 @@ canon() {  # canon <path> <cwd>: absolute, ~ and $HOME expanded, dot segments co
 protected_one() {  # protected_one <canonical path>: 0 when Claude Code's settings, hook files, plugins or MCP config
   local p="$1" b="${1##*/}" d="${1%/*}" c
   c=$(canon "$CONF" /); h=$(canon "$HOME" /)
-  [ "$p" = "$h/.claude.json" ] && return 0
+  [ "$p" = "$h/.claude.json" ] || [ "$p" = "$c/.claude.json" ] && return 0
   case "$b" in settings*.json) { [ "$d" = "$c" ] || [ "${d##*/}" = .claude ]; } && return 0 ;; esac
   case "$b" in .mcp.json|hooks.json) return 0 ;; esac
-  case "$p" in "$c/plugins"|"$c/plugins/"*|*/.claude/hooks/*) return 0 ;; esac
+  case "$p" in "$c/plugins"|"$c/plugins/"*|"$c/hooks"|"$c/hooks/"*|*/.claude/hooks/*) return 0 ;; esac
   [ -z "${CLAUDE_PLUGIN_ROOT:-}" ] || { r=$(canon "$CLAUDE_PLUGIN_ROOT" /); case "$p" in "$r"|"$r/"*) return 0 ;; esac; }
   return 1
 }
-protected() { protected_one "$(canon "$1" "$2")"; }   # protected <path> <cwd>
+protected() {  # protected <path> <cwd>: the path itself, and where its links lead (a write goes to the target); a link loop counts
+  local a l n=0
+  a=$(canon "$1" "$2"); protected_one "$a" && return 0
+  while [ -L "$a" ] && [ "$n" -lt 8 ]; do
+    l=$(readlink "$a") || return 0
+    case "$l" in /*) ;; *) l="$(dirname "$a")/$l" ;; esac
+    a=$(canon "$l" /); protected_one "$a" && return 0
+    n=$((n + 1))
+  done
+  [ ! -L "$a" ] || return 0
+  return 1
+}
 
 # --- inputs
 command -v jq >/dev/null 2>&1 || deny "jq is missing, so the tool call cannot be checked"
@@ -52,6 +63,7 @@ input=$(cat) || deny "its input could not be read"
 tool=$(printf '%s' "$input" | jq -er '.tool_name | strings' 2>/dev/null) || deny "its input is not a tool call"
 cwd=$(printf '%s' "$input" | jq -r '.cwd // empty | strings' 2>/dev/null) || deny "its input could not be parsed"
 [ -n "$cwd" ] || cwd=$PWD
+[ -n "${HM_PROJECT:-}" ] || deny "the project (HM_PROJECT) is missing from the session's launch env"
 [ -n "${HM_AWAY_HUB:-}" ] && [ -d "$HM_AWAY_HUB/.hivemind-hub" ] || deny "the hub's folder (HM_AWAY_HUB) is missing or unreadable"
 HUB=$(cd -P "$HM_AWAY_HUB" && pwd -P) || deny "the hub's folder cannot be read"
 allow=${HM_AWAY_MCP_ALLOW-}
@@ -63,7 +75,7 @@ mcp_check() {
     e=${e// /}; [ -n "$e" ] || continue
     case "$e" in
       mcp__*) [ "$tool" = "$e" ] && return 0 ;;
-      *) case "$tool" in "mcp__${e}__"?*) return 0 ;; esac ;;
+      *) [ "$tool" = "$e" ] && return 0; case "$tool" in "mcp__${e}__"?*) return 0 ;; esac ;;
     esac
   done
   deny "$tool is not allowed while the owner is away (the owner's away_mcp_allow lists what is)"
@@ -94,16 +106,15 @@ add_team() {  # add_team <project home>: its orchestrator and its agents, <proje
   done < <(jq -r '.agents[]? | [.name, .pane_pid, .pane_started] | map(. // "" | tostring) | join("\u001f")' "$home/.hivemind/team.json" 2>/dev/null)
 }
 msg_check() {
-  local to ref pid i n live role proj p h found=""
+  local to ref pid i n live role proj p h
   to=$(printf '%s' "$input" | jq -er '.tool_input.to' 2>/dev/null) || deny "its SendMessage target cannot be read"
   case "$to" in main) return 0 ;; esac
   # who the session is, and whom it may message
   hubpid=$(hm_json_get "$HUB/.hivemind-hub/hub.json" .claude_pid); hubst=$(hm_json_get "$HUB/.hivemind-hub/hub.json" .claude_started)
   hubname=$(hm_json_get "$HUB/.hivemind-hub/hub.json" .name)
   add_id "$hubname" "$hubpid" "$hubst"
-  proj=${HM_PROJECT:-}
-  if [ -n "$proj" ]; then proj=$(cd -P "$proj" 2>/dev/null && pwd -P) || deny "the project (HM_PROJECT) cannot be read"; fi
-  if [ -z "$proj" ] || [ "$proj" = "$HUB" ]; then
+  proj=$(cd -P "$HM_PROJECT" 2>/dev/null && pwd -P) || deny "the project (HM_PROJECT) cannot be read"
+  if [ "$proj" = "$HUB" ]; then
     while IFS= read -r h; do
       [ -n "$h" ] || continue
       case "$h" in /*) ;; *) h="$HUB/$h" ;; esac
@@ -128,8 +139,8 @@ msg_check() {
   for f in "$CONF"/sessions/*.json; do
     [ -f "$f" ] || continue
     pid=$(jq -r --arg n "$n" 'select(.name == $n) | .pid // empty' "$f" 2>/dev/null) || continue
-    [ -n "$pid" ] && hm_alive "$pid" || continue
-    found=1; live="$live $pid "
+    [ -n "$pid" ] && hm_alive "$pid" && hm_is_claude "$pid" || continue
+    live="$live $pid "
   done
   for i in "${!ID_NAMES[@]}"; do
     [ "${ID_NAMES[$i]}" = "$n" ] || continue
@@ -138,8 +149,6 @@ msg_check() {
     for pid in $live; do [ "$pid" = "${ID_PIDS[$i]}" ] || deny "another live session also carries the name $n"; done
     return 0
   done
-  # a raw in-process agent id stays inside the session, unless a live session is named so
-  if printf '%s' "$n" | grep -Eq '^a[A-Za-z0-9]+-[A-Za-z0-9-]+$'; then [ -z "$found" ] && return 0; fi
   deny "the message target $to is not the session's own hub or team"
 }
 
@@ -163,6 +172,7 @@ bash_check() {
     [ -n "$rt" ] && protected "$rt" "$cwd" && deny "a redirect into Claude Code's settings, hook or plugin files is not allowed from an away session"
   done < <(printf '%s\n' "$s" | grep -oE '>[>|]?[[:space:]]*[^[:space:];&|()<>]+' 2>/dev/null || true)
   s=${s//\$HOME/$HOME}
+  s=$(printf '%s' "$s" | sed -E 's/([A-Za-z0-9_-])\(/\1 /g')   # "fix(scope):" in a message is not a subshell: only a ( after a space or an operator opens one
   # segments: one per simple command (separators become newlines); < > = tab become spaces for the token reading
   local segs; segs=$(printf '%s' "$s" | tr ';&|()`$' '\n\n\n\n\n\n\n' | tr '<>\t' '   ')
   set -f
@@ -183,8 +193,6 @@ bash_check() {
     for tok in ${toks[@]+"${toks[@]}"}; do
       case "$(bn "$tok")" in
         git) have_git=1 ;;
-        ssh|scp) deny "$(bn "$tok") is not allowed while the owner is away" ;;
-        vercel|netlify) deny "$(bn "$tok") is not allowed while the owner is away" ;;
         npm|pnpm|yarn) pkgm=1 ;;
         docker) have_dock=1 ;;
       esac
@@ -199,6 +207,7 @@ bash_check() {
     case "$cmdw" in
       hm-push) deny "hm-push is not allowed while the owner is away" ;;
       hm-remote-sync) deny "hm-remote-sync is not allowed while the owner is away" ;;
+      ssh|scp|vercel|netlify) deny "$cmdw is not allowed while the owner is away" ;;
       claude) deny "starting Claude by hand is not allowed from an away session; hm-spawn and hm-hub start sessions" ;;
     esac
     local has_tmux="" has_start="" has_gh="" has_rsync="" has_curl="" has_wget="" has_write=""
@@ -214,9 +223,9 @@ bash_check() {
         curl) has_curl=1 ;;
         wget) has_wget=1 ;;
       esac
-      case "$tok" in new-window|neww|split-window|splitw|new-session|new|respawn-pane|respawnp|respawn-window|respawnw) has_start=1 ;; esac
+      case "$tok" in new-window|neww|split-window|splitw|new-session|new|respawn-pane|respawnp|respawn-window|respawnw|run-shell|run|if-shell|if|display-popup|popup|pipe-pane|pipep|source-file|source|send-keys|send) has_start=1 ;; esac
     done
-    [ -z "$has_tmux" ] || [ -z "$has_start" ] || deny "tmux windows and sessions are started by hm-spawn and hm-hub, not by an away session"
+    [ -z "$has_tmux" ] || [ -z "$has_start" ] || deny "tmux cannot start windows or sessions, run commands or type into panes from an away session; hm-spawn and hm-hub do those"
     if [ -n "$has_rsync" ]; then
       for tok in ${toks[@]+"${toks[@]}"}; do case "$tok" in *:*|-e|--rsh*) deny "rsync to a remote is not allowed while the owner is away" ;; esac; done
     fi
@@ -251,10 +260,17 @@ EOF
   return 0
 }
 
+agent_check() {  # an Agent call passes unless it starts a cloud agent, which carries no marker
+  local iso
+  iso=$(printf '%s' "$input" | jq -er '.tool_input.isolation // "" | strings' 2>/dev/null) || deny "the Agent call's isolation cannot be read"
+  [ "$iso" != remote ] || deny "a remote (cloud) agent starts with no marker and is not allowed while the owner is away"
+  return 0
+}
 main() {
   case "$tool" in
     Bash) bash_check ;;
-    mcp__*) mcp_check ;;
+    mcp__*|Artifact|ArtifactData|ArtifactComments|RemoteTrigger) mcp_check ;;
+    Agent) agent_check ;;
     SendMessage) msg_check ;;
     Edit|Write|MultiEdit|NotebookEdit) file_check ;;
     *) deny "$tool is not a tool this hook was set up for" ;;
