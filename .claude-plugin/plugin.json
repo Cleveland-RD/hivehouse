@@ -5,6 +5,7 @@
   "author": { "name": "Cleveland R&D" },
   "license": "MIT",
   "repository": "https://github.com/Cleveland-RD/hivemind",
+  "types": "./types/index.d.ts",
   "keywords": ["orchestration", "tmux", "agents", "review", "workflow"],
   "userConfig": {
     "commit_style": { "type": "string", "title": "Commit subject style", "description": "conventional (type(scope): summary) or free", "options": ["conventional", "free"], "default": "conventional" },
