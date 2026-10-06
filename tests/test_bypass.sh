@@ -89,6 +89,10 @@ tmux -S "$FS" kill-server 2>/dev/null
 p=$(sp "$NCP" a1 auto); sc=$(screen "$p")
 assert_contains "any other mode: the agent runs in it" "$sc" "ARGV: auto"
 assert_contains "...with no marker and no hook variables" "$sc" "ENV2: HM_AWAY_BYPASS= HM_AWAY_HUB= HM_AWAY_MCP_ALLOW="
+# a server that ALREADY holds the variables in its global environment (started before the fix, or from a marked shell): a window opened on it is cleaned
+hm_tmux set-environment -g HM_AWAY_BYPASS 1; hm_tmux set-environment -g HM_AWAY_HUB "$H"; hm_tmux set-environment -g HM_AWAY_MCP_ALLOW docs
+p=$(sp0 "$NCP" g1 auto); assert_contains "a server that already holds the away variables: an agent opened on it still has none" "$(screen "$p")" "ENV2: HM_AWAY_BYPASS= HM_AWAY_HUB= HM_AWAY_MCP_ALLOW="
+assert_eq "...and the server's global environment is cleaned" "$(hm_tmux show-environment -g 2>/dev/null | grep -c '^HM_AWAY_')" "0"
 case "$sc" in *--strict-mcp-config*|*--no-chrome*) bad "a session not in bypass got the away MCP flags" ;; *) ok "...and no away MCP flags" ;; esac
 [ ! -e "$H/app/.hivemind/team/a1/away-mcp.json" ] && ok "...and no MCP file" || bad "a session not in bypass has an MCP file"
 # a respawn: out of bypass when the owner is back, the same bypass while away
@@ -108,6 +112,11 @@ mkdir -p "$P/panes"; printf '{"mcpServers":{"docs":{}}}\n' > "$P/panes/app-mcp.j
 kp=$(hm_tmux list-panes -t keep -F '#{pane_id}' | head -1)
 TMUX_PANE="$kp" HM_PROJECT="$H/app" "${M[@]}" node "$NCP" "$DB/hm-spawn" --self --agent orchestrator >/dev/null 2>"$T_TMP/sp.err"; assert_status "an orchestrator registering with --self" $? 0
 [ -f "$H/app/.hivemind/team/orchestrator/away-mcp.json" ] && [ ! -e "$P/panes/app-mcp.json" ] && ok "...takes the MCP file the hub gave it into its team folder" || bad "the hub-launched orchestrator's MCP file did not move"
+# the delegate file expired before it registered: the hub's copy (it may hold server secrets) is removed, not left behind
+printf '{"mcpServers":{"docs":{}}}\n' > "$P/panes/app-mcp.json"; chmod 600 "$P/panes/app-mcp.json"; mkdel "$((NOW - 10))"
+TMUX_PANE="$kp" HM_PROJECT="$H/app" HM_AWAY_HUB="$H" "${M[@]}" node "$NCP" "$DB/hm-spawn" --self --agent orchestrator >/dev/null 2>"$T_TMP/sp.err"; assert_status "registering with --self after the delegate file expired" $? 0
+[ ! -e "$P/panes/app-mcp.json" ] && ok "...removes the hub's MCP file" || bad "an expired start left the hub's MCP file"
+mkdel
 
 # ---- hm-hub: only the hub the owner's file names, in its own marked Claude, and never through --mode ----
 rm -f "$H/app/.hivemind/team.json"; rm -rf "$H/app/.hivemind/team"
@@ -118,6 +127,7 @@ jq -nc --arg h "$H/app" '{projects:[{name:"app", home:$h, repos:[$h]}]}' > "$H2/
 hh0() { (cd "$H" && env node "$NCH" "$DB/hm-hub" "$@" 2>"$T_TMP/hh.err"); }
 t1=$(hh "$NCH" task app --text "First"); t1=${t1%%$'\t'*}
 hh "$NCH" start app "$t1" --mode bypassPermissions --still 2 --max-wait 15 >/dev/null; assert_status "hm-hub start --mode bypassPermissions is refused, whoever asks" $? 4
+assert_contains "...by its own rule, not by the check that follows it" "$(cat "$T_TMP/hh.err")" "never given with --mode"
 hh "$NCH" start nope "$t1" --mode bypassPermissions >/dev/null; assert_status "...before the project is even looked up" $? 4
 up=$(hh0 start app "$t1" --mode auto --still 2 --max-wait 15); assert_status "a hub that was not started with the marker starts in the owner's mode, as today" $? 0
 sc=$(screen "$up"); assert_contains "...auto" "$sc" "ARGV: auto"
@@ -127,6 +137,9 @@ printf 'hivemind-delegate 1\nhub=%s\nuntil=%s\nmcp=docs\n' "$H2" "$((NOW + 3600)
 hh "$NCH" start app "$t1" --mode auto --still 2 --max-wait 15 >/dev/null; assert_status "a delegate file that names another hub gives this hub no bypass" $? 4
 assert_contains "...says so" "$(cat "$T_TMP/hh.err")" "does not name this hub"
 mkdel
+hh "$NCP" start app "$t1" --mode auto --still 2 --max-wait 15 >/dev/null; assert_status "a marked Claude that is not the hub's, running hm-hub start while the owner is away" $? 4
+assert_contains "...is refused as another session" "$(cat "$T_TMP/hh.err")" "another session"
+assert_eq "...and no orchestrator was launched" "$(hm_tmux list-windows -a -F '#{window_name}' 2>/dev/null | grep -c '^orchestrator$')" "0"
 hp=$(hh "$NCH" start app "$t1" --mode auto --still 2 --max-wait 15); assert_status "a marked hub starts an orchestrator while the owner is away" $? 0
 sc=$(screen "$hp")
 assert_contains "...in bypass" "$sc" "ARGV: bypassPermissions"
@@ -141,7 +154,9 @@ hh "$NCH" start app "$t1" --mode auto --still 2 --max-wait 15 >/dev/null; assert
 [ ! -e "$P/panes/app-mcp.json" ] && ok "...leaves no MCP file behind" || bad "a refused start left an MCP file"
 hm_tmux kill-pane -t "$hp"; sleep 0.5
 mkdel "$((NOW - 10))"
+printf '{"mcpServers":{"docs":{}}}\n' > "$P/panes/app-mcp.json"; chmod 600 "$P/panes/app-mcp.json"
 hp=$(hh "$NCH" start app "$t1" --mode auto --still 2 --max-wait 15); assert_status "the owner back (the file expired): the same start runs in the owner's mode" $? 0
+[ ! -e "$P/panes/app-mcp.json" ] && ok "...and the MCP file of the earlier bypass start is removed" || bad "a start not in bypass left an earlier MCP file"
 sc=$(screen "$hp")
 assert_contains "...auto" "$sc" "ARGV: auto"
 assert_contains "...with no marker" "$sc" "ENV2: HM_AWAY_BYPASS= HM_AWAY_HUB= HM_AWAY_MCP_ALLOW="
@@ -159,6 +174,8 @@ hh "$NCH" wake app --mode auto --still 2 --max-wait 15 >/dev/null; assert_status
 assert_contains "...says it is running, and whose pid" "$(cat "$T_TMP/hh.err")" "conversation is already open in a live session (pid $holder): it is running; nothing was started."
 assert_eq "...nothing was started" "$(hm_tmux list-windows -a -F '#{window_name}' 2>/dev/null | grep -c '^orchestrator$')" "0"
 kill "$holder" 2>/dev/null; rm -f "$CLAUDE_CONFIG_DIR/sessions/$holder.json"; sleep 0.3
+hh "$NCP" wake app --mode auto --still 2 --max-wait 15 >/dev/null; assert_status "a marked Claude that is not the hub's, running hm-hub wake while the owner is away" $? 4
+assert_contains "...is refused as another session" "$(cat "$T_TMP/hh.err")" "another session"
 wp=$(hh "$NCH" wake app --mode auto --still 2 --max-wait 15); assert_status "a wake while the owner is away" $? 0
 sc=$(screen "$wp")
 assert_contains "...resumes its own conversation" "$sc" "ARGV: --resume"

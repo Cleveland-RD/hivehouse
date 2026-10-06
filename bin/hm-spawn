@@ -140,9 +140,17 @@ if [ "$self" = 1 ]; then
     hm_is_session_name "$hub" || hub=""
   fi
   register "$pane" "$socket" || exit $?
-  # an orchestrator the hub launched in bypass was given an MCP file beside its pane record: it lives with the team from here
-  if hm_delegate_for_project "$ROOT" && [ -f "$HM_DG_HUB/.hivemind-hub/panes/$HM_DG_PROJECT-mcp.json" ]; then
-    mkdir -p "$STATE/team/$agent" && mv "$HM_DG_HUB/.hivemind-hub/panes/$HM_DG_PROJECT-mcp.json" "$STATE/team/$agent/away-mcp.json"
+  # an orchestrator the hub launched in bypass was given an MCP file beside its pane record: it lives with the team from here. When the
+  # delegate file no longer says so (it expired before this registration) the file may hold server secrets and is removed from the hub's folder.
+  if hm_delegate_for_project "$ROOT"; then
+    amf="$HM_DG_HUB/.hivemind-hub/panes/$HM_DG_PROJECT-mcp.json"
+    if [ -f "$amf" ]; then
+      { mkdir -p "$STATE/team/$agent" && mv "$amf" "$STATE/team/$agent/away-mcp.json"; } \
+        || { rm -f "$amf"; echo "hm-spawn: could not move the hub's MCP file for $HM_DG_PROJECT into $STATE/team/$agent (removed it); the orchestrator has none" >&2; }
+    fi
+  elif [ -n "${HM_AWAY_HUB:-}" ] && [ -d "$HM_AWAY_HUB/.hivemind-hub" ]; then
+    amn=$(jq -r --arg h "$HM_AWAY_HUB" --arg r "$ROOT" '.projects[]? | select((.home | if startswith("/") then . else $h + "/" + . end) == $r) | .name' "$HM_AWAY_HUB/.hivemind-hub/projects.json" 2>/dev/null | head -1)
+    ! hm_is_agent_name "$amn" || rm -f "$HM_AWAY_HUB/.hivemind-hub/panes/$amn-mcp.json"
   fi
   # the session's own name, as agents are told to report to it (hm_orchestrator_name reads it live; this is its fallback)
   [ -n "$oname" ] || { oname=$(hm_session_record "$CLAUDE_PID" .name); hm_is_session_name "$oname" || oname=""; }

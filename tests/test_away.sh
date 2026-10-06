@@ -38,7 +38,7 @@ mkcl_node() {  # mkcl_node <bin dir>: the same stand-in as a node script named c
 }
 CLP=$(mkcl "$HM_REPO_ROOT/bin"); CLD=$(mkcl "$DB")
 # where ps -E can show a process's environment (a non-platform binary on macOS: node), the stand-in is a node script and the
-# marker is really read; elsewhere it is a bash script, the environment cannot be read, and recover warns and goes on
+# marker is really read; elsewhere it is a bash script, the environment cannot be read, and recover refuses
 READABLE=0; ep=$(t_env_probe HM_PROBE=1) || ep=""
 if [ -n "$ep" ]; then t_track "$ep"; sleep 0.5; hm_env_has "$ep" HM_PROBE=1 && READABLE=1; kill "$ep" 2>/dev/null; fi
 [ "$READABLE" = 1 ] && { CLN=$(mkcl_node "$DB"); NODEBIN=$(command -v node); }
@@ -244,5 +244,16 @@ assert_eq "...and nothing said on stderr" "$(cat "$T_TMP/m.err")" ""
 HM_AWAY_BYPASS=0 node "$CLN" recover --json >/dev/null 2>&1; assert_status "...a marker with another value is none" $? 4
 env -i HM_AWAY_BYPASS=1 "$NODEBIN" "$CLN" recover --json >/dev/null 2>"$T_TMP/m.err"; assert_status "recover from a Claude whose environment shows no variables at all (cannot be read)" $? 4
 assert_contains "...is refused, saying it cannot be read" "$(cat "$T_TMP/m.err")" "cannot be read"
+# trust, for a project with a second repository (distinct from its home) and a worktree of its home
+mk zeta; mk "zeta api"; git -C "$H/zeta" worktree add -q -b zwt "$H/zeta-wt"
+hub add zeta --home zeta --repo "zeta api" --repo zeta-wt >/dev/null; assert_status "a project with a second repository and a worktree of its home" $? 0
+jq -nc --arg t "$T_TMP" --arg h "$H" '{projects: ({($t):{hasTrustDialogAccepted:true}} + ([$h+"/alpha",$h+"/beta",$h+"/gamma",$h+"/delta",$h+"/zeta"] | map({(.):{hasTrustDialogAccepted:true}}) | add))}' > "$CLAUDE_CONFIG_DIR/.claude.json"
+out3=$(hub away --until +1h)
+assert_contains "away names a project's second repository that is not trusted, escaped for the shell the owner pastes it into" "$out3" "$H/zeta\\ api is not trusted by Claude Code yet"
+case "$out3" in *"zeta-wt is not trusted"*) bad "a worktree whose main repository is trusted is named" ;; *) ok "...and not a worktree of the trusted home" ;; esac
+jq -nc --arg t "$T_TMP" '{projects:{($t):{hasTrustDialogAccepted:true}}}' > "$CLAUDE_CONFIG_DIR/.claude.json"
+out4=$(hub away --until +1h)
+assert_eq "a worktree and its main repository listed together give one line (one key)" "$(printf '%s\n' "$out4" | grep -c "Start claude in $H/zeta once")" "1"
+rm -f "$CLAUDE_CONFIG_DIR/.claude.json"
 assert_eq "...hivemind ran no sudo anywhere" "$(cat "$HM_SUDO_LOG")" ""
 t_done

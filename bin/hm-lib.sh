@@ -653,7 +653,7 @@ hm_check_mode() {  # hm_check_mode <mode> <who> [<project root>]: exits 4 unless
 HM_BP_ENVS=(); HM_BP_ARGS=(); HM_AWAY_MCP_MISSING=""
 hm_write_away_mcp() {  # hm_write_away_mcp <file> <allow list> <project root>: the servers of the list, found; HM_AWAY_MCP_MISSING names the others
   local f="$1" allow="$2" root="$3" cj e srv def
-  cj="${CLAUDE_CONFIG_DIR:-${HOME:-/}}/.claude.json"; HM_AWAY_MCP_MISSING=""
+  cj=$(hm_claude_json); HM_AWAY_MCP_MISSING=""
   ( umask 077; jq -n '{mcpServers:{}}' > "$f.tmp$$" ) && mv "$f.tmp$$" "$f" && chmod 600 "$f" || return 1
   [ -n "$allow" ] || return 0
   for e in $(printf '%s' "$allow" | tr ',' ' '); do

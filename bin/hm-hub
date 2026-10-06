@@ -284,7 +284,8 @@ launch() {
   # bypass (MODE, resolved by project_mode): the marker, the hook's variables and only the MCP servers the owner allowed; nothing for any other mode.
   # The MCP file may hold server secrets, so it is written only once the start is not refused, and removed if the window does not open.
   mcpf="$root/.hivemind-hub/panes/$name-mcp.json"
-  if [ "$MODE" = bypassPermissions ]; then mkdir -p "$root/.hivemind-hub/panes"; hm_bypass_launch "$cwd" "$mcpf" || { rm -f "$mcpf"; hm_die 4 "cannot prepare the away MCP file for $name"; }; fi
+  if [ "$MODE" = bypassPermissions ]; then mkdir -p "$root/.hivemind-hub/panes"; hm_bypass_launch "$cwd" "$mcpf" || { rm -f "$mcpf"; hm_die 4 "cannot prepare the away MCP file for $name"; }
+  else rm -f "$mcpf"; fi   # an earlier bypass start's file may hold server secrets and is not this launch's
   c="exec $(printf '%q ' claude "$@" ${HM_BP_ARGS[@]+"${HM_BP_ARGS[@]}"})"
   envs=(-e "HIVEMIND_HOME=$(hm_home)" -e "HM_PROJECT=$cwd" ${HM_BP_ENVS[@]+"${HM_BP_ENVS[@]}"})
   [ -n "${HM_TMUX_SOCKET:-}" ] && envs+=(-e "HM_TMUX_SOCKET=$HM_TMUX_SOCKET")
@@ -800,7 +801,7 @@ away)
   [ "$epoch" -le $((now + 604800)) ] || hm_die 4 "away is at most 7 days: the hub's heartbeat does not outlive that"
   file=$(hm_delegate_path); dir=${file%/*}; grp=root; [ ! -d /System/Library ] || grp=wheel
   mcp="$root/.hivemind-hub/away-mcp.json"
-  cdir="${CLAUDE_CONFIG_DIR:-${HOME:-/}/.claude}"; cj="${CLAUDE_CONFIG_DIR:-${HOME:-/}}/.claude.json"
+  cdir="${CLAUDE_CONFIG_DIR:-${HOME:-/}/.claude}"; cj=$(hm_claude_json)
   hm_write_away_mcp "$mcp" "$allow" "$root" || hm_die 1 "cannot write $mcp"
   missing=$HM_AWAY_MCP_MISSING
   jq -nc --arg s "$(epoch_iso "$now")" --argjson u "$epoch" '{since:$s, until:$u}' > "$root/.hivemind-hub/away.json"
@@ -832,7 +833,7 @@ away)
     hm_claude_trusts "$t" && continue
     case "$seen" in *" $HM_TRUST_KEY "*) continue ;; esac
     seen="$seen$HM_TRUST_KEY "
-    echo "# Before leaving: $t is not trusted by Claude Code yet (it looks for $HM_TRUST_KEY in $cj). Start claude in $HM_TRUST_KEY once and accept the folder-trust dialog: it shows for every untrusted folder."
+    printf '# Before leaving: %q is not trusted by Claude Code yet (it looks for %q in %q). Start claude in %q once and accept the folder-trust dialog: it shows for every untrusted folder.\n' "$t" "$HM_TRUST_KEY" "$cj" "$HM_TRUST_KEY"
   done < <({ printf '%s\n' "$root"; jq -r '.projects[]? | .home, (.repos[]?)' "$root/.hivemind-hub/projects.json" 2>/dev/null; })
   echo "# Away mode needs permission_mode_local set to auto (the hub resolves it); a stricter value keeps its sessions out of bypass."
   echo "# MCP servers allowed for the hub: ${allow:-none}.${missing:+ Not found (not loaded):$missing.}"
