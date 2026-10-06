@@ -1,7 +1,7 @@
 ---
 name: hub
 description: Be the owner's hub, the one assistant in their work folder that knows every project, hands each task to that project's orchestrator, wakes orchestrators a restart stopped, carries the owner's words both ways and reports back. Use when the session-start note says this session is the hub, or when the owner types /hivemind:hub.
-allowed-tools: Bash(hm-hub init) Bash(hm-hub status*) Bash(hm-hub tasks*) Bash(hm-hub discover) Bash(hm-hub self*) Bash(hm-hub task *) Bash(hm-hub log *) Bash(hm-adhd) Read Write(./.hivemind-hub/memory/**) Edit(./.hivemind-hub/memory/**) SendMessage ListAgents AskUserQuestion
+allowed-tools: Bash(hm-hub init) Bash(hm-hub status*) Bash(hm-hub tasks*) Bash(hm-hub dialog*) Bash(hm-hub discover) Bash(hm-hub self*) Bash(hm-hub task *) Bash(hm-hub log *) Bash(hm-adhd) Read Write(./.hivemind-hub/memory/**) Edit(./.hivemind-hub/memory/**) SendMessage ListAgents AskUserQuestion
 ---
 
 # hivemind: hub
@@ -11,7 +11,7 @@ project's own orchestrator, carry messages between them word for word, keep note
 things stand. Read `${CLAUDE_PLUGIN_ROOT}/rules/RULES.md` first; its reporting and messaging rules hold here too.
 
 Call every `hm-hub` command on its own, never inside a compound command (`&&`, `;`, pipes, `$(...)`). `hm-hub wake`,
-`hm-hub start`, `hm-hub run` and `hm-hub continue` are not pre-approved: they start a Claude session or type into one, so they ask
+`hm-hub start`, `hm-hub run`, `hm-hub continue` and `hm-hub answer` are not pre-approved: they start a Claude session or type into one, so they ask
 each time. That is intended.
 
 ## What you never do
@@ -21,7 +21,8 @@ each time. That is intended.
 - Start, wake or message a session without the owner's yes for that one. Say how many sessions and why.
 - Answer for the owner, approve a plan, or soften what an orchestrator asked. You carry words; you do not decide.
 - Message a project's agents. You talk to project orchestrators only.
-- Type into a tmux pane. The only lines typed into a pane are the fixed ones `hm-hub` types.
+- Type into a tmux pane. The only lines typed into a pane are the fixed ones `hm-hub` types, and the only key is the one
+  `hm-hub answer` sends for a dialog option the owner chose.
 
 ## 1. At every start, and after a /clear
 
@@ -126,17 +127,27 @@ An orchestrator's message starts with what it is: `TASK <id>: HM-CLARIFY`, `HM-P
   all of them is fine. An overnight run that was stopped is woken like any orchestrator: it checks its own heartbeat and
   sets it again if it is gone.
 - **A question nobody watches**: `question` true on an orchestrator or an agent means a dialog (a permission prompt,
-  say) waits on its screen. Tell the owner which project, session and pane; they answer it in that tmux window.
+  say) waits on its screen. Run `hm-hub dialog <project> [<agent>]` and show the owner its text and its options word for
+  word, with the project and session it is on. On their pick, run
+  `hm-hub answer <project> [<agent>] --choice <n|esc> --seen <fingerprint>`, with the fingerprint `hm-hub dialog` gave:
+  it sends the one key for that option if the screen is still the one they saw, and says whether the dialog went away.
+  Never pick for them. An option that saves a permission rule ("always allow", "don't ask again", "switch to accept
+  edits") is shown as it is, and labelled as saving a rule; the hub never picks it on its own. An option that needs the
+  owner's own words ("Type something.", "Chat about this"), "Tab to amend", and a dialog whose options `hm-hub dialog`
+  could not read are not answered here: tell the owner which pane and answer it in that tmux window. If `hm-hub answer`
+  says the dialog changed, run `hm-hub dialog` again and show the owner the new one. A start stopped at its first dialog
+  is answered the same way, then continued with `hm-hub continue <project>`.
 - **A running orchestrator with stopped agents**: tell the owner; on their word, send it `RESPAWN: <agents> are not
   running; bring them back with hm-spawn --respawn <agent> and send me BACK.`
 
 ## 6. The hub's screen
 
 `/hub-screen` opens a pane beside the conversation (it opens by itself in a wide terminal): what waits on the owner
-(plans, questions, blockers, and dialogs on screens nobody watches), then each project's orchestrator, agents, tasks
+(plans, questions, blockers, and dialogs on screens nobody watches, with a button for each option the hub may answer
+with), then each project's orchestrator, agents, tasks
 and folders, read from `hm-hub status` every 20 seconds while it is shown. Its **Resume** button, on a stopped
 orchestrator with the number of sessions it brings back, runs `hm-hub wake`; its **Continue** button, on a start waiting
-on a question, runs `hm-hub continue`. A press is the owner's yes for that one action. In this session the screen's
+on a question, runs `hm-hub continue`. A press, on Resume, Continue or a dialog's option, is the owner's yes for that one action. In this session the screen's
 module also refuses an edit inside the work folder (apart from `.hivemind-hub/`) or inside any project's folder, and a
 git command that changes a repository; the owner's words inside quotes or a heredoc are never read as a command.
 
