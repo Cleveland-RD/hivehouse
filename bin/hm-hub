@@ -5,7 +5,8 @@
 # The hub's state is <work folder>/.hivemind-hub/: projects.json, hub.json (the hub's own session), tasks.jsonl (the
 # ledger, one event per line), tasks/<id>.md (each task's text), memory/<project>.md (the hub's notes), panes/<project>.json
 # (an orchestrator this hub started, with the line it is to be sent and whether it was: kept until that session registers,
-# so a start stopped at a question is continued rather than made twice). HM_HUB names the work folder; else the nearest
+# so a start stopped at a question is continued rather than made twice), runs/<project>.json (the same for a line `run` types
+# into a running orchestrator's own pane). HM_HUB names the work folder; else the nearest
 # folder at or above the cwd holding .hivemind-hub/.
 # Exit: 2 not found (no hub, project, task or record), 4 refused value or state, 5 a dialog needs a person, 1 never idle,
 # 64 usage.
@@ -13,7 +14,7 @@ set -u
 . "$(dirname "$0")/hm-lib.sh"
 # The ledger's vocabulary, declared once. A note never moves a task's state; done and cancelled close it; a plan to
 # approve, a question and a blocker wait on the owner.
-HUB_EVENTS="asked handed plan question answered blocked done cancelled note"
+HUB_EVENTS="asked handed plan question answered blocked overnight cleanup done cancelled note"
 HUB_CLOSED="done cancelled"
 HUB_NEEDS_OWNER="plan question blocked"
 HUB_CLOSED_JSON=$(printf '%s' "$HUB_CLOSED" | jq -Rc 'split(" ")')
@@ -32,7 +33,9 @@ USAGE="usage: hm-hub init
        hm-hub log <task id> <event> [--note <text>]    events: $HUB_EVENTS
        hm-hub tasks [<project>] [--open] [--json]
        hm-hub wake <project> [--mode <m>] [--still <s>] [--max-wait <s>]
-       hm-hub start <project> <task id> [--model <m>] [--mode <m>] [--still <s>] [--max-wait <s>]
+       hm-hub start <project> <task id> [--overnight] [--model <m>] [--mode <m>] [--still <s>] [--max-wait <s>]
+       hm-hub run <project> overnight <task id> [--still <s>] [--max-wait <s>]
+       hm-hub run <project> cleanup <task id> [--disk] [--still <s>] [--max-wait <s>]
        hm-hub continue <project> [--still <s>] [--max-wait <s>]
        hm-hub naming --session <session id>"
 
@@ -214,26 +217,32 @@ launch() {
   unlock
   finish "$root" "$name"
 }
-# finish <hub root> <project>: once the recorded pane is idle, types its line and marks it sent (a start's task is logged as
-# handed). A question on its screen is never answered: it says where, and continue picks it up once the owner has.
+# finish <hub root> <project> [panes|runs]: once the recorded pane is idle, types its line and marks it sent; each kind logs
+# its own event with its task (a start is handed, a run is overnight or cleanup). The pane is reached on the server the
+# record names. A question on its screen is never answered: it says where, and continue picks it up once the owner has.
 finish() {
-  local root="$1" name="$2" f pane line rc
-  f="$root/.hivemind-hub/panes/$name.json"; pane=$(hm_json_get "$f" .pane); line=$(hm_json_get "$f" .line)
+  local root="$1" name="$2" dir="${3:-panes}" f pane line rc socket kind task
+  f="$root/.hivemind-hub/$dir/$name.json"; pane=$(hm_json_get "$f" .pane); line=$(hm_json_get "$f" .line); socket=$(hm_json_get "$f" .socket)
   case "$line" in ''|*$'\n'*) hm_die 4 "the line recorded for $name is not one hivemind will type" ;; esac
-  wait_idle "$pane" "$STILL" "$MAXWAIT"; rc=$?
+  wait_idle "$pane" "$STILL" "$MAXWAIT" "$socket"; rc=$?
   case "$rc" in
     0) ;;
     3) echo "hivemind: a question is on the screen of pane $pane ($name): answer it there, then run hm-hub continue $name; nothing was typed" >&2; exit 5 ;;
     *) echo "hivemind: pane $pane ($name) never went idle within ${MAXWAIT}s; nothing was typed; hm-hub continue $name tries again" >&2; exit 1 ;;
   esac
-  type_line "$pane" "$line"
+  type_line "$pane" "$line" "$socket"
   lock "$root"
   jq '.typed = true' "$f" > "$f.tmp$$" && mv "$f.tmp$$" "$f"
-  [ "$(hm_json_get "$f" .kind)" != start ] || append_event "$root" "$(hm_json_get "$f" .task)" "$name" handed "started $name-orchestrator in pane $pane"
+  kind=$(hm_json_get "$f" .kind); task=$(hm_json_get "$f" .task)
+  case "$kind" in
+    start) append_event "$root" "$task" "$name" handed "started $name-orchestrator in pane $pane" ;;
+    overnight|cleanup) append_event "$root" "$task" "$name" "$kind" "sent to $name's orchestrator in pane $pane" ;;
+  esac
   unlock
   echo "$pane"
 }
-type_line() { hm_tmux send-keys -t "$1" -l "$2"; hm_tmux send-keys -t "$1" Enter; }   # type_line <pane> <fixed line>
+type_line() { hm_tmux_on "${3:-}" send-keys -t "$1" -l "$2"; hm_tmux_on "${3:-}" send-keys -t "$1" Enter; }   # type_line <pane> <fixed line> [socket]
+overnight_line() { printf '/hivemind:overnight Task %s: read %s. It came from the owner through %s.' "$1" "$2" "$3"; }   # overnight_line <task id> <task file> <hub name>
 
 case "$cmd" in
 init)
@@ -465,7 +474,9 @@ wake)
 
 start)
   name="${1:-}"; id="${2:-}"; [ -n "$name" ] && [ -n "$id" ] || hm_die 64 "$USAGE"; shift 2
-  start_opts 1 "$@"
+  overnight=0; sargs=()
+  for a in "$@"; do if [ "$a" = --overnight ]; then overnight=1; else sargs+=("$a"); fi; done
+  start_opts 1 ${sargs[@]+"${sargs[@]}"}
   root=$(hub_root) || exit $?
   need_project "$root" "$name"
   hn=$(need_hub_name "$root") || exit $?
@@ -482,7 +493,51 @@ start)
   hm_is_typed_path "$tf" || hm_die 4 "the task's path is not one hivemind will type: $tf"
   project_mode "$HOME_DIR"
   args=(--name "$name-orchestrator"); [ -z "$MODEL" ] || args+=(--model "$MODEL"); [ -z "$MODE" ] || args+=(--permission-mode "$MODE")
-  launch "$root" "$name" start "$HOME_DIR" "/hivemind:start Task $id: read $tf. It came from the owner through $hn." "$id" "${args[@]}" ;;
+  if [ "$overnight" = 1 ]; then sline=$(overnight_line "$id" "$tf" "$hn"); else sline="/hivemind:start Task $id: read $tf. It came from the owner through $hn."; fi
+  launch "$root" "$name" start "$HOME_DIR" "$sline" "$id" "${args[@]}" ;;
+
+run)
+  # the two owner-only skills, typed into the project's running orchestrator: only a line this script builds, only when the
+  # orchestrator is registered and alive, never while a task waits on the owner, and once (its own record, runs/<project>.json)
+  name="${1:-}"; skill="${2:-}"; id="${3:-}"; [ -n "$name" ] && [ -n "$skill" ] && [ -n "$id" ] || hm_die 64 "$USAGE"; shift 3
+  case "$skill" in overnight|cleanup) ;; *) hm_die 64 "$USAGE" ;; esac
+  disk=""; rargs=()
+  for a in "$@"; do if [ "$a" = --disk ]; then disk=" --disk"; else rargs+=("$a"); fi; done
+  [ -z "$disk" ] || [ "$skill" = cleanup ] || hm_die 64 "$USAGE"
+  start_opts 0 ${rargs[@]+"${rargs[@]}"}
+  [ -z "$MODE" ] || hm_die 64 "$USAGE"
+  root=$(hub_root) || exit $?
+  need_project "$root" "$name"
+  hn=$(need_hub_name "$root") || exit $?
+  st=$(task_state "$root" "$id"); [ -n "$st" ] || hm_die 2 "no task $id in this hub"
+  [ "$(jq -r --arg i "$id" 'select(.id == $i) | .project' "$root/.hivemind-hub/tasks.jsonl" | head -1)" = "$name" ] || hm_die 4 "task $id is not $name's"
+  in_list "$st" "$HUB_CLOSED" && hm_die 4 "task $id is $st"
+  in_list "$st" "$HUB_NEEDS_OWNER" && hm_die 4 "task $id waits on the owner ($st): nothing is run until it is answered"
+  orch_state "$root" "$name" "$HOME_DIR"
+  case "$O_STATE" in
+    running) ;;
+    stopped) hm_die 4 "$name's orchestrator is stopped: wake it first with hm-hub wake $name" ;;
+    none) hm_die 4 "$name has no orchestrator: start one first with hm-hub start $name $id" ;;
+    unregistered) hm_die 4 "$name's orchestrator is running as $O_NAME but is not registered with hivemind: ask it to run hm-spawn --self --agent orchestrator --hub $hn first" ;;
+    *) hm_die 4 "cannot tell whether $name's orchestrator is running; nothing was typed" ;;
+  esac
+  tf="$root/.hivemind-hub/tasks/$id.md"
+  hm_is_typed_path "$tf" || hm_die 4 "the task's path is not one hivemind will type: $tf"
+  entry=$(hm_self_entry "$HOME_DIR")
+  rsocket=$(printf '%s' "$entry" | jq -r '.socket // empty'); rpane=$(printf '%s' "$entry" | jq -r '.pane // empty')
+  [ -n "$rpane" ] || hm_die 4 "$name's orchestrator has no pane recorded"
+  if [ "$skill" = overnight ]; then rline=$(overnight_line "$id" "$tf" "$hn"); else rline="/hivemind:cleanup$disk"; fi
+  rf="$root/.hivemind-hub/runs/$name.json"
+  lock "$root"
+  if [ -f "$rf" ] && sending "$rf"; then hm_die 4 "another hm-hub run is typing into $name's orchestrator; it reports when it is done"; fi
+  ident=$(hm_pane_identity "$rsocket" "$rpane") || hm_die 4 "cannot read $name's orchestrator pane $rpane"
+  mkdir -p "$root/.hivemind-hub/runs"
+  jq -nc --arg p "$rpane" --arg s "$rsocket" --arg i "${ident%%$'\t'*}" --arg t "${ident#*$'\t'}" --arg k "$skill" --arg l "$rline" --arg task "$id" --arg at "$(hm_now)" \
+    --arg sp "$$" --arg ss "$(hm_lstart $$)" \
+    '{pane:$p, socket:$s, pane_pid:$i, pane_started:$t, kind:$k, line:$l, typed:false, sender_pid:$sp, sender_started:$ss, at:$at, task:$task}' \
+    > "$rf"
+  unlock
+  finish "$root" "$name" runs ;;
 
 continue)
   name="${1:-}"; [ -n "$name" ] || hm_die 64 "$USAGE"; shift
@@ -492,6 +547,15 @@ continue)
   need_project "$root" "$name"
   f="$root/.hivemind-hub/panes/$name.json"
   lock "$root"
+  # a run stopped at a dialog is picked up here, before any start record
+  rf="$root/.hivemind-hub/runs/$name.json"
+  if [ -f "$rf" ] && [ "$(hm_json_get "$rf" .typed)" != true ] && ! sending "$rf" \
+     && hm_recorded_pane_is "$(hm_json_get "$rf" .socket)" "$(hm_json_get "$rf" .pane)" "$(hm_json_get "$rf" .pane_pid)" "$(hm_json_get "$rf" .pane_started)"; then
+    jq --arg sp "$$" --arg ss "$(hm_lstart $$)" '.sender_pid = $sp | .sender_started = $ss' "$rf" > "$rf.tmp$$" && mv "$rf.tmp$$" "$rf"
+    unlock
+    finish "$root" "$name" runs
+    exit $?
+  fi
   pending "$root" "$name"; case $? in
     1) hm_die 2 "this hub has started nothing for $name that is still waiting" ;;
     2) hm_die 4 "cannot tell whether the pane this hub started for $name is still there" ;;

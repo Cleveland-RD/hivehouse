@@ -216,6 +216,88 @@ fp=$(head -1 "$T_TMP/five.out")
 assert_eq "...its line typed once" "$(hm_tmux capture-pane -p -J -S - -t "$fp" | grep -c "GOT: /hivemind:start Task $t5")" "1"
 assert_eq "...and handed once" "$(jq -r --arg i "$t5" 'select(.id == $i and .event == "handed") | .id' "$P/tasks.jsonl" | grep -c .)" "1"
 
+# ---- run: the two owner-only skills, typed into a running orchestrator's own pane (on the server it is recorded on) ----
+mk ru; hub add ru --home ru >/dev/null; RU="$H/ru/.hivemind"; mkdir -p "$RU"
+SB="$T_TMP/b.sock"   # a second tmux server: a registered orchestrator's pane is not always on hivemind's own
+ru_pane() {  # ru_pane <fake claude mode>: a fresh pane on that server, recorded as ru's orchestrator (a stand-in process for its Claude)
+  tmux -S "$SB" kill-server 2>/dev/null; sleep 0.3
+  RUPANE=$(env -u HIVEMIND_HOME tmux -S "$SB" new-session -d -P -F '#{pane_id}' -s rub -c "$H/ru" -e "HM_FAKE_CLAUDE=$1" 'exec claude --name ru-orchestrator') || return 1
+  t_track "$(tmux -S "$SB" display -p '#{pid}')"
+  ( exec -a claude sleep 300 ) >/dev/null 2>&1 & RUCLAUDE=$!; disown "$RUCLAUDE"; t_track "$RUCLAUDE"; sleep 0.3
+  local i; i=$(hm_pane_identity "$SB" "$RUPANE")
+  jq -nc --arg k "$SB" --arg p "$RUPANE" --arg pp "${i%%$'\t'*}" --arg ps "${i#*$'\t'}" --arg c "$RUCLAUDE" --arg cs "$(hm_lstart "$RUCLAUDE")" \
+    '{agents:[{name:"orchestrator", pane:$p, socket:$k, pane_pid:$pp, pane_started:$ps, claude_pid:$c, claude_started:$cs, name_full:"ru-orchestrator"}]}' > "$RU/team.json"
+  mkdir -p "$RU/team/orchestrator"; jq -nc --arg t "$HM_REPO_ROOT/tests/fixtures/transcript.jsonl" '{session_id:"sess-ru", transcript_path:$t}' > "$RU/team/orchestrator/session.json"
+}
+rscreen() { tmux -S "$SB" capture-pane -p -J -S - -t "$RUPANE"; }
+r1=$(idof "$(hub task ru --text "Work the queue")")
+hub run ru bogus "$r1" >/dev/null 2>&1; assert_status "run: only the two owner-only skills" $? 64
+hub run ru start "$r1" >/dev/null 2>&1; assert_status "...start is not one" $? 64
+hub run ru overnight >/dev/null 2>&1; assert_status "...a task id is required" $? 64
+hub run ru overnight "$r1" --disk >/dev/null 2>&1; assert_status "...--disk is cleanup's" $? 64
+hub run ru overnight "$r1" --mode auto >/dev/null 2>&1; assert_status "...no mode: the session is already running" $? 64
+hub run ru overnight ru-9 >/dev/null 2>&1; assert_status "...a task nobody asked" $? 2
+hub run tri cleanup "$t3" >/dev/null 2>"$T_TMP/r.err"; assert_status "...no orchestrator is recorded" $? 4
+assert_contains "......it says to start one" "$(cat "$T_TMP/r.err")" "hm-hub start tri"
+lp=$(live tri-orchestrator "$H/tri")
+hub run tri overnight "$t3" >/dev/null 2>"$T_TMP/r.err"; assert_status "...an orchestrator outside hivemind" $? 4
+assert_contains "......it says to register it" "$(cat "$T_TMP/r.err")" "hm-spawn --self"
+kill "$lp" 2>/dev/null; sleep 0.3
+ru_pane idle
+jq '.agents[0].claude_pid = "99999"' "$RU/team.json" > "$RU/team.json.t" && mv "$RU/team.json.t" "$RU/team.json"
+hub run ru overnight "$r1" --still 2 --max-wait 10 >/dev/null 2>"$T_TMP/r.err"; assert_status "...a stopped orchestrator" $? 4
+assert_contains "......it says to wake it" "$(cat "$T_TMP/r.err")" "hm-hub wake ru"
+ru_pane idle
+hub run ru overnight "$t3" --still 2 --max-wait 10 >/dev/null 2>&1; assert_status "...a task of another project, even for a running orchestrator" $? 4
+hub log "$r1" plan >/dev/null
+hub run ru overnight "$r1" --still 2 --max-wait 10 >/dev/null 2>&1; assert_status "...a task waiting on the owner is never hidden" $? 4
+hub log "$r1" answered >/dev/null
+assert_eq "...nothing was typed by any refusal" "$(rscreen | grep -c 'GOT:')" "0"
+# a start record left from when this hub started the orchestrator is not a start in progress: it never blocks a run
+mkdir -p "$P/panes"; ri=$(hm_pane_identity "$SB" "$RUPANE")
+jq -nc --arg p "$RUPANE" --arg s "$SB" --arg i "${ri%%$'\t'*}" --arg t "${ri#*$'\t'}" \
+  '{pane:$p, socket:$s, pane_pid:$i, pane_started:$t, kind:"start", line:"x", typed:true, at:"2026-10-06T00:00:00Z"}' > "$P/panes/ru.json"
+rp=$(hub run ru overnight "$r1" --still 2 --max-wait 15 2>"$T_TMP/r.err"); assert_status "run overnight" $? 0
+assert_eq "...into the orchestrator's pane, on its own server" "$rp" "$RUPANE"
+assert_contains "...the fixed line" "$(rscreen)" "GOT: /hivemind:overnight Task $r1: read $P/tasks/$r1.md. It came from the owner through hub."
+assert_eq "...typed once" "$(rscreen | grep -c 'GOT: /hivemind:overnight')" "1"
+assert_eq "...the task is in an overnight run, not waiting on the owner" "$(hub tasks --json | jq -r --arg i "$r1" '.[] | select(.id==$i) | [.state, .needs_owner] | map(tostring) | join(" ")')" "overnight false"
+assert_eq "...and still open" "$(hub tasks --open | grep -c "^$r1")" "1"
+hub run ru cleanup "$r1" --still 2 --max-wait 15 >/dev/null 2>&1; assert_status "run cleanup" $? 0
+assert_eq "...its fixed line" "$(rscreen | grep -c 'GOT: /hivemind:cleanup$')" "1"
+assert_eq "...the task's state" "$(hub tasks --json | jq -r --arg i "$r1" '.[] | select(.id==$i) | .state')" "cleanup"
+hub run ru cleanup "$r1" --disk --still 2 --max-wait 15 >/dev/null 2>&1; assert_status "run cleanup --disk" $? 0
+assert_eq "...its fixed line" "$(rscreen | grep -c 'GOT: /hivemind:cleanup --disk$')" "1"
+# a dialog on the screen: nothing typed, and continue goes on once the owner has answered it
+r2=$(idof "$(hub task ru --text "Second")"); ru_pane dialoganswer
+hub run ru overnight "$r2" --still 2 --max-wait 30 >/dev/null 2>"$T_TMP/r.err"; assert_status "a dialog on the orchestrator's screen" $? 5
+assert_contains "...it says how to go on" "$(cat "$T_TMP/r.err")" "hm-hub continue ru"
+assert_eq "...nothing was typed" "$(rscreen | grep -c 'GOT:')" "0"
+assert_eq "...nothing was logged" "$(hub tasks --json | jq -r --arg i "$r2" '.[] | select(.id==$i) | .state')" "asked"
+tmux -S "$SB" send-keys -t "$RUPANE" 1 Enter; sleep 0.5   # the owner answers it
+hub continue ru --still 2 --max-wait 15 >/dev/null 2>"$T_TMP/r.err"; assert_status "continue" $? 0
+assert_eq "...the line is typed once" "$(rscreen | grep -c "GOT: /hivemind:overnight Task $r2")" "1"
+assert_eq "...and logged" "$(hub tasks --json | jq -r --arg i "$r2" '.[] | select(.id==$i) | .state')" "overnight"
+hub continue ru >/dev/null 2>&1; assert_status "...nothing left to continue" $? 2
+# two runs at once: the second is refused while the first is still sending, so the line is typed once
+r3=$(idof "$(hub task ru --text "Third")"); ru_pane idle
+( cd "$H" && hm-hub run ru overnight "$r3" --still 6 --max-wait 30 >"$T_TMP/run3.out" 2>&1; echo "rc=$?" >> "$T_TMP/run3.out" ) &
+fs=$!; t_track "$fs"; sleep 3
+hub run ru overnight "$r3" --still 1 --max-wait 5 >/dev/null 2>"$T_TMP/r.err"; assert_status "a second run while the first is sending" $? 4
+wait "$fs"
+assert_contains "...the first finished" "$(cat "$T_TMP/run3.out")" "rc=0"
+assert_eq "...its line typed once" "$(rscreen | grep -c "GOT: /hivemind:overnight Task $r3")" "1"
+r4=$(idof "$(hub task ru --text "Fourth")"); hub log "$r4" done >/dev/null
+hub run ru overnight "$r4" --still 2 --max-wait 10 >/dev/null 2>&1; assert_status "a closed task" $? 4
+tmux -S "$SB" kill-server 2>/dev/null
+
+# ---- start --overnight: a project with no orchestrator starts on the overnight line ----
+mk ov; hub add ov --home ov >/dev/null; to=$(idof "$(hub task ov --text "Run the night")")
+op=$(hub start ov "$to" --overnight --still 2 --max-wait 15 2>/dev/null); assert_status "start --overnight" $? 0
+assert_contains "...its first line is the overnight line" "$(hm_tmux capture-pane -p -J -S - -t "$op")" "GOT: /hivemind:overnight Task $to: read $P/tasks/$to.md. It came from the owner through hub."
+case "$(hm_tmux capture-pane -p -J -S - -t "$op")" in *"/hivemind:start"*) bad "an overnight start also typed the start line" ;; *) ok "...not the start line" ;; esac
+assert_eq "...the task is handed" "$(hub tasks --json | jq -r --arg i "$to" '.[] | select(.id==$i) | .state')" "handed"
+
 # ---- the hub names its own session: Claude Code's record of it, and a name no other running session has ----
 mine=$(live "" "$H"); jq '.sessionId = "sess-hub" | .nameSource = "auto" | .name = "Read the docs"' "$CLAUDE_CONFIG_DIR/sessions/$mine.json" > "$T_TMP/m.json" && mv "$T_TMP/m.json" "$CLAUDE_CONFIG_DIR/sessions/$mine.json"
 n=$(hub naming --session sess-hub); assert_status "naming" $? 0
@@ -258,5 +340,5 @@ out=$(hk "$T_TMP"); assert_eq "nothing elsewhere" "$out" ""
 # ---- remove ----
 hub remove two >/dev/null; assert_status "remove" $? 0
 hub remove two >/dev/null 2>&1; assert_status "remove what is not there" $? 2
-assert_eq "...the others stay" "$(jq -r '[.projects[].name] | join(",")' "$P/projects.json")" "app,tri,five"
+assert_eq "...the others stay" "$(jq -r '[.projects[].name] | join(",")' "$P/projects.json")" "app,tri,five,ru,ov"
 cd /; t_teardown; t_done

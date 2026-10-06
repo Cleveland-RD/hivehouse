@@ -35,6 +35,9 @@ hm_pane_key() {  # hm_pane_key <socket> <pane id> -> filename-safe key
   printf '%s' "$1|$2" | shasum | cut -c1-16
 }
 hm_tmux() { if [ -n "${HM_TMUX_SOCKET:-}" ]; then tmux -S "$HM_TMUX_SOCKET" "$@"; else tmux "$@"; fi; }
+# hm_tmux_on <socket, or empty for hivemind's own server> <tmux args>...: the one way to reach a session's pane on the server
+# it was recorded on (team.json .socket), which is not always hivemind's own
+hm_tmux_on() { local s="$1"; shift; if [ -n "$s" ]; then tmux -S "$s" "$@"; else hm_tmux "$@"; fi; }
 # A pane is identified by its process and that process's start time: a pane id alone is handed out again by a restarted
 # tmux server. These three are the only place that is read and compared (the registry's writer and hook, the manifest
 # and cleanup use them).
@@ -160,7 +163,7 @@ HM_DIALOG_TEXT=("Do you trust" "Yes, proceed" "Esc to cancel" "Do you want to" "
 hm_pane_clean() {  # a pane captured with -e on stdin: drop dim runs (the placeholder), other escapes, and no-break spaces
   perl -pe 's/\e\[(?:[01];)?2m.*?(?:\e\[(?:0|22)?m|$)//g; s/\e\[[0-9;?]*[A-Za-z]//g; s/\xc2\xa0/ /g'
 }
-hm_pane_text() { hm_tmux capture-pane -p -e -J -t "$1" 2>/dev/null | hm_pane_clean; }   # hm_pane_text <pane>
+hm_pane_text() { hm_tmux_on "${2:-}" capture-pane -p -e -J -t "$1" 2>/dev/null | hm_pane_clean; }   # hm_pane_text <pane> [socket]
 hm_pane_box() {  # a cleaned pane on stdin: the prompt box and what is below it (from the second-to-last rule), else all of it
   local text top
   text=$(cat)
@@ -179,14 +182,14 @@ hm_pane_idle_text() {  # a cleaned pane on stdin: 0 an empty prompt and no dialo
   for p in "${HM_DIALOG_TEXT[@]}"; do case "$region" in *"$p"*) return 3 ;; esac; done
   printf '%s\n' "$text" | grep -v '^[[:space:]]*$' | tail -6 | grep -Eq '^(│| )*(>|❯)( |│)*$'
 }
-# wait_idle <pane> <seconds still> <max seconds>: 0 idle, 1 timed out, 3 a dialog on screen (the caller tells the
+# wait_idle <pane> <seconds still> <max seconds> [socket]: 0 idle, 1 timed out, 3 a dialog on screen (the caller tells the
 # orchestrator; nothing here ever types into a pane). A dialog that has been still as long as idle must be is told then,
 # not waited out: it does not go away by itself.
 wait_idle() {
   local prev="" cur text still=0 waited=0 rc=1
   while [ "$waited" -lt "$3" ]; do
-    hm_tmux display-message -p -t "$1" '#{pane_id}' >/dev/null 2>&1 || return 1   # the pane is gone
-    text=$(hm_pane_text "$1")
+    hm_tmux_on "${4:-}" display-message -p -t "$1" '#{pane_id}' >/dev/null 2>&1 || return 1   # the pane is gone
+    text=$(hm_pane_text "$1" "${4:-}")
     cur=$(printf '%s' "$text" | shasum)
     if [ "$cur" = "$prev" ]; then still=$((still + 1)); else still=0; fi
     prev="$cur"
@@ -374,7 +377,6 @@ hm_open_window() {
 hm_pane_question() {  # hm_pane_question <socket, or empty for hivemind's own server> <pane>: 0 when a dialog waits on its screen
   local t
   [ -n "$2" ] || return 1
-  if [ -n "$1" ]; then t=$(tmux -S "$1" capture-pane -p -e -J -t "$2" 2>/dev/null) || return 1
-  else t=$(hm_tmux capture-pane -p -e -J -t "$2" 2>/dev/null) || return 1; fi
+  t=$(hm_tmux_on "$1" capture-pane -p -e -J -t "$2" 2>/dev/null) || return 1
   printf '%s\n' "$t" | hm_pane_idle_text; [ $? -eq 3 ]
 }
