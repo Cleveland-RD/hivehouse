@@ -320,16 +320,33 @@ live "$CAP_PID" "$CAP_START" && ok "...it is left running" || bad "a session at 
 assert_eq "...and reported blocked, for the owner" "$(printf '%s' "$r" | jq -r '[.blocked[] | select(.action == "restart")][0].agents | join(",")')" "capd"
 assert_contains "...with its reason" "$(printf '%s' "$r" | jq -r '[.blocked[] | select(.action == "restart")][0].reason')" "3 times"
 r=$(rec --json); assert_eq "...said once: the next beat does not repeat it" "$(printf '%s' "$r" | jq -r '[.blocked[] | select(.action == "restart")] | length')" "0"
-: > "$rj"; jq -nc --argjson e "$((NOW - 90000))" '{epoch:$e, action:"restart", item:"beta/capd"}' >> "$rj"; ago beta/capd 0
-r=$(rec --json); assert_eq "restarts older than 24 hours do not count" "$(restarts "$r")" "capd"
-# an orchestrator is a session too: its Claude is the recorded claude pid, its screen the registered pane; it is woken, not respawned
-opane=$(hm_tmux new-window -d -P -F '#{pane_id}' -t keep: -n orch "exec bash -c \"cat '$WF'; exec sleep 600\""); sleep 1; oi=$(hm_pane_identity "$HM_TMUX_SOCKET" "$opane")
-jq --arg p "$opane" --arg pp "${oi%%$'\t'*}" --arg ps "${oi#*$'\t'}" '(.agents[] | select(.name == "orchestrator")) |= (.pane = $p | .pane_pid = $pp | .pane_started = $ps)' \
-  "$H/beta/.hivemind/team.json" > "$T_TMP/tj" && mv "$T_TMP/tj" "$H/beta/.hivemind/team.json"
-: > "$rj"; rec --json >/dev/null; ago beta/orchestrator 960
+: > "$rj"; for i in 1 2 3; do jq -nc --argjson e "$((NOW - 90000 - i))" '{epoch:$e, action:"restart", item:"beta/capd"}' >> "$rj"; done; ago beta/capd 0
+r=$(rec --json); assert_eq "three restarts older than 24 hours do not count" "$(restarts "$r")" "capd"
+# an orchestrator is a session too: its Claude is the recorded claude pid, its screen the registered pane (the Claude runs under that pane's
+# shell, as a --self orchestrator's does); it is woken, not respawned
+printf 'cat "$1"; (exec -a claude sleep 600) & echo $! > "$2"; wait; exec sleep 600\n' > "$T_TMP/orch.sh"
+opane=$(hm_tmux new-window -d -P -F '#{pane_id}' -t keep: -n orch "exec bash '$T_TMP/orch.sh' '$WF' '$T_TMP/oclaude.pid'"); sleep 1; oi=$(hm_pane_identity "$HM_TMUX_SOCKET" "$opane")
+OC=$(cat "$T_TMP/oclaude.pid"); t_track "$OC"; OCS=$(hm_lstart "$OC"); BPS=$(jq -r '.agents[] | select(.name == "orchestrator") | .claude_started' "$H/beta/.hivemind/team.json")
+setorch() {  # setorch <claude pid> <its start>: beta's orchestrator on the orch pane, with that Claude
+  jq --arg p "$opane" --arg pp "${oi%%$'\t'*}" --arg ps "${oi#*$'\t'}" --arg c "$1" --arg cs "$2" \
+    '(.agents[] | select(.name == "orchestrator")) |= (.pane = $p | .pane_pid = $pp | .pane_started = $ps | .claude_pid = $c | .claude_started = $cs)' \
+    "$H/beta/.hivemind/team.json" > "$T_TMP/tj" && mv "$T_TMP/tj" "$H/beta/.hivemind/team.json"
+}
+# a frozen screen on a pane the recorded Claude is not under (a stale or edited team.json) stops nothing
+setorch "$bpid" "$BPS"; : > "$rj"; rec --json >/dev/null; ago beta/orchestrator 960
+r=$(rec --json); live "$bpid" "$BPS" && ok "a frozen pane tied to a Claude that is not under it stops nothing" || bad "a Claude that is not under the frozen pane was stopped"
+assert_eq "...and no wake is asked" "$(act "$r" | tr ',' '\n' | grep -c wake:beta)" "0"
+setorch "$OC" "$OCS"; rec --json >/dev/null; ago beta/orchestrator 960
+# the daily cap of 3.3 applies to the wake that follows
+jq -nc --argjson e "$((NOW - 50))" '{epoch:$e, action:"start", item:"alpha"}' >> "$rj"; jq -nc --argjson e "$((NOW - 60))" '{epoch:$e, action:"wake", item:"gamma"}' >> "$rj"
+r=$(rec --json --max-starts 2); assert_eq "a hung orchestrator is not stopped when the daily cap of wakes is reached" "$(act "$r" | tr ',' '\n' | grep -c wake:beta)" "0"
+live "$OC" "$OCS" && ok "...it is left running" || bad "an orchestrator was stopped with no room to wake it"
+assert_contains "...and reported blocked, with the cap named" "$(printf '%s' "$r" | jq -r '[.blocked[] | select(.project == "beta")][0].reason')" "daily cap of 2"
+r=$(rec --json --max-starts 2); assert_eq "...said once" "$(blk "$r" | tr ',' '\n' | grep -c wake:beta)" "0"
+: > "$rj"
 r=$(rec --json); assert_eq "a hung orchestrator is stopped and woken for its open task" "$(act "$r" | tr ',' '\n' | grep -c wake:beta)" "1"
 assert_contains "...saying why" "$(printf '%s' "$r" | jq -r '[.actions[] | select(.action == "wake" and .project == "beta")][0].why')" "hung"
-live "$bpid" "$(jq -r '.agents[] | select(.name == "orchestrator") | .claude_started' "$H/beta/.hivemind/team.json")" && bad "the orchestrator's Claude is still running" || ok "...its Claude was stopped"
+live "$OC" "$OCS" && bad "the orchestrator's Claude is still running" || ok "...its Claude was stopped"
 hm_alive "${oi%%$'\t'*}" && ok "...its pane (the owner's shell) was not" || bad "the orchestrator's pane process was stopped: only its Claude is"
 assert_eq "...logged against the session" "$(jq -s '[.[] | select(.action == "restart" and .item == "beta/orchestrator")] | length' "$rj")" "1"
 assert_eq "...hivemind ran no sudo anywhere" "$(cat "$HM_SUDO_LOG")" ""

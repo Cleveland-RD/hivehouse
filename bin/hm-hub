@@ -337,8 +337,9 @@ session_target() {
 # (hung-state.json holds what each beat saw: the same process, the same time, and since when). Any other screen is unknown: never hung,
 # nothing kept. A hung session is stopped (hm_stop_hung) within the cap of 3 restarts of one session in 24 hours, and recover has
 # already refused unless the delegate file is valid and this hub's marker was read (away_hub_caller); the action that brings it
-# back is added. Sets HUNG_STOPPED=1 when it stopped one. It works on recover's variables: now, since, rjf, hstates, newhs, newrec,
-# actions, blocked.
+# back is added. An orchestrator is stopped only while recover's daily cap on sessions started or woken has room (3.3: the wake that
+# follows is one of them); a stop that did not take is blocked once and not tried again for 24 hours. Sets HUNG_STOPPED=1 when it
+# stopped one. It works on recover's variables: now, since, starts, max, rjf, hstates, newhs, newrec, actions, blocked.
 hung_try() {
   local n="$1" kind="$2" a="$3" task="$4" socket="$5" pane="$6" pid="$7" started="$8" key secs hsince tries seen mins why rc
   HUNG_STOPPED=0; key="$n/$a"
@@ -359,10 +360,20 @@ hung_try() {
       newrec="$newrec$(jq -nc --arg i "$key" --argjson e "$now" '{epoch:$e, action:"blocked-restart", item:$i}')"$'\n'; }
     return 0
   fi
+  if [ "$kind" = orchestrator ] && [ "$starts" -ge "$max" ]; then
+    seen=$(jq -s --arg i "$n" --argjson s "$since" '[.[] | select(.epoch > $s and .action == "blocked-wake" and .item == $i)] | length' "$rjf")
+    [ "$seen" -gt 0 ] || {
+      blocked=$(printf '%s' "$blocked" | jq -c --arg p "$n" --arg t "$task" --arg w "$why" --argjson m "$max" '. + [{action:"wake", project:$p, task:$t, reason:($w + ", and the daily cap of \($m) sessions started or woken is reached, so it was not stopped")}]')
+      newrec="$newrec$(jq -nc --arg i "$n" --argjson e "$now" '{epoch:$e, action:"blocked-wake", item:$i}')"$'\n'; }
+    return 0
+  fi
+  seen=$(jq -s --arg i "$key" --argjson s "$since" '[.[] | select(.epoch > $s and .action == "blocked-stop" and .item == $i)] | length' "$rjf")
+  [ "$seen" -eq 0 ] || return 0
   hm_stop_hung "$pid" "$started" "$socket" "$pane" "$secs"; rc=$?
   case "$rc" in
     0) ;;
     3) blocked=$(printf '%s' "$blocked" | jq -c --arg p "$n" --arg a "$a" --arg t "$task" --arg w "$why" '. + [{action:"restart", project:$p, agents:[$a], task:$t, reason:($w + " and did not stop when asked")}]')
+       newrec="$newrec$(jq -nc --arg i "$key" --argjson e "$now" '{epoch:$e, action:"blocked-stop", item:$i}')"$'\n'
        return 0 ;;
     *) return 0 ;;   # not that process any more, or its screen moved: not hung after all
   esac

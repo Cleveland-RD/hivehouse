@@ -173,10 +173,11 @@ from a file or an environment variable.
     to the orchestrator: `RESTART: <agents> stopped responding and were stopped; bring them back with hm-spawn --respawn
     <agent> --resume (add --mode ${user_config.permission_mode_local} once away has ended) and send me BACK.`. A hung
     orchestrator is a `wake` whose `why` says hung;
-  - `list`: a dialog waits on a session this hub started, or a hung session `recover` could not stop; note it for the owner
-    (you never answer a screen dialog while they are away);
+  - `list`: a dialog waits on a session this hub started; note it for the owner (you never answer a screen dialog while
+    they are away);
   - `blocked`: `hm-hub log <task id> blocked --note "<its reason>"` (a `restart` blocked with no task: tell the owner); the
-    task waits for the owner and other tasks go on.
+    task waits for the owner and other tasks go on. A hung session `recover` could not stop (`restart` blocked, "did not
+    stop when asked") is said once, and not tried again for 24 hours.
   If it prints `"away":false`, away has ended: `CronDelete` the job and tell the owner to restart you out of bypass (a
   `hm-hub back` line restarts you without it); until they have, ask in the conversation before every start, wake, run or
   answer, as in relay mode.
