@@ -94,19 +94,21 @@ set -m
   HM_FAKE_CLAUDE=busy bash -c 'bash "$1" --name x >/dev/null & sleep 300 & wait' _ "$HM_REPO_ROOT/tests/bin/claude" & gc=$!   # a group with a claude in it
   perl -e '$SIG{TERM} = "IGNORE"; sleep 300' & stubborn=$!
   sleep 300 & edited=$!
+  sleep 300 & locp=$!                                              # recorded in the caller's locale, as 0.2.0 wrote it (A83)
   HM_FAKE_CLAUDE=busy bash "$HM_REPO_ROOT/tests/bin/claude" --name y >/dev/null & cl=$!
   set +m
-  t_track $g $gc $stubborn $edited $cl
-  for p in $g $gc $stubborn $edited $cl; do t_track_group $p; done
+  t_track $g $gc $stubborn $edited $cl $locp
+  for p in $g $gc $stubborn $edited $cl $locp; do t_track_group $p; done
   bash -c 'sleep 300 & wait' & own=$!                                # P, the cleanup's own group
   sleep 300 & dead=$!
   t_track $own $dead
   sleep 1
   gchild=$(pgrep -P $g sleep); gcchild=$(pgrep -P $gc sleep); gcclaude=$(pgrep -P $gc -f tests/bin/claude); ownchild=$(pgrep -P $own sleep)
   t_track $gchild $gcchild $gcclaude $ownchild
-  for p in $g $gc $stubborn $edited $cl $own $dead $$; do hm-manifest add process pid=$p >/dev/null; done
+  for p in $g $gc $stubborn $edited $cl $locp $own $dead $$; do hm-manifest add process pid=$p >/dev/null; done
   kill $dead; wait $dead 2>/dev/null
   f=.hivemind/manifest.jsonl; jq -c --arg p "$edited" 'if .pid == $p then .started = "Mon Jan  1 00:00:00 2001" else . end' $f > $f.t && mv $f.t $f
+  jq -c --arg p "$locp" --arg s "$(ps -o lstart= -p "$locp" | sed 's/^ *//;s/ *$//')" 'if .pid == $p then .started = $s else . end' $f > $f.t && mv $f.t $f
   out=$(hm-cleanup --disk); assert_status "--disk with processes" $? 0
   alive $g && alive $edited && ok "--disk stops no process" || bad "--disk stopped a process"
   out=$(hm-cleanup --finish); assert_status "--finish with processes" $? 0
@@ -114,6 +116,7 @@ set -m
   ! alive $g && ok "a recorded process is stopped" || bad "a recorded process is still running"
   ! alive "$gchild" && ok "...with its whole group (A14)" || bad "its group was not signalled"
   ! alive $stubborn && ok "a process that ignores TERM is killed after the wait" || bad "a process that ignores TERM survived"
+  ! alive $locp && ok "a process recorded with its start time in the caller's locale is still recognised and stopped (A83)" || bad "a process recorded in the caller's locale was not recognised"
   alive $edited && ok "a process whose start time changed is left alone" || bad "stopped a process whose identity changed"
   assert_contains "...and skipped" "$out" "skipped process $edited by=owner (identity changed)"
   alive $cl && ok "a Claude process is never stopped" || bad "stopped a Claude process"
