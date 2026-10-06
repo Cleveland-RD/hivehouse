@@ -95,7 +95,7 @@ add_team() {  # add_team <project home>: its orchestrator and its agents, <proje
 }
 msg_check() {
   local to ref pid i n live role proj p h found=""
-  to=$(printf '%s' "$input" | jq -er '.tool_input.to | strings' 2>/dev/null) || deny "its SendMessage target cannot be read"
+  to=$(printf '%s' "$input" | jq -er '.tool_input.to' 2>/dev/null) || deny "its SendMessage target cannot be read"
   case "$to" in main) return 0 ;; esac
   # who the session is, and whom it may message
   hubpid=$(hm_json_get "$HUB/.hivemind-hub/hub.json" .claude_pid); hubst=$(hm_json_get "$HUB/.hivemind-hub/hub.json" .claude_started)
@@ -116,7 +116,6 @@ msg_check() {
   case "$to" in
     uds:*)
       pid=${to##*/}; pid=${pid%.sock}
-      case "$pid" in ''|*[!0-9]*) deny "the message target $to cannot be resolved" ;; esac
       for i in "${!ID_PIDS[@]}"; do
         [ "${ID_PIDS[$i]}" = "$pid" ] && hm_claude_is "$pid" "${ID_STARTS[$i]}" && return 0
       done
@@ -163,7 +162,7 @@ bash_check() {
     rt=${rt#>}; rt=${rt#>}; rt=${rt#|}; rt=${rt# }; rt=${rt//[[:space:]]/}
     [ -n "$rt" ] && protected "$rt" "$cwd" && deny "a redirect into Claude Code's settings, hook or plugin files is not allowed from an away session"
   done < <(printf '%s\n' "$s" | grep -oE '>[>|]?[[:space:]]*[^[:space:];&|()<>]+' 2>/dev/null || true)
-  s=${s//\$HOME/$HOME}; s=${s//~\//$HOME/}
+  s=${s//\$HOME/$HOME}
   # segments: one per simple command (separators become newlines); < > = tab become spaces for the token reading
   local segs; segs=$(printf '%s' "$s" | tr ';&|()`$' '\n\n\n\n\n\n\n' | tr '<>\t' '   ')
   set -f

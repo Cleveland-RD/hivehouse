@@ -55,7 +55,8 @@ hook '{"tool_name":"Bash","tool_input":{}}'; assert_status "Bash with no command
 hook '{"tool_name":"Bash","tool_input":{"command":5}}'; assert_status "Bash with a non-string command" $RC 2
 hook '{"tool_name":"Read","cwd":"/","tool_input":{}}'; assert_status "a tool outside its matcher" $RC 2
 r=$(printf '%s' "$(tc ls)" | HM_AWAY_BYPASS=1 HM_PROJECT="$proj" HM_AWAY_MCP_ALLOW= "$HOOK" 2>&1); assert_status "no hub folder in the env" $? 2
-r=$(printf '%s' "$(tc ls)" | HM_AWAY_BYPASS=1 HM_PROJECT="$proj" HM_AWAY_HUB="$T_TMP/none" HM_AWAY_MCP_ALLOW= "$HOOK" 2>&1); assert_status "hub folder with no .hivemind-hub" $? 2
+r=$(printf '%s' "$(tc ls)" | HM_AWAY_BYPASS=1 HM_PROJECT="$proj" HM_AWAY_HUB="$other" HM_AWAY_MCP_ALLOW= "$HOOK" 2>&1); assert_status "hub folder with no .hivemind-hub" $? 2
+r=$(printf '%s' "$(tc ls)" | HM_AWAY_BYPASS=1 HM_PROJECT="$proj" HM_AWAY_HUB="$T_TMP/none" HM_AWAY_MCP_ALLOW= "$HOOK" 2>&1); assert_status "hub folder that does not exist" $? 2
 mkdir -p "$T_TMP/nojq"; for b in bash cat dirname basename ps sed tr grep sleep; do ln -sf "$(command -v $b)" "$T_TMP/nojq/$b"; done
 r=$(printf '%s' "$(tc ls)" | PATH="$T_TMP/nojq" HM_AWAY_BYPASS=1 HM_PROJECT="$proj" HM_AWAY_HUB="$hub" HM_AWAY_MCP_ALLOW= "$(command -v bash)" "$HOOK" 2>&1); assert_status "jq missing" $? 2
 assert_contains "jq missing says so" "$r" "jq"
