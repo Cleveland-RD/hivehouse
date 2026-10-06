@@ -1,0 +1,265 @@
+#!/usr/bin/env bash
+# PreToolUse hook for a session hivemind launched in bypass while the owner is away (the launch marker). It denies (exit 2,
+# reason on stderr) what leaves the machine or lets the session out of the marker: MCP tools outside the owner's allowlist,
+# Bash that pushes, publishes or uploads, starts Claude or a tmux window, or writes Claude Code's settings and hook files,
+# SendMessage to anyone outside the session's own team, and Edit/Write to those same files.
+# It reads its session's launch env, which a Bash command cannot change: HM_AWAY_BYPASS=1 (the marker), HM_AWAY_HUB (the
+# hub's folder), HM_PROJECT (the project's home; the hub's own folder or nothing for the hub), HM_AWAY_MCP_ALLOW (the owner's
+# away_mcp_allow, comma-separated, may be empty). Without the marker it exits 0 at once, before anything is read. With it,
+# anything it cannot read or parse is a denial.
+# Matching is by tokens and is not complete (a script the session wrote, `$'\x67'it push` and `g${e}it push` get through).
+[ "${HM_AWAY_BYPASS:-}" = 1 ] || exit 0
+set -u
+# Any exit that is not 0 or an explicit denial (a bash error, an unset variable, a missing library) is a denial too: Claude Code
+# treats exit 1 as "no decision" and would let the tool run.
+trap 'rc=$?; [ "$rc" -eq 0 ] || { [ -n "${DENIED:-}" ] || echo "Refused by hivemind away mode: the check itself failed, which counts as a denial. Tell the owner." >&2; exit 2; }' EXIT
+: "${HOME:?HOME is not set}"
+. "$(dirname "$0")/hm-lib.sh" || exit 2
+
+deny() { DENIED=1; printf 'Refused by hivemind away mode (the owner is away; this is not a permission prompt): %s. Do not try to change settings, hooks or permissions to get round it; tell the owner what you needed.\n' "$1" >&2; exit 2; }
+CONF="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
+WRAPPERS=" command exec nohup env sudo doas time nice ionice timeout stdbuf builtin eval xargs sh bash zsh dash ksh setsid if then else elif do while until ! { "
+
+canon() {  # canon <path> <cwd>: absolute, ~ and $HOME expanded, dot segments collapsed, symlinks of an existing parent resolved
+  local p="$1" d out="" seg IFS=/ parts
+  case "$p" in "~") p="$HOME" ;; "~/"*) p="$HOME/${p#\~/}" ;; esac
+  p=${p//\$\{HOME\}/$HOME}; p=${p//\$HOME/$HOME}
+  case "$p" in /*) ;; *) p="$2/$p" ;; esac
+  set -f; parts=($p); set +f
+  for seg in ${parts[@]+"${parts[@]}"}; do
+    case "$seg" in ''|.) ;; ..) out=${out%/*} ;; *) out="$out/$seg" ;; esac
+  done
+  out=${out:-/}
+  d=$(dirname "$out")
+  if [ -d "$d" ]; then d=$(cd -P "$d" 2>/dev/null && pwd -P) && out="${d%/}/$(basename "$out")"; fi
+  printf '%s\n' "$out"
+}
+protected_one() {  # protected_one <canonical path>: 0 when Claude Code's settings, hook files, plugins or MCP config
+  local p="$1" b="${1##*/}" d="${1%/*}" c
+  c=$(canon "$CONF" /); h=$(canon "$HOME" /)
+  [ "$p" = "$h/.claude.json" ] && return 0
+  case "$b" in settings*.json) { [ "$d" = "$c" ] || [ "${d##*/}" = .claude ]; } && return 0 ;; esac
+  case "$b" in .mcp.json|hooks.json) return 0 ;; esac
+  case "$p" in "$c/plugins"|"$c/plugins/"*|*/.claude/hooks/*) return 0 ;; esac
+  [ -z "${CLAUDE_PLUGIN_ROOT:-}" ] || { r=$(canon "$CLAUDE_PLUGIN_ROOT" /); case "$p" in "$r"|"$r/"*) return 0 ;; esac; }
+  return 1
+}
+protected() { protected_one "$(canon "$1" "$2")"; }   # protected <path> <cwd>
+
+# --- inputs
+command -v jq >/dev/null 2>&1 || deny "jq is missing, so the tool call cannot be checked"
+input=$(cat) || deny "its input could not be read"
+tool=$(printf '%s' "$input" | jq -er '.tool_name | strings' 2>/dev/null) || deny "its input is not a tool call"
+cwd=$(printf '%s' "$input" | jq -r '.cwd // empty | strings' 2>/dev/null) || deny "its input could not be parsed"
+[ -n "$cwd" ] || cwd=$PWD
+[ -n "${HM_AWAY_HUB:-}" ] && [ -d "$HM_AWAY_HUB/.hivemind-hub" ] || deny "the hub's folder (HM_AWAY_HUB) is missing or unreadable"
+HUB=$(cd -P "$HM_AWAY_HUB" && pwd -P) || deny "the hub's folder cannot be read"
+allow=${HM_AWAY_MCP_ALLOW-}
+
+mcp_check() {
+  local e
+  IFS=, read -ra es <<< "$allow"
+  for e in ${es[@]+"${es[@]}"}; do
+    e=${e// /}; [ -n "$e" ] || continue
+    case "$e" in
+      mcp__*) [ "$tool" = "$e" ] && return 0 ;;
+      *) case "$tool" in "mcp__${e}__"?*) return 0 ;; esac ;;
+    esac
+  done
+  deny "$tool is not allowed while the owner is away (the owner's away_mcp_allow lists what is)"
+}
+
+# --- messages: only to the session's own hub and team, checked by name and by process
+declare -a ID_NAMES ID_PIDS ID_STARTS
+add_id() {  # add_id <name> <pid> <started>
+  [ -n "$1" ] || return 0
+  ID_NAMES+=("$1"); ID_PIDS+=("${2:-}"); ID_STARTS+=("${3:-}")
+}
+add_orchestrator() {  # add_orchestrator <project home>
+  local o pid st full live=""
+  o=$(hm_self_entry "$1"); [ -n "$o" ] || return 0
+  pid=$(printf '%s' "$o" | jq -r '.claude_pid // empty'); st=$(printf '%s' "$o" | jq -r '.claude_started // empty')
+  full=$(printf '%s' "$o" | jq -r '.name_full // empty')
+  [ -n "$pid" ] || return 0
+  live=$(hm_session_record "$pid" .name)
+  [ -z "$live" ] || add_id "$live" "$pid" "$st"
+  [ -z "$full" ] || add_id "$full" "$pid" "$st"
+}
+add_team() {  # add_team <project home>: its orchestrator and its agents, <project>-<agent>
+  local home="$1" a pp ps
+  add_orchestrator "$home"
+  while IFS=$'\x1f' read -r a pp ps; do
+    [ -n "$a" ] || continue
+    add_id "$(basename "$home")-$a" "$pp" "$ps"
+  done < <(jq -r '.agents[]? | [.name, .pane_pid, .pane_started] | map(. // "" | tostring) | join("\u001f")' "$home/.hivemind/team.json" 2>/dev/null)
+}
+msg_check() {
+  local to ref pid i n live role proj p h found=""
+  to=$(printf '%s' "$input" | jq -er '.tool_input.to | strings' 2>/dev/null) || deny "its SendMessage target cannot be read"
+  case "$to" in main) return 0 ;; esac
+  # who the session is, and whom it may message
+  hubpid=$(hm_json_get "$HUB/.hivemind-hub/hub.json" .claude_pid); hubst=$(hm_json_get "$HUB/.hivemind-hub/hub.json" .claude_started)
+  hubname=$(hm_json_get "$HUB/.hivemind-hub/hub.json" .name)
+  add_id "$hubname" "$hubpid" "$hubst"
+  proj=${HM_PROJECT:-}
+  if [ -n "$proj" ]; then proj=$(cd -P "$proj" 2>/dev/null && pwd -P) || deny "the project (HM_PROJECT) cannot be read"; fi
+  if [ -z "$proj" ] || [ "$proj" = "$HUB" ]; then
+    while IFS= read -r h; do
+      [ -n "$h" ] || continue
+      case "$h" in /*) ;; *) h="$HUB/$h" ;; esac
+      p=$(cd -P "$h" 2>/dev/null && pwd -P) || continue
+      add_orchestrator "$p"
+    done < <(jq -r '.projects[]?.home // empty' "$HUB/.hivemind-hub/projects.json" 2>/dev/null)
+  else
+    add_team "$proj"
+  fi
+  case "$to" in
+    uds:*)
+      pid=${to##*/}; pid=${pid%.sock}
+      case "$pid" in ''|*[!0-9]*) deny "the message target $to cannot be resolved" ;; esac
+      for i in "${!ID_PIDS[@]}"; do
+        [ "${ID_PIDS[$i]}" = "$pid" ] && hm_claude_is "$pid" "${ID_STARTS[$i]}" && return 0
+      done
+      deny "the message target $to is not the session's own hub or team" ;;
+  esac
+  n=$to
+  case "$n" in *" ["*"]") n=${n% \[*} ;; esac
+  # a name that a live session of another process also carries is not proof
+  live=""
+  for f in "$CONF"/sessions/*.json; do
+    [ -f "$f" ] || continue
+    pid=$(jq -r --arg n "$n" 'select(.name == $n) | .pid // empty' "$f" 2>/dev/null) || continue
+    [ -n "$pid" ] && hm_alive "$pid" || continue
+    found=1; live="$live $pid "
+  done
+  for i in "${!ID_NAMES[@]}"; do
+    [ "${ID_NAMES[$i]}" = "$n" ] || continue
+    hm_claude_is "${ID_PIDS[$i]}" "${ID_STARTS[$i]}" || continue
+    case "$live" in *[!\ ]*) ;; *) return 0 ;; esac   # no live record under the name: nothing to impersonate it
+    for pid in $live; do [ "$pid" = "${ID_PIDS[$i]}" ] || deny "another live session also carries the name $n"; done
+    return 0
+  done
+  # a raw in-process agent id stays inside the session, unless a live session is named so
+  if printf '%s' "$n" | grep -Eq '^a[A-Za-z0-9]+-[A-Za-z0-9-]+$'; then [ -z "$found" ] && return 0; fi
+  deny "the message target $to is not the session's own hub or team"
+}
+
+# --- files
+file_check() {
+  local f
+  f=$(printf '%s' "$input" | jq -er '.tool_input | (.file_path // .notebook_path) | strings' 2>/dev/null) || deny "its file path cannot be read"
+  protected "$f" "$cwd" && deny "Claude Code's settings, hook and plugin files cannot be changed from an away session"
+  return 0
+}
+
+# --- Bash
+bn() { local t=${1##*/}; printf '%s' "$t"; }
+bash_check() {
+  local cmd s seg tok toks ws i first second prev have_git="" have_push="" have_pub="" have_dock="" pkgm="" wr rt
+  cmd=$(printf '%s' "$input" | jq -er '.tool_input.command | strings' 2>/dev/null) || deny "its command cannot be read"
+  s=${cmd//\'/}; s=${s//\"/}; s=${s//\\/}
+  # redirect targets are looked at before the punctuation goes
+  while IFS= read -r rt; do
+    rt=${rt#>}; rt=${rt#>}; rt=${rt#|}; rt=${rt# }; rt=${rt//[[:space:]]/}
+    [ -n "$rt" ] && protected "$rt" "$cwd" && deny "a redirect into Claude Code's settings, hook or plugin files is not allowed from an away session"
+  done < <(printf '%s\n' "$s" | grep -oE '>[>|]?[[:space:]]*[^[:space:];&|()<>]+' 2>/dev/null || true)
+  s=${s//\$HOME/$HOME}; s=${s//~\//$HOME/}
+  # segments: one per simple command (separators become newlines); < > = tab become spaces for the token reading
+  local segs; segs=$(printf '%s' "$s" | tr ';&|()`$' '\n\n\n\n\n\n\n' | tr '<>\t' '   ')
+  set -f
+  while IFS= read -r seg; do
+    [ -n "${seg//[[:space:]]/}" ] || continue
+    ws=($seg)                                  # whitespace tokens, "name=value" kept whole
+    toks=(${seg//=/ })                         # A32 tokens
+    # the command word: past wrappers, their options, numbers after them and "name=value" prefixes
+    first=""; wr=""
+    for tok in ${ws[@]+"${ws[@]}"}; do
+      case "$tok" in *=*) [ -z "$first" ] && continue ;; esac
+      case "$WRAPPERS" in *" $tok "*) wr=1; continue ;; esac
+      case "$tok" in -*) continue ;; esac
+      if [ -n "$wr" ]; then case "$tok" in ''|*[!0-9]*) ;; *) continue ;; esac; fi
+      first=$tok; break
+    done
+    fb=$(bn "$first")
+    for tok in ${toks[@]+"${toks[@]}"}; do
+      case "$(bn "$tok")" in
+        git) have_git=1 ;;
+        ssh|scp) deny "$(bn "$tok") is not allowed while the owner is away" ;;
+        vercel|netlify) deny "$(bn "$tok") is not allowed while the owner is away" ;;
+        npm|pnpm|yarn) pkgm=1 ;;
+        docker) have_dock=1 ;;
+      esac
+      case "$tok" in push) have_push=1 ;; publish) have_pub=1 ;; esac
+    done
+    # command-position names
+    cmdw=$fb
+    if [ "$fb" = hm-slot ]; then
+      cmdw=""; prev=""
+      for tok in ${ws[@]+"${ws[@]}"}; do [ "$prev" = -- ] && { cmdw=$(bn "$tok"); break; }; prev=$tok; done
+    fi
+    case "$cmdw" in
+      hm-push) deny "hm-push is not allowed while the owner is away" ;;
+      hm-remote-sync) deny "hm-remote-sync is not allowed while the owner is away" ;;
+      claude) deny "starting Claude by hand is not allowed from an away session; hm-spawn and hm-hub start sessions" ;;
+    esac
+    local has_tmux="" has_start="" has_gh="" has_rsync="" has_curl="" has_wget="" has_write=""
+    for i in "${!toks[@]}"; do
+      tok=${toks[$i]}
+      case "$(bn "$tok")" in
+        tmux) has_tmux=1 ;;
+        gh) # every gh must be followed by a read-only pair
+          a=${toks[$((i+1))]-}; b=${toks[$((i+2))]-}
+          case "$a $b" in "pr view"|"pr list"|"pr status"|"pr diff"|"pr checks"|"run view"|"run list"|"issue view"|"issue list") ;;
+            *) deny "gh is allowed only for read-only forms while the owner is away" ;; esac ;;
+        rsync) has_rsync=1 ;;
+        curl) has_curl=1 ;;
+        wget) has_wget=1 ;;
+      esac
+      case "$tok" in new-window|neww|split-window|splitw|new-session|new|respawn-pane|respawnp|respawn-window|respawnw) has_start=1 ;; esac
+    done
+    [ -z "$has_tmux" ] || [ -z "$has_start" ] || deny "tmux windows and sessions are started by hm-spawn and hm-hub, not by an away session"
+    if [ -n "$has_rsync" ]; then
+      for tok in ${toks[@]+"${toks[@]}"}; do case "$tok" in *:*|-e|--rsh*) deny "rsync to a remote is not allowed while the owner is away" ;; esac; done
+    fi
+    if [ -n "$has_curl$has_wget" ]; then
+      for i in "${!toks[@]}"; do
+        tok=${toks[$i]}; nx=${toks[$((i+1))]-}
+        case "$tok" in
+          -X|--request|--method)
+            case "$nx" in GET|HEAD) ;; *) deny "curl and wget may only read while the owner is away" ;; esac ;;
+          -X?*) case "${tok#-X}" in GET|HEAD) ;; *) deny "curl and wget may only read while the owner is away" ;; esac ;;
+          --data*|--form*|--upload-file|--json|--post-data*|--post-file|--body-data|--body-file) deny "curl and wget may only read while the owner is away" ;;
+          --*) ;;
+          -*[dFTX]*) deny "curl and wget may only read while the owner is away" ;;
+        esac
+      done
+    fi
+    # a write into a protected file by a command that writes
+    case "$cmdw" in tee|cp|mv|rm|ln|install|dd|sed|perl|python|python3|node|ruby|truncate|touch|chmod|chown|patch|sponge) has_write=1 ;; esac
+    if [ -n "$has_write" ]; then
+      for tok in ${toks[@]+"${toks[@]}"}; do
+        case "$tok" in -*) continue ;; esac
+        protected "$tok" "$cwd" && deny "a command that writes cannot touch Claude Code's settings, hook or plugin files from an away session"
+      done
+    fi
+  done <<EOF
+$segs
+EOF
+  set +f
+  [ -z "$have_git$have_push" ] || { [ -n "$have_git" ] && [ -n "$have_push" ] && deny "git push is not allowed while the owner is away (a quoted \"push\" beside git counts: rephrase)"; }
+  [ -z "$pkgm" ] || [ -z "$have_pub" ] || deny "publishing a package is not allowed while the owner is away"
+  [ -z "$have_dock" ] || [ -z "$have_push" ] || deny "docker push is not allowed while the owner is away"
+  return 0
+}
+
+main() {
+  case "$tool" in
+    Bash) bash_check ;;
+    mcp__*) mcp_check ;;
+    SendMessage) msg_check ;;
+    Edit|Write|MultiEdit|NotebookEdit) file_check ;;
+    *) deny "$tool is not a tool this hook was set up for" ;;
+  esac
+}
+main
+exit 0

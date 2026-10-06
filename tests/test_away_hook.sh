@@ -1,0 +1,232 @@
+#!/usr/bin/env bash
+# hm-away-hook: the PreToolUse hook of a session launched in bypass while the owner is away. It reads the launch marker and
+# the launch env, never the Bash env; it matches by tokens and does not claim to be complete (A43).
+. "$(dirname "$0")/lib.sh"
+. "$HM_REPO_ROOT/bin/hm-lib.sh"
+t_setup
+proj=$(t_repo proj); hub="$T_TMP/hub"; mkdir -p "$hub/.hivemind-hub" "$proj/.hivemind"
+other=$(t_repo other); mkdir -p "$other/.hivemind"
+# Stand-ins for Claude sessions: an interpreter running a script named claude (what hm_is_claude reads as one).
+mkdir -p "$T_TMP/cl"; printf '#!/usr/bin/env bash\nfor i in $(seq 120); do sleep 1; done\n' > "$T_TMP/cl/claude"
+SP=""; SS=""
+spawn() {  # spawn <session name or empty>: sets SP (pid) and SS (start time); records the session as Claude Code does
+  bash "$T_TMP/cl/claude" & SP=$!; t_track "$SP"; sleep 0.2; SS=$(hm_lstart "$SP")
+  mkdir -p "$CLAUDE_CONFIG_DIR/sessions"
+  [ -z "$1" ] || jq -nc --argjson p "$SP" --arg n "$1" '{pid:$p,name:$n}' > "$CLAUDE_CONFIG_DIR/sessions/$SP.json"
+}
+spawn hub1; HP=$SP; HS=$SS
+spawn proj-orchestrator; OP=$SP; OS=$SS
+spawn proj-implementer; IP=$SP; IS=$SS
+spawn other-orchestrator; XP=$SP; XS=$SS
+sleep 1.1; spawn stranger; SGP=$SP; SGS=$SS
+jq -nc --arg p "$HP" --arg s "$HS" '{name:"hub1",claude_pid:$p,claude_started:$s}' > "$hub/.hivemind-hub/hub.json"
+jq -nc --arg a "$proj" --arg b "$other" '{projects:[{name:"proj",home:$a,repos:[]},{name:"other",home:$b,repos:[]}]}' > "$hub/.hivemind-hub/projects.json"
+jq -nc --arg op "$OP" --arg os "$OS" --arg ip "$IP" --arg is "$IS" --arg sg "$SGP" \
+  '{agents:[{name:"orchestrator",claude_pid:$op,claude_started:$os,name_full:"proj-orchestrator",pane_pid:"1",pane_started:"x"},
+            {name:"implementer",pane_pid:$ip,pane_started:$is},
+            {name:"reused",pane_pid:$sg,pane_started:"Mon Jan  1 00:00:00 2001"}]}' > "$proj/.hivemind/team.json"
+jq -nc --arg op "$XP" --arg os "$XS" '{agents:[{name:"orchestrator",claude_pid:$op,claude_started:$os,name_full:"other-orchestrator",pane_pid:"1",pane_started:"x"}]}' > "$other/.hivemind/team.json"
+HOOK="${HM_AWAY_HOOK_TEST:-$HM_REPO_ROOT/bin/hm-away-hook}"
+ALLOW=""; ROLE=proj
+hook() {  # hook <json>: the hook as a marked session of $ROLE; sets RC and ERR
+  local pr="$proj"; [ "$ROLE" != hub ] || pr=""
+  ERR=$(printf '%s' "$1" | HM_AWAY_BYPASS=1 HM_PROJECT="$pr" HM_AWAY_HUB="$hub" HM_AWAY_MCP_ALLOW="$ALLOW" "$HOOK" 2>&1 >/dev/null); RC=$?
+}
+tc() { jq -nc --arg c "$1" --arg d "$proj" '{tool_name:"Bash",cwd:$d,tool_input:{command:$c}}'; }
+denied()  { hook "$(tc "$2")"; [ "$RC" -eq 2 ] && [ -n "$ERR" ] && ok "$1" || bad "$1: exit $RC [$ERR]"; }
+allowed() { hook "$(tc "$2")"; [ "$RC" -eq 0 ] && ok "$1" || bad "$1: exit $RC [$ERR]"; }
+tool_denied()  { hook "$2"; [ "$RC" -eq 2 ] && [ -n "$ERR" ] && ok "$1" || bad "$1: exit $RC [$ERR]"; }
+tool_allowed() { hook "$2"; [ "$RC" -eq 0 ] && ok "$1" || bad "$1: exit $RC [$ERR]"; }
+mcp() { jq -nc --arg t "$1" '{tool_name:$t,cwd:"/",tool_input:{}}'; }
+msg() { jq -nc --arg t "$1" '{tool_name:"SendMessage",cwd:"/",tool_input:{to:$t,message:"hi"}}'; }
+fileop() { jq -nc --arg t "$1" --arg f "$2" --arg d "$proj" '{tool_name:$t,cwd:$d,tool_input:{file_path:$f,content:"x"}}'; }
+
+echo "-- no marker: exits 0 at once, whatever it is given"
+r=$(printf 'not json' | env -u HM_AWAY_BYPASS "$HOOK" 2>&1); assert_status "no marker, bad input" $? 0
+assert_eq "no marker, silent" "$r" ""
+printf '%s' "$(tc 'git push')" | env -u HM_AWAY_BYPASS "$HOOK" 2>&1; assert_status "no marker, git push" $? 0
+printf '%s' "$(tc 'git push')" | HM_AWAY_BYPASS=0 "$HOOK" 2>&1; assert_status "marker 0 is no marker" $? 0
+printf '%s' "$(tc 'git push')" | HM_AWAY_BYPASS= "$HOOK" 2>&1; assert_status "empty marker is no marker" $? 0
+
+echo "-- fail closed (A9)"
+hook 'not json'; assert_status "marker, input not json" $RC 2
+hook '{"cwd":"/"}'; assert_status "marker, no tool name" $RC 2
+hook '{"tool_name":"Bash","tool_input":{}}'; assert_status "Bash with no command" $RC 2
+hook '{"tool_name":"Bash","tool_input":{"command":5}}'; assert_status "Bash with a non-string command" $RC 2
+hook '{"tool_name":"Read","cwd":"/","tool_input":{}}'; assert_status "a tool outside its matcher" $RC 2
+r=$(printf '%s' "$(tc ls)" | HM_AWAY_BYPASS=1 HM_PROJECT="$proj" HM_AWAY_MCP_ALLOW= "$HOOK" 2>&1); assert_status "no hub folder in the env" $? 2
+r=$(printf '%s' "$(tc ls)" | HM_AWAY_BYPASS=1 HM_PROJECT="$proj" HM_AWAY_HUB="$T_TMP/none" HM_AWAY_MCP_ALLOW= "$HOOK" 2>&1); assert_status "hub folder with no .hivemind-hub" $? 2
+mkdir -p "$T_TMP/nojq"; for b in bash cat dirname basename ps sed tr grep sleep; do ln -sf "$(command -v $b)" "$T_TMP/nojq/$b"; done
+r=$(printf '%s' "$(tc ls)" | PATH="$T_TMP/nojq" HM_AWAY_BYPASS=1 HM_PROJECT="$proj" HM_AWAY_HUB="$hub" HM_AWAY_MCP_ALLOW= "$(command -v bash)" "$HOOK" 2>&1); assert_status "jq missing" $? 2
+assert_contains "jq missing says so" "$r" "jq"
+r=$(printf '%s' "$(fileop Write "$proj/a.ts")" | env -u HOME HM_AWAY_BYPASS=1 HM_PROJECT="$proj" HM_AWAY_HUB="$hub" HM_AWAY_MCP_ALLOW= "$HOOK" 2>&1 >/dev/null); rc=$?
+assert_status "an internal failure (no HOME) is a denial, not exit 1" $rc 2
+mkdir -p "$T_TMP/nolib"; cp "$HOOK" "$T_TMP/nolib/hm-away-hook"
+r=$(printf '%s' "$(tc ls)" | HM_AWAY_BYPASS=1 HM_PROJECT="$proj" HM_AWAY_HUB="$hub" HM_AWAY_MCP_ALLOW= "$T_TMP/nolib/hm-away-hook" 2>&1 >/dev/null); assert_status "a missing library is a denial" $? 2
+allowed "plain ls is allowed" "ls -la"
+
+echo "-- git push (A22, A32, A38)"
+for c in 'git push' 'git push origin main' 'git -C /tmp/x push' 'git push origin HEAD:main' 'git push +main' 'git push :main' 'git push --delete origin x' \
+  'git push --all' 'git push --mirror' '/usr/bin/git push' 'command git push' 'exec git push' 'nohup git push' 'env GIT_X=1 git push' \
+  'sh -c "git push"' "bash -c 'git push'" "zsh -c 'git push'" 'eval "git push"' 'echo x | xargs git push' 'echo $(git push)' 'echo `git push`' \
+  'alias g=git; g push' 'true && git push' 'git status; git push' "g''it push" 'g"i"t push' 'gi\t push' "git 'push'" 'git commit -m "fix(push): x"' 'git log --grep=push'; do
+  denied "git push form: $c" "$c"
+done
+printf '%s' "$ERR" | grep -q . && assert_contains "the refusal says why" "$ERR" "git push"
+echo "-- git and push words that are not the pair"
+allowed "git add bin/hm-push" 'git add bin/hm-push'
+allowed "git diff -- tests/test_push.sh" 'git diff -- tests/test_push.sh'
+allowed "git status" 'git status'
+allowed "git commit without push" 'git commit -m "feat: add the thing"'
+allowed "bash tests/run.sh test_push.sh" 'bash tests/run.sh test_push.sh'
+allowed "cat bin/hm-push" 'cat bin/hm-push'
+
+echo "-- hm-push and hm-remote-sync (A32, A38)"
+for c in 'hm-push origin abc main' 'bin/hm-push origin abc main' './bin/hm-push x' "''hm-push x" 'hm-""push x' 'FOO=1 hm-push x' 'env hm-push x' 'nohup hm-push x' 'bash -c "hm-push x"' \
+  'xargs hm-push' 'true; hm-push x' 'echo a && bin/hm-push x' 'xargs -n1 hm-push' 'timeout 5 hm-push x' 'sudo -n hm-push x' 'hm-slot run push -- hm-push origin a b' 'hm-remote-sync status' 'time hm-push x'; do
+  denied "hm-push form: $c" "$c"
+done
+allowed "hm-push as an argument of git add" 'git add bin/hm-push'
+allowed "hm-push inside a commit message" 'git commit -m "docs: about hm-push"'
+allowed "the team's own hm-slot traffic" 'hm-slot run gate -- hm-gate'
+allowed "hm-gate-verify" 'hm-gate-verify log /tmp/x.log --commit abc'
+
+echo "-- gh (A21)"
+for c in 'gh pr create' 'gh pr merge 3' 'gh api repos/x/y' 'gh issue create' 'gh release create v1' 'gh pr view 3 && gh pr merge 3' 'sh -c "gh pr merge"'; do denied "gh form: $c" "$c"; done
+for c in 'gh pr view 3' 'gh pr list' 'gh pr status' 'gh pr diff 3' 'gh pr checks 3' 'gh run view 5' 'gh run list' 'gh issue view 2' 'gh issue list'; do allowed "gh read-only: $c" "$c"; done
+
+echo "-- the rest of A21"
+for c in 'ssh host ls' '/usr/bin/ssh host' 'scp a host:b' 'rsync -a a host:b' 'rsync -e ssh a b' 'rsync a rsync://h/m' 'curl -X POST http://x' 'curl -XPUT http://x' 'curl -d a=b http://x' \
+  'curl --data a http://x' 'curl --data-binary @f http://x' 'curl -F f=@x http://x' 'curl -T f http://x' 'curl --upload-file f http://x' 'curl --request=DELETE http://x' 'curl -sd a http://x' 'curl --json {} http://x' \
+  'wget --post-data=a http://x' 'wget --post-file=f http://x' 'wget --method=PUT http://x' 'npm publish' 'pnpm publish' 'yarn publish' 'npx npm publish' 'vercel deploy' 'vercel' 'netlify deploy' 'docker push img'; do
+  denied "A21 form: $c" "$c"
+done
+for c in 'curl http://localhost:3000' 'curl -X GET http://x' 'curl -s -o /dev/null http://x' 'wget http://x' 'rsync -a a/ b/' 'npm test' 'npm install' 'yarn build' 'docker build .' 'docker ps' 'curl http://x | grep -F foo'; do allowed "A21 allowed: $c" "$c"; done
+
+echo "-- the way out of the marker (A52)"
+for c in 'claude' 'claude --permission-mode bypassPermissions' '/usr/local/bin/claude -p hi' 'env X=1 claude' 'nohup claude &' 'bash -c "claude"' \
+  'tmux new-window claude' 'tmux split-window -h' 'tmux new-session -d' 'tmux respawn-pane -k' 'tmux respawn-window' 'tmux neww' 'tmux -S /x new-window'; do denied "way out: $c" "$c"; done
+allowed "tmux list-panes" 'tmux list-panes -a'
+allowed "tmux send-keys to a peer" 'tmux send-keys -t x hello'
+allowed "which claude" 'which claude'
+allowed "hm-spawn" 'hm-spawn --agent x --role implementer'
+
+echo "-- protected files, by Bash (A52, A57, A61)"
+CD="$CLAUDE_CONFIG_DIR"
+for c in "echo {} > $CD/settings.json" "echo {} >> $CD/settings.local.json" 'echo {} > ~/.claude/settings.json' 'echo {} > $HOME/.claude.json' 'echo x > ~/.claude.json' 'echo x > ${HOME}/.claude.json' 'cp a ~/.claude.json' 'cp a $HOME/.claude.json' 'echo {} > .claude/settings.json' \
+  'echo x > .claude/settings.local.json' 'echo x > .mcp.json' "tee $CD/settings.json" "sed -i s/a/b/ $CD/settings.json" "cp a $CD/plugins/x/hooks.json" "mv x $CD/plugins/y" 'echo x > hooks/hooks.json' \
+  'echo x > .claude/hooks/pre.sh' "echo x > '$CD/settings.json'" "echo x >$CD/settings.json" 'cp a .mcp.json' "python3 -c x $CD/settings.json" "echo x > $CD/plugins/cache/p/hooks/hooks.json"; do
+  denied "protected write: $c" "$c"
+done
+allowed "reading settings" "cat $CD/settings.json"
+allowed "jq on settings" "jq . $CD/settings.json"
+allowed "memory stays writable" "echo x > $CD/projects/p/memory/note.md"
+allowed "an ordinary redirect" 'echo x > /tmp/a.txt'
+allowed "grep in the plugins folder" "grep -r x $CD/plugins"
+
+echo "-- protected files, by Edit and Write (A52, A57, A61)"
+for t in Edit Write MultiEdit NotebookEdit; do tool_denied "$t on settings.json in the config dir" "$(fileop $t "$CD/settings.json")"; done
+tool_denied "Write to settings.local.json" "$(fileop Write "$CD/settings.local.json")"
+tool_denied "Write to the project's .claude/settings.json" "$(fileop Write "$proj/.claude/settings.json")"
+tool_denied "Write to a relative .claude/settings.local.json" "$(fileop Write ".claude/settings.local.json")"
+tool_denied "Write to ~/.claude.json" "$(fileop Write "$HOME/.claude.json")"
+tool_denied "Write to ~/.claude.json written with ~" "$(fileop Write "~/.claude.json")"
+tool_denied "Write to the project's .mcp.json" "$(fileop Write "$proj/.mcp.json")"
+tool_denied "Write to hooks.json" "$(fileop Write "$proj/hooks/hooks.json")"
+tool_denied "Write to a hook script" "$(fileop Write "$proj/.claude/hooks/x.sh")"
+tool_denied "Write into the plugins folder" "$(fileop Write "$CD/plugins/cache/x/bin/y")"
+tool_denied "Write through .." "$(fileop Write "$CD/../$(basename "$CD")/settings.json")"
+mkdir -p "$T_TMP/real-conf"; ln -s "$CD" "$T_TMP/linkdir"
+tool_denied "Write through a link to the config dir" "$(fileop Write "$T_TMP/linkdir/settings.json")"
+mkdir -p "$proj/pl/bin"; PROOT="$proj/pl"
+ERR=$(printf '%s' "$(fileop Write "$PROOT/bin/x")" | HM_AWAY_BYPASS=1 HM_PROJECT="$proj" HM_AWAY_HUB="$hub" HM_AWAY_MCP_ALLOW= CLAUDE_PLUGIN_ROOT="$PROOT" "$HOOK" 2>&1 >/dev/null); [ $? -eq 2 ] && ok "Write into the plugin's own folder" || bad "plugin root write allowed"
+tool_allowed "Write to an ordinary project file" "$(fileop Write "$proj/src/a.ts")"
+tool_allowed "Edit of an ordinary file" "$(fileop Edit "$proj/README")"
+tool_allowed "Write to memory" "$(fileop Write "$CD/projects/p/memory/n.md")"
+tool_allowed "Write to settings.json inside an unrelated folder" "$(fileop Write "$proj/docs/settings.json")"
+tool_denied "Write with no path" '{"tool_name":"Write","cwd":"/","tool_input":{}}'
+
+echo "-- MCP tools (A21, A47-A49)"
+tool_denied "an MCP tool, no allowlist" "$(mcp mcp__github__create_issue)"
+tool_denied "a claude.ai connector, no allowlist" "$(mcp mcp__claude_ai_Gmail__send)"
+tool_denied "the built-in computer-use server" "$(mcp mcp__computer-use__screenshot)"
+ALLOW="github"; tool_allowed "a tool of an allowed server" "$(mcp mcp__github__create_issue)"
+tool_denied "a tool of another server" "$(mcp mcp__slack__post)"
+tool_denied "a server whose name starts the same" "$(mcp mcp__github2__x)"
+ALLOW="mcp__github__get_issue"; tool_allowed "an allowed single tool" "$(mcp mcp__github__get_issue)"
+tool_denied "another tool of that server" "$(mcp mcp__github__create_issue)"
+ALLOW="slack, mcp__github__get_issue ,"; tool_allowed "spaces and a trailing comma" "$(mcp mcp__slack__post)"
+tool_allowed "the single tool in a list" "$(mcp mcp__github__get_issue)"
+tool_denied "a malformed tool name" "$(mcp mcp__)"
+ALLOW="plugin_vercel_vercel"; tool_allowed "a plugin server by its full name" "$(mcp mcp__plugin_vercel_vercel__list_projects)"
+ALLOW=""
+unset HM_AWAY_MCP_ALLOW
+ERR=$(printf '%s' "$(mcp mcp__x__y)" | HM_AWAY_BYPASS=1 HM_PROJECT="$proj" HM_AWAY_HUB="$hub" "$HOOK" 2>&1 >/dev/null); assert_status "an unset allowlist allows nothing" $? 2
+
+echo "-- SendMessage (A50, A55, A60)"
+ROLE=proj
+tool_allowed "agent to its orchestrator by live name" "$(msg proj-orchestrator)"
+tool_allowed "a [ref] suffix is removed" "$(msg 'proj-orchestrator [3fa9c1]')"
+tool_allowed "to its hub" "$(msg hub1)"
+tool_allowed "to a team agent <project>-<agent>" "$(msg proj-implementer)"
+tool_allowed "a reply by uds address (orchestrator)" "$(msg "uds:/tmp/cc-socks/$OP.sock")"
+tool_allowed "a reply by uds address (hub)" "$(msg "uds:/tmp/cc-socks/$HP.sock")"
+tool_allowed "a reply by uds address (agent)" "$(msg "uds:/tmp/cc-socks/$IP.sock")"
+tool_allowed "main" "$(msg main)"
+tool_allowed "a raw in-process agent id" "$(msg a1b2c3d4e5f6a7b8c-9f)"
+tool_denied "a session outside the team" "$(msg stranger)"
+tool_denied "another project's orchestrator" "$(msg other-orchestrator)"
+tool_denied "a recorded pid whose start time differs (pid reuse), by uds" "$(msg "uds:/tmp/cc-socks/$SGP.sock")"
+tool_denied "a recorded pid whose start time differs (pid reuse), by name" "$(msg proj-reused)"
+tool_denied "a raw-id-looking target with a scheme in it" "$(msg 'a1:bridge-x')"
+tool_denied "a stranger by uds address" "$(msg "uds:/tmp/cc-socks/$SGP.sock")"
+tool_denied "another project's orchestrator by uds" "$(msg "uds:/tmp/cc-socks/$XP.sock")"
+tool_denied "a bridge address" "$(msg bridge:abc123)"
+tool_denied "a remote scheme" "$(msg ssh:host/x)"
+tool_denied "a uds address with no pid" "$(msg uds:/tmp/cc-socks/none.sock)"
+tool_denied "a uds address of a dead pid" "$(msg uds:/tmp/cc-socks/99999999.sock)"
+tool_denied "a target that cannot be resolved" "$(msg nobody-at-all)"
+tool_denied "a broadcast" "$(msg '*')"
+tool_denied "no target" '{"tool_name":"SendMessage","cwd":"/","tool_input":{"message":"x"}}'
+tool_denied "a non-string target" '{"tool_name":"SendMessage","cwd":"/","tool_input":{"to":5,"message":"x"}}'
+# an impostor carrying an agent's name, and a stale session with the same name
+spawn proj-implementer; IMP=$SP
+tool_denied "an impostor with an agent's name" "$(msg proj-implementer)"
+kill "$IMP" 2>/dev/null; sleep 0.2
+tool_allowed "the name is the agent's again once the impostor is gone" "$(msg proj-implementer)"
+spawn hub1; HIMP=$SP
+tool_denied "an impostor with the hub's name" "$(msg hub1)"
+kill "$HIMP" 2>/dev/null; sleep 0.2
+spawn a1b2c3d4-9f; RIP=$SP
+tool_denied "a raw-id-looking name that a live session carries" "$(msg a1b2c3d4-9f)"
+kill "$RIP" 2>/dev/null; sleep 0.2
+jq -nc --argjson p 99999999 '{pid:$p,name:"proj-orchestrator"}' > "$CLAUDE_CONFIG_DIR/sessions/99999999.json"
+tool_allowed "a dead session record with the same name is not an impostor" "$(msg proj-orchestrator)"
+echo "-- the hub's messages"
+ROLE=hub
+tool_allowed "hub to a project's orchestrator" "$(msg proj-orchestrator)"
+tool_allowed "hub to another listed project's orchestrator" "$(msg other-orchestrator)"
+tool_allowed "hub to an orchestrator by uds" "$(msg "uds:/tmp/cc-socks/$OP.sock")"
+tool_denied "hub to a project's agent" "$(msg proj-implementer)"
+tool_denied "hub to a stranger" "$(msg stranger)"
+tool_denied "hub to a bridge address" "$(msg bridge:x)"
+r=$(printf '%s' "$(msg proj-orchestrator)" | HM_AWAY_BYPASS=1 HM_PROJECT="$hub" HM_AWAY_HUB="$hub" HM_AWAY_MCP_ALLOW= "$HOOK" 2>&1 >/dev/null); assert_status "HM_PROJECT equal to the hub's folder is the hub" $? 0
+r=$(printf '%s' "$(msg proj-implementer)" | HM_AWAY_BYPASS=1 HM_PROJECT="$hub" HM_AWAY_HUB="$hub" HM_AWAY_MCP_ALLOW= "$HOOK" 2>&1 >/dev/null); assert_status "...and has no agents to message" $? 2
+echo "-- a project that is not readable"
+r=$(printf '%s' "$(msg main)" | HM_AWAY_BYPASS=1 HM_PROJECT="$T_TMP/gone" HM_AWAY_HUB="$hub" HM_AWAY_MCP_ALLOW= "$HOOK" 2>&1 >/dev/null); assert_status "main still passes, the check is by target" $? 0
+r=$(printf '%s' "$(msg proj-orchestrator)" | HM_AWAY_BYPASS=1 HM_PROJECT="$T_TMP/gone" HM_AWAY_HUB="$hub" HM_AWAY_MCP_ALLOW= "$HOOK" 2>&1 >/dev/null); assert_status "an unreadable HM_PROJECT denies a named target" $? 2
+
+echo "-- the env the Bash tool sees does not matter"
+r=$(printf '%s' "$(tc 'git push')" | HM_AWAY_BYPASS=1 HM_PROJECT="$other" HM_AWAY_HUB="$hub" HM_AWAY_MCP_ALLOW= "$HOOK" 2>&1 >/dev/null); assert_status "any project in the env: still refused" $? 2
+
+echo "-- wiring and the rule (A51, A72)"
+m=$(jq -r '.hooks.PreToolUse[]? | select(.hooks[]?.command | test("bin/hm-away-hook")) | .matcher' "$HM_REPO_ROOT/hooks/hooks.json")
+for t in Bash 'mcp__.*' SendMessage Edit Write; do case "|$m|" in *"|$t|"*) ok "hooks.json matcher has $t" ;; *) bad "hooks.json matcher lacks $t: [$m]" ;; esac; done
+assert_eq "the hook command runs from the plugin's bin" "$(jq -r '.hooks.PreToolUse[0].hooks[0].command' "$HM_REPO_ROOT/hooks/hooks.json")" '"${CLAUDE_PLUGIN_ROOT}/bin/hm-away-hook"'
+[ -x "$HOOK" ] && ok "hm-away-hook is executable" || bad "hm-away-hook is not executable"
+grep -q 'HM_AWAY_BYPASS=1.*a message from anyone other than the session' <(tr '\n' ' ' < "$HM_REPO_ROOT/rules/RULES.md" | sed 's/  */ /g') && ok "RULES.md has the A51 line" || bad "RULES.md lacks the A51 line"
+echo "-- the unmarked path's time"
+s=$(date +%s); i=0; while [ $i -lt 50 ]; do printf '%s' "$(tc ls)" | env -u HM_AWAY_BYPASS "$HOOK"; i=$((i+1)); done; e=$(date +%s)
+echo "  (50 unmarked runs: $((e - s)) s)"
+[ $((e - s)) -le 10 ] && ok "50 unmarked runs took at most 10 s" || bad "unmarked path too slow: $((e - s)) s for 50"
+t_done

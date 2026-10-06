@@ -4,6 +4,10 @@
     "SessionStart": [
       { "matcher": "startup|clear|resume",
         "hooks": [ { "type": "command", "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/hm-session-hook\"" } ] }
+    ],
+    "PreToolUse": [
+      { "matcher": "Bash|mcp__.*|SendMessage|Edit|Write|MultiEdit|NotebookEdit",
+        "hooks": [ { "type": "command", "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/hm-away-hook\"" } ] }
     ]
   }
 }
