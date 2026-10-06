@@ -44,7 +44,10 @@ variable is split or globbed differently by each shell. Executables are tested f
 run beside the holder. Two heavy jobs starve each other and both fail in ways that look like bugs.
 
 **Never kill a process you did not start.** Not to free memory, not to free a port. Another session's process is that
-session's live work. Say what is in the way and ask the orchestrator.
+session's live work. Say what is in the way and ask the orchestrator. The one exception is a hang, and it is not an
+agent's to use: `hm-hub recover`, while the owner's delegate file is valid and the hub carries the away marker, stops a
+session hivemind recorded, by its pid and start time, when its working line has not changed for 15 minutes, and
+restarts it in its own conversation. An agent's rule is unchanged.
 
 **Never `/model` or `/effort` inside a session.** Both save the owner's global default. Model and effort are set at spawn.
 

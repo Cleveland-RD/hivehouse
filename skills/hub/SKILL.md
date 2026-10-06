@@ -169,9 +169,14 @@ from a file or an environment variable.
     it reports `BACK`;
   - `respawn`: `SendMessage` to the orchestrator: `RESPAWN: <agents> are not running; bring back the ones you still need
     with hm-spawn --respawn <agent> and send me BACK.`;
-  - `list`: a dialog waits on a session this hub started; note it for the owner (you never answer a screen dialog while
-    they are away);
-  - `blocked`: `hm-hub log <task id> blocked --note "<its reason>"`; the task waits for the owner and other tasks go on.
+  - `restart`: an agent whose working line froze for 15 minutes was stopped by `recover` (never typed into): `SendMessage`
+    to the orchestrator: `RESTART: <agents> stopped responding and were stopped; bring them back with hm-spawn --respawn
+    <agent> --resume (add --mode ${user_config.permission_mode_local} once away has ended) and send me BACK.`. A hung
+    orchestrator is a `wake` whose `why` says hung;
+  - `list`: a dialog waits on a session this hub started, or a hung session `recover` could not stop; note it for the owner
+    (you never answer a screen dialog while they are away);
+  - `blocked`: `hm-hub log <task id> blocked --note "<its reason>"` (a `restart` blocked with no task: tell the owner); the
+    task waits for the owner and other tasks go on.
   If it prints `"away":false`, away has ended: `CronDelete` the job and tell the owner to restart you out of bypass (a
   `hm-hub back` line restarts you without it); until they have, ask in the conversation before every start, wake, run or
   answer, as in relay mode.
