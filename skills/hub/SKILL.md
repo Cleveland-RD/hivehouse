@@ -195,8 +195,9 @@ from a file or an environment variable.
 
   It writes `.hivemind-hub/decisions/<task id>.md` and a `decided` event, and refuses unless the owner is away.
 - **When the owner is back.** Open with what you decided since they left (`hm-hub tasks --json`: each task's `decisions`,
-  with their times, from `hub.away.since` on), one line each with its reason, then what waits on them. The screen shows
-  the same under "decided while you were away".
+  with their times, from `hub.away.since` on, or `hub.last_away.since` once away has ended), one line each with its
+  reason, then what waits on them. The screen shows the same under "decided while you were away", and keeps it after
+  they are back until they press Seen (a newer away period starts unseen).
 
 ## 6. The hub's screen
 

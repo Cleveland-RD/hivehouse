@@ -63,12 +63,14 @@ export type HubView = {
   dialogs: Record<string, HubDialog>
   // delegate mode: the owner is away until this epoch (seconds), since this time; null in relay mode
   away: { until: number; since?: string } | null
+  // the last away period, which stays in status after it ends: what the hub decided in it is shown until the owner has seen it
+  lastAway: { since: string; until: number } | null
   updatedAt: number
   error: string
 }
 
 declare module 'claude-code' {
   interface PluginState {
-    hivemind: { hubView: HubView; hubResuming: string }
+    hivemind: { hubView: HubView; hubResuming: string; hubSeenAway: string }
   }
 }

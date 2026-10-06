@@ -86,7 +86,7 @@ const DIALOGS: Record<string, unknown> = {
     ],
   },
 }
-const AWAY = { on: false }
+const AWAY = { on: false, ended: false, since: '2026-10-05T10:00:00Z' }
 const ANSWER = { code: 0, stdout: '{"answered":true,"session":"rev","choice":"1","option":"Yes","dialog_gone":true}', stderr: '' }
 const TOASTS: string[] = []
 const PANE = {
@@ -125,7 +125,10 @@ function world(on: On, runs: string[][], opened: string[] = [], commands: string
   on('process.run', async (_$, e) => {
     runs.push([...e.argv])
     const sub = e.argv[1]
-    if (sub === 'status') return ran(0, JSON.stringify(AWAY.on ? { ...STATUS, hub: { ...STATUS.hub, away: { until: NOW / 1000 + 5 * 3600, since: '2026-10-05T10:00:00Z' } } } : STATUS))
+    if (sub === 'status') {
+      const hub = AWAY.on ? { ...STATUS.hub, away: { until: NOW / 1000 + 5 * 3600, since: AWAY.since } } : AWAY.ended ? { ...STATUS.hub, last_away: { since: AWAY.since, until: NOW / 1000 - 3600 } } : STATUS.hub
+      return ran(0, JSON.stringify({ ...STATUS, hub }))
+    }
     if (sub === 'tasks') return ran(0, JSON.stringify(TASKS))
     if (sub === 'wake' || sub === 'continue') return ran(0, '%7\n')
     if (sub === 'dialog') {
@@ -285,6 +288,25 @@ test('the screen says relay or away in its header, and lists what the hub decide
     await away.unmount()
   } finally {
     AWAY.on = false
+  }
+  // the owner is back: what was decided stays until they have seen it, and a newer away period starts unseen
+  AWAY.ended = true
+  try {
+    await clock.advance(20_000)
+    const back = await $.ui.mount({ ...PANE, surface: 'terminal' })
+    expect(await back.find({ type: 'Text', text: /away until/ })).toBeUndefined()
+    expect(await back.find({ type: 'Text', text: 'DECIDED WHILE YOU WERE AWAY' })).toBeDefined()
+    expect(await back.find({ type: 'Text', text: /matches the existing pages/ })).toBeDefined()
+    await back.press({ key: 'seen-away' })
+    await clock.advance(20_000)
+    expect(await back.find({ type: 'Text', text: 'DECIDED WHILE YOU WERE AWAY' })).toBeUndefined()
+    AWAY.since = '2026-10-05T11:00:00Z' // a newer away period (the decision at 11:30 is inside it): unseen again
+    await clock.advance(20_000)
+    expect(await back.find({ type: 'Text', text: 'DECIDED WHILE YOU WERE AWAY' })).toBeDefined()
+    await back.unmount()
+  } finally {
+    AWAY.ended = false
+    AWAY.since = '2026-10-05T10:00:00Z'
   }
 })
 

@@ -15,10 +15,12 @@ const EVERY_MS = 20_000
 const WAKE_TIMEOUT_MS = 150_000 // hm-hub waits up to 90 s for a started session to be idle
 const ANSWER_TIMEOUT_MS = 30_000 // hm-hub answer sends its keys and then watches a few seconds
 
-const EMPTY: HubView = { root: '', hubName: '', projects: [], tasks: [], dialogs: {}, away: null, updatedAt: 0, error: '' }
+const EMPTY: HubView = { root: '', hubName: '', projects: [], tasks: [], dialogs: {}, away: null, lastAway: null, updatedAt: 0, error: '' }
 const view = atom({ plugin: 'hivemind', key: 'hubView' } as const, EMPTY)
 // the project a press is acting on, one at a time
 const acting = atom({ plugin: 'hivemind', key: 'hubResuming' } as const, '')
+// the start of the away period whose decisions the owner has marked seen (a newer away starts unseen)
+const seenAway = atom({ plugin: 'hivemind', key: 'hubSeenAway' } as const, '')
 
 // The session is the hub when its own folder holds .hivemind-hub/ (a folder, not a link): hm-session-hook's rule.
 let hubRootOnce: Promise<string | null> | null = null
@@ -46,7 +48,7 @@ async function refresh($: EngineInterface): Promise<void> {
       $.process.run([hmHub($), 'tasks', '--json'], { cwd: root, timeoutMs: 30_000 }),
     ])
     if (status.exitCode !== 0) throw new Error(lastLine(status.stderr) || `hm-hub status exited ${status.exitCode}`)
-    const s = JSON.parse(status.stdout) as { hub?: { root?: string; name?: string; away?: { until: number; since?: string } }; projects?: HubProject[] }
+    const s = JSON.parse(status.stdout) as { hub?: { root?: string; name?: string; away?: { until: number; since?: string }; last_away?: { since: string; until: number } }; projects?: HubProject[] }
     const t = tasks.exitCode === 0 ? (JSON.parse(tasks.stdout) as HubTask[]) : []
     const projects = s.projects ?? []
     const next: HubView = {
@@ -56,6 +58,7 @@ async function refresh($: EngineInterface): Promise<void> {
       tasks: t,
       dialogs: await readDialogs($, root, projects),
       away: s.hub?.away ?? null,
+      lastAway: s.hub?.last_away ?? null,
       updatedAt: await $.clock.now(),
       // the projects still draw when only the ledger could not be read, and the screen says so
       error: tasks.exitCode === 0 ? '' : `tasks not read: ${lastLine(tasks.stderr) || `hm-hub tasks exited ${tasks.exitCode}`}`,
@@ -377,9 +380,13 @@ export const register: Register = (on, options) => {
     }
 
     // what the hub decided for the owner since they left, newest first
+    // while away, and after it until the owner marks them seen (a newer away period starts unseen)
+    const awaySince = v.away?.since ?? v.lastAway?.since ?? ''
+    const seen = (await read($, seenAway)) ?? ''
+    const showDecided = Boolean(v.away) || (Boolean(v.lastAway) && awaySince !== seen)
     const decided = (v.tasks ?? [])
       .flatMap(t => (t.decisions ?? []).map(d => ({ id: t.id, ...d })))
-      .filter(d => !v.away?.since || d.at >= v.away.since)
+      .filter(d => !awaySince || d.at >= awaySince)
       .sort((a, b) => (a.at < b.at ? 1 : -1))
       .slice(0, 8)
 
@@ -520,11 +527,18 @@ export const register: Register = (on, options) => {
             ))}
           </Box>
         ) : null}
-        {v.away && decided.length > 0 ? (
+        {showDecided && decided.length > 0 ? (
           <Box flexDirection="column" marginTop={1}>
-            <Text bold color="cyan">
-              DECIDED WHILE YOU WERE AWAY
-            </Text>
+            <Box flexDirection="row" justifyContent="space-between">
+              <Text bold color="cyan">
+                DECIDED WHILE YOU WERE AWAY
+              </Text>
+              {v.away ? null : (
+                <Button key="seen-away" plain onPress={() => void update($, seenAway, () => awaySince)}>
+                  Seen
+                </Button>
+              )}
+            </Box>
             {decided.map(d => (
               <Box key={`d-${d.id}-${d.at}`} flexDirection="row" justifyContent="space-between" paddingLeft={1}>
                 <Box flexDirection="row" flexShrink={1}>
