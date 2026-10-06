@@ -61,6 +61,8 @@ const PROJECTS = {
 const TASKS = [
   { id: 'app-1', project: 'app', asked: '2026-10-05T11:00:00Z', state: 'plan', updated: '2026-10-05T11:58:00Z', last_note: null, needs_owner: true },
   { id: 'app-2', project: 'app', asked: '2026-10-05T11:10:00Z', state: 'handed', updated: '2026-10-05T11:20:00Z', last_note: null, needs_owner: false },
+  { id: 'app-3', project: 'app', asked: '2026-10-05T11:15:00Z', state: 'overnight', updated: '2026-10-05T11:30:00Z', last_note: null, needs_owner: false },
+  { id: 'app-4', project: 'app', asked: '2026-10-05T11:16:00Z', state: 'cleanup', updated: '2026-10-05T11:31:00Z', last_note: null, needs_owner: false },
 ]
 const PANE = {
   plugin: 'hivemind',
@@ -171,6 +173,8 @@ test('the screen: what needs the owner first, then each project, and Resume wake
   expect(await ui.find({ type: 'Text', text: /^ +a question on its screen$/ })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /a question on the screen of pane %12/ })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: 'APP' })).toBeDefined()
+  // an overnight run and a cleanup the hub started are shown on the project's task row, and wait on nobody
+  expect(await ui.find({ type: 'Text', text: /1 overnight run · 1 cleanup/ })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /stopped/ })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /51%/ })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /no team/ })).toBeDefined()

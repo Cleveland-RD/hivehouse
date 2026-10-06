@@ -296,6 +296,10 @@ export const register: Register = (on, options) => {
       // what Resume brings back: the orchestrator, and each agent hm-spawn --respawn takes (one proven stopped)
       const back = 1 + agents.filter(a => a.state === 'stopped').length
       const doneToday = v.tasks.filter(t => t.project === p.name && t.state === 'done' && sameDay(t.updated, now)).length
+      // a task the hub sent into an overnight run or a cleanup stays open and waits on nobody: say it is running
+      const inState = (s: string) => v.tasks.filter(t => t.project === p.name && t.state === s).length
+      const nightly = inState('overnight')
+      const cleaning = inState('cleanup')
       const canResume = o.state === 'stopped' && Boolean(o.session_id) && !o.starting
       return (
         <Box key={`p-${p.name}`} flexDirection="column" marginTop={1}>
@@ -336,7 +340,7 @@ export const register: Register = (on, options) => {
           )}
           {row(
             'tasks',
-            <Text color="white">{`${p.open_tasks ?? 0} open${doneToday > 0 ? ` · ${doneToday} done today` : ''}`}</Text>,
+            <Text color="white">{`${p.open_tasks ?? 0} open${nightly > 0 ? ` · ${nightly} overnight run${nightly === 1 ? '' : 's'}` : ''}${cleaning > 0 ? ` · ${cleaning} cleanup` : ''}${doneToday > 0 ? ` · ${doneToday} done today` : ''}`}</Text>,
           )}
           {row(
             'folders',
