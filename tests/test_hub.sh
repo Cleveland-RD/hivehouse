@@ -109,19 +109,23 @@ assert_contains "...and what is stopped" "$t" "stopped"
 hub wake two >/dev/null 2>&1; assert_status "wake with no orchestrator recorded" $? 2
 hub wake app --model opus >/dev/null 2>&1; assert_status "a resumed session keeps its own model" $? 64
 hub wake app --mode bypassPermissions >/dev/null 2>&1; assert_status "never in bypass" $? 4
+# the project's own settings make the owner's mode stricter on a wake too (hm-settings)
+echo '{"permission_mode":"plan"}' > "$S/settings.json"
 wp=$(hub wake app --mode auto --still 2 --max-wait 15 2>"$T_TMP/wake.err"); assert_status "wake" $? 0
 [ ! -s "$T_TMP/wake.err" ] && ok "...nothing on stderr" || bad "stderr: $(cat "$T_TMP/wake.err")"
 screen=$(hm_tmux capture-pane -p -J -S - -t "$wp")
 assert_contains "...its own conversation" "$screen" "ARGV: --resume"
 assert_contains "...that session" "$screen" "ARGV: sess-1"
 assert_contains "...under its name" "$screen" "ARGV: app-orchestrator"
-assert_contains "...in the hub's permission mode" "$screen" "ARGV: --permission-mode"
+assert_contains "...with a permission mode" "$screen" "ARGV: --permission-mode"
+assert_contains "...the one the project allows" "$screen" "ARGV: plan"
 case "$screen" in *"ARGV: --model"*) bad "a model was forced on the resumed session" ;; *) ok "...with its own model" ;; esac
 assert_contains "...and told it works through the hub, which survives a rotation" "$screen" "--hub hub"
 assert_contains "...told to register again" "$screen" "hm-spawn --self --agent orchestrator"
 assert_contains "...and to report to the hub" "$screen" "send hub one line"
 assert_eq "...in the project's tmux session" "$(hm_tmux display-message -p -t "$wp" '#{session_name}')" "app"
 assert_eq "...in its home" "$(hm_tmux display-message -p -t "$wp" '#{pane_current_path}')" "$H/back"
+rm "$S/settings.json"
 hub wake app --still 2 --max-wait 15 >/dev/null 2>&1; assert_status "never woken twice while the first is coming up" $? 4
 assert_eq "...status says so" "$(hub status --json | jq -r '.projects[] | select(.name=="app") | .orchestrator.starting.pane')" "$wp"
 # once it has registered again it runs: a live process named claude stands in for its Claude (the test shell is not one)
