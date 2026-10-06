@@ -68,6 +68,25 @@ hm_claude_ancestor() {  # hm_claude_ancestor [pid]: the nearest Claude process a
 hm_claude_is() {  # hm_claude_is <pid> <started>: that very process (not a reused pid), still Claude
   [ -n "$1" ] && [ -n "$2" ] && hm_alive "$1" && [ "$(hm_lstart "$1")" = "$2" ] && hm_is_claude "$1"
 }
+# The one place hivemind stops a process it did not just start: a Claude whose working line has not moved for 15 minutes (A10), by
+# `hm-hub recover`, while the owner's delegate file is valid and the hub carries the away marker. It is never a pattern or a name:
+# only the recorded pid, while that pid still has its recorded start time and is still Claude, and never a Claude above the caller
+# (the hub's own). hm_stop_hung <pid> <started> <socket> <pane> <secs>: 0 stopped (or no longer that process); 1 not that process,
+# nothing sent; 2 the pane no longer shows a working line of <secs>, nothing sent; 3 still running after KILL. Before TERM the pid,
+# the start time and the screen are read again; TERM, up to 10 s for it to end, then KILL only if the pid is still that process.
+hm_stop_hung() {
+  local pid="${1:-}" started="${2:-}" i
+  hm_is_number "$pid" && [ "$pid" -gt 1 ] && hm_is_number "${5:-}" || return 1
+  hm_claude_is "$pid" "$started" || return 1
+  [ "$(hm_claude_ancestor "$$")" != "$pid" ] || return 1
+  [ "$(hm_pane_text "$4" "$3" | hm_pane_working_seconds)" = "$5" ] || return 2
+  kill -TERM "$pid" 2>/dev/null
+  for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do hm_alive "$pid" || return 0; sleep 0.5; done
+  hm_claude_is "$pid" "$started" || return 0
+  kill -KILL "$pid" 2>/dev/null; sleep 0.5
+  hm_alive "$pid" && [ "$(hm_lstart "$pid")" = "$started" ] && return 3
+  return 0
+}
 hm_agent_is() {  # hm_agent_is <socket> <pane> <pane pid> <pane started> [<claude pid> <claude started>]: 0 the agent is still there, as recorded; 1 it is not; 2 the pane cannot be read
   hm_pane_is "$1" "$2" "$3" "$4"; local rc=$?; [ "$rc" -eq 0 ] || return "$rc"
   [ -z "${5:-}" ] || hm_claude_is "$5" "${6:-}"
@@ -108,7 +127,7 @@ hm_alive()  { /bin/ps -p "$1" >/dev/null 2>&1; }
 # ps prints a start time in the caller's locale (mar.  6 oct. in fr_FR, Tue Oct  6 in C): one fixed format, or a time recorded under
 # one locale never matches under another and a live session reads as gone
 hm_lstart() { local s; s=$(LC_ALL=C /bin/ps -o lstart= -p "$1" 2>/dev/null); s=${s#"${s%%[![:space:]]*}"}; printf '%s\n' "${s%"${s##*[![:space:]]}"}"; }   # built-ins only: the away checks read it
-hm_is_claude() {  # hm_is_claude <pid>: 0 when the process is Claude Code's, which hivemind never stops
+hm_is_claude() {  # hm_is_claude <pid>: 0 when the process is Claude Code's, which hivemind stops only in hm_stop_hung (below)
   local args first second   # by argv: macOS ps reports comm from argv0 as well, so it would be the same reading
   args=$(/bin/ps -o args= -p "$1" 2>/dev/null) || return 1
   first=${args%% *}; second=${args#* }; second=${second%% *}
