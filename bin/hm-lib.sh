@@ -582,12 +582,70 @@ hm_env_has() {
   return 1
 }
 
-# A permission mode hivemind starts a session in (hm-spawn's and hm-hub's --mode): never bypassPermissions.
+# ---- bypass: granted only while the owner is away -----------------------------------------------------------------------
+# bypassPermissions is started by hivemind only when ALL of these hold: the owner's root-owned delegate file is valid, the project's
+# home is listed in the hub that file names (A6), and the caller's own Claude carries the away marker in its launch environment
+# (hm_away_caller). The owner's own unmarked sessions and a plain shell never get it. Nothing here is read from an argument or a
+# setting the caller can write.
+HM_DG_HUB=""; HM_DG_UNTIL=""; HM_DG_MCP=""; HM_DG_PROJECT=""
+hm_delegate_for_project() {  # hm_delegate_for_project <project root>: 0 when delegate is valid and that project is one of its hub's; sets HM_DG_*
+  local out rest hub r name home abs
+  HM_DG_HUB=""; HM_DG_UNTIL=""; HM_DG_MCP=""; HM_DG_PROJECT=""
+  out=$(hm_delegate_now) || return 1
+  hub=${out%%$'\t'*}; rest=${out#*$'\t'}
+  hub=$(cd "$hub" 2>/dev/null && pwd -P) || return 1
+  r=$(cd "$1" 2>/dev/null && pwd -P) || return 1
+  while IFS=$'\t' read -r name home; do
+    case "$home" in /*) abs=$home ;; *) abs="$hub/$home" ;; esac
+    abs=$(cd "$abs" 2>/dev/null && pwd -P) || continue
+    if [ "$abs" = "$r" ]; then HM_DG_HUB=$hub; HM_DG_UNTIL=${rest%%$'\t'*}; HM_DG_MCP=${rest#*$'\t'}; HM_DG_PROJECT=$name; return 0; fi
+  done < <(jq -r '.projects[]? | [.name, .home] | @tsv' "$hub/.hivemind-hub/projects.json" 2>/dev/null)
+  return 1
+}
+hm_away_caller() {  # 0 the caller's Claude carries the away marker; 1 it does not (or there is no Claude: a plain shell); 2 its environment cannot be read
+  local pid; pid=$(hm_claude_ancestor) || return 1
+  hm_env_has "$pid" HM_AWAY_BYPASS=1
+}
+# A permission mode hivemind starts a session in (hm-spawn's and hm-hub's --mode). bypassPermissions only as above, and so only with the
+# project's root.
 HM_PERMISSION_MODES="plan dontAsk default acceptEdits auto"
-hm_check_mode() {  # hm_check_mode <mode> <who>: exits 4 unless hivemind may start a session in that mode
-  [ "$1" = bypassPermissions ] && hm_die 4 "bypassPermissions is never started by $2"
-  case " $HM_PERMISSION_MODES " in *" $1 "*) return 0 ;; esac
-  hm_die 4 "unknown permission mode: $1"
+hm_check_mode() {  # hm_check_mode <mode> <who> [<project root>]: exits 4 unless hivemind may start a session in that mode
+  local mode="$1" who="$2" root="${3:-}"
+  if [ "$mode" = bypassPermissions ]; then
+    [ -n "$root" ] || hm_die 4 "bypassPermissions is never started by $who without a project to check it for"
+    hm_delegate_for_project "$root" || hm_die 4 "bypassPermissions is started only while the owner's delegate file is valid for this project (hm-hub away prints how to make it)"
+    hm_away_caller
+    case $? in
+      0) return 0 ;;
+      2) hm_die 4 "this session's launch environment cannot be read, so the away marker cannot be checked: $who refuses bypassPermissions" ;;
+      *) hm_die 4 "bypassPermissions is started only for a session carrying the away marker (HM_AWAY_BYPASS), which hm-hub away's start line sets" ;;
+    esac
+  fi
+  case " $HM_PERMISSION_MODES " in *" $mode "*) return 0 ;; esac
+  hm_die 4 "unknown permission mode: $mode"
+}
+# What a session started in bypass gets (A31, A40, A48, A62, A71): the marker and the hook's three variables, and only the MCP servers the
+# owner allowed (a file written from the user's .claude.json and the project's .mcp.json, mode 0600), with no Chrome. Never for any other mode.
+HM_BP_ENVS=(); HM_BP_ARGS=(); HM_AWAY_MCP_MISSING=""
+hm_write_away_mcp() {  # hm_write_away_mcp <file> <allow list> <project root>: the servers of the list, found; HM_AWAY_MCP_MISSING names the others
+  local f="$1" allow="$2" root="$3" cj e srv def
+  cj="${CLAUDE_CONFIG_DIR:-${HOME:-/}}/.claude.json"; HM_AWAY_MCP_MISSING=""
+  ( umask 077; jq -n '{mcpServers:{}}' > "$f.tmp$$" ) && mv "$f.tmp$$" "$f" && chmod 600 "$f" || return 1
+  [ -n "$allow" ] || return 0
+  for e in $(printf '%s' "$allow" | tr ',' ' '); do
+    srv=$e; case "$e" in mcp__*__*) srv=${e#mcp__}; srv=${srv%%__*} ;; esac
+    def=$(jq -c --arg s "$srv" --arg r "$root" '(.mcpServers[$s] // .projects[$r].mcpServers[$s]) // empty' "$cj" 2>/dev/null | head -1)
+    [ -n "$def" ] || def=$(jq -c --arg s "$srv" '.mcpServers[$s] // empty' "$root/.mcp.json" 2>/dev/null | head -1)
+    if [ -n "$def" ]; then
+      ( umask 077; jq --arg s "$srv" --argjson d "$def" '.mcpServers[$s] = $d' "$f" > "$f.tmp$$" ) && mv "$f.tmp$$" "$f" && chmod 600 "$f" || return 1
+    else HM_AWAY_MCP_MISSING="$HM_AWAY_MCP_MISSING $srv"; fi
+  done
+}
+hm_bypass_launch() {  # hm_bypass_launch <project root> <mcp file>: HM_BP_ENVS (tmux -e) and HM_BP_ARGS (claude flags) for a bypass launch; call only after hm_check_mode
+  hm_delegate_for_project "$1" || return 1
+  hm_write_away_mcp "$2" "$HM_DG_MCP" "$1" || return 1
+  HM_BP_ENVS=(-e "HM_AWAY_BYPASS=1" -e "HM_AWAY_HUB=$HM_DG_HUB" -e "HM_AWAY_MCP_ALLOW=$HM_DG_MCP")
+  HM_BP_ARGS=(--strict-mcp-config --mcp-config "$2" --no-chrome)
 }
 hm_is_number() { case "$1" in ''|*[!0-9]*) return 1 ;; esac; }   # hm_is_number <value>: digits only
 # A model or an effort as hivemind passes one to claude: letters, digits, '.', '_', '[', ']' and '-', not starting with '-'.
@@ -598,11 +656,15 @@ hm_is_model_name() {  # hm_is_model_name <value>: 0 when it is one
 # hm_open_window <tmux session> <window name> <cwd> <command> [-e VAR=value]...: a window in that session, which is made when
 # it does not exist; prints the new pane. The one place hm-spawn and hm-hub open a pane.
 hm_open_window() {
-  local s="$1" n="$2" c="$3" cmd="$4"; shift 4
+  local s="$1" n="$2" c="$3" cmd="$4" pane a prev=""; shift 4
   if hm_tmux has-session -t "=$s" 2>/dev/null; then
     hm_tmux new-window -d -P -F '#{pane_id}' -t "=$s:" -n "$n" -c "$c" "$@" "$cmd"
   else
-    hm_tmux new-session -d -P -F '#{pane_id}' -s "$s" -n "$n" -c "$c" "$@" "$cmd"
+    pane=$(hm_tmux new-session -d -P -F '#{pane_id}' -s "$s" -n "$n" -c "$c" "$@" "$cmd") || return $?
+    # -e on new-session sets the SESSION's environment, which every later window of it would inherit: the away marker of a bypass agent,
+    # say, reaching an agent that is not in bypass. These variables belong to this one process, which already has them.
+    for a in "$@"; do [ "$prev" = -e ] && hm_tmux set-environment -t "=$s" -u "${a%%=*}" 2>/dev/null; prev=$a; done
+    printf '%s\n' "$pane"
   fi
 }
 hm_pane_question() {  # hm_pane_question <socket, or empty for hivemind's own server> <pane>: 0 when a dialog waits on its screen

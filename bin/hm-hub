@@ -89,6 +89,20 @@ delegate_for_hub() {
 }
 epoch_local() { date -r "$1" '+%Y-%m-%d %H:%M' 2>/dev/null || date -d "@$1" '+%Y-%m-%d %H:%M'; }   # epoch_local <epoch>
 epoch_iso() { date -u -r "$1" '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null || date -u -d "@$1" '+%Y-%m-%dT%H:%M:%SZ'; }
+# away_hub_caller <hub root>: exits 4 unless the caller's own Claude is the hub hub.json records (pid and start time) and carries the away
+# marker; an environment that cannot be read is a refusal too. recover and a bypass launch both ask it.
+away_hub_caller() {
+  local cpid mrc
+  cpid=$(hm_claude_ancestor) || hm_die 4 "this runs inside the hub's own session"
+  [ "$cpid" = "$(hm_json_get "$1/.hivemind-hub/hub.json" .claude_pid)" ] && [ "$(hm_lstart "$cpid")" = "$(hm_json_get "$1/.hivemind-hub/hub.json" .claude_started)" ] \
+    || hm_die 4 "this runs only inside the hub session hub.json records (hm-hub self records it): this Claude is another session"
+  hm_env_has "$cpid" HM_AWAY_BYPASS=1; mrc=$?
+  case "$mrc" in
+    0) ;;
+    1) hm_die 4 "this session was not started with the away marker (hm-hub away prints its start line): this is for the hub that was" ;;
+    *) hm_die 4 "this session's launch environment cannot be read, so the away marker cannot be checked: refused" ;;
+  esac
+}
 # A project's name follows the agent-name rule (lower-case letters, digits, '_' and '-'): it becomes a tmux session, a
 # task id and part of an orchestrator's session name.
 check_name() { hm_is_agent_name "$1" || hm_die 4 "a project name is lower-case letters, digits, '_' and '-': $1"; }
@@ -229,6 +243,8 @@ start_opts() {  # start_opts <model allowed 0|1> [--model m] [--mode m] [--still
   done
   hm_is_number "$STILL" && hm_is_number "$MAXWAIT" || hm_die 4 "--still and --max-wait must be numbers"
   [ -z "$MODEL" ] || hm_is_model_name "$MODEL" || hm_die 4 "bad model: $MODEL"
+  # bypass is reached only through project_mode (the owner's delegate file, the project's home, the hub's own marked Claude): never by --mode
+  [ "$MODE" != bypassPermissions ] || hm_die 4 "bypassPermissions is never given with --mode: while the owner is away the project's settings resolve to it"
   [ -z "$MODE" ] || hm_check_mode "$MODE" hm-hub
 }
 # sending <record>: 0 while the hm-hub that owns the record's line (a start, a wake or a continue) is still waiting to send
@@ -236,7 +252,15 @@ start_opts() {  # start_opts <model allowed 0|1> [--model m] [--mode m] [--still
 sending() { local p; p=$(hm_json_get "$1" .sender_pid); [ -n "$p" ] && hm_alive "$p" && [ "$(hm_lstart "$p")" = "$(hm_json_get "$1" .sender_started)" ]; }
 # project_mode <home>: the owner's --mode, made stricter (never looser) by the project's own .hivemind/settings.json, as
 # hm-spawn's agents get it (hm-settings); the hub's folder is no repository, so it is resolved in the project's home
-project_mode() { [ -z "$MODE" ] || MODE=$(HM_PROJECT="$1" "$HM_BIN/hm-settings" resolve permission_mode "$MODE") || exit $?; }
+project_mode() {
+  [ -z "$MODE" ] || MODE=$(HM_PROJECT="$1" "$HM_BIN/hm-settings" resolve permission_mode "$MODE") || exit $?
+  # a resolved bypass is granted to the hub the owner's file names, running in its own marked Claude, for a listed project
+  if [ "$MODE" = bypassPermissions ]; then
+    delegate_for_hub "$root" || hm_die 4 "the owner's delegate file does not name this hub: no bypass"
+    away_hub_caller "$root"
+    hm_check_mode "$MODE" hm-hub "$1"
+  fi
+}
 refuse_pending() {  # refuse_pending <hub root> <project>: under the lock, exits 4 while a pane this hub started for it still runs
   local f="$1/.hivemind-hub/panes/$2.json"
   pending "$1" "$2"; case $? in
@@ -254,8 +278,11 @@ refuse_pending() {  # refuse_pending <hub root> <project>: under the lock, exits
 launch() {
   local root="$1" name="$2" kind="$3" cwd="$4" line="$5" task="$6" c pane socket ident envs
   shift 6
-  c="exec $(printf '%q ' claude "$@")"
-  envs=(-e "HIVEMIND_HOME=$(hm_home)")
+  HM_BP_ENVS=(); HM_BP_ARGS=()
+  # bypass (MODE, resolved by project_mode): the marker, the hook's variables and only the MCP servers the owner allowed; nothing for any other mode
+  if [ "$MODE" = bypassPermissions ]; then hm_bypass_launch "$cwd" "$root/.hivemind-hub/panes/$name-mcp.json" || hm_die 4 "cannot prepare the away MCP file for $name"; fi
+  c="exec $(printf '%q ' claude "$@" ${HM_BP_ARGS[@]+"${HM_BP_ARGS[@]}"})"
+  envs=(-e "HIVEMIND_HOME=$(hm_home)" -e "HM_PROJECT=$cwd" ${HM_BP_ENVS[@]+"${HM_BP_ENVS[@]}"})
   [ -n "${HM_TMUX_SOCKET:-}" ] && envs+=(-e "HM_TMUX_SOCKET=$HM_TMUX_SOCKET")
   lock "$root"
   refuse_pending "$root" "$name"
@@ -560,6 +587,9 @@ wake)
     unknown) hm_die 4 "cannot tell whether $name's orchestrator is running; nothing was started" ;;
   esac
   [ -n "$O_SID" ] || hm_die 2 "$name's orchestrator has no session recorded, so there is no conversation to resume"
+  # whatever the state above says (a start time read in another locale, a name that does not match): a live Claude already holding this
+  # conversation means it is running, and a second process on it would fork it
+  if holder=$(hm_session_holder "$O_SID"); then who=${O_NAME:-$name}; hm_die 4 "$who's conversation is already open in a live session (pid $holder): it is running; nothing was started."; fi
   project_mode "$HOME_DIR"
   hm_is_session_name "$O_NAME" || hm_die 4 "$name's orchestrator name is not one hivemind will type"
   args=(--resume "$O_SID" --name "$O_NAME"); [ -z "$MODE" ] || args+=(--permission-mode "$MODE")
@@ -667,6 +697,8 @@ answer)
   [ "${#seen}" -eq 40 ] || hm_die 64 "$USAGE"
   root=$(hub_root) || exit $?
   need_project "$root" "$name"
+  # while the owner is away the hub decides internal work but never answers a screen dialog (a permission prompt, say): it is the owner's
+  ! delegate_for_hub "$root" || hm_die 4 "the owner is away: the hub never answers a screen dialog; it waits for them (hm-hub dialog still reads it)"
   lock "$root"
   dialog_target "$root" "$name" "$agent"
   d=$(hm_pane_dialog "$T_SOCKET" "$T_PANE"); rc=$?
@@ -767,18 +799,8 @@ away)
   file=$(hm_delegate_path); dir=${file%/*}; grp=root; [ ! -d /System/Library ] || grp=wheel
   mcp="$root/.hivemind-hub/away-mcp.json"
   cdir="${CLAUDE_CONFIG_DIR:-${HOME:-/}/.claude}"; cj="${CLAUDE_CONFIG_DIR:-${HOME:-/}}/.claude.json"
-  ( umask 077; jq -n '{mcpServers:{}}' > "$mcp.tmp$$" ) && mv "$mcp.tmp$$" "$mcp" && chmod 600 "$mcp"
-  missing=""
-  if [ -n "$allow" ]; then
-    for e in $(printf '%s' "$allow" | tr ',' ' '); do
-      srv=$e; case "$e" in mcp__*__*) srv=${e#mcp__}; srv=${srv%%__*} ;; esac
-      def=$(jq -c --arg s "$srv" --arg r "$root" '(.mcpServers[$s] // .projects[$r].mcpServers[$s]) // empty' "$cj" 2>/dev/null | head -1)
-      [ -n "$def" ] || def=$(jq -c --arg s "$srv" '.mcpServers[$s] // empty' "$root/.mcp.json" 2>/dev/null | head -1)
-      if [ -n "$def" ]; then
-        ( umask 077; jq --arg s "$srv" --argjson d "$def" '.mcpServers[$s] = $d' "$mcp" > "$mcp.tmp$$" ) && mv "$mcp.tmp$$" "$mcp" && chmod 600 "$mcp"
-      else missing="$missing $srv"; fi
-    done
-  fi
+  hm_write_away_mcp "$mcp" "$allow" "$root" || hm_die 1 "cannot write $mcp"
+  missing=$HM_AWAY_MCP_MISSING
   jq -nc --arg s "$(epoch_iso "$now")" --argjson u "$epoch" '{since:$s, until:$u}' > "$root/.hivemind-hub/away.json"
   sid=$(hm_json_get "$root/.hivemind-hub/hub.json" .session_id)
   case "$sid" in ''|*[!${HM_LOWER}${HM_UPPER}${HM_DIGITS}-]*) sid="" ;; esac
@@ -878,15 +900,7 @@ recover)
     if [ "$json" = 1 ]; then echo '{"away":false,"actions":[],"blocked":[]}'; else echo "not away: nothing to recover"; fi
     exit 0
   fi
-  cpid=$(hm_claude_ancestor) || hm_die 4 "recover runs inside the hub's own session"
-  [ "$cpid" = "$(hm_json_get "$root/.hivemind-hub/hub.json" .claude_pid)" ] && [ "$(hm_lstart "$cpid")" = "$(hm_json_get "$root/.hivemind-hub/hub.json" .claude_started)" ] \
-    || hm_die 4 "recover runs only inside the hub session hub.json records (hm-hub self records it): this Claude is another session"
-  hm_env_has "$cpid" HM_AWAY_BYPASS=1; mrc=$?
-  case "$mrc" in
-    0) ;;
-    1) hm_die 4 "this session was not started with the away marker (hm-hub away prints its start line): recover is for the hub that was" ;;
-    *) hm_die 4 "this session's launch environment cannot be read, so the away marker cannot be checked: recover is refused" ;;
-  esac
+  away_hub_caller "$root"
   now=$(/bin/date +%s); since=$((now - 86400))
   # every project's state is read first, with no lock held (tmux can be slow); the lock is taken only to write
   rj="$root/.hivemind-hub/recovery.jsonl"; rjf="$rj"; [ -f "$rj" ] || rjf=/dev/null; newrec=""

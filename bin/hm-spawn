@@ -1,10 +1,13 @@
-#!/usr/bin/env bash
+#!/bin/bash -p
 # Start an agent in tmux with its role, rules and (optionally) its own worktree; or, with --self, register the calling
 # pane as the orchestrator. Takes no command to run: it always starts `claude`. Never answers a dialog.
 # Exit: 2 no project or no tmux pane, 3 .hivemind tracked, 4 refused value, 5 a dialog needs a person, 1 never idle,
 # 64 usage.
 set -u
-. "$(dirname "$0")/hm-lib.sh"
+# Privileged mode: no BASH_ENV, no functions from the environment, and a fixed bash (hm_check_mode below grants bypass). Siblings are
+# found through this folder, never PATH.
+HM_BIN=${0%/*}; [ "$HM_BIN" != "$0" ] || HM_BIN=.
+. "$HM_BIN/hm-lib.sh"
 USAGE="usage: hm-spawn --agent <n> --role <file> --rules <file> --model <m> --effort <e> --mode <m> [--worktree <abs> --branch <b> --base <b>] [--session <s>] [--window <tokens>] [--still <s>] [--max-wait <s>]
        hm-spawn --self --agent <n> [--name <orchestrator session name>] [--hub <hub session name> | --no-hub] [--window <tokens>]
        hm-spawn --respawn <n> [--mode <a stricter mode>] [--resume] [--still <s>] [--max-wait <s>]"
@@ -59,7 +62,7 @@ if [ -n "$respawn" ]; then
   agent="$respawn"; model=$(rec model); effort=$(rec effort); wt=$(rec worktree); branch=$(rec branch)
   [ -z "$(rec window)" ] || window=$(rec window)
   role="$ROOT/.hivemind/team/$agent/role.md"; rules="$ROOT/.hivemind/team/$agent/RULES.md"
-  [ -z "$wt" ] || base=$(hm-manifest list --kind worktree | jq -r --arg p "$wt" 'select(.path == $p) | .base // empty' | head -1)
+  [ -z "$wt" ] || base=$("$HM_BIN/hm-manifest" list --kind worktree | jq -r --arg p "$wt" 'select(.path == $p) | .base // empty' | head -1)
 fi
 [ -n "$agent" ] || hm_die 64 "$USAGE"
 hm_is_agent_name "$agent" || hm_die 4 "bad agent name: $agent"
@@ -77,7 +80,7 @@ if [ "$self" = 1 ]; then
   hm_ensure_state || exit $?
   export HM_PROJECT="$ROOT"
   pane="$TMUX_PANE"
-  hm-manifest list --kind tmux | jq -e --arg a "$agent" 'select(.agent == $a)' >/dev/null \
+  "$HM_BIN/hm-manifest" list --kind tmux | jq -e --arg a "$agent" 'select(.agent == $a)' >/dev/null \
     && hm_die 4 "$agent belongs to a pane hivemind spawned; --self would re-point it at this one"
   socket=$(hm_tmux display-message -p -t "$pane" '#{socket_path}') || exit $?
   mode="" ; model=""; effort=""; session=""; branch=""; wt=""
@@ -85,7 +88,6 @@ else
   [ -z "$oname" ] || hm_die 64 "--name is for --self only"
   [ -z "$hub" ] && [ "$nohub" = 0 ] || hm_die 64 "--hub and --no-hub are for --self only"
   for v in role rules model effort mode; do [ -n "${!v}" ] || hm_die 64 "$USAGE"; done
-  hm_check_mode "$mode" hm-spawn
   [ -f "$role" ] && [ -f "$rules" ] || hm_die 4 "--role and --rules must be files"
   hm_is_model_name "$model" || hm_die 4 "bad model (a value starting with - would be read as an option): $model"
   hm_is_model_name "$effort" || hm_die 4 "bad effort (a value starting with - would be read as an option): $effort"
@@ -95,6 +97,7 @@ else
     for b in "$branch" "$base"; do hm_is_branch_name "$b" || hm_die 4 "bad branch name: $b"; done
   fi
   ROOT=$(hm_project_root) || exit $?
+  hm_check_mode "$mode" hm-spawn "$ROOT"   # bypassPermissions only while the owner is away, for a marked caller (needs the project's root)
   hm_ensure_state || exit $?
   export HM_PROJECT="$ROOT"
 fi
@@ -137,6 +140,10 @@ if [ "$self" = 1 ]; then
     hm_is_session_name "$hub" || hub=""
   fi
   register "$pane" "$socket" || exit $?
+  # an orchestrator the hub launched in bypass was given an MCP file beside its pane record: it lives with the team from here
+  if hm_delegate_for_project "$ROOT" && [ -f "$HM_DG_HUB/.hivemind-hub/panes/$HM_DG_PROJECT-mcp.json" ]; then
+    mkdir -p "$STATE/team/$agent" && mv "$HM_DG_HUB/.hivemind-hub/panes/$HM_DG_PROJECT-mcp.json" "$STATE/team/$agent/away-mcp.json"
+  fi
   # the session's own name, as agents are told to report to it (hm_orchestrator_name reads it live; this is its fallback)
   [ -n "$oname" ] || { oname=$(hm_session_record "$CLAUDE_PID" .name); hm_is_session_name "$oname" || oname=""; }
   upsert_team "$(jq -nc --arg n "$agent" --arg p "$pane" --arg s "$socket" --argjson w "$window" --arg pp "$PANE_PID" --arg ps "$PANE_STARTED" --arg cp "$CLAUDE_PID" --arg cs "$CLAUDE_STARTED" --arg nf "$oname" --arg hub "$hub" \
@@ -156,11 +163,11 @@ fi
 cwd="$ROOT"
 if [ -n "$wt" ]; then
   if [ -e "$wt" ]; then
-    hm-manifest list --kind worktree | jq -e --arg p "$wt" 'select(.path == $p)' >/dev/null \
+    "$HM_BIN/hm-manifest" list --kind worktree | jq -e --arg p "$wt" 'select(.path == $p)' >/dev/null \
       || hm_die 4 "$wt exists and hivemind did not create it"
   else
     git -C "$ROOT" worktree add -q -b "$branch" "$wt" "$base" || hm_die 4 "git worktree add failed for $wt"
-    hm-manifest add worktree path="$wt" base="$base" >/dev/null || exit $?
+    "$HM_BIN/hm-manifest" add worktree path="$wt" base="$base" >/dev/null || exit $?
   fi
   cwd="$wt"
 fi
@@ -197,12 +204,16 @@ if [ "$resume" = 1 ]; then
   hm_session_transcript "$sid" >/dev/null && ! hm_session_holder "$sid" >/dev/null && resume_id=$sid
 fi
 extra=(); [ -z "$resume_id" ] || extra=(--resume "$resume_id")
-cmd="exec $(printf '%q ' claude ${extra[@]+"${extra[@]}"} --name "$project-$agent" --model "$model" --effort "$effort" --permission-mode "$mode" --allowedTools "$ALLOWED" --settings "$settings")"
-envs=(-e "HM_AGENT=$agent" -e "HM_PROJECT=$ROOT" -e "HIVEMIND_HOME=$(hm_home)")
+# bypass: the marker and the hook's variables, and only the MCP servers the owner allowed; any other mode gets none of it (and no stale file)
+HM_BP_ENVS=(); HM_BP_ARGS=()
+if [ "$mode" = bypassPermissions ]; then hm_bypass_launch "$ROOT" "$STATE/team/$agent/away-mcp.json" || hm_die 4 "cannot prepare the away MCP file for $agent"
+else rm -f "$STATE/team/$agent/away-mcp.json"; fi
+cmd="exec $(printf '%q ' claude ${extra[@]+"${extra[@]}"} --name "$project-$agent" --model "$model" --effort "$effort" --permission-mode "$mode" --allowedTools "$ALLOWED" --settings "$settings" ${HM_BP_ARGS[@]+"${HM_BP_ARGS[@]}"})"
+envs=(-e "HM_AGENT=$agent" -e "HM_PROJECT=$ROOT" -e "HIVEMIND_HOME=$(hm_home)" ${HM_BP_ENVS[@]+"${HM_BP_ENVS[@]}"})
 [ -n "${HM_TMUX_SOCKET:-}" ] && envs+=(-e "HM_TMUX_SOCKET=$HM_TMUX_SOCKET")
 pane=$(hm_open_window "$session" "$agent" "$cwd" "$cmd" "${envs[@]}") || exit $?
 socket=$(hm_tmux display-message -p -t "$pane" '#{socket_path}') || exit $?
-hm-manifest add tmux socket="$socket" pane="$pane" agent="$agent" >/dev/null || exit $?   # first: what is on the manifest can be cleaned up
+"$HM_BIN/hm-manifest" add tmux socket="$socket" pane="$pane" agent="$agent" >/dev/null || exit $?   # first: what is on the manifest can be cleaned up
 register "$pane" "$socket" || exit $?
 upsert_team "$(jq -nc --arg n "$agent" --arg p "$pane" --arg s "$socket" --arg m "$model" --arg e "$effort" --arg mode "$mode" \
   --arg wt "$wt" --arg b "$branch" --arg sess "$session" --argjson w "$window" --arg pp "$PANE_PID" --arg ps "$PANE_STARTED" \

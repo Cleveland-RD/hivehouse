@@ -1,16 +1,20 @@
-#!/usr/bin/env bash
+#!/bin/bash -p
 # Tighten-only project settings. `hm-settings resolve <key> <owner value>` prints the effective value: the project's
-# .hivemind/settings.json may make a safety value stricter than the owner's, never looser. Takes no command to run.
+# .hivemind/settings.json may make a safety value stricter than the owner's, never looser. permission_mode alone can come back as
+# bypassPermissions, and only for a marked caller (hm_away_caller) while the owner's delegate file is valid for this project and the
+# owner's own value is auto and the project did not tighten it. Takes no command to run.
 # Exit: 2 no project, 3 .hivemind tracked by git, 4 refused value or key, 64 usage.
 set -u
-. "$(dirname "$0")/hm-lib.sh"
+# Privileged mode: no BASH_ENV, no functions from the environment, and a fixed bash (the away check below decides bypass).
+HM_BIN=${0%/*}; [ "$HM_BIN" != "$0" ] || HM_BIN=.
+. "$HM_BIN/hm-lib.sh"
 KEYS="permission_mode overnight_ceiling_usd allow_attribution files_per_commit"
 [ $# -eq 3 ] && [ "$1" = resolve ] || hm_die 64 "usage: hm-settings resolve <key> <owner value>"
 key="$2"; owner="$3"
 case " $KEYS " in *" $key "*) ;; *) hm_die 4 "unknown setting: $key" ;; esac
 
-mode_rank() {  # plan and dontAsk are the same strictness; bypassPermissions is never a local value
-  case "$1" in plan|dontAsk) echo 0 ;; default) echo 1 ;; acceptEdits) echo 2 ;; auto) echo 3 ;; *) return 1 ;; esac
+mode_rank() {  # hm_mode_rank, but bypassPermissions is never a local value (a project or the owner may not name it)
+  [ "$1" != bypassPermissions ] && hm_mode_rank "$1"
 }
 is_num()  { printf '%s' "$1" | grep -Eq '^[0-9]+(\.[0-9]+)?$'; }
 is_int()  { printf '%s' "$1" | grep -Eq '^[1-9][0-9]*$'; }
@@ -38,21 +42,31 @@ if [ -n "$(git -C "$root" ls-files -- .hivemind)" ]; then
   hm_die 3 "files under .hivemind/ are tracked by git; untrack them before using hivemind here"
 fi
 file="$root/.hivemind/settings.json"
-if [ ! -f "$file" ]; then printf '%s\n' "$owner"; exit 0; fi
+emit() {  # emit <value>: print it; permission_mode left at the owner's auto becomes bypassPermissions for a marked caller while the owner is away
+  if [ "$key" = permission_mode ] && [ "$1" = auto ] && [ "$owner" = auto ] && hm_delegate_for_project "$root"; then
+    hm_away_caller
+    case $? in
+      0) printf 'bypassPermissions\n'; return ;;
+      2) echo "hivemind: this session's launch environment cannot be read, so the away marker cannot be checked; no bypass: using $1" >&2 ;;
+    esac
+  fi
+  printf '%s\n' "$1"
+}
+if [ ! -f "$file" ]; then emit "$owner"; exit 0; fi
 
 jq -e 'type == "object"' "$file" >/dev/null 2>&1 || hm_die 4 "$file is not a JSON object"
 for k in $(jq -r 'keys[]' "$file"); do
   case " $KEYS " in *" $k "*) ;; *) hm_die 4 "unknown setting in $file: $k" ;; esac
 done
-[ "$(jq -r --arg k "$key" 'has($k)' "$file")" = true ] || { printf '%s\n' "$owner"; exit 0; }
+[ "$(jq -r --arg k "$key" 'has($k)' "$file")" = true ] || { emit "$owner"; exit 0; }
 proj=$(jq -r --arg k "$key" '.[$k] | tostring' "$file") || exit 4
 if [ "$key" = permission_mode ] && [ "$proj" = bypassPermissions ]; then
   echo "hivemind: project $key bypassPermissions is never effective; using the owner's $owner" >&2
-  printf '%s\n' "$owner"; exit 0
+  emit "$owner"; exit 0
 fi
 valid "$proj" || hm_die 4 "project value for $key is not allowed: $proj"
 if stricter "$proj" "$owner"; then printf '%s\n' "$proj"
 else
   [ "$proj" = "$owner" ] || echo "hivemind: project $key $proj is looser than the owner's $owner; using the owner's" >&2
-  printf '%s\n' "$owner"
+  emit "$owner"
 fi
