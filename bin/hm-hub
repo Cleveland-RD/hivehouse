@@ -942,7 +942,8 @@ decide)
     printf '## %s: %s\n\n### Question\n\n%s\n\n### Answer\n\n%s\n\n' "$(hm_now)" "$reason" "$question" "$answer"
   } >> "$root/.hivemind-hub/decisions/$id.md"
   append_event "$root" "$id" "$p" decided "$reason"
-  echo "$id decided" ;;
+  echo "$id decided"
+  echo "now send the answer you recorded: HUB on TASK $id: $(printf '%s\n' "$answer" | head -1)" ;;
 
 hold)
   name="${1:-}"; [ -n "$name" ] || hm_die 64 "$USAGE"; shift

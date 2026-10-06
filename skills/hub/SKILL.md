@@ -188,8 +188,8 @@ from a file or an environment variable.
   machine, a paid step, deleting data that is not the team's own scratch, a change to settings or permissions, a new task,
   and every screen dialog. Log the task `question` (`hm-hub log <id> question`) and say what waits in the report; other
   tasks go on. `hm-hub hold <project>` (on the owner's word, `--off` to release) keeps you away from a project.
-- **How you answer.** `SendMessage` the orchestrator `HUB on TASK <id>: <decision>`, never `OWNER on TASK`, so it knows
-  whose words it has. Record every decision, with its question and answer word for word:
+- **How you answer.** Record the decision FIRST, then send it. `hm-hub decide` takes the question as the orchestrator asked
+  it, `=== ANSWER ===`, and the answer you are about to send, word for word:
 
   ```
   hm-hub decide <task id> --reason "<one line>" <<'EOF'
@@ -199,7 +199,11 @@ from a file or an environment variable.
   EOF
   ```
 
-  It writes `.hivemind-hub/decisions/<task id>.md` and a `decided` event, and refuses unless the owner is away.
+  It writes `.hivemind-hub/decisions/<task id>.md` and a `decided` event, refuses unless the owner is away, and prints
+  `now send the answer you recorded: HUB on TASK <id>: <its first line>`. THEN `SendMessage` the orchestrator that same
+  answer word for word as `HUB on TASK <id>: <decision>`, never `OWNER on TASK`, so it knows whose words it has. If `decide`
+  refuses, send nothing and tell the owner: a reply sent without its record leaves the task waiting on the owner with no
+  `decisions/` file.
 - **When the owner is back.** Open with what you decided since they left (`hm-hub tasks --json`: each task's `decisions`,
   with their times, from `hub.away.since` on, or `hub.last_away.since` once away has ended), one line each with its
   reason, then what waits on them. The screen shows the same under "decided while you were away", and keeps it after

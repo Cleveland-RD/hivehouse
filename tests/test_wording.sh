@@ -42,4 +42,7 @@ done
 for w in "hm-hub away" "hm-hub recover" "hm-hub decide" "printenv HM_AWAY_BYPASS" "never \`OWNER on TASK\`" "--max-starts" "decided while you were away" "hm-hub hold"; do
   assert_contains "the hub skill (delegate mode): $w" "$hubskill" "$w"
 done
+# the record comes before the reply: a reply sent first leaves the task waiting on the owner with no decisions/ file
+assert_contains "the hub skill: the decision is recorded FIRST" "$(printf '%s' "$hubskill" | tr '\n' ' ' | tr -s ' ')" "Record the decision FIRST, then send it"
+assert_contains "the hub skill: when decide refuses, nothing is sent" "$(printf '%s' "$hubskill" | tr '\n' ' ' | tr -s ' ')" "If \`decide\` refuses, send nothing"
 [ "$FAILS" -eq 0 ] || exit 1

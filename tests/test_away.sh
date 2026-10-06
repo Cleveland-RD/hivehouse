@@ -137,7 +137,9 @@ mkdel
 ta=$(idof "$(hub task alpha --text "Add the export button")"); hub log "$ta" plan >/dev/null
 printf 'Which of the two layouts?\nA or B.\n=== ANSWER ===\nB, as the existing pages do.\n' | hub decide "$ta" --reason "matches the existing pages" >/dev/null 2>&1
 assert_status "decide while the owner is home (no valid delegate file for this hub)" $? 4
-printf 'Which of the two layouts?\nA or B.\n=== ANSWER ===\nB, as the existing pages do.\n' | dhub decide "$ta" --reason "matches the existing pages" >/dev/null; assert_status "decide while away" $? 0
+dout=$(printf 'Which of the two layouts?\nA or B.\n=== ANSWER ===\nB, as the existing pages do.\n' | dhub decide "$ta" --reason "matches the existing pages"); assert_status "decide while away" $? 0
+assert_contains "...says it is decided" "$dout" "$ta decided"
+assert_contains "...and which reply to send next, the answer's first line" "$dout" "now send the answer you recorded: HUB on TASK $ta: B, as the existing pages do."
 assert_eq "...the question and answer, word for word" "$(grep -c -e 'Which of the two layouts?' -e 'B, as the existing pages do.' "$P/decisions/$ta.md")" "2"
 assert_contains "...with its reason" "$(cat "$P/decisions/$ta.md")" "matches the existing pages"
 assert_eq "...a decided event" "$(dhub tasks --json | jq -r --arg i "$ta" '.[] | select(.id==$i) | [.state, .needs_owner] | map(tostring) | join(" ")')" "decided false"
