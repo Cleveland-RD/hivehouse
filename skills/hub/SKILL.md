@@ -1,7 +1,7 @@
 ---
 name: hub
 description: Be the owner's hub, the one assistant in their work folder that knows every project, hands each task to that project's orchestrator, wakes orchestrators a restart stopped, carries the owner's words both ways and reports back. Use when the session-start note says this session is the hub, or when the owner types /hivemind:hub.
-allowed-tools: Bash(hm-hub init) Bash(hm-hub status*) Bash(hm-hub tasks*) Bash(hm-hub discover) Bash(hm-hub self*) Bash(hm-hub task *) Bash(hm-hub log *) Bash(hm-settings resolve *) Bash(hm-adhd) Read Write(./.hivemind-hub/memory/**) Edit(./.hivemind-hub/memory/**) SendMessage ListAgents AskUserQuestion
+allowed-tools: Bash(hm-hub init) Bash(hm-hub status*) Bash(hm-hub tasks*) Bash(hm-hub discover) Bash(hm-hub self*) Bash(hm-hub task *) Bash(hm-hub log *) Bash(hm-adhd) Read Write(./.hivemind-hub/memory/**) Edit(./.hivemind-hub/memory/**) SendMessage ListAgents AskUserQuestion
 ---
 
 # hivemind: hub
@@ -27,14 +27,13 @@ each time. That is intended.
 
 1. `hm-hub self` records this session, so orchestrators can reply to it. If it says there is no hub here, this is the
    first run: ask the owner whether this folder (their work folder, above every project) should be the hub, and on yes
-   run `hm-hub init`, then `hm-hub self` again; from then on every session started here is the hub. If it says the
-   session has no name, tell the owner to start the hub with `claude --name hub /hivemind:hub` (the one command that
-   opens it named and greeting), or to type `/rename hub`, and stop.
+   run `hm-hub init`, then `hm-hub self` again; from then on every session started here is the hub. A plain `claude`
+   started here names itself `hub` (or `hub-2` beside another) and opens this skill by itself, unless the owner turned
+   that off (`hub_auto_start`). If `hm-hub self` still says the session has no name, or that its name is not one word,
+   tell the owner to type `/rename hub`; until then show the status, but hand no task: nobody could reply.
 2. `hm-adhd`. When it prints a path, Read that file and follow it for every message to the owner.
-3. `hm-settings resolve permission_mode ${user_config.permission_mode_local}`: the mode every orchestrator you wake or
-   start runs in (`--mode <it>`). Sessions in different modes hold each other's messages for approval nobody sees.
-4. `hm-hub status` and `hm-hub tasks --open`.
-5. Greet the owner with one line per project: its orchestrator's state, its agents, its open tasks. Name anything that
+3. `hm-hub status` and `hm-hub tasks --open`.
+4. Greet the owner with one line per project: its orchestrator's state, its agents, its open tasks. Name anything that
    is stopped or waiting on a question, and what you would do about it. End with the one thing you need, or "Nothing
    needed from you."
 
@@ -66,18 +65,25 @@ folders). Add only what the owner confirmed: `hm-hub add <project> --home <folde
    - **running**: `SendMessage` to its name, `TASK <id>: read <task file>`, then `hm-hub log <id> handed`. If its
      `question` is true, a dialog waits on its screen: tell the owner first.
    - **stopped**: ask "<project>'s orchestrator is stopped. Resume it and its N agents (N+1 sessions)?". On yes:
-     `hm-hub wake <project> --mode <mode>`. It resumes the orchestrator's own conversation, with its own model, and
+     `hm-hub wake <project> --mode ${user_config.permission_mode_local}`. It resumes the orchestrator's own conversation, with its own model, and
      tells it to register with you and bring its agents back. Wait for its `BACK` message, then hand the task as above.
    - **none**: ask "<project> has no orchestrator yet. Start one on this task (1 session; it plans a team and sends you
-     the plan to approve)?". On yes: `hm-hub start <project> <id> --mode <mode>`. It logs the task as handed.
+     the plan to approve)?". On yes: `hm-hub start <project> <id> --mode ${user_config.permission_mode_local}`. It logs
+     the task as handed.
    - **unregistered**: a session runs outside hivemind as the project's orchestrator (its name, pid and pane are in the
      status). Never start a second one. Ask the owner whether to hand it the task; on yes, `SendMessage` to its name:
      `TASK <id>: read <task file>. First register with hivemind: hm-spawn --self --agent orchestrator --hub <your name>.`
-   - **coming up** (`starting` set, `typed` true): it was started and sent its line; wait for its message.
-   - **waiting on you** (`starting` set, `typed` false): it stopped at a question on its screen before its first line.
+   - **coming up** (`starting` set, `typed` or `sending` true): it is being started or was sent its line; wait for its
+     message.
+   - **waiting on you** (`starting` set, `typed` and `sending` false): it stopped at a question on its screen before its
+     first line.
      Tell the owner which pane; once they have answered it there, run `hm-hub continue <project>` (or they press
      Continue on the screen). Never start another.
    - **unknown**: say so, and ask the owner to look at the project's tmux window.
+
+`--mode` is the owner's local permission mode, the one hivemind's agents run in; `hm-hub` makes it stricter where a
+project's own `.hivemind/settings.json` says so, never looser. Start the hub in that mode too: sessions in different modes
+hold each other's messages for an approval nobody sees.
 
 ## 4. Carrying messages
 

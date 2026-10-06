@@ -33,7 +33,8 @@ USAGE="usage: hm-hub init
        hm-hub tasks [<project>] [--open] [--json]
        hm-hub wake <project> [--mode <m>] [--still <s>] [--max-wait <s>]
        hm-hub start <project> <task id> [--model <m>] [--mode <m>] [--still <s>] [--max-wait <s>]
-       hm-hub continue <project> [--still <s>] [--max-wait <s>]"
+       hm-hub continue <project> [--still <s>] [--max-wait <s>]
+       hm-hub naming --session <session id>"
 
 cmd="${1:-}"; [ -n "$cmd" ] || hm_die 64 "$USAGE"; shift
 hub_root() {  # the work folder holding .hivemind-hub/, resolved
@@ -174,10 +175,16 @@ start_opts() {  # start_opts <model allowed 0|1> [--model m] [--mode m] [--still
   [ -z "$MODEL" ] || hm_is_model_name "$MODEL" || hm_die 4 "bad model: $MODEL"
   [ -z "$MODE" ] || hm_check_mode "$MODE" hm-hub
 }
-refuse_pending() {  # refuse_pending <hub root> <project>: exits 4 while a pane this hub started for it still runs
+# sending <record>: 0 while the hm-hub that owns the record's line (a start, a wake or a continue) is still waiting to send
+# it: the pane is then coming up, not waiting on the owner, and nothing else may send its line
+sending() { local p; p=$(hm_json_get "$1" .sender_pid); [ -n "$p" ] && hm_alive "$p" && [ "$(hm_lstart "$p")" = "$(hm_json_get "$1" .sender_started)" ]; }
+# project_mode <home>: the owner's --mode, made stricter (never looser) by the project's own .hivemind/settings.json, as
+# hm-spawn's agents get it (hm-settings); the hub's folder is no repository, so it is resolved in the project's home
+project_mode() { [ -z "$MODE" ] || MODE=$(HM_PROJECT="$1" "$(dirname "$0")/hm-settings" resolve permission_mode "$MODE") || exit $?; }
+refuse_pending() {  # refuse_pending <hub root> <project>: under the lock, exits 4 while a pane this hub started for it still runs
   local f="$1/.hivemind-hub/panes/$2.json"
   pending "$1" "$2"; case $? in
-    0) if [ "$(hm_json_get "$f" .typed)" = true ]; then
+    0) if [ "$(hm_json_get "$f" .typed)" = true ] || sending "$f"; then
          hm_die 4 "$2's orchestrator is already coming up in pane $(hm_json_get "$f" .pane); it reports back when it is up"
        fi
        hm_die 4 "$2's orchestrator waits in pane $(hm_json_get "$f" .pane) for its first line (a question on its screen?): answer it there, then run hm-hub continue $2" ;;
@@ -201,7 +208,8 @@ launch() {
   ident=$(hm_pane_identity "$socket" "$pane") || hm_die 4 "cannot read the new pane $pane"
   mkdir -p "$root/.hivemind-hub/panes"
   jq -nc --arg p "$pane" --arg s "$socket" --arg i "${ident%%$'\t'*}" --arg t "${ident#*$'\t'}" --arg k "$kind" --arg l "$line" --arg task "$task" --arg at "$(hm_now)" \
-    '{pane:$p, socket:$s, pane_pid:$i, pane_started:$t, kind:$k, line:$l, typed:false, at:$at} + (if $task != "" then {task:$task} else {} end)' \
+    --arg sp "$$" --arg ss "$(hm_lstart $$)" \
+    '{pane:$p, socket:$s, pane_pid:$i, pane_started:$t, kind:$k, line:$l, typed:false, sender_pid:$sp, sender_started:$ss, at:$at} + (if $task != "" then {task:$task} else {} end)' \
     > "$root/.hivemind-hub/panes/$name.json"
   unlock
   finish "$root" "$name"
@@ -245,6 +253,8 @@ self)
   [ -n "$name" ] || name=$(hm_session_record "$pid" .name)
   [ -n "$name" ] || hm_die 4 "this session has no name: start the hub with claude --name hub /hivemind:hub (or type /rename hub), or pass --name"
   hm_is_session_name "$name" || hm_die 4 "a session name hivemind will type is one line of letters, digits, space, - _ . ( ), at most 64: $name"
+  # orchestrators are told to type it (hm-spawn --self --hub <name>), so it is one word
+  case "$name" in *[' ()']*) hm_die 4 "the hub's name is one word (letters, digits, - _ .): $name; rename the session" ;; esac
   jq -nc --arg n "$name" --arg p "$pid" --arg s "$(hm_lstart "$pid")" --arg sid "$(hm_session_record "$pid" .sessionId)" --arg at "$(hm_now)" \
     '{name:$n, claude_pid:$p, claude_started:$s, at:$at} + (if $sid != "" then {session_id:$sid} else {} end)' \
     > "$root/.hivemind-hub/hub.json.tmp$$" && mv "$root/.hivemind-hub/hub.json.tmp$$" "$root/.hivemind-hub/hub.json"
@@ -345,7 +355,8 @@ status)
     starting='null'
     if [ "$O_STATE" != running ] && pending "$root" "$n"; then
       q=false; hm_pane_question "$(hm_json_get "$root/.hivemind-hub/panes/$n.json" .socket)" "$(hm_json_get "$root/.hivemind-hub/panes/$n.json" .pane)" && q=true
-      starting=$(jq -c --argjson q "$q" '{pane, kind, at, typed: (.typed // false), question: $q} + (if .task then {task} else {} end)' "$root/.hivemind-hub/panes/$n.json")
+      sg=false; sending "$root/.hivemind-hub/panes/$n.json" && sg=true
+      starting=$(jq -c --argjson q "$q" --argjson sg "$sg" '{pane, kind, at, typed: (.typed // false), sending: $sg, question: $q} + (if .task then {task} else {} end)' "$root/.hivemind-hub/panes/$n.json")
     fi
     agents='[]'
     for a in $(jq -r '.agents[]?.name' "$home/.hivemind/team.json" 2>/dev/null); do
@@ -374,7 +385,7 @@ status)
       (.[] |
         "",
         .name,
-        "  orchestrator  \(if .orchestrator.state == "unregistered" then "running, not registered with hivemind" else .orchestrator.state end)\(if .orchestrator.name then "  \(.orchestrator.name)" else "" end)\(if .orchestrator.pane then " in pane \(.orchestrator.pane)" else "" end)\(if .orchestrator.question then "  (a question on its screen)" else "" end)\(if .orchestrator.starting then (if .orchestrator.starting.typed then "  (coming up in pane \(.orchestrator.starting.pane))" else "  (waiting in pane \(.orchestrator.starting.pane)\(if .orchestrator.starting.question then " on a question" else "" end): hm-hub continue \(.name))" end) else "" end)",
+        "  orchestrator  \(if .orchestrator.state == "unregistered" then "running, not registered with hivemind" else .orchestrator.state end)\(if .orchestrator.name then "  \(.orchestrator.name)" else "" end)\(if .orchestrator.pane then " in pane \(.orchestrator.pane)" else "" end)\(if .orchestrator.question then "  (a question on its screen)" else "" end)\(if .orchestrator.starting then (if .orchestrator.starting.typed or .orchestrator.starting.sending then "  (coming up in pane \(.orchestrator.starting.pane))" else "  (waiting in pane \(.orchestrator.starting.pane)\(if .orchestrator.starting.question then " on a question" else "" end): hm-hub continue \(.name))" end) else "" end)",
         "  agents        \(if (.agents | length) == 0 then "none" else "\([.agents[] | select(.state == "running")] | length) of \(.agents | length) running\([.agents[] | select(.state != "running" or .question) | "\(.name) \(if .question then "has a question on its screen" else .state end)"] | if length > 0 then "  (\(join(", ")))" else "" end)" end)",
         "  tasks         \(.open_tasks) open",
         (.repos | to_entries[] | "\(if .key == 0 then "  folders       " else "                " end)\(.value.folder + (" " * ($fw - (.value.folder | length))))  \(.value.kind)\(if .value.branch then "  \(.value.branch)  \(if .value.changed == 0 then "clean" else "\(.value.changed) changed" end)" else "" end)"))'
@@ -437,7 +448,6 @@ wake)
   root=$(hub_root) || exit $?
   need_project "$root" "$name"
   hn=$(need_hub_name "$root") || exit $?
-  refuse_pending "$root" "$name"
   orch_state "$root" "$name" "$HOME_DIR"
   case "$O_STATE" in
     none) hm_die 2 "no orchestrator is recorded for $name: start one on a task with hm-hub start $name <task id>" ;;
@@ -446,6 +456,7 @@ wake)
     unknown) hm_die 4 "cannot tell whether $name's orchestrator is running; nothing was started" ;;
   esac
   [ -n "$O_SID" ] || hm_die 2 "$name's orchestrator has no session recorded, so there is no conversation to resume"
+  project_mode "$HOME_DIR"
   hm_is_session_name "$O_NAME" || hm_die 4 "$name's orchestrator name is not one hivemind will type"
   args=(--resume "$O_SID" --name "$O_NAME"); [ -z "$MODE" ] || args+=(--permission-mode "$MODE")
   launch "$root" "$name" wake "$HOME_DIR" \
@@ -461,7 +472,6 @@ start)
   st=$(task_state "$root" "$id"); [ -n "$st" ] || hm_die 2 "no task $id in this hub"
   [ "$(jq -r --arg i "$id" 'select(.id == $i) | .project' "$root/.hivemind-hub/tasks.jsonl" | head -1)" = "$name" ] || hm_die 4 "task $id is not $name's"
   in_list "$st" "$HUB_CLOSED" && hm_die 4 "task $id is $st"
-  refuse_pending "$root" "$name"
   orch_state "$root" "$name" "$HOME_DIR"
   case "$O_STATE" in
     none) ;;
@@ -470,6 +480,7 @@ start)
   esac
   tf="$root/.hivemind-hub/tasks/$id.md"
   hm_is_typed_path "$tf" || hm_die 4 "the task's path is not one hivemind will type: $tf"
+  project_mode "$HOME_DIR"
   args=(--name "$name-orchestrator"); [ -z "$MODEL" ] || args+=(--model "$MODEL"); [ -z "$MODE" ] || args+=(--permission-mode "$MODE")
   launch "$root" "$name" start "$HOME_DIR" "/hivemind:start Task $id: read $tf. It came from the owner through $hn." "$id" "${args[@]}" ;;
 
@@ -479,13 +490,35 @@ continue)
   [ -z "$MODE" ] || hm_die 64 "$USAGE"
   root=$(hub_root) || exit $?
   need_project "$root" "$name"
+  f="$root/.hivemind-hub/panes/$name.json"
+  lock "$root"
   pending "$root" "$name"; case $? in
     1) hm_die 2 "this hub has started nothing for $name that is still waiting" ;;
     2) hm_die 4 "cannot tell whether the pane this hub started for $name is still there" ;;
   esac
-  [ "$(hm_json_get "$root/.hivemind-hub/panes/$name.json" .typed)" != true ] \
-    || hm_die 4 "$name's orchestrator was already sent its line in pane $(hm_json_get "$root/.hivemind-hub/panes/$name.json" .pane); it reports back when it is up"
+  [ "$(hm_json_get "$f" .typed)" != true ] || hm_die 4 "$name's orchestrator was already sent its line in pane $(hm_json_get "$f" .pane); it reports back when it is up"
+  sending "$f" && hm_die 4 "$name's orchestrator is being started in pane $(hm_json_get "$f" .pane) and its line is on the way; nothing to continue"
+  jq --arg sp "$$" --arg ss "$(hm_lstart $$)" '.sender_pid = $sp | .sender_started = $ss' "$f" > "$f.tmp$$" && mv "$f.tmp$$" "$f"
+  unlock
   finish "$root" "$name" ;;
+
+naming)
+  # hm-hub naming --session <id>: what Claude Code records about this hub's own session ({found, name, source}) and a name
+  # for it no other running session has (hub, else hub-2...). The records are Claude Code's own and undocumented
+  # (<config dir>/sessions/<pid>.json); without one, found is false and the session is left as it is.
+  [ $# -eq 2 ] && [ "$1" = --session ] || hm_die 64 "$USAGE"
+  sid="$2"; case "$sid" in ''|*[!${HM_LOWER}${HM_UPPER}${HM_DIGITS}-]*) hm_die 4 "bad session id: $sid" ;; esac
+  found=false; mname=""; msource=""; taken=""
+  for f in "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/sessions/*.json; do
+    [ -f "$f" ] || continue
+    e=$(jq -r '[.pid, .sessionId, .name, .nameSource] | map(. // "" | tostring) | join("\u001f")' "$f" 2>/dev/null) || continue
+    IFS=$'\x1f' read -r pid fsid fname fsource <<< "$e"
+    hm_is_number "$pid" && hm_alive "$pid" && hm_is_claude "$pid" || continue
+    if [ "$fsid" = "$sid" ]; then found=true; mname="$fname"; msource="$fsource"; else taken="$taken|$fname|"; fi
+  done
+  free=hub; i=2
+  while case "$taken" in *"|$free|"*) true ;; *) false ;; esac; do free="hub-$i"; i=$((i + 1)); done
+  jq -nc --argjson f "$found" --arg n "$mname" --arg s "$msource" --arg free "$free" '{found:$f, name:$n, source:$s, free:$free}' ;;
 
 *) hm_die 64 "$USAGE" ;;
 esac

@@ -52,6 +52,7 @@ bash "$T_TMP/cl/claude" --name hub >/dev/null; assert_status "self" $? 0
 assert_eq "...its name" "$(jq -r .name "$P/hub.json")" "hub"
 [ -n "$(jq -r '.claude_pid // empty' "$P/hub.json")" ] && ok "...and the Claude process" || bad "no claude pid"
 bash "$T_TMP/cl/claude" --name 'hub;rm' >/dev/null 2>&1; assert_status "a name hivemind will not type" $? 4
+bash "$T_TMP/cl/claude" --name 'my hub' >/dev/null 2>&1; assert_status "a hub name is one word: orchestrators are told to type it" $? 4
 assert_eq "...the record stays" "$(jq -r .name "$P/hub.json")" "hub"
 
 # ---- tasks: a ledger of what the owner asked ----
@@ -158,6 +159,11 @@ live() {  # live <name> <cwd>: a running process named claude, with Claude Code'
   jq -nc --argjson p "$p" --arg n "$1" --arg c "$2" '{pid:$p, name:$n, cwd:$c, tmux:"work:@3.%77", kind:"interactive"}' > "$CLAUDE_CONFIG_DIR/sessions/$p.json"
   echo "$p"
 }
+# this hub's own session is never a project's orchestrator, whatever it is called
+hp=$(live tri-orchestrator "$H/tri"); cp "$P/hub.json" "$T_TMP/hub.json.saved"
+jq --arg p "$hp" '.claude_pid = $p' "$T_TMP/hub.json.saved" > "$P/hub.json"
+assert_eq "the hub's own session is not taken for an orchestrator" "$(hub status tri --json | jq -r '.projects[0].orchestrator.state')" "none"
+kill "$hp" 2>/dev/null; cp "$T_TMP/hub.json.saved" "$P/hub.json"; sleep 0.3
 lp=$(live tri-builder "$H/tri")
 assert_eq "a session that is no orchestrator is not one" "$(hub status tri --json | jq -r '.projects[0].orchestrator.state')" "none"
 lp=$(live tri-orchestrator "$H/tri")
@@ -171,6 +177,8 @@ kill "$lp" 2>/dev/null; sleep 0.3
 assert_eq "...gone once it ends" "$(hub status tri --json | jq -r '.projects[0].orchestrator.state')" "none"
 
 # ---- a start stopped at a question: shown, kept, and continued once the owner answers ----
+# the project's own settings make the owner's mode stricter, never looser (hm-settings): the orchestrator gets the result
+mkdir -p "$H/tri/.hivemind"; echo '{"permission_mode":"plan"}' > "$H/tri/.hivemind/settings.json"
 hm_tmux set-environment -g HM_FAKE_CLAUDE dialoganswer
 qp=$(hub start tri "$t3" --mode auto --still 2 --max-wait 30 2>"$T_TMP/q.err"); assert_status "a question stops the start" $? 5
 assert_contains "...and says how to go on" "$(cat "$T_TMP/q.err")" "hm-hub continue tri"
@@ -178,6 +186,7 @@ hm_tmux set-environment -g -u HM_FAKE_CLAUDE
 st=$(hub status tri --json | jq -c '.projects[0].orchestrator.starting')
 assert_eq "...status shows it waiting on the owner" "$(printf '%s' "$st" | jq -r '[.typed, .question] | map(tostring) | join(" ")')" "false true"
 qp=$(printf '%s' "$st" | jq -r .pane)
+assert_contains "...in the mode the project allows" "$(hm_tmux capture-pane -p -J -S - -t "$(hub status tri --json | jq -r '.projects[0].orchestrator.starting.pane')")" "ARGV: plan"
 hub start tri "$t3" --still 2 --max-wait 15 >/dev/null 2>"$T_TMP/q2.err"; assert_status "...never started again" $? 4
 assert_contains "...it points at continue" "$(cat "$T_TMP/q2.err")" "hm-hub continue tri"
 hub continue tri --still 2 --max-wait 15 >/dev/null 2>&1; assert_status "continue while the question is still there" $? 5
@@ -188,6 +197,31 @@ assert_contains "...the start's line is typed" "$(hm_tmux capture-pane -p -J -S 
 assert_eq "...the task is handed" "$(hub tasks --json | jq -r --arg i "$t3" '.[] | select(.id==$i) | .state')" "handed"
 hub continue tri --still 2 --max-wait 15 >/dev/null 2>&1; assert_status "nothing left to continue" $? 4
 hub continue app >/dev/null 2>&1; assert_status "continue where this hub started nothing" $? 2
+
+# ---- a start still being sent is coming up, not waiting on the owner, and continue never sends its line twice ----
+mk five; hub add five --home five >/dev/null; t5=$(idof "$(hub task five --text "Ship it")")
+( cd "$H" && hm-hub start five "$t5" --still 6 --max-wait 30 >"$T_TMP/five.out" 2>&1; echo "rc=$?" >> "$T_TMP/five.out" ) &
+fs=$!; t_track "$fs"; sleep 3
+st=$(hub status five --json | jq -c '.projects[0].orchestrator.starting')
+assert_eq "while its line is on the way it is being sent, not waiting" "$(printf '%s' "$st" | jq -r '[.typed, .sending] | map(tostring) | join(" ")')" "false true"
+case "$(hub status five)" in *"hm-hub continue"*) bad "the plain status offers continue for a start still being sent" ;; *) ok "...the plain status offers no continue" ;; esac
+hub continue five --still 1 --max-wait 5 >/dev/null 2>"$T_TMP/c5.err"; assert_status "...and continue refuses it" $? 4
+wait "$fs"
+assert_contains "the start itself finished" "$(cat "$T_TMP/five.out")" "rc=0"
+fp=$(head -1 "$T_TMP/five.out")
+assert_eq "...its line typed once" "$(hm_tmux capture-pane -p -J -S - -t "$fp" | grep -c "GOT: /hivemind:start Task $t5")" "1"
+assert_eq "...and handed once" "$(jq -r --arg i "$t5" 'select(.id == $i and .event == "handed") | .id' "$P/tasks.jsonl" | grep -c .)" "1"
+
+# ---- the hub names its own session: Claude Code's record of it, and a name no other running session has ----
+mine=$(live "" "$H"); jq '.sessionId = "sess-hub" | .nameSource = "auto" | .name = "Read the docs"' "$CLAUDE_CONFIG_DIR/sessions/$mine.json" > "$T_TMP/m.json" && mv "$T_TMP/m.json" "$CLAUDE_CONFIG_DIR/sessions/$mine.json"
+n=$(hub naming --session sess-hub); assert_status "naming" $? 0
+assert_eq "...an unnamed session is offered hub" "$(printf '%s' "$n" | jq -r '[.found, .source, .free] | map(tostring) | join(" ")')" "true auto hub"
+other=$(live hub "$T_TMP")
+assert_eq "...hub-2 while another session is called hub" "$(hub naming --session sess-hub | jq -r .free)" "hub-2"
+kill "$other" 2>/dev/null; sleep 0.3
+assert_eq "...and found false when Claude Code keeps no record of it" "$(hub naming --session nosuch | jq -r .found)" "false"
+hub naming --session 'x;y' >/dev/null 2>&1; assert_status "...a session id it will not read" $? 4
+kill "$mine" 2>/dev/null
 
 # ---- a question in an agent's window is shown, since nobody watches it ----
 hm_tmux set-environment -g HM_FAKE_CLAUDE dialog
@@ -220,5 +254,5 @@ out=$(hk "$T_TMP"); assert_eq "nothing elsewhere" "$out" ""
 # ---- remove ----
 hub remove two >/dev/null; assert_status "remove" $? 0
 hub remove two >/dev/null 2>&1; assert_status "remove what is not there" $? 2
-assert_eq "...the others stay" "$(jq -r '[.projects[].name] | join(",")' "$P/projects.json")" "app,tri"
+assert_eq "...the others stay" "$(jq -r '[.projects[].name] | join(",")' "$P/projects.json")" "app,tri,five"
 cd /; t_teardown; t_done
