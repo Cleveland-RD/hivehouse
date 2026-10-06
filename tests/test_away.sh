@@ -235,6 +235,8 @@ jq -nc --argjson e "$((NOW - 50))" '{epoch:$e, action:"start", item:"beta"}' >> 
 r=$(rec --json --max-starts 2); assert_eq "the daily cap on sessions started or woken: blocked" "$(act "$r" | tr ',' '\n' | grep -c wake:alpha)" "0"
 assert_contains "...with its reason" "$(printf '%s' "$r" | jq -r '[.blocked[] | select(.project == "alpha")][0].reason')" "daily cap of 2"
 : > "$rj"; r=$(rec --json --max-starts 2); assert_eq "...under the cap it is woken" "$(act "$r" | tr ',' '\n' | grep -c wake:alpha)" "1"
+r=$(rec --json --max-starts 1); assert_eq "two stopped orchestrators and room for one session: one is woken in this beat" "$(act "$r" | tr ',' '\n' | grep -c '^wake:')" "1"
+assert_contains "...and the other is blocked on the daily cap" "$(printf '%s' "$r" | jq -r '[.blocked[] | select(.action == "wake")][0].reason')" "daily cap of 1"
 hub recover --max-starts x >/dev/null 2>&1; assert_status "a daily cap that is a number" $? 4
 t=$(rec); case "$t" in *"wake alpha (task $ta)"*) ok "the plain output names each action" ;; *) bad "plain recover: $t" ;; esac
 # a hub started without the away marker does not recover; one started with it does; one whose environment cannot be read is refused
@@ -344,10 +346,14 @@ live "$OC" "$OCS" && ok "...it is left running" || bad "an orchestrator was stop
 assert_contains "...and reported blocked, with the cap named" "$(printf '%s' "$r" | jq -r '[.blocked[] | select(.project == "beta")][0].reason')" "daily cap of 2"
 r=$(rec --json --max-starts 2); assert_eq "...said once" "$(blk "$r" | tr ',' '\n' | grep -c wake:beta)" "0"
 : > "$rj"
-r=$(rec --json); assert_eq "a hung orchestrator is stopped and woken for its open task" "$(act "$r" | tr ',' '\n' | grep -c wake:beta)" "1"
+hub hold alpha >/dev/null   # beta (hung) comes before gamma (stopped); room for one session in this beat
+r=$(rec --json --max-starts 1); assert_eq "a hung orchestrator is stopped and woken for its open task" "$(act "$r" | tr ',' '\n' | grep -c wake:beta)" "1"
 assert_contains "...saying why" "$(printf '%s' "$r" | jq -r '[.actions[] | select(.action == "wake" and .project == "beta")][0].why')" "hung"
 live "$OC" "$OCS" && bad "the orchestrator's Claude is still running" || ok "...its Claude was stopped"
 hm_alive "${oi%%$'\t'*}" && ok "...its pane (the owner's shell) was not" || bad "the orchestrator's pane process was stopped: only its Claude is"
 assert_eq "...logged against the session" "$(jq -s '[.[] | select(.action == "restart" and .item == "beta/orchestrator")] | length' "$rj")" "1"
+assert_eq "...its wake took the last session of the day: the stopped orchestrator after it is not woken in the same beat" "$(act "$r" | tr ',' '\n' | grep -c wake:gamma)" "0"
+assert_contains "...it is blocked on the daily cap" "$(printf '%s' "$r" | jq -r '[.blocked[] | select(.project == "gamma")][0].reason')" "daily cap of 1"
+hub hold alpha --off >/dev/null
 assert_eq "...hivemind ran no sudo anywhere" "$(cat "$HM_SUDO_LOG")" ""
 t_done

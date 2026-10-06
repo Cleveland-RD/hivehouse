@@ -90,6 +90,8 @@ epoch_local() { date -r "$1" '+%Y-%m-%d %H:%M' 2>/dev/null || date -d "@$1" '+%Y
 epoch_iso() { date -u -r "$1" '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null || date -u -d "@$1" '+%Y-%m-%dT%H:%M:%SZ'; }
 # away_hub_caller <hub root>: exits 4 unless the caller's own Claude is the hub hub.json records (pid and start time) and carries the away
 # marker; an environment that cannot be read is a refusal too. recover and a bypass launch both ask it.
+# (hub.json's claude_started is compared with hm_lstart_is: the C form or the caller's locale's. A record in any other form is refused
+# until `hm-hub self` records it again, which the hub skill runs at every start: this only ever fails closed.)
 away_hub_caller() {
   local cpid mrc
   cpid=$(hm_claude_ancestor) || hm_die 4 "this runs inside the hub's own session"
@@ -381,6 +383,7 @@ hung_try() {
   newrec="$newrec$(jq -nc --arg i "$key" --argjson e "$now" '{epoch:$e, action:"restart", item:$i}')"$'\n'
   HUNG_STOPPED=1
   if [ "$kind" = orchestrator ]; then
+    starts=$((starts + 1))   # its wake is one of the day's sessions
     actions=$(printf '%s' "$actions" | jq -c --arg p "$n" --arg t "$task" --arg w "$why; hivemind stopped it" '. + [{action:"wake", project:$p, task:$t, why:$w}]')
   else
     actions=$(printf '%s' "$actions" | jq -c --arg p "$n" --arg a "$a" --arg w "$why; hivemind stopped it: bring it back with hm-spawn --respawn $a --resume" '. + [{action:"restart", project:$p, agents:[$a], why:$w}]')
@@ -1029,6 +1032,7 @@ recover)
           newrec="$newrec$(jq -nc --arg i "$n" --argjson e "$now" '{epoch:$e, action:"blocked-wake", item:$i}')"$'\n'; }
       else
         actions=$(printf '%s' "$actions" | jq -c --arg p "$n" --arg t "$task" '. + [{action:"wake", project:$p, task:$t}]')
+        starts=$((starts + 1))   # this beat's wake is one of the day's sessions: the next project sees the cap with it
       fi
     elif [ "$O_STATE" = running ] && [ "$newly" != '[]' ]; then
       tries=$(jq -s --arg i "$n" --argjson s "$since" '[.[] | select(.epoch > $s and .action == "respawn" and .item == $i)] | length' "$rjf")
