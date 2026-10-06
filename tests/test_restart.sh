@@ -6,6 +6,8 @@
 t_setup
 r=$(t_repo proj); cd "$r"; echo role > "$T_TMP/impl.md"; echo rules > "$T_TMP/RULES.md"
 env -u HIVEMIND_HOME tmux -S "$HM_TMUX_SOCKET" new-session -d -s keep 'sleep 600'
+# the repository is trusted in this run's own Claude config, so hm-spawn's folder-trust warning (a worktree stops at the dialog until its main repository is trusted) is not on stderr here
+jq -nc --arg p "$(cd "$r" && pwd -P)" '{projects:{($p):{hasTrustDialogAccepted:true}}}' > "$CLAUDE_CONFIG_DIR/.claude.json"
 spawn() { hm-spawn --agent "$1" --role "$T_TMP/impl.md" --rules "$T_TMP/RULES.md" --model sonnet --effort medium --mode auto --still 2 --max-wait 15 "${@:2}"; }
 S="$r/.hivemind"
 addteam() { jq --argjson a "$1" '.agents += [$a]' "$S/team.json" > "$S/team.json.t" && mv "$S/team.json.t" "$S/team.json"; }
