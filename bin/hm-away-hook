@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/bin/bash -p
 # PreToolUse hook for a session hivemind launched in bypass while the owner is away (the launch marker). It denies (exit 2,
 # reason on stderr) what leaves the machine or lets the session out of the marker: MCP tools outside the owner's allowlist,
 # Bash that pushes, publishes or uploads, starts Claude or a tmux window, or writes Claude Code's settings and hook files,
@@ -14,7 +14,8 @@ set -u
 # treats exit 1 as "no decision" and would let the tool run.
 trap 'rc=$?; [ "$rc" -eq 0 ] || { [ -n "${DENIED:-}" ] || echo "Refused by hivemind away mode: the check itself failed, which counts as a denial. Tell the owner." >&2; exit 2; }' EXIT
 : "${HOME:?HOME is not set}"
-. "$(dirname "$0")/hm-lib.sh" || exit 2
+HM_BIN=${0%/*}; [ "$HM_BIN" != "$0" ] || HM_BIN=.   # parameter expansion, never dirname: an executable on PATH by that name would be run instead
+. "$HM_BIN/hm-lib.sh" || exit 2
 
 deny() { DENIED=1; printf 'Refused by hivemind away mode (the owner is away; this is not a permission prompt): %s. Do not try to change settings, hooks or permissions to get round it; tell the owner what you needed.\n' "$1" >&2; exit 2; }
 CONF="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
@@ -34,18 +35,30 @@ canon() {  # canon <path> <cwd>: absolute, ~ and $HOME expanded, dot segments co
   if [ -d "$d" ]; then d=$(cd -P "$d" 2>/dev/null && pwd -P) && out="${d%/}/$(basename "$out")"; fi
   printf '%s\n' "$out"
 }
-protected_one() {  # protected_one <canonical path>: 0 when Claude Code's settings, hook files, plugins or MCP config
+# P_WHY is why the last path asked about is refused (set by protected_one and protected): the refusal says it.
+P_WHY="Claude Code's settings, hook and plugin files cannot be changed from an away session"
+protected_one() {  # protected_one <canonical path>: 0 when Claude Code's settings, hook files, plugins or MCP config, the hub's records or a team.json
   local p="$1" b="${1##*/}" d="${1%/*}" c
+  P_WHY="Claude Code's settings, hook and plugin files cannot be changed from an away session"
   c=$(canon "$CONF" /); h=$(canon "$HOME" /)
   [ "$p" = "$h/.claude.json" ] || [ "$p" = "$c/.claude.json" ] && return 0
   case "$b" in settings*.json) { [ "$d" = "$c" ] || [ "${d##*/}" = .claude ]; } && return 0 ;; esac
   case "$b" in .mcp.json|hooks.json) return 0 ;; esac
   case "$p" in "$c/plugins"|"$c/plugins/"*|"$c/hooks"|"$c/hooks/"*|*/.claude/hooks/*) return 0 ;; esac
   [ -z "${CLAUDE_PLUGIN_ROOT:-}" ] || { r=$(canon "$CLAUDE_PLUGIN_ROOT" /); case "$p" in "$r"|"$r/"*) return 0 ;; esac; }
+  # the hub's records (hub.json is the identity away_hub_caller checks and the hub a SendMessage resolves by pid; projects.json lists what
+  # may get bypass): only the hub's own session writes them, and any other marked session is refused
+  if [ "$PROJ_REAL" != "$HUB" ]; then
+    case "$p" in "$HUB/.hivemind-hub"|"$HUB/.hivemind-hub/"*)
+      P_WHY="the hub's records (.hivemind-hub) can be changed only by the hub's own session, never by an agent's or an orchestrator's"; return 0 ;; esac
+  fi
+  # a team.json names every agent's process: hivemind's own scripts write it from their code, never a session's tools (the hub's too)
+  case "$p" in */.hivemind/team.json) P_WHY="a team's team.json is written by hivemind's own scripts, never through a session's tools"; return 0 ;; esac
   return 1
 }
 protected() {  # protected <path> <cwd>: the path itself, and where its links lead (a write goes to the target); a link loop counts
   local a l n=0
+  P_WHY="Claude Code's settings, hook and plugin files cannot be changed from an away session"
   a=$(canon "$1" "$2"); protected_one "$a" && return 0
   while [ -L "$a" ] && [ "$n" -lt 8 ]; do
     l=$(readlink "$a") || return 0
@@ -66,6 +79,7 @@ cwd=$(printf '%s' "$input" | jq -r '.cwd // empty | strings' 2>/dev/null) || den
 [ -n "${HM_PROJECT:-}" ] || deny "the project (HM_PROJECT) is missing from the session's launch env"
 [ -n "${HM_AWAY_HUB:-}" ] && [ -d "$HM_AWAY_HUB/.hivemind-hub" ] || deny "the hub's folder (HM_AWAY_HUB) is missing or unreadable"
 HUB=$(cd -P "$HM_AWAY_HUB" && pwd -P) || deny "the hub's folder cannot be read"
+PROJ_REAL=$(cd -P "$HM_PROJECT" 2>/dev/null && pwd -P) || PROJ_REAL=""   # a project that cannot be read is no hub: the stricter reading
 allow=${HM_AWAY_MCP_ALLOW-}
 
 mcp_check() {
@@ -156,7 +170,7 @@ msg_check() {
 file_check() {
   local f
   f=$(printf '%s' "$input" | jq -er '.tool_input | (.file_path // .notebook_path) | strings' 2>/dev/null) || deny "its file path cannot be read"
-  protected "$f" "$cwd" && deny "Claude Code's settings, hook and plugin files cannot be changed from an away session"
+  protected "$f" "$cwd" && deny "$P_WHY"
   return 0
 }
 
@@ -169,7 +183,7 @@ bash_check() {
   # redirect targets are looked at before the punctuation goes
   while IFS= read -r rt; do
     rt=${rt#>}; rt=${rt#>}; rt=${rt#|}; rt=${rt# }; rt=${rt//[[:space:]]/}
-    [ -n "$rt" ] && protected "$rt" "$cwd" && deny "a redirect into Claude Code's settings, hook or plugin files is not allowed from an away session"
+    [ -n "$rt" ] && protected "$rt" "$cwd" && deny "a redirect is refused: $P_WHY"
   done < <(printf '%s\n' "$s" | grep -oE '>[>|]?[[:space:]]*[^[:space:];&|()<>]+' 2>/dev/null || true)
   s=${s//\$HOME/$HOME}
   s=$(printf '%s' "$s" | sed -E 's/([A-Za-z0-9_-])\(/\1 /g')   # "fix(scope):" in a message is not a subshell: only a ( after a space or an operator opens one
@@ -247,7 +261,7 @@ bash_check() {
     if [ -n "$has_write" ]; then
       for tok in ${toks[@]+"${toks[@]}"}; do
         case "$tok" in -*) continue ;; esac
-        protected "$tok" "$cwd" && deny "a command that writes cannot touch Claude Code's settings, hook or plugin files from an away session"
+        protected "$tok" "$cwd" && deny "a command that writes is refused: $P_WHY"
       done
     fi
   done <<EOF

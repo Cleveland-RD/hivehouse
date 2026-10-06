@@ -49,6 +49,12 @@ printf '%s' "$(tc 'git push')" | HM_AWAY_BYPASS=0 "$HOOK" 2>&1; assert_status "m
 printf '%s' "$(tc 'git push')" | HM_AWAY_BYPASS= "$HOOK" 2>&1; assert_status "empty marker is no marker" $? 0
 
 head -c 400000 /dev/zero | env -u HM_AWAY_BYPASS "$HOOK"; assert_eq "S5 the fast path drains its input (the writer is not hit by SIGPIPE)" "${PIPESTATUS[0]}" 0
+echo "-- the hook ignores BASH_ENV and starts under bash -p, like the other executables"
+printf 'HM_AWAY_BYPASS=0\n' > "$T_TMP/benv.sh"
+r=$(printf '%s' "$(tc 'git push')" | BASH_ENV="$T_TMP/benv.sh" HM_AWAY_BYPASS=1 HM_PROJECT="$proj" HM_AWAY_HUB="$hub" HM_AWAY_MCP_ALLOW= "$HOOK" 2>&1 >/dev/null); assert_status "a BASH_ENV that unsets the marker does not turn the hook off" $? 2
+mkdir "$T_TMP/dn"; printf '#!/bin/sh\necho /nonexistent\n' > "$T_TMP/dn/dirname"; chmod +x "$T_TMP/dn/dirname"
+r=$(printf '%s' "$(tc 'ls')" | PATH="$T_TMP/dn:$PATH" HM_AWAY_BYPASS=1 HM_PROJECT="$proj" HM_AWAY_HUB="$hub" HM_AWAY_MCP_ALLOW= "$HOOK" 2>&1 >/dev/null); assert_status "a dirname first on PATH cannot move where the hook finds hm-lib.sh" $? 0
+assert_eq "the hook's first line is #!/bin/bash -p" "$(head -1 "$HM_REPO_ROOT/bin/hm-away-hook")" "#!/bin/bash -p"
 echo "-- fail closed (A9)"
 hook 'not json'; assert_status "marker, input not json" $RC 2
 hook '{"cwd":"/"}'; assert_status "marker, no tool name" $RC 2
@@ -170,6 +176,47 @@ tool_allowed "Edit of an ordinary file" "$(fileop Edit "$proj/README")"
 tool_allowed "Write to memory" "$(fileop Write "$CD/projects/p/memory/n.md")"
 tool_allowed "Write to settings.json inside an unrelated folder" "$(fileop Write "$proj/docs/settings.json")"
 tool_denied "Write with no path" '{"tool_name":"Write","cwd":"/","tool_input":{}}'
+
+echo "-- the hub's records and a team's team.json are written by hivemind's scripts, never by a session's tools (final review S1)"
+# hub.json is the identity away_hub_caller checks and the "own hub" a SendMessage resolves by pid; projects.json lists what the hub may
+# bypass; team.json names every agent's process. A marked agent that could write them could pass as the hub.
+HR="$hub/.hivemind-hub"; echo '{}' > "$HR/tasks.jsonl"; mkdir -p "$HR/memory"
+ln -s "$HR/hub.json" "$T_TMP/lnk-hubjson"; ln -s "$HR" "$T_TMP/lnk-hubdir"; ln -s "$proj/.hivemind/team.json" "$T_TMP/lnk-teamjson"
+ROLE=proj
+for t in Edit Write MultiEdit NotebookEdit; do tool_denied "an agent's $t on hub.json" "$(fileop $t "$HR/hub.json")"; done
+tool_denied "an agent's Write to projects.json" "$(fileop Write "$HR/projects.json")"
+tool_denied "an agent's Write to the hub's tasks ledger" "$(fileop Write "$HR/tasks.jsonl")"
+tool_denied "an agent's Write to the hub's memory folder" "$(fileop Write "$HR/memory/n.md")"
+tool_denied "an agent's Write through a link to hub.json" "$(fileop Write "$T_TMP/lnk-hubjson")"
+tool_denied "an agent's Write through a link to the hub's records folder" "$(fileop Write "$T_TMP/lnk-hubdir/hub.json")"
+tool_denied "an agent's Write through .." "$(fileop Write "$hub/x/../.hivemind-hub/hub.json")"
+denied "an agent's redirect into hub.json" "echo x > $HR/hub.json"
+denied "an agent's tee into projects.json" "tee $HR/projects.json"
+denied "an agent's cp onto hub.json" "cp a $HR/hub.json"
+denied "an agent's sed -i on the ledger" "sed -i s/a/b/ $HR/tasks.jsonl"
+denied "an agent's redirect through a link to hub.json" "echo x > $T_TMP/lnk-hubjson"
+allowed "an agent reads hub.json" "cat $HR/hub.json"
+tool_allowed "an agent's Write to its own handoff" "$(fileop Write "$proj/.hivemind/handoffs/impl.md")"
+tool_allowed "an agent's Write to a file named hub.json elsewhere" "$(fileop Write "$proj/src/hub.json")"
+for R in proj hub; do
+  ROLE=$R
+  tool_denied "a $R session's Write to a project's team.json" "$(fileop Write "$proj/.hivemind/team.json")"
+  tool_denied "a $R session's Edit of another project's team.json" "$(fileop Edit "$other/.hivemind/team.json")"
+  tool_denied "a $R session's Write through a link to team.json" "$(fileop Write "$T_TMP/lnk-teamjson")"
+  denied "a $R session's redirect into team.json" "echo x > $proj/.hivemind/team.json"
+  denied "a $R session's sed -i on team.json" "sed -i s/a/b/ $proj/.hivemind/team.json"
+  tool_allowed "a $R session's Write to a team.json outside any .hivemind" "$(fileop Write "$proj/src/team.json")"
+done
+ROLE=proj
+hook "$(fileop Write "$HR/hub.json")"; assert_contains "the refusal for the hub's records says so" "$ERR" "hub's records"
+hook "$(fileop Write "$proj/.hivemind/team.json")"; assert_contains "the refusal for a team.json says so" "$ERR" "team.json"
+hook "$(fileop Write "$CD/settings.json")"; assert_contains "the refusal for settings still says so" "$ERR" "settings"
+r=$(printf '%s' "$(fileop Write "$HR/hub.json")" | HM_AWAY_BYPASS=1 HM_PROJECT="$T_TMP/no-such-project" HM_AWAY_HUB="$hub" HM_AWAY_MCP_ALLOW= "$HOOK" 2>&1 >/dev/null); assert_status "a session whose project folder cannot be read is not the hub: hub.json is refused" $? 2
+ROLE=hub
+tool_allowed "the hub's Write to its own memory" "$(fileop Write "$HR/memory/n.md")"
+tool_allowed "the hub's Write to its own records, as before" "$(fileop Write "$HR/decisions/x.md")"
+tool_allowed "the hub's Write through a link into its own records folder" "$(fileop Write "$T_TMP/lnk-hubdir/memory/n.md")"
+ROLE=proj
 
 echo "-- MCP tools (A21, A47-A49)"
 tool_denied "an MCP tool, no allowlist" "$(mcp mcp__github__create_issue)"
