@@ -1,0 +1,50 @@
+
+[91m ▐[40m▛███▛█[39m[49m   [1mClaude Code[0m [37mv2.1.291
+[91m▝▜[40m█████[49m█▀[39m  [37mHaiku 4.5
+[91m ▝▝   ▝▝ [39m  [37m/tmp/work · [92m]8;id=865bow;https://claude.ai/code/session_x?from=cli\/rc[39m]8;;\            
+
+
+[37m[100m❯ [97mRun exactly this shell command with the Bash tool and nothing else: touch made-by-test.txt[39m                                                                    
+
+[49m  [37mRan [1m1[0m[37m shell command [39m                              
+
+[97m⏺[39m Done. File [94mmade-by-test.txt[39m created.
+
+[37m[100m❯ [97mUse the Write tool to create a file notes.txt containing the single word hello. Do nothing else.[39m                                                              
+[49m                                            
+[91m⏺[39m [1mWrite[0m(]8;id=s8y6ur;file:///tmp/work/notes.txt\notes.txt]8;;\)
+[37m  ⎿  User rejected write to [1mnotes.txt
+[0m     [2m[37m 1 hello
+[0m                        
+[37m[100m❯ [97mUse the AskUserQuestion tool to ask me one question: which colour do I prefer, with the two options red and blue. Then just say what I picked.[39m                
+[37m[49m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[30m[104m ☐ Colour [39m[49m        
+
+[1m[97mWhich colour do you prefer?[0m      
+                             
+[94m❯[39m [37m1.[39m [94mRed[39m                                                                                                             
+     [37mThe colour red
+[39m  [37m2.[39m Blue
+     [37mThe colour blue[39m         
+  [37m3. Type something.
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  4. Chat about this
+
+[37mEnter to select · ↑/↓ to navigate · Esc to cancel
+
+
+
+
+
+
+
+
+
+
+
+[39m                                                                                                                                                              
+
+
+
+                                                                                                                                                
+[37m─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── dialog-capture ─

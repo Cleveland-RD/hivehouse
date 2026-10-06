@@ -1,0 +1,50 @@
+
+[91m ▐[40m▛███▛█[39m[49m   [1mClaude Code[0m [37mv2.1.291
+[91m▝▜[40m█████[49m█▀[39m  [37mHaiku 4.5
+[91m ▝▝   ▝▝ [39m  [37m/tmp/work · [92m]8;id=865bow;https://claude.ai/code/session_x?from=cli\/rc[39m]8;;\            
+
+
+[37m[100m❯ [97mRun exactly this shell command with the Bash tool and nothing else: touch made-by-test.txt[39m                                                                    
+
+[49m  [37mRan [1m1[0m[37m shell command [39m                              
+
+[97m⏺[39m Done. File [94mmade-by-test.txt[39m created.
+
+[37m[100m❯ [97mUse the Write tool to create a file notes.txt containing the single word hello. Do nothing else.[39m                                                              
+[49m                                            
+[37m⏺[39m [1mWrite[0m(]8;id=s8y6ur;file:///tmp/work/notes.txt\notes.txt]8;;\)
+                       
+[94m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m [1m[94mCreate file[0m            
+ [37mnotes.txt
+╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌
+[39m [2m[37m 1 [0m[37mhello[39m         
+[37m╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌
+[39m Do you want to create [1mnotes.txt[0m?
+ [94m❯[39m [37m1. [94mYes[39m                    
+   [37m2. [39mYes, and switch to [1maccept edits (auto-approve file edits and common file commands)[0m for this session [1m(shift+tab)
+[0m   [37m3. [39mNo
+
+ [37mEsc to cancel · Tab to amend
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+[39m                                                                                                                                                              
+
+
+
+                                                                                                                                                
+                                 
