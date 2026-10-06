@@ -205,19 +205,33 @@ env -u HIVEMIND_HOME tmux -S "$HM_TMUX_SOCKET" new-session -d -s keep 'sleep 600
 sync check testhost --min-gb 0 --plugin-version 0.1.0 >/dev/null
 rra=$(t_repo remote-agent); mkdir -p "$rra/.hivemind/team/impl1"; echo role > "$rra/.hivemind/team/impl1/role.md"; echo rules > "$rra/.hivemind/team/impl1/RULES.md"
 SA=(start-agent testhost "$rra" impl1 --model 'opus[1m]' --effort medium --mode auto)
-: > "$HM_FAKE_LOG"; out=$(SHELL=/bin/bash sync "${SA[@]}" 2>"$T_TMP/err"); rc=$?
-assert_status "start-agent runs the remote's hm-spawn" $rc 0
-pane=$(printf '%s\n' "$out" | grep -E '^%[0-9]+$' | tail -1); [ -n "$pane" ] && ok "...and prints the new pane" || bad "no pane in: $out"
-log=$(cat "$HM_FAKE_LOG")
-assert_contains "...by the absolute install path check recorded" "$log" "$HM_REPO_ROOT/bin/hm-spawn"
-assert_contains "...under the remote's login shell" "$log" '-lc'
-assert_contains "...with an explicit PATH in front, then the login PATH" "$log" '/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:\$PATH'
-assert_contains "...the project is the remote root" "$log" "HM_PROJECT=$rra"
-assert_contains "...the role and rules are the remote copies under the remote root" "$log" "--role\\ $rra/.hivemind/team/impl1/role.md"
-assert_contains "......rules" "$log" "--rules\\ $rra/.hivemind/team/impl1/RULES.md"
-assert_contains "...the model is quoted: [ ] is a glob in some shells" "$log" 'opus\\\[1m\\\]'
-assert_contains "...in the mode it was given" "$log" "--mode\\ auto"
-[ -z "$pane" ] || assert_eq "...and the new window stays after its process exits, so a start that dies shows its error" "$(tmux -S "$HM_TMUX_SOCKET" show-options -w -v -t "$pane" remain-on-exit 2>&1)" "on"
+# the same start under the remote's login shell, bash and zsh: a word that one reads as two is a bug in only one of them
+for RSH in /bin/bash /bin/zsh; do
+  [ -x "$RSH" ] || continue; ag=impl1; [ "$RSH" = /bin/bash ] || ag=impl1z
+  mkdir -p "$rra/.hivemind/team/$ag"; echo role > "$rra/.hivemind/team/$ag/role.md"; echo rules > "$rra/.hivemind/team/$ag/RULES.md"
+  : > "$HM_FAKE_LOG"; out=$(SHELL=$RSH sync start-agent testhost "$rra" "$ag" --model 'opus[1m]' --effort medium --mode auto 2>"$T_TMP/err"); rc=$?
+  assert_status "start-agent runs the remote's hm-spawn (login shell $RSH)" $rc 0
+  pane=$(printf '%s\n' "$out" | grep -E '^%[0-9]+$' | tail -1); [ -n "$pane" ] && ok "...and prints the new pane" || bad "no pane in: $out"
+  log=$(cat "$HM_FAKE_LOG"); sl=$(grep 'hm-spawn' "$HM_FAKE_LOG" | head -1)   # the hm-spawn call's own line: the remain-on-exit call carries the same PATH text
+  assert_contains "...by the absolute install path check recorded" "$sl" "$HM_REPO_ROOT/bin/hm-spawn"
+  assert_contains "...under the remote's login shell" "$sl" '-lc'
+  assert_contains "...with an explicit PATH in front of the hm-spawn call, then the login PATH" "$sl" '/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:\$PATH'
+  assert_contains "...the project is the remote root" "$sl" "HM_PROJECT=$rra"
+  assert_contains "...the role and rules are the remote copies under the remote root" "$sl" "--role\\ $rra/.hivemind/team/$ag/role.md"
+  assert_contains "......rules" "$sl" "--rules\\ $rra/.hivemind/team/$ag/RULES.md"
+  assert_contains "...the model is quoted: [ ] is a glob in some shells" "$sl" 'opus\\\[1m\\\]'
+  assert_contains "...in the mode it was given" "$sl" "--mode\\ auto"
+  [ -z "$pane" ] || assert_eq "...and the new window stays after its process exits, so a start that dies shows its error" "$(tmux -S "$HM_TMUX_SOCKET" show-options -w -v -t "$pane" remain-on-exit 2>&1)" "on"
+done
+# a worktree: created on its branch by the remote hm-spawn, the agent runs in it, and the folder-trust warning (KI-7) comes back
+ag=impl2; mkdir -p "$rra/.hivemind/team/$ag"; echo role > "$rra/.hivemind/team/$ag/role.md"; echo rules > "$rra/.hivemind/team/$ag/RULES.md"
+rm -f "$CLAUDE_CONFIG_DIR/.claude.json"; : > "$HM_FAKE_LOG"
+out=$(SHELL=/bin/bash sync start-agent testhost "$rra" "$ag" --model m --effort medium --mode auto --worktree "$T_TMP/wt-agent" --branch feat/wt --base main 2>&1); assert_status "start-agent with a worktree" $? 0
+assert_contains "...reached the remote hm-spawn: --worktree" "$(grep 'hm-spawn' "$HM_FAKE_LOG" | head -1)" "--worktree\\ $T_TMP/wt-agent"
+assert_eq "...the worktree exists on its branch" "$(git -C "$T_TMP/wt-agent" rev-parse --abbrev-ref HEAD 2>&1)" "feat/wt"
+wpane=$(printf '%s\n' "$out" | grep -E '^%[0-9]+$' | tail -1)
+assert_eq "...the agent's pane runs in it" "$(cd "$(tmux -S "$HM_TMUX_SOCKET" display-message -p -t "$wpane" '#{pane_current_path}' 2>/dev/null)" 2>/dev/null && pwd -P)" "$(cd "$T_TMP/wt-agent" && pwd -P)"
+assert_contains "...and the folder-trust warning for its main repository comes back in the output" "$out" "folder-trust dialog"
 n=$(wc -l < "$HM_FAKE_LOG")
 sync "${SA[@]:0:4}" --model m --effort e --mode bypassPermissions >"$T_TMP/out" 2>"$T_TMP/err"; assert_status "start-agent --mode bypassPermissions is refused" $? 4
 assert_contains "...saying why" "$(cat "$T_TMP/err")" "never starts bypassPermissions"

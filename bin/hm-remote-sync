@@ -279,7 +279,8 @@ start-agent)
   # a start that dies later should show its error, not vanish with its window
   pane=$(printf '%s\n' "$out" | grep -E '^%[0-9]+$' | tail -1)
   if [ -n "$pane" ]; then
-    inner="export PATH=$RPATH:\$PATH; tmux \${HM_TMUX_SOCKET:+-S \"\$HM_TMUX_SOCKET\"} set-option -w -t $(printf '%q' "$pane") remain-on-exit on"
+    so="set-option -w -t $(printf '%q' "$pane") remain-on-exit on"   # an if, not ${VAR:+-S "$VAR"}: zsh keeps that as one word
+    inner="export PATH=$RPATH:\$PATH; if [ -n \"\$HM_TMUX_SOCKET\" ]; then tmux -S \"\$HM_TMUX_SOCKET\" $so; else tmux $so; fi"
     hm_ssh "\"\$SHELL\" -lc $(printf '%q' "$inner")" >/dev/null 2>&1 || echo "hm-remote-sync: could not set remain-on-exit for $pane on $host: a start that dies will close its window" >&2
   fi
   exit 0 ;;

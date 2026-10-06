@@ -92,13 +92,17 @@ Over ssh, with `hm-remote-sync`, in this order, each on its own call:
 - `memory`: copied by content into the remote's own path-derived memory folder (a different absolute path is a
   different folder, so the mapping is explicit);
 - `secret`: such as `.env`, copied at mode 0600, recorded in the remote's manifest and removed by its cleanup; settings
-  are compared by key hash and never printed.
+  are compared by key hash and never printed;
+- `start-agent`: how an agent starts there (step 5). First send the agent's `role.md` and `RULES.md` to
+  `<root>/.hivemind/team/<agent>/` with `files`, then `hm-remote-sync start-agent <host> <root> <agent> --model … --effort …
+  --mode <resolved>` (add `--worktree <abs> --branch <b> --base <b>` for a worktree). It runs the remote's own `hm-spawn`, in
+  the resolved mode and never in bypass, and asks permission each time.
 
 Start the dev servers there and health-check them before the team starts.
 
 ## 5. Start the team and the heartbeat
 
-Spawn as the start skill's step 6, with the models and efforts from `${user_config.model_builder}` /
+Spawn as the start skill's step 6 (on a remote host, start each agent with `hm-remote-sync start-agent`, step 4, not `hm-spawn`), with the models and efforts from `${user_config.model_builder}` /
 `${user_config.effort_builder}` and `${user_config.model_reviewer}` / `${user_config.effort_reviewer}`. Write `HM-PLAN:`
 and show the team and the queue's order; wait for the owner's OK.
 
