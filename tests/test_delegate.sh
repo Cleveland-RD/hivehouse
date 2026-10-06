@@ -82,4 +82,12 @@ else
   hm_env_has "$pp" HM_NOT_THERE=1; assert_status "...nor a variable it lacks" $? 1
 fi
 kill "$pp" 2>/dev/null
+# a marker spelled in the process's own arguments is not one it was launched with
+pa=$(t_env_probe HM_PROBE_OTHER=1 HM_PROBE_ARG=1) || pa=""
+if [ -n "$pa" ]; then
+  t_track "$pa"; sleep 0.5
+  hm_env_has "$pa" HM_PROBE_OTHER=1; assert_status "a variable the process has is found beside an argument that looks like one" $? 0
+  hm_env_has "$pa" HM_PROBE_ARG=1; assert_status "...a marker spelled only in its arguments is absent" $? 1
+  kill "$pa" 2>/dev/null
+else echo "  SKIP only Apple platform binaries were found (no node): the argument-spelled marker cannot be tested here"; fi
 t_done

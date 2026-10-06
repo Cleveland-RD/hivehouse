@@ -25,13 +25,15 @@ if ! hm_delegate_read "$DF" "$ME" "$NOW" >/dev/null 2>&1; then
   echo "  SKIP the fixture folder is not eligible here: $HM_DELEGATE_WHY"; t_done; exit 0
 fi
 DB=$(t_delegate_bin "$DF"); dhub() { (cd "$H" && "$DB/hm-hub" "$@"); }   # the copy that sees the fixture
-mkcl() {  # mkcl <bin dir>: a stand-in for the hub's Claude, which runs that bin's hm-hub from the hub's folder as its child
+mkcl() {  # mkcl <bin dir> [noself]: a stand-in for the hub's Claude: it records itself as the hub (hm-hub self), then runs that bin's hm-hub as its child
   local d; d=$(mktemp -d "$T_TMP/cl.XXXXXX")
-  printf '#!/usr/bin/env bash\ncd "%s" && "%s/hm-hub" "$@"\n' "$H" "$1" > "$d/claude"; chmod +x "$d/claude"; printf '%s\n' "$d/claude"
+  if [ "${2:-}" = noself ]; then printf '#!/usr/bin/env bash\ncd "%s" && "%s/hm-hub" "$@"\n' "$H" "$1" > "$d/claude"
+  else printf '#!/usr/bin/env bash\ncd "%s" && "%s/hm-hub" self --name hub >/dev/null && "%s/hm-hub" "$@"\n' "$H" "$1" "$1" > "$d/claude"; fi
+  chmod +x "$d/claude"; printf '%s\n' "$d/claude"
 }
 mkcl_node() {  # mkcl_node <bin dir>: the same stand-in as a node script named claude, which ps -E can show the environment of
   local d; d=$(mktemp -d "$T_TMP/cln.XXXXXX")
-  printf 'const { spawnSync } = require("child_process")\nconst r = spawnSync(%s, process.argv.slice(2), { cwd: %s, stdio: "inherit" })\nprocess.exit(r.status === null ? 1 : r.status)\n' "\"$1/hm-hub\"" "\"$H\"" > "$d/claude"; printf '%s\n' "$d/claude"
+  printf 'const { spawnSync } = require("child_process")\nspawnSync(%s, ["self", "--name", "hub"], { cwd: %s, stdio: "ignore" })\nconst r = spawnSync(%s, process.argv.slice(2), { cwd: %s, stdio: "inherit" })\nprocess.exit(r.status === null ? 1 : r.status)\n' "\"$1/hm-hub\"" "\"$H\"" "\"$1/hm-hub\"" "\"$H\"" > "$d/claude"; printf '%s\n' "$d/claude"
 }
 CLP=$(mkcl "$HM_REPO_ROOT/bin"); CLD=$(mkcl "$DB")
 # where ps -E can show a process's environment (a non-platform binary on macOS: node), the stand-in is a node script and the
@@ -103,6 +105,24 @@ mkdel "$H" "$((NOW - 10))"; case "$(dhub status --json | jq -c '.hub | has("away
 mkdel; chmod 666 "$DF"; case "$(dhub status --json | jq -c '.hub | has("away")')" in false) ok "a file anyone could write is not away" ;; *) bad "away shown for a writable file" ;; esac
 mkdel
 
+# the last away period stays in status after away has ended (for the screen and the hub's return)
+assert_eq "the last away period is in status, with no valid file" "$(hub status --json | jq -c '.hub.last_away | [has("since"), (.until | type)]')" '[true,"number"]'
+# ---- nothing in the environment revives an expired file (A76) ----
+mkdel "$H" "$((NOW - 10))"
+fk="$T_TMP/fk"; mkdir -p "$fk"; printf '#!/bin/sh\necho %s\n' "$((NOW - 100000))" > "$fk/date"; chmod +x "$fk/date"
+printf 'date() { echo %s; }\n' "$((NOW - 100000))" > "$T_TMP/benv.sh"
+printf '#!/bin/sh\necho "$*" >> "%s/fakebash.ran"\nBASH_ENV="%s" exec /bin/bash "$@"\n' "$T_TMP" "$T_TMP/benv.sh" > "$fk/bash"; chmod +x "$fk/bash"
+is_away() { jq -c '.hub | has("away")'; }
+assert_eq "an expired file is not away" "$(dhub status --json | is_away)" "false"
+assert_eq "...with a fake date first on PATH" "$(PATH="$fk:$PATH" dhub status --json | is_away)" "false"
+assert_eq "...with a date() from BASH_ENV" "$(BASH_ENV="$T_TMP/benv.sh" dhub status --json | is_away)" "false"
+assert_eq "...with an exported function date" "$( ( date() { echo "$((NOW - 100000))"; }; export -f date; dhub status --json ) | is_away)" "false"
+assert_eq "...with a fake bash first on PATH" "$( (cd "$H" && PATH="$fk:$PATH" "$DB/hm-hub" status --json) | is_away)" "false"
+# (a sibling script such as hm-context may still use the bash on PATH: it decides nothing about the away file)
+{ [ ! -e "$T_TMP/fakebash.ran" ] || ! grep -q 'hm-hub' "$T_TMP/fakebash.ran"; } && ok "...hm-hub itself was never run by it" || bad "hm-hub ran under the bash found on PATH"
+assert_eq "hm-hub starts as /bin/bash -p, which skips BASH_ENV and imports no functions" "$(head -1 "$HM_REPO_ROOT/bin/hm-hub")" "#!/bin/bash -p"
+mkdel
+
 # ---- decide: what the hub decided for the owner, word for word, only while away ----
 ta=$(idof "$(hub task alpha --text "Add the export button")"); hub log "$ta" plan >/dev/null
 printf 'Which of the two layouts?\nA or B.\n=== ANSWER ===\nB, as the existing pages do.\n' | hub decide "$ta" --reason "matches the existing pages" >/dev/null 2>&1
@@ -159,6 +179,18 @@ hm_tmux kill-pane -t "$aw"; sleep 0.5
 r=$(rec --json); assert_eq "an agent that stopped since the last beat: its orchestrator is told" "$(act "$r" | tr ',' '\n' | grep respawn)" "respawn:beta"
 assert_eq "...naming it" "$(printf '%s' "$r" | jq -r '[.actions[] | select(.action == "respawn")][0].agents | join(",")')" "impl"
 r=$(rec --json); assert_eq "...and once: the next beat does not say it again" "$(act "$r" | tr ',' '\n' | grep -c respawn)" "0"
+# a Claude that is not the hub hub.json records does not recover, marker or not
+CLX=$(mkcl "$DB" noself)
+HM_AWAY_BYPASS=1 bash "$CLX" recover --json >/dev/null 2>"$T_TMP/n2.err"; assert_status "recover from a Claude that is not the recorded hub" $? 4
+assert_contains "...says so" "$(cat "$T_TMP/n2.err")" "hub.json records"
+# recover reads every project's state without the hub's lock: a log meanwhile is not held up
+tmx=$(command -v tmux); slow="$T_TMP/slow"; mkdir -p "$slow"; rm -f "$T_TMP/slow.done"
+printf '#!/bin/sh\nif [ ! -e "%s/slow.done" ]; then touch "%s/slow.done"; sleep 4; fi\nexec "%s" "$@"\n' "$T_TMP" "$T_TMP" "$tmx" > "$slow/tmux"; chmod +x "$slow/tmux"
+( PATH="$slow:$PATH" HM_AWAY_BYPASS=1 bash "$CLD" recover --json > "$T_TMP/slowrec.out" 2>/dev/null ) & sr=$!; t_track "$sr"; sleep 1
+t0=$(date +%s); hub log "$ta" note --note "while recover reads" >/dev/null 2>&1; lrc=$?; t1=$(date +%s)
+assert_status "a log while recover is still reading state" "$lrc" 0
+[ $((t1 - t0)) -le 2 ] && ok "...is not held up by it" || bad "the log waited $((t1 - t0)) s for the lock"
+wait "$sr"; assert_eq "...and recover still finishes" "$(jq -r .away "$T_TMP/slowrec.out")" "true"
 # a start waiting on a dialog is the owner's
 dp=$(hm_open_window delta orchestrator "$H/delta" "exec claude" -e "HM_FAKE_CLAUDE=dialog" -e "HIVEMIND_HOME=$HIVEMIND_HOME" -e "HM_TMUX_SOCKET=$HM_TMUX_SOCKET"); sleep 1
 di=$(hm_pane_identity "$HM_TMUX_SOCKET" "$dp"); mkdir -p "$P/panes"

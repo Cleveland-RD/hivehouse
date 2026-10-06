@@ -4,7 +4,7 @@
 # A command substitution does not stop its caller: write x=$(hm_project_root) || exit $?, never a bare x=$(...).
 hm_die()  { echo "hivemind: $2" >&2; exit "$1"; }
 hm_home() { printf '%s\n' "${HIVEMIND_HOME:-$HOME/.hivemind}"; }
-hm_now()  { date -u +%Y-%m-%dT%H:%M:%SZ; }
+hm_now()  { /bin/date -u +%Y-%m-%dT%H:%M:%SZ; }
 hm_project_root() {
   if [ -n "${HM_PROJECT:-}" ]; then
     [ -d "$HM_PROJECT" ] || hm_die 2 "HM_PROJECT is not a directory: $HM_PROJECT"
@@ -54,7 +54,7 @@ hm_claude_ancestor() {  # hm_claude_ancestor [pid]: the nearest Claude process a
   local p="${1:-$$}" i=0
   while [ -n "$p" ] && [ "$p" -gt 1 ] 2>/dev/null && [ "$i" -lt 64 ]; do
     hm_is_claude "$p" && { echo "$p"; return 0; }
-    p=$(ps -o ppid= -p "$p" 2>/dev/null | tr -d ' '); i=$((i + 1))
+    p=$(/bin/ps -o ppid= -p "$p" 2>/dev/null); p=${p//[[:space:]]/}; i=$((i + 1))
   done
   return 1
 }
@@ -97,11 +97,11 @@ hm_socket() { if [ -n "${HM_TMUX_SOCKET:-}" ]; then echo "$HM_TMUX_SOCKET"; else
 # the pid is alive with another start time (pid reuse), or when holder.json is missing or empty and the directory is
 # older than 10 s. A stale lock is taken over inside a guard directory "<lock>.takeover" (itself stale after 30 s),
 # after re-reading the holder, so exactly one contender removes it. `kill -9` of a holder frees its lock.
-hm_alive()  { ps -p "$1" >/dev/null 2>&1; }
-hm_lstart() { ps -o lstart= -p "$1" 2>/dev/null | sed 's/^ *//;s/ *$//'; }
+hm_alive()  { /bin/ps -p "$1" >/dev/null 2>&1; }
+hm_lstart() { local s; s=$(/bin/ps -o lstart= -p "$1" 2>/dev/null); s=${s#"${s%%[![:space:]]*}"}; printf '%s\n' "${s%"${s##*[![:space:]]}"}"; }   # built-ins only: the away checks read it
 hm_is_claude() {  # hm_is_claude <pid>: 0 when the process is Claude Code's, which hivemind never stops
   local args first second   # by argv: macOS ps reports comm from argv0 as well, so it would be the same reading
-  args=$(ps -o args= -p "$1" 2>/dev/null) || return 1
+  args=$(/bin/ps -o args= -p "$1" 2>/dev/null) || return 1
   first=${args%% *}; second=${args#* }; second=${second%% *}
   [ "${first##*/}" = claude ] && return 0
   case "${first##*/}" in node|bash|sh|zsh) [ "${second##*/}" = claude ] && return 0 ;; esac   # run by an interpreter
@@ -448,8 +448,11 @@ hm_pane_dialog() {  # hm_pane_dialog <socket, or empty for hivemind's own server
 # with `until` in the future and at most 7 days ahead (a CronCreate heartbeat does not outlive that). HM_DELEGATE_WHY is set
 # to the first check that failed.
 hm_delegate_path() {  # the fixed path: under /Library on macOS (/etc is a link there), /etc on Linux
-  case "$(uname -s)" in Darwin) echo '/Library/Application Support/hivemind/delegate' ;; *) echo '/etc/hivemind/delegate' ;; esac
+  case "$OSTYPE" in darwin*) echo '/Library/Application Support/hivemind/delegate' ;; *) echo '/etc/hivemind/delegate' ;; esac
 }
+# Nothing here is found through PATH: every outside command is called by absolute path, and the rest is built-ins, so a fake
+# `date` or a function from BASH_ENV or the environment cannot revive an expired file (the executables that ask start with
+# #!/bin/bash -p for the same reason).
 hm_stat3() {  # hm_stat3 <path>: "<uid> <octal mode> <type>" of the path itself (lstat, /usr/bin/stat in either form), or fails
   local out
   if /usr/bin/stat --version >/dev/null 2>&1; then out=$(/usr/bin/stat -c '%u %a %F' -- "$1" 2>/dev/null)
@@ -469,21 +472,25 @@ hm_path_trusted() {  # hm_path_trusted <path> <file|dir> <uid> <strict|loose>: n
   return 0
 }
 hm_delegate_read() {  # hm_delegate_read <path> <uid> [<now>]: prints "<hub><TAB><until>" when the file is valid; 1 when it is not
-  local f="$1" want="$2" now="${3:-$(date +%s)}" d p hub until i
+  local f="$1" want="$2" now="${3:-}" d p hub until i l1="" l2="" l3="" l4=""
   HM_DELEGATE_WHY=""
+  [ -n "$now" ] || now=$(/bin/date +%s)
   case "$f" in /*) ;; *) HM_DELEGATE_WHY="the path is not absolute"; return 1 ;; esac
   hm_is_number "$want" && hm_is_number "$now" || { HM_DELEGATE_WHY="bad uid or time"; return 1; }
   hm_path_trusted "$f" file "$want" strict || return 1
-  d=$(dirname "$f"); hm_path_trusted "$d" dir "$want" strict || return 1
-  p=$(dirname "$d"); i=0
+  d=${f%/*}; [ -n "$d" ] || d=/
+  hm_path_trusted "$d" dir "$want" strict || return 1
+  p=${d%/*}; [ -n "$p" ] || p=/; i=0
   while :; do
     hm_path_trusted "$p" dir "$want" loose || return 1
     [ "$p" = / ] && break
-    p=$(dirname "$p"); i=$((i + 1)); [ "$i" -lt 64 ] || { HM_DELEGATE_WHY="the path is too deep"; return 1; }
+    p=${p%/*}; [ -n "$p" ] || p=/; i=$((i + 1)); [ "$i" -lt 64 ] || { HM_DELEGATE_WHY="the path is too deep"; return 1; }
   done
-  if [ "$(grep -c '' "$f")" -ne 3 ] || grep -q $'\r' "$f"; then HM_DELEGATE_WHY="the content is not three lines"; return 1; fi
-  [ "$(sed -n 1p "$f")" = 'hivemind-delegate 1' ] || { HM_DELEGATE_WHY="the first line is not 'hivemind-delegate 1'"; return 1; }
-  hub=$(sed -n 2p "$f"); until=$(sed -n 3p "$f")
+  { IFS= read -r l1; IFS= read -r l2; IFS= read -r l3; IFS= read -r l4 && l4=x; } < "$f" 2>/dev/null
+  [ -z "$l4" ] || { HM_DELEGATE_WHY="the content is more than three lines"; return 1; }
+  case "$l1$l2$l3" in *$'\r'*) HM_DELEGATE_WHY="the content has carriage returns"; return 1 ;; esac
+  [ "$l1" = 'hivemind-delegate 1' ] || { HM_DELEGATE_WHY="the first line is not 'hivemind-delegate 1'"; return 1; }
+  hub=$l2; until=$l3
   case "$hub" in hub=/*) hub=${hub#hub=} ;; *) HM_DELEGATE_WHY="line 2 is not hub=<absolute path>"; return 1 ;; esac
   hm_is_typed_path "$hub" || { HM_DELEGATE_WHY="the hub path is not one hivemind will type"; return 1; }
   case "$until" in until=*) until=${until#until=} ;; *) HM_DELEGATE_WHY="line 3 is not until=<epoch>"; return 1 ;; esac
@@ -495,17 +502,22 @@ hm_delegate_read() {  # hm_delegate_read <path> <uid> [<now>]: prints "<hub><TAB
 hm_delegate_now() { hm_delegate_read "$(hm_delegate_path)" 0; }
 # hm_env_has <pid> <NAME=value>: 0 the process was launched with it; 1 its environment is visible and lacks it; 2 no
 # environment is visible at all (the caller says so and does not pretend to have checked). Linux reads /proc/<pid>/environ,
-# which is exact. macOS `ps -E` prints the arguments and the environment on one line: an argument that spells the marker
-# could fool it, so it is matched as a whole word, and only after the command's own words. macOS shows no environment for
-# Apple platform binaries (bash, sleep), so a non-platform process is needed to read one: Claude Code is one.
+# which is exact. macOS `ps -E` prints the arguments and the environment on one line: the process's own arguments are
+# taken off the front first (so a marker spelled in an argument does not count), and the rest is matched as whole words.
+# macOS shows no environment for Apple platform binaries (bash, sleep), so a non-platform process is needed to read one:
+# Claude Code is one.
 hm_env_has() {
-  local pid="$1" want="$2" env
+  local pid="$1" want="$2" line args rest
   if [ -r "/proc/$pid/environ" ]; then
-    tr '\0' '\n' < "/proc/$pid/environ" | grep -qxF -- "$want"; return $(( $? == 0 ? 0 : 1 ))
+    while IFS= read -r -d '' line; do [ "$line" = "$want" ] && return 0; done < "/proc/$pid/environ"
+    return 1
   fi
-  env=$(ps -E -ww -p "$pid" -o command= 2>/dev/null | tr ' ' '\n')
-  printf '%s\n' "$env" | grep -qE '^(PATH|HOME|USER|SHELL)=' || return 2
-  printf '%s\n' "$env" | grep -qxF -- "$want"; return $(( $? == 0 ? 0 : 1 ))
+  line=$(/bin/ps -E -ww -p "$pid" -o command= 2>/dev/null); args=$(/bin/ps -ww -p "$pid" -o command= 2>/dev/null)
+  [ -n "$args" ] || return 2
+  case "$line" in "$args"*) rest=${line#"$args"} ;; *) return 2 ;; esac
+  case " $rest " in *" PATH="*|*" HOME="*|*" USER="*|*" SHELL="*) ;; *) return 2 ;; esac
+  case " $rest " in *" $want "*) return 0 ;; esac
+  return 1
 }
 
 # A permission mode hivemind starts a session in (hm-spawn's and hm-hub's --mode): never bypassPermissions.

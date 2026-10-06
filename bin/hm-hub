@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/bin/bash -p
 # The owner's hub: one Claude session in the owner's work folder that knows every project, hands each task to that
 # project's orchestrator, wakes an orchestrator a restart stopped and starts one where none is. It never reads or
 # changes a project's code: everything here is records, tmux and fixed lines. bash 3.2 compatible.
@@ -16,7 +16,11 @@
 # Exit: 2 not found (no hub, project, task, agent or record), 4 refused value or state, 5 a dialog needs a person, 1 never idle,
 # 64 usage.
 set -u
-. "$(dirname "$0")/hm-lib.sh"
+# Privileged mode (-p) skips BASH_ENV and takes no functions from the environment, and the fixed /bin/bash cannot be swapped
+# through PATH: the owner's away file is judged by code nothing in the environment can change. Nothing here finds its sibling
+# scripts through PATH either.
+HM_BIN=${0%/*}; [ "$HM_BIN" != "$0" ] || HM_BIN=.
+. "$HM_BIN/hm-lib.sh"
 # The ledger's vocabulary, declared once. A note never moves a task's state; done and cancelled close it; a plan to
 # approve, a question and a blocker wait on the owner.
 HUB_EVENTS="asked handed plan question answered blocked overnight cleanup decided done cancelled note"
@@ -61,7 +65,7 @@ hub_root() {  # the work folder holding .hivemind-hub/, resolved
   d=$(pwd -P)
   while :; do
     [ -d "$d/.hivemind-hub" ] && [ ! -L "$d/.hivemind-hub" ] && { printf '%s\n' "$d"; return 0; }
-    [ "$d" = / ] && break; d=$(dirname "$d")
+    [ "$d" = / ] && break; d=${d%/*}; [ -n "$d" ] || d=/
   done
   hm_die 2 "no hub here: run hm-hub init in your work folder"
 }
@@ -69,7 +73,7 @@ hub_root_cwd() {  # the work folder holding .hivemind-hub/, found from the cwd a
   local d; d=$(pwd -P)
   while :; do
     [ -d "$d/.hivemind-hub" ] && [ ! -L "$d/.hivemind-hub" ] && { printf '%s\n' "$d"; return 0; }
-    [ "$d" = / ] && break; d=$(dirname "$d")
+    [ "$d" = / ] && break; d=${d%/*}; [ -n "$d" ] || d=/
   done
   hm_die 2 "no hub here: run hm-hub init in your work folder"
 }
@@ -231,7 +235,7 @@ start_opts() {  # start_opts <model allowed 0|1> [--model m] [--mode m] [--still
 sending() { local p; p=$(hm_json_get "$1" .sender_pid); [ -n "$p" ] && hm_alive "$p" && [ "$(hm_lstart "$p")" = "$(hm_json_get "$1" .sender_started)" ]; }
 # project_mode <home>: the owner's --mode, made stricter (never looser) by the project's own .hivemind/settings.json, as
 # hm-spawn's agents get it (hm-settings); the hub's folder is no repository, so it is resolved in the project's home
-project_mode() { [ -z "$MODE" ] || MODE=$(HM_PROJECT="$1" "$(dirname "$0")/hm-settings" resolve permission_mode "$MODE") || exit $?; }
+project_mode() { [ -z "$MODE" ] || MODE=$(HM_PROJECT="$1" "$HM_BIN/hm-settings" resolve permission_mode "$MODE") || exit $?; }
 refuse_pending() {  # refuse_pending <hub root> <project>: under the lock, exits 4 while a pane this hub started for it still runs
   local f="$1/.hivemind-hub/panes/$2.json"
   pending "$1" "$2"; case $? in
@@ -263,7 +267,7 @@ launch() {
     '{pane:$p, socket:$s, pane_pid:$i, pane_started:$t, kind:$k, line:$l, typed:false, sender_pid:$sp, sender_started:$ss, at:$at} + (if $task != "" then {task:$task} else {} end)' \
     > "$root/.hivemind-hub/panes/$name.json"
   # the sessions this hub started or woke, with their times: recover's caps count them within 24 hours
-  jq -nc --arg a "$kind" --arg i "$name" --arg e "$(date +%s)" '{epoch:($e | tonumber), action:$a, item:$i}' >> "$root/.hivemind-hub/recovery.jsonl"
+  jq -nc --arg a "$kind" --arg i "$name" --arg e "$(/bin/date +%s)" '{epoch:($e | tonumber), action:$a, item:$i}' >> "$root/.hivemind-hub/recovery.jsonl"
   unlock
   finish "$root" "$name"
 }
@@ -416,6 +420,9 @@ status)
     away=$(jq -nc --argjson u "$AWAY_UNTIL" --arg since "$(hm_json_get "$root/.hivemind-hub/away.json" .since)" '{until:$u} + (if $since != "" then {since:$since} else {} end)')
   fi
   hub=$(printf '%s' "$hub" | jq -c --argjson a "$away" 'if $a == null then . else . + {away:$a} end')
+  # the last away period, which stays after it ends: the screen and the hub keep what was decided in it until it is seen
+  last=$(jq -c 'select(.since and .until) | {since, until}' "$root/.hivemind-hub/away.json" 2>/dev/null | head -1)
+  [ -z "$last" ] || hub=$(printf '%s' "$hub" | jq -c --argjson l "$last" '. + {last_away:$l}')
   # open tasks per project: those whose last event (a note aside) neither closes them
   opens=$(jq -s --argjson c "$HUB_CLOSED_JSON" '[group_by(.id)[] | {p: .[0].project, s: ([.[] | select(.event != "note")] | last | .event)}
     | select((.s as $s | $c | index($s)) | not)] | group_by(.p) | map({key: .[0].p, value: length}) | from_entries' "$root/.hivemind-hub/tasks.jsonl")
@@ -443,7 +450,7 @@ status)
     done < <(printf '%s' "$p" | jq -r '.repos[]')
     orch_state "$root" "$n" "$home"
     # each session's context level as hm-context reads it: "<agent> <level>[ (window assumed N)][ (not running)]"
-    levels=$(HM_PROJECT="$home" "$(dirname "$0")/hm-context" --all 2>/dev/null) || levels=""
+    levels=$(HM_PROJECT="$home" "$HM_BIN/hm-context" --all 2>/dev/null) || levels=""
     starting='null'
     if [ "$O_STATE" != running ] && pending "$root" "$n"; then
       q=false; hm_pane_question "$(hm_json_get "$root/.hivemind-hub/panes/$n.json" .socket)" "$(hm_json_get "$root/.hivemind-hub/panes/$n.json" .pane)" && q=true
@@ -741,7 +748,7 @@ away)
   root=$(hub_root_cwd) || exit $?
   hm_is_typed_path "$root" || hm_die 4 "the hub's folder is not a path hivemind will print into a command: $root"
   case "$allow" in *[!${HM_LOWER}${HM_UPPER}${HM_DIGITS}_,.:-]*) hm_die 4 "--mcp-allow is a comma-separated list of server or tool names" ;; esac
-  now=$(date +%s)
+  now=$(/bin/date +%s)
   case "$until" in
     *[!0-9]*)
       case "$until" in
@@ -756,7 +763,7 @@ away)
   hm_is_number "$epoch" || hm_die 64 "--until is an epoch, +<n>m|h|d, or YYYY-MM-DD[ HH:MM] (local time): $until"
   [ "$epoch" -gt "$now" ] || hm_die 4 "--until is not in the future"
   [ "$epoch" -le $((now + 604800)) ] || hm_die 4 "away is at most 7 days: the hub's heartbeat does not outlive that"
-  file=$(hm_delegate_path); dir=$(dirname "$file"); grp=root; [ "$(uname -s)" != Darwin ] || grp=wheel
+  file=$(hm_delegate_path); dir=${file%/*}; grp=root; case "$OSTYPE" in darwin*) grp=wheel ;; esac
   mcp="$root/.hivemind-hub/away-mcp.json"
   cdir="${CLAUDE_CONFIG_DIR:-${HOME:-/}/.claude}"; cj="${CLAUDE_CONFIG_DIR:-${HOME:-/}}/.claude.json"
   ( umask 077; jq -n '{mcpServers:{}}' > "$mcp.tmp$$" ) && mv "$mcp.tmp$$" "$mcp" && chmod 600 "$mcp"
@@ -794,7 +801,7 @@ away)
   trusted=0; t=$root
   while :; do
     [ "$(jq -r --arg p "$t" '.projects[$p].hasTrustDialogAccepted // false' "$cj" 2>/dev/null)" = true ] && { trusted=1; break; }
-    [ "$t" = / ] && break; t=$(dirname "$t")
+    [ "$t" = / ] && break; t=${t%/*}; [ -n "$t" ] || t=/
   done
   [ "$trusted" = 1 ] || echo "# Before leaving: $root (or a folder above it) is not trusted by Claude Code yet. Start claude there once and accept the folder-trust dialog: it shows for every untrusted folder."
   echo "# Away mode needs permission_mode_local set to auto (the hub resolves it); a stricter value keeps its sessions out of bypass."
@@ -871,22 +878,24 @@ recover)
     exit 0
   fi
   cpid=$(hm_claude_ancestor) || hm_die 4 "recover runs inside the hub's own session"
+  [ "$cpid" = "$(hm_json_get "$root/.hivemind-hub/hub.json" .claude_pid)" ] && [ "$(hm_lstart "$cpid")" = "$(hm_json_get "$root/.hivemind-hub/hub.json" .claude_started)" ] \
+    || hm_die 4 "recover runs only inside the hub session hub.json records (hm-hub self records it): this Claude is another session"
   hm_env_has "$cpid" HM_AWAY_BYPASS=1; mrc=$?
   case "$mrc" in
     0) ;;
     1) hm_die 4 "this session was not started with the away marker (hm-hub away prints its start line): recover is for the hub that was" ;;
     *) echo "hivemind: warning: this session's launch environment cannot be read here, so the away marker was not checked" >&2 ;;
   esac
-  now=$(date +%s); since=$((now - 86400))
-  lock "$root"
-  rj="$root/.hivemind-hub/recovery.jsonl"; touch "$rj"
-  rs="$root/.hivemind-hub/recovery-state.json"; [ -s "$rs" ] || echo '{}' > "$rs"
+  now=$(/bin/date +%s); since=$((now - 86400))
+  # every project's state is read first, with no lock held (tmux can be slow); the lock is taken only to write
+  rj="$root/.hivemind-hub/recovery.jsonl"; rjf="$rj"; [ -f "$rj" ] || rjf=/dev/null; newrec=""
+  rs="$root/.hivemind-hub/recovery-state.json"
   states=$(jq -c . "$rs" 2>/dev/null) || states='{}'
   # tasks that can go on without the owner: open, and not waiting on them
   work=$(jq -s --argjson c "$HUB_CLOSED_JSON" --argjson ow "$HUB_NEEDS_OWNER_JSON" '[group_by(.id)[]
     | {p: .[0].project, id: .[0].id, s: ([.[] | select(.event != "note")] | last | .event)}
     | select((.s as $s | ($c + $ow) | index($s)) | not)]' "$root/.hivemind-hub/tasks.jsonl")
-  starts=$(jq -s --argjson s "$since" '[.[] | select(.epoch > $s and (.action == "start" or .action == "wake"))] | length' "$rj")
+  starts=$(jq -s --argjson s "$since" '[.[] | select(.epoch > $s and (.action == "start" or .action == "wake"))] | length' "$rjf")
   actions='[]'; blocked='[]'
   for n in $(jq -r '.projects[]?.name' "$root/.hivemind-hub/projects.json"); do
     hm_is_agent_name "$n" || continue
@@ -913,29 +922,31 @@ recover)
       continue
     fi
     if [ "$O_STATE" = stopped ] && [ -n "$task" ]; then
-      tries=$(jq -s --arg i "$n" --argjson s "$since" '[.[] | select(.epoch > $s and .action == "wake" and .item == $i)] | length' "$rj")
-      seenblock=$(jq -s --arg i "$n" --argjson s "$since" '[.[] | select(.epoch > $s and .action == "blocked-wake" and .item == $i)] | length' "$rj")
+      tries=$(jq -s --arg i "$n" --argjson s "$since" '[.[] | select(.epoch > $s and .action == "wake" and .item == $i)] | length' "$rjf")
+      seenblock=$(jq -s --arg i "$n" --argjson s "$since" '[.[] | select(.epoch > $s and .action == "blocked-wake" and .item == $i)] | length' "$rjf")
       if [ "$tries" -ge 3 ]; then
         [ "$seenblock" -gt 0 ] || {
           blocked=$(printf '%s' "$blocked" | jq -c --arg p "$n" --arg t "$task" '. + [{action:"wake", project:$p, task:$t, reason:"woken 3 times in 24 hours and still stopped"}]')
-          jq -nc --arg i "$n" --argjson e "$now" '{epoch:$e, action:"blocked-wake", item:$i}' >> "$rj"; }
+          newrec="$newrec$(jq -nc --arg i "$n" --argjson e "$now" '{epoch:$e, action:"blocked-wake", item:$i}')"$'\n'; }
       elif [ "$starts" -ge "$max" ]; then
         [ "$seenblock" -gt 0 ] || {
           blocked=$(printf '%s' "$blocked" | jq -c --arg p "$n" --arg t "$task" --argjson m "$max" '. + [{action:"wake", project:$p, task:$t, reason:"the daily cap of \($m) sessions started or woken is reached"}]')
-          jq -nc --arg i "$n" --argjson e "$now" '{epoch:$e, action:"blocked-wake", item:$i}' >> "$rj"; }
+          newrec="$newrec$(jq -nc --arg i "$n" --argjson e "$now" '{epoch:$e, action:"blocked-wake", item:$i}')"$'\n'; }
       else
         actions=$(printf '%s' "$actions" | jq -c --arg p "$n" --arg t "$task" '. + [{action:"wake", project:$p, task:$t}]')
       fi
     elif [ "$O_STATE" = running ] && [ "$newly" != '[]' ]; then
-      tries=$(jq -s --arg i "$n" --argjson s "$since" '[.[] | select(.epoch > $s and .action == "respawn" and .item == $i)] | length' "$rj")
+      tries=$(jq -s --arg i "$n" --argjson s "$since" '[.[] | select(.epoch > $s and .action == "respawn" and .item == $i)] | length' "$rjf")
       if [ "$tries" -ge 3 ]; then
         blocked=$(printf '%s' "$blocked" | jq -c --arg p "$n" --arg t "$task" --argjson a "$newly" '. + [{action:"respawn", project:$p, agents:$a, reason:"RESPAWN sent 3 times in 24 hours"}]')
       else
         actions=$(printf '%s' "$actions" | jq -c --arg p "$n" --argjson a "$newly" '. + [{action:"respawn", project:$p, agents:$a}]')
-        jq -nc --arg i "$n" --argjson e "$now" '{epoch:$e, action:"respawn", item:$i}' >> "$rj"
+        newrec="$newrec$(jq -nc --arg i "$n" --argjson e "$now" '{epoch:$e, action:"respawn", item:$i}')"$'\n'
       fi
     fi
   done
+  lock "$root"
+  [ -z "$newrec" ] || printf '%s' "$newrec" >> "$rj"
   printf '%s\n' "$states" > "$rs.tmp$$" && mv "$rs.tmp$$" "$rs"
   unlock
   if [ "$json" = 1 ]; then
