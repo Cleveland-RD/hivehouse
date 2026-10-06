@@ -121,7 +121,7 @@ One Claude session in the owner's work folder, the folder above every project, i
   `~/.claude/sessions/<pid>.json`, which Claude Code keeps and does not document. Without them the hub names nothing
   (the person types `/rename hub`) and finds only orchestrators hivemind registered; nothing else changes.
 - **The screen.** `/hub-screen` (or a wide terminal, at start) opens a pane: what waits on the owner, then each
-  project's orchestrator, agents, tasks and folders, with Resume and Continue buttons. It reads `hm-hub` only while shown.
+  project's orchestrator, agents, tasks and folders, with Resume and Continue buttons, and a button for each option of a dialog waiting on a session (a click carries the dialog's `Seen` fingerprint, so an answer to a screen that has changed is refused). It reads `hm-hub` only while shown.
 - **Hands off the code.** The hub never reviews, builds, tests, commits or pushes. In the hub's session the module
   refuses an edit inside the work folder (apart from `.hivemind-hub/`) or inside a project's folder, and a git command
   that changes a repository; quoted text and heredocs are the owner's words, never a command (best effort for shell).
@@ -160,7 +160,7 @@ While the owner is away the hub never answers a screen dialog (`hm-hub answer` r
 
 **Away mode is not a sandbox.** In bypass, any session can run any command as the owner's user, with the owner's files and credentials. The refusals below stop the actions delegate keeps for the owner; they are not a security boundary, and switching away on means trusting the teams the hub runs.
 
-**Who is guarded: the marker.** A session hivemind launches in bypass while away carries `HM_AWAY_BYPASS=1` in its launch environment. Every guard keys on it. On macOS, `ps -E` shows no environment for Apple's own programs (bash, sleep) and shows it for others, such as Claude: the marker is read from the Claude process, and a session whose environment cannot be read is refused, never trusted. A Bash command can unset it for itself, so the hook, not the scripts, is the guard. When a session carries no marker (the owner's own bypass sessions, `dedicated_hosts` runs) nothing here applies. If delegate mode ever has to run in `auto` instead of bypass, there is no marker and no refusals: outward steps are left to the auto classifier and to prompts nobody answers, as in overnight today.
+**Who is guarded: the marker.** A session hivemind launches in bypass while away carries `HM_AWAY_BYPASS=1` in its launch environment. Every guard keys on it. On macOS, `ps -E` shows no environment for Apple's own programs (bash, sleep) and shows it for others, such as Claude: the marker is read from the Claude process, and a session whose environment cannot be read is refused, never trusted. `ps -E` joins the variables with spaces, so on macOS a marker spelled inside another variable's value (`FOO="x HM_AWAY_BYPASS=1 y"`) counts as set; Linux reads `/proc/<pid>/environ` exactly. A Bash command can unset it for itself, so the hook, not the scripts, is the guard. When a session carries no marker (the owner's own bypass sessions, `dedicated_hosts` runs) nothing here applies. If delegate mode ever has to run in `auto` instead of bypass, there is no marker and no refusals: outward steps are left to the auto classifier and to prompts nobody answers, as in overnight today.
 
 **The hook.** `bin/hm-away-hook` is a `PreToolUse` command hook, wired in `hooks/hooks.json` for Bash, MCP tools, SendMessage, Edit, Write, MultiEdit, NotebookEdit, Artifact, ArtifactData, ArtifactComments, RemoteTrigger and Agent. Without the marker it exits at once. With it, it refuses (exit 2, with a reason the session can read):
 
@@ -183,14 +183,21 @@ Anything the hook cannot read or parse is refused too, and so is any failure of 
 - The hook guards sessions of this plugin. It assumes the owner's `disableAllHooks` is not set.
 - Nothing runs while the machine is off. Remote hosts are not used while away (`hm-remote-sync` is refused).
 
-**Which records are trusted, and why.** Only the root-owned delegate file gates bypass and delegate mode. Everything else is writable by the owner's user, so by any of their sessions in bypass, and is trusted only that far: `away.json`, the hub's `tasks.jsonl`, `recovery.jsonl` and `decisions/`, a project's `.hivemind/settings.json` and `team.json`, and Claude Code's own settings. `projects.json` is user-writable too: a session could list another folder during an away period the owner opened.
+**Which records are trusted, and why.** Only the root-owned delegate file gates bypass and delegate mode. Everything else is writable by the owner's user, so by any of their sessions in bypass, and is trusted only that far: `away.json`, the hub's `tasks.jsonl`, `recovery.jsonl` and `decisions/`, a project's `.hivemind/settings.json` and `team.json`, and Claude Code's own settings. `hub.json` (which Claude is the hub) and `projects.json` (which folders a project covers, and so which get bypass) are user-writable too: a session could rewrite them during an away period the owner opened. The away hook's protected-file list covers writes to them only as far as that list and its matching go (see above); nothing else protects them.
 
 ## State
 
 - `<project>/.hivemind/` — handoffs, team, manifest, settings, trash; excluded through the repo's `info/exclude`, never tracked.
 - `${HIVEMIND_HOME:-~/.hivemind}` — per machine: the heavy-job slot and the registry of running teams.
 - `<work folder>/.hivemind-hub/` — the hub's projects, task ledger and task files, its notes per project; outside every
-  repository.
+  repository. Delegate mode adds `hub.json` (which Claude is the hub), `away.json`, `decisions/<task id>.md`,
+  `answers.jsonl` (dialogs answered through the hub), `recovery.jsonl` and `recovery-state.json`, `hung-state.json` and
+  `holds/<project>`.
+- `/Library/Application Support/hivemind/delegate` (macOS) or `/etc/hivemind/delegate` (Linux) — the owner's root-owned
+  delegate file, the only record that gates bypass; hivemind never writes it.
+- Files that may hold MCP server secrets, each mode 0600 and removed or replaced by the next start:
+  `.hivemind/team/<agent>/away-mcp.json` (an agent started in bypass), `.hivemind-hub/away-mcp.json` (the hub's) and
+  `.hivemind-hub/panes/<project>-mcp.json` (an orchestrator the hub started, until it registers).
 
 ## After a restart
 
@@ -199,7 +206,9 @@ A restart of the machine or of tmux takes the team's panes with it. `hm-context 
 orchestrator`, then runs `hm-spawn --respawn <agent>` for each agent so marked: the agent starts again from its own
 record (model, effort, permission mode, worktree and branch from `team.json`, role and rules from
 `.hivemind/team/<agent>/`) and is sent back to its handoff. A running agent, one whose state cannot be told, and the
-orchestrator itself are never respawned.
+orchestrator itself are never respawned. An agent recorded in bypass is refused (exit 4) once away has ended: add
+`--mode <a stricter mode>` (the owner's `permission_mode_local`). `--resume` brings the agent back in its own recorded
+conversation instead of from its handoff, when no live Claude already holds that conversation.
 
 With a hub, `hm-hub status` shows which orchestrators a restart stopped; `hm-hub wake <project>` (or the screen's Resume)
 resumes each one's own conversation in tmux and tells it to do the above.
