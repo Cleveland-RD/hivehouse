@@ -148,9 +148,21 @@ hm_lstart_is() {
   [ "$(hm_lstart "$1")" = "$2" ] && return 0
   s=$(hm_lstart_local "$1"); [ "$s" = "$2" ]
 }
-# hm_lstart_shape <time>: its form without the values (digits to 0, words to a, spaces squeezed): "a a 0 0:0:0 0" is C, "a 0 a 0:0:0 0"
-# en_GB, "a. 0 a. 0:0:0 0" fr_FR. A lock told apart from pid reuse by shape (hm_lock_stale).
-hm_lstart_shape() { printf '%s' "$1" | LC_ALL=C sed -E 's/[0-9]+/0/g; s/[^ 0:.]+/a/g; s/ +/ /g; s/^ //; s/ $//'; }
+# hm_lstart_fp <time>: a recorded start time's language-free numbers, "HH:MM:SS YYYY D" (day without a leading zero), or nothing. Its
+# one HH:MM:SS token, its one 4-digit year and its one standalone 1-2 digit day; exactly one of each, or there is no fingerprint (a
+# day written "6." has none). Languages differ in the words and their order ("Tue  6 Oct", "mar  6 ott", "Tue Oct  6") but not in these.
+hm_lstart_fp() {
+  local w t="" y="" d="" nt=0 ny=0 nd=0 ws
+  IFS=' ' read -r -a ws <<< "$1"
+  for w in ${ws[@]+"${ws[@]}"}; do
+    case "$w" in
+      [0-9][0-9]:[0-9][0-9]:[0-9][0-9]) t=$w; nt=$((nt + 1)) ;;
+      [0-9][0-9][0-9][0-9]) y=$w; ny=$((ny + 1)) ;;
+      [0-9]|[0-9][0-9]) d=$((10#$w)); nd=$((nd + 1)) ;;
+    esac
+  done
+  [ "$nt" = 1 ] && [ "$ny" = 1 ] && [ "$nd" = 1 ] && printf '%s %s %s\n' "$t" "$y" "$d"
+}
 hm_is_claude() {  # hm_is_claude <pid>: 0 when the process is Claude Code's, which hivemind stops only in hm_stop_hung (below)
   local args first second   # by argv: macOS ps reports comm from argv0 as well, so it would be the same reading
   args=$(/bin/ps -o args= -p "$1" 2>/dev/null) || return 1
@@ -174,22 +186,23 @@ hm_holder_json() {  # hm_holder_json <pid> [extra json object] -> the holder rec
     '{pid:$pid,lstart:$l,lstart_c:$lc,created:$c} + $x'
 }
 # hm_lock_stale <lock>: 0 when the holder is gone. A dead pid is stale whatever the record says. A live pid is the holder when either
-# record matches it. Otherwise the lock is taken from it only when a record is in a form hivemind writes (the C form's shape or the
-# caller's locale's) and names another time: pid reuse. Any other shape (another locale's, junk, empty) is busy: not knowing is
-# never a reason to take a live holder's lock.
+# record matches it exactly. Otherwise the record is judged by its language-free numbers (hm_lstart_fp): the holder when they equal
+# the pid's own, stale (pid reuse) when they differ. A record with no fingerprint (junk, empty) is busy: not knowing is never a reason
+# to take a live holder's lock. Words are not compared: en_GB, it_IT and pt_PT print the same shape in different languages.
 hm_lock_stale() {
-  local h="$1/holder.json" pid ls lc age r cs ls_shape
+  local h="$1/holder.json" pid ls lc age r fp cfp any=0
   pid=$(hm_json_get "$h" .pid); ls=$(hm_json_get "$h" .lstart); lc=$(hm_json_get "$h" .lstart_c)
   if [ -z "$pid" ]; then age=$(hm_dir_age "$1") || return 1; [ "$age" -gt 10 ]; return; fi
   hm_alive "$pid" || return 0
   hm_lstart_is "$pid" "$lc" && return 1
   hm_lstart_is "$pid" "$ls" && return 1
-  cs=$(hm_lstart_shape "$(hm_lstart "$$")"); ls_shape=$(hm_lstart_shape "$(hm_lstart_local "$$")")
+  cfp=$(hm_lstart_fp "$(hm_lstart "$pid")")
   for r in "$lc" "$ls"; do
-    [ -n "$r" ] || continue
-    case "$(hm_lstart_shape "$r")" in "$cs"|"$ls_shape") return 0 ;; esac
+    fp=$(hm_lstart_fp "$r"); [ -n "$fp" ] || continue
+    [ "$fp" = "$cfp" ] && return 1
+    any=1
   done
-  return 1
+  [ "$any" = 1 ]
 }
 hm_lock_try() {  # hm_lock_try <lock> <holder json>: 0 taken, 1 busy
   local lock="$1" json="$2" guard age snap

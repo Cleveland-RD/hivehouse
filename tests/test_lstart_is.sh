@@ -12,6 +12,7 @@ t_setup
 export LC_ALL=$LOC
 trim() { sed 's/^ *//;s/ *$//'; }
 env -u HIVEMIND_HOME tmux -S "$HM_TMUX_SOCKET" new-session -d -s keep 'sleep 600'
+sleep 300 >/dev/null 2>&1 & pold=$!; t_track "$pold"; sleep 2   # started at another second than p
 sleep 300 >/dev/null 2>&1 & p=$!; t_track "$p"
 C=$(LC_ALL=C /bin/ps -o lstart= -p "$p" | trim); L=$(/bin/ps -o lstart= -p "$p" | trim)
 [ "$C" != "$L" ] && ok "(ps prints this time differently under $LOC: $L / $C)" || bad "$LOC prints the same as C: the tests below prove nothing"
@@ -41,9 +42,28 @@ rec "$p" "$C";       hm_lock_stale "$LK"; assert_status "the C form of this proc
 rec "$p" "$L";       hm_lock_stale "$LK"; assert_status "the caller's-locale form of this process (0.2.0's holder): busy" $? 1
 rec "$p" "$OTHER_C"; hm_lock_stale "$LK"; assert_status "a C-shaped record of another time: stale (pid reuse)" $? 0
 rec "$p" "$OTHER_L"; hm_lock_stale "$LK"; assert_status "a caller's-locale-shaped record of another time: stale (pid reuse)" $? 0
-rec "$p" "$FR";      hm_lock_stale "$LK"; assert_status "a third locale's shape: busy, never taken" $? 1
 rec "$p" "xyz";      hm_lock_stale "$LK"; assert_status "a record of no known shape: busy" $? 1
 rec "$p" "";         hm_lock_stale "$LK"; assert_status "no recorded start time with a live pid: busy" $? 1
+echo "-- hm_lstart_fp: the numbers a record holds, whatever its language"
+assert_eq "C" "$(hm_lstart_fp "Tue Oct  6 18:00:39 2026")" "18:00:39 2026 6"
+assert_eq "en_GB" "$(hm_lstart_fp "Tue  6 Oct 18:00:39 2026")" "18:00:39 2026 6"
+assert_eq "fr_FR (hand-built)" "$(hm_lstart_fp "mar.  6 oct. 18:00:39 2026")" "18:00:39 2026 6"
+assert_eq "a two-digit day" "$(hm_lstart_fp "Tue Oct 16 08:00:39 2026")" "08:00:39 2026 16"
+assert_eq "a leading zero on the day is dropped" "$(hm_lstart_fp "Tue Oct 06 08:00:39 2026")" "08:00:39 2026 6"
+for j in "" xyz "Tue Oct  6 2026" "Tue Oct  6 18:00:39" "Tue Oct 18:00:39 2026" "Tue  6 Oct  7 18:00:39 2026" "6 18:00:39 18:00:40 2026" "Tue Oct  6 18:00:39 2026 2027" "mar. 6. oct. 18:00:39 2026"; do
+  [ -z "$(hm_lstart_fp "$j")" ] && ok "no fingerprint: [$j]" || bad "a fingerprint from [$j]: $(hm_lstart_fp "$j")"
+done
+echo "-- hm_lock_stale: a live pid, judged by the numbers, under readers of other languages"
+for rd in en_GB.UTF-8 it_IT.UTF-8; do
+  locale -a 2>/dev/null | grep -qix "$rd" || { echo "  SKIP the $rd reader: the locale is not installed"; continue; }
+  for loc in C en_GB.UTF-8 it_IT.UTF-8 fr_FR.UTF-8; do
+    if [ "$loc" != C ] && ! locale -a 2>/dev/null | grep -qix "$loc"; then echo "  SKIP the $loc record: the locale is not installed"; continue; fi
+    live=$(LC_ALL=$loc /bin/ps -o lstart= -p "$p" | trim); old=$(LC_ALL=$loc /bin/ps -o lstart= -p "$pold" | trim)
+    rec "$p" "$live"; (export LC_ALL=$rd; hm_lock_stale "$LK"); assert_status "a $loc record of the live holder [$live], read under $rd: busy" $? 1
+    rec "$p" "$old";  (export LC_ALL=$rd; hm_lock_stale "$LK"); assert_status "a $loc record of another time [$old], read under $rd: stale (pid reuse)" $? 0
+  done
+  rec "$p" "xyz"; (export LC_ALL=$rd; hm_lock_stale "$LK"); assert_status "junk, read under $rd: busy" $? 1
+done
 echo "-- hm_lock_stale: a dead pid's lock is stale whatever the record"
 for r in "$qC" "$qL" "$FR" "xyz" ""; do rec "$q" "$r"; hm_lock_stale "$LK"; assert_status "dead pid, record [$r]" $? 0; done
 
