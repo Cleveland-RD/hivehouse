@@ -111,6 +111,14 @@ t_delegate_bin() {
   awk -v f="$1" -v u="$(id -u)" '/^hm_delegate_now\(\) \{ hm_delegate_read / { print "hm_delegate_now() { hm_delegate_read \"" f "\" " u "; }"; next } { print }' "$d/hm-lib.sh" > "$d/hm-lib.sh.new" && mv "$d/hm-lib.sh.new" "$d/hm-lib.sh"
   printf '%s\n' "$d"
 }
+# t_env_probe <NAME=value>: starts a process launched with that variable and prints its pid. macOS shows no environment for
+# Apple platform binaries (sleep, bash) in ps -E, so a non-platform one (node) is used; prints nothing, and fails, when only
+# platform binaries are found.
+t_env_probe() {
+  local n; n=$(command -v node) || return 1
+  if command -v codesign >/dev/null 2>&1 && codesign -dv "$n" 2>&1 | grep -q 'Platform identifier'; then return 1; fi
+  ( env "$1" "$n" -e 'setTimeout(() => {}, 60000)' >/dev/null 2>&1 & echo $! )
+}
 ok()   { printf '  ok   %s\n' "$1"; }
 bad()  { printf '  FAIL %s\n' "$1"; FAILS=$((FAILS + 1)); }
 assert_eq()       { if [ "$2" = "$3" ]; then ok "$1"; else bad "$1: expected [$3] got [$2]"; fi; }

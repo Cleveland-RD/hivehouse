@@ -29,7 +29,16 @@ mkcl() {  # mkcl <bin dir>: a stand-in for the hub's Claude, which runs that bin
   local d; d=$(mktemp -d "$T_TMP/cl.XXXXXX")
   printf '#!/usr/bin/env bash\ncd "%s" && "%s/hm-hub" "$@"\n' "$H" "$1" > "$d/claude"; chmod +x "$d/claude"; printf '%s\n' "$d/claude"
 }
+mkcl_node() {  # mkcl_node <bin dir>: the same stand-in as a node script named claude, which ps -E can show the environment of
+  local d; d=$(mktemp -d "$T_TMP/cln.XXXXXX")
+  printf 'const { spawnSync } = require("child_process")\nconst r = spawnSync(%s, process.argv.slice(2), { cwd: %s, stdio: "inherit" })\nprocess.exit(r.status === null ? 1 : r.status)\n' "\"$1/hm-hub\"" "\"$H\"" > "$d/claude"; printf '%s\n' "$d/claude"
+}
 CLP=$(mkcl "$HM_REPO_ROOT/bin"); CLD=$(mkcl "$DB")
+# where ps -E can show a process's environment (a non-platform binary on macOS: node), the stand-in is a node script and the
+# marker is really read; elsewhere it is a bash script, the environment cannot be read, and recover warns and goes on
+READABLE=0; ep=$(t_env_probe HM_PROBE=1) || ep=""
+if [ -n "$ep" ]; then t_track "$ep"; sleep 0.5; hm_env_has "$ep" HM_PROBE=1 && READABLE=1; kill "$ep" 2>/dev/null; fi
+[ "$READABLE" = 1 ] && CLN=$(mkcl_node "$DB")
 hub init >/dev/null
 for n in alpha beta gamma delta; do mk "$n"; hub add "$n" --home "$n" >/dev/null; done
 bash "$CLP" self --name hub >/dev/null; assert_status "the hub records itself" $? 0
@@ -129,7 +138,7 @@ mkorch beta "$bpid"
 # beta's one agent runs in a window of its own
 aw=$(hm_tmux new-window -d -P -F '#{pane_id}' -t keep: -n impl 'sleep 600'); ai=$(hm_pane_identity "$HM_TMUX_SOCKET" "$aw")
 jq --arg k "$HM_TMUX_SOCKET" --arg p "$aw" --arg pp "${ai%%$'\t'*}" --arg ps "${ai#*$'\t'}" '.agents += [{name:"impl", pane:$p, socket:$k, pane_pid:$pp, pane_started:$ps}]' "$H/beta/.hivemind/team.json" > "$T_TMP/tj" && mv "$T_TMP/tj" "$H/beta/.hivemind/team.json"
-rec() { HM_AWAY_BYPASS=1 bash "$CLD" recover "$@" 2>/dev/null; }
+rec() { if [ "$READABLE" = 1 ]; then HM_AWAY_BYPASS=1 node "$CLN" recover "$@" 2>/dev/null; else HM_AWAY_BYPASS=1 bash "$CLD" recover "$@" 2>/dev/null; fi; }
 act() { printf '%s' "$1" | jq -r '[.actions[] | "\(.action):\(.project)"] | join(",")'; }
 blk() { printf '%s' "$1" | jq -r '[.blocked[] | "\(.action):\(.project)"] | join(",")'; }
 r=$(hub recover --json); assert_eq "recover with the owner home: nothing is due" "$r" '{"away":false,"actions":[],"blocked":[]}'
@@ -174,10 +183,16 @@ assert_contains "...with its reason" "$(printf '%s' "$r" | jq -r '[.blocked[] | 
 : > "$rj"; r=$(rec --json --max-starts 2); assert_eq "...under the cap it is woken" "$(act "$r" | tr ',' '\n' | grep -c wake:alpha)" "1"
 hub recover --max-starts x >/dev/null 2>&1; assert_status "a daily cap that is a number" $? 4
 t=$(rec); case "$t" in *"wake alpha (task $ta)"*) ok "the plain output names each action" ;; *) bad "plain recover: $t" ;; esac
-# a hub started without the marker does not recover (where this machine shows a process's environment)
-( HM_PROBE=1 bash -c 'exec -a claude sleep 20' ) & pp=$!; t_track "$pp"; sleep 0.5; hm_env_has "$pp" HM_PROBE=1; erc=$?; kill "$pp" 2>/dev/null
-if [ "$erc" -eq 2 ]; then echo "  SKIP this machine does not show a process's environment: the marker's absence cannot be tested here"
-else bash "$CLD" recover --json >/dev/null 2>"$T_TMP/m.err"; assert_status "recover without the away marker" $? 4; assert_contains "...says why" "$(cat "$T_TMP/m.err")" "away marker"; fi
+# a hub started without the away marker does not recover; one started with it does, with nothing said on stderr
+if [ "$READABLE" = 1 ]; then
+  node "$CLN" recover --json >/dev/null 2>"$T_TMP/m.err"; assert_status "recover without the away marker" $? 4; assert_contains "...says why" "$(cat "$T_TMP/m.err")" "away marker"
+  HM_AWAY_BYPASS=1 node "$CLN" recover --json >/dev/null 2>"$T_TMP/m.err"; assert_status "recover with the away marker" $? 0
+  assert_eq "...and no warning that it could not check" "$(grep -c warning "$T_TMP/m.err")" "0"
+  HM_AWAY_BYPASS=0 node "$CLN" recover --json >/dev/null 2>&1; assert_status "...a marker with another value is none" $? 4
+else
+  echo "  SKIP only Apple platform binaries were found (no node): macOS shows no environment for them in ps -E, so the marker's absence cannot be tested here"
+  HM_AWAY_BYPASS=1 bash "$CLD" recover --json >/dev/null 2>"$T_TMP/m.err"; assert_contains "...a platform binary's environment cannot be read: it warns and goes on" "$(cat "$T_TMP/m.err")" "cannot be read"
+fi
 # the sessions the hub starts or wakes are recorded, for those caps
 : > "$rj"; mk eps; hub add eps --home eps >/dev/null; te=$(idof "$(hub task eps --text "New")")
 hub start eps "$te" --still 2 --max-wait 15 >/dev/null 2>&1; assert_status "a start" $? 0

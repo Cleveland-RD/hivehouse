@@ -496,7 +496,8 @@ hm_delegate_now() { hm_delegate_read "$(hm_delegate_path)" 0; }
 # hm_env_has <pid> <NAME=value>: 0 the process was launched with it; 1 its environment is visible and lacks it; 2 no
 # environment is visible at all (the caller says so and does not pretend to have checked). Linux reads /proc/<pid>/environ,
 # which is exact. macOS `ps -E` prints the arguments and the environment on one line: an argument that spells the marker
-# could fool it, so it is matched as a whole word, and only after the command's own words.
+# could fool it, so it is matched as a whole word, and only after the command's own words. macOS shows no environment for
+# Apple platform binaries (bash, sleep), so a non-platform process is needed to read one: Claude Code is one.
 hm_env_has() {
   local pid="$1" want="$2" env
   if [ -r "/proc/$pid/environ" ]; then

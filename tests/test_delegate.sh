@@ -69,11 +69,13 @@ hm_delegate_read "$D/nothing" "$ME" "$NOW" >/dev/null 2>&1 && bad "a missing fil
 mkf; ok_ && ok "...and the valid file is valid again" || bad "the valid file stopped being valid"
 
 # ---- the launch environment of a process (the marker's check, A42) ----
-( HM_PROBE_TEST=1 bash -c 'exec -a claude sleep 30' ) & pp=$!; t_track "$pp"; sleep 0.5
+pp=$(t_env_probe HM_PROBE_TEST=1) || pp=""
+[ -n "$pp" ] || { ( HM_PROBE_TEST=1 bash -c 'exec -a claude sleep 30' ) & pp=$!; }   # a platform binary: readable on Linux only
+t_track "$pp"; sleep 0.5
 hm_env_has "$pp" HM_PROBE_TEST=1; rc=$?
 if [ "$rc" -eq 2 ]; then
-  echo "  SKIP this machine does not show a process's environment (ps -E / proc): the marker's check cannot be tested here"
-  assert_eq "an unreadable environment is told apart from an absent variable" "$rc" "2"
+  echo "  SKIP only Apple platform binaries were found (no node): macOS shows no environment for them in ps -E, so the marker's check cannot be tested here"
+  assert_eq "an environment that cannot be read is told apart from an absent variable" "$rc" "2"
 else
   assert_eq "a variable the process was launched with is found" "$rc" "0"
   hm_env_has "$pp" HM_PROBE_TEST=2; assert_status "...another value is not" $? 1
