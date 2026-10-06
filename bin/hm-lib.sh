@@ -321,7 +321,7 @@ hm_managed_settings() {
 }
 hm_owner_statusline() {  # hm_owner_statusline <session cwd>
   local f
-  for f in "$(hm_managed_settings)" "$1/.claude/settings.local.json" "$1/.claude/settings.json" "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/settings.json"; do
+  for f in "$(hm_managed_settings)" "$1/.claude/settings.local.json" "$1/.claude/settings.json" "$(hm_claude_dir)/settings.json"; do
     [ -f "$f" ] && jq -ce '.statusLine | select(type == "object")' "$f" 2>/dev/null && return 0
   done
   return 0
@@ -383,13 +383,13 @@ hm_is_session_name() {  # hm_is_session_name <name>: 0 when it is one
 # that is not JSON is no answer, never an error.
 hm_session_record() {  # hm_session_record <pid> <jq path>
   case "$1" in ''|*[!0-9]*) return 0 ;; esac
-  jq -j --arg p "$1" "select((.pid | tostring) == \$p) | $2 // empty" "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/sessions/$1.json" 2>/dev/null
+  jq -j --arg p "$1" "select((.pid | tostring) == \$p) | $2 // empty" "$(hm_claude_dir)/sessions/$1.json" 2>/dev/null
 }
 # A live Claude process already holding a conversation, from Claude Code's own session records: prints its pid, or fails when none
 # is. Records of dead processes, of processes that are not Claude, and files that are not JSON are no answer.
 hm_session_holder() {  # hm_session_holder <session id>
   local f p
-  for f in "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/sessions/*.json; do
+  for f in "$(hm_claude_dir)"/sessions/*.json; do
     [ -f "$f" ] || continue
     p=$(jq -r --arg s "$1" 'select(.sessionId == $s) | .pid // empty' "$f" 2>/dev/null) || continue
     hm_is_claude "$p" && { printf '%s\n' "$p"; return 0; }
@@ -399,7 +399,7 @@ hm_session_holder() {  # hm_session_holder <session id>
 hm_session_transcript() {  # hm_session_transcript <session id>: the one <id>.jsonl under <config dir>/projects/*/, else fails
   local m n
   case "$1" in ''|*[!${HM_LOWER}${HM_UPPER}${HM_DIGITS}-]*) return 1 ;; esac
-  m=$(find "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/projects" -mindepth 2 -maxdepth 2 -type f -name "$1.jsonl" 2>/dev/null)
+  m=$(find "$(hm_claude_dir)/projects" -mindepth 2 -maxdepth 2 -type f -name "$1.jsonl" 2>/dev/null)
   n=$(printf '%s' "$m" | grep -c .)
   [ "$n" -eq 1 ] && printf '%s\n' "$m"
 }
@@ -408,7 +408,7 @@ hm_session_transcript() {  # hm_session_transcript <session id>: the one <id>.js
 # else; never installs, enables or switches it on. When its always-on flag exists the plugin already applies itself to
 # every session, so it is not loaded a second time. Prints the path, or fails.
 hm_adhd_skill() {
-  local flag="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/.i-have-adhd-always" d
+  local flag="$(hm_claude_dir)/.i-have-adhd-always" d
   if [ -e "$flag" ]; then echo "hivemind: i-have-adhd is always on ($flag) and applies itself; not loaded again" >&2; return 1; fi
   while IFS= read -r d; do
     [ -n "$d" ] && [ -f "$d/skills/i-have-adhd/SKILL.md" ] && { printf '%s\n' "$d/skills/i-have-adhd/SKILL.md"; return 0; }
@@ -463,7 +463,7 @@ hm_is_agent_name() {  # hm_is_agent_name <name>: 0 when it is one
 }
 
 # How strict a permission mode is, for "only ever stricter": plan and dontAsk are the same, bypassPermissions the loosest. Fails for
-# anything else. (hm-settings keeps its own copy, which refuses bypassPermissions as a local value.)
+# anything else. (hm-settings wraps it and refuses bypassPermissions as a local value.)
 hm_mode_rank() {  # hm_mode_rank <mode>
   case "$1" in plan|dontAsk) echo 0 ;; default) echo 1 ;; acceptEdits) echo 2 ;; auto) echo 3 ;; bypassPermissions) echo 4 ;; *) return 1 ;; esac
 }
@@ -660,7 +660,8 @@ hm_env_has() {
 # <config dir>/.claude.json (.projects[<folder>].hasTrustDialogAccepted) decides it. Measured on Claude Code 2.1.291: a plain folder is
 # trusted when it or any folder above it is; a git repository does NOT inherit from a folder above it, and a worktree is judged by its
 # MAIN repository's entry (accepting the dialog in a worktree writes that key, not the worktree's).
-hm_claude_json() { printf '%s\n' "${CLAUDE_CONFIG_DIR:-${HOME:-/}}/.claude.json"; }
+hm_claude_dir() { printf '%s\n' "${CLAUDE_CONFIG_DIR:-${HOME:-/}/.claude}"; }   # Claude Code's config folder: the one place it is resolved (the hook keeps its own, being a separate script)
+hm_claude_json() { printf '%s\n' "${CLAUDE_CONFIG_DIR:-${HOME:-/}}/.claude.json"; }   # the user-level state file: inside the config folder when CLAUDE_CONFIG_DIR is set, else in the home folder
 hm_claude_trusts() {
   local d common t cj; cj=$(hm_claude_json)
   d=$(cd "$1" 2>/dev/null && pwd -P) || d=$1

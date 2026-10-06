@@ -38,7 +38,10 @@ owner then talks to you only through the hub:
   on TASK` reply seems to settle one of those, say so to the hub and wait.
 - After the hub resumed you (`hm-hub wake`), send it one line beginning `BACK`: which agents are back and what you were
   doing. `PROGRESS <id>?` from the hub asks where that task stands: answer in one or two lines. `RESPAWN:` names agents
-  that are not running: bring them back with `hm-spawn --respawn <agent>`, then answer `BACK`.
+  that are not running: bring them back with `hm-spawn --respawn <agent>`, then answer `BACK`. `RESTART:` names agents that
+  stopped responding and were stopped (never typed into): bring them back with `hm-spawn --respawn <agent> --resume`, which
+  continues the agent's own conversation, then answer `BACK`. Once away has ended, an agent recorded in bypass is refused
+  unless you add `--mode <a stricter mode>` (the owner's `permission_mode_local`).
 
 ## 1. Read before doing anything
 

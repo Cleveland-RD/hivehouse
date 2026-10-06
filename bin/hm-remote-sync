@@ -1,5 +1,5 @@
 #!/bin/bash -p
-# Prepare a remote host for an overnight run. Never pre-approved for agents (A4). Subcommands, each idempotent:
+# Prepare a remote host for an overnight run. Never pre-approved for agents: every call asks for permission. Subcommands, each idempotent:
 #   check    <host> --min-gb <n> --plugin-version <v>
 #   branches <host> <remote root> [<branch> ...]
 #   files    <host> <remote root> <list file>
@@ -9,7 +9,7 @@
 # Remote paths, list entries and secret paths use only ASCII letters, digits and ._/@+_- (rsync's remote shell splits on a space or ;); anything else is refused (exit 4).
 # Every ssh, scp and rsync goes through hm_ssh, hm_scp, hm_rsync below, which call the tool by name: tests put shims first
 # on PATH, so no test uses a network. After `check`, remote hivemind executables are called by the absolute install path
-# it recorded (A6). Exit: 0 ok, 1 findings (mismatch, conflict, version, space), 2 no project, 3 .hivemind tracked,
+# it recorded, so no PATH lookup can run another program there. Exit: 0 ok, 1 findings (mismatch, conflict, version, space), 2 no project, 3 .hivemind tracked,
 # 4 refused, 5 host unreachable, 64 usage.
 set -u
 HM_BIN=${0%/*}; [ "$HM_BIN" != "$0" ] || HM_BIN=.   # parameter expansion, never dirname: under -p a function is ignored, an executable on PATH is not
@@ -191,7 +191,7 @@ secret)
   [ $# -eq 2 ] || hm_die 64 "$USAGE"
   rroot="$1"; rel="$2"
   rel_ok "$rel" || hm_die 4 "path refused (relative, no .., not starting with -): $rel"
-  case "$rel" in .hivemind/tmp/*) ;; *) hm_die 4 "a secret goes under .hivemind/tmp/ only: the remote manifest refuses a file entry elsewhere in the project (A18)" ;; esac
+  case "$rel" in .hivemind/tmp/*) ;; *) hm_die 4 "a secret goes under .hivemind/tmp/ only: the remote manifest refuses a file entry elsewhere in the project" ;; esac
   [ ! -L "$ROOT/$rel" ] || hm_die 4 "the secret is a symlink: $rel"
   [ -f "$ROOT/$rel" ] || hm_die 4 "no such file here: $rel"
   local_parent_ok "$rel"
@@ -238,8 +238,8 @@ secret)
   exit 0 ;;
 
 # ---- start-agent ---------------------------------------------------------------------------------------------------
-# The remote's own hm-spawn, by the install path `check` recorded (A6), in the mode the caller resolved. Never bypassPermissions: the plan
-# keeps bypass to away mode (A5), where the owner's delegate file and marker decide, and the remote hm-spawn refuses it too. The role and
+# The remote's own hm-spawn, by the install path `check` recorded, in the mode the caller resolved. Never bypassPermissions: the plan
+# keeps bypass to away mode, where the owner's delegate file and marker decide, and the remote hm-spawn refuses it too. The role and
 # rules are the remote copies, under the remote root (send them with `files`). The model's [ ] would be a glob in some shells: every
 # argument goes through printf %q, and the whole is run by the remote's login shell with a PATH that has tmux and node in front.
 start-agent)

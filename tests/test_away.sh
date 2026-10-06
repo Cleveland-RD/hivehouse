@@ -89,6 +89,8 @@ assert_eq "...at mode 0600" "$(stat -f '%Lp' "$P/away-mcp.json" 2>/dev/null || s
 assert_contains "...it says away is capped at 7 days" "$out" "at most 7 days"
 assert_contains "...that a reboot ends it" "$out" "after a reboot"
 assert_contains "...that messages to the hub are information only" "$out" "information only"
+assert_contains "...that the MCP allowlist stops browser checks and computer-use unless allowed" "$out" "browser automation and computer-use"
+assert_contains "...and that SendMessage is held to the hub and its teams, so peers on other machines are cut off" "$out" "SendMessage is held to the hub and its teams"
 assert_contains "...and that no remote host is used" "$out" "No remote host"
 assert_eq "...the time away began is kept for the screen" "$(jq -r '.since | length' "$P/away.json")" "20"
 jq '.session_id = "sess-hub-1"' "$P/hub.json" > "$P/hub.json.t" && mv "$P/hub.json.t" "$P/hub.json"

@@ -31,7 +31,7 @@ HUB_NEEDS_OWNER_JSON=$(printf '%s' "$HUB_NEEDS_OWNER" | jq -Rc 'split(" ")')
 # The words of the hub's exchange with an orchestrator, held to both skills by tests/test_hub.sh: what an orchestrator's
 # message to the hub begins with, and what the hub's own messages begin with.
 HUB_REPLIES="HM-CLARIFY HM-PLAN BLOCKED DONE BACK"
-HUB_ASKS="TASK OWNER HUB PROGRESS RESPAWN"
+HUB_ASKS="TASK OWNER HUB PROGRESS RESPAWN RESTART"
 USAGE="usage: hm-hub init
        hm-hub self [--name <session name>]
        hm-hub discover
@@ -174,7 +174,7 @@ pending() {  # pending <hub root> <project>: 0 a pane this hub started is still 
 live_orchestrator() {  # live_orchestrator <hub root> <project> <home> <recorded name>: prints "<pid> <name> <pane>", or fails
   local f e pid name cwd tm raw hubpid skip
   hubpid=$(hm_json_get "$1/.hivemind-hub/hub.json" .claude_pid); skip=$(hm_json_get "$1/.hivemind-hub/panes/$2.json" .pane_pid)
-  for f in "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/sessions/*.json; do
+  for f in "$(hm_claude_dir)"/sessions/*.json; do
     [ -f "$f" ] || continue
     e=$(jq -r '[.pid, .name, .cwd, .tmux] | map(. // "" | tostring) | join("\u001f")' "$f" 2>/dev/null) || continue
     IFS=$'\x1f' read -r pid name cwd tm <<< "$e"
@@ -864,7 +864,7 @@ away)
   [ "$epoch" -le $((now + 604800)) ] || hm_die 4 "away is at most 7 days: the hub's heartbeat does not outlive that"
   file=$(hm_delegate_path); dir=${file%/*}; grp=root; [ ! -d /System/Library ] || grp=wheel
   mcp="$root/.hivemind-hub/away-mcp.json"
-  cdir="${CLAUDE_CONFIG_DIR:-${HOME:-/}/.claude}"; cj=$(hm_claude_json)
+  cdir=$(hm_claude_dir); cj=$(hm_claude_json)
   hm_write_away_mcp "$mcp" "$allow" "$root" || hm_die 1 "cannot write $mcp"
   missing=$HM_AWAY_MCP_MISSING
   jq -nc --arg s "$(epoch_iso "$now")" --argjson u "$epoch" '{since:$s, until:$u}' > "$root/.hivemind-hub/away.json"
@@ -900,6 +900,8 @@ away)
   done < <({ printf '%s\n' "$root"; jq -r '.projects[]? | .home, (.repos[]?)' "$root/.hivemind-hub/projects.json" 2>/dev/null; })
   echo "# Away mode needs permission_mode_local set to auto (the hub resolves it); a stricter value keeps its sessions out of bypass."
   echo "# MCP servers allowed for the hub: ${allow:-none}.${missing:+ Not found (not loaded):$missing.}"
+  echo "# The MCP allowlist also stops browser automation and computer-use (browser checks) unless they are in it: add them with --mcp-allow if the night needs them."
+  echo "# SendMessage is held to the hub and its teams while you are away: peers on other machines are cut off for the whole away period."
   echo "# Nothing runs while the machine is off: after a reboot, start the hub again with the lines above."
   echo "# A message from another session to the hub, while you are away, is information only; to instruct it, type into it (Remote Control, say)."
   echo "# No remote host is used while away: overnight work runs on this machine."
@@ -1063,7 +1065,7 @@ naming)
   [ $# -eq 2 ] && [ "$1" = --session ] || hm_die 64 "$USAGE"
   sid="$2"; case "$sid" in ''|*[!${HM_LOWER}${HM_UPPER}${HM_DIGITS}-]*) hm_die 4 "bad session id: $sid" ;; esac
   found=false; mname=""; msource=""; taken=""
-  for f in "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/sessions/*.json; do
+  for f in "$(hm_claude_dir)"/sessions/*.json; do
     [ -f "$f" ] || continue
     e=$(jq -r '[.pid, .sessionId, .name, .nameSource] | map(. // "" | tostring) | join("\u001f")' "$f" 2>/dev/null) || continue
     IFS=$'\x1f' read -r pid fsid fname fsource <<< "$e"
