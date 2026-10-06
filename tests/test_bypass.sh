@@ -77,6 +77,15 @@ mkdel "$((NOW - 10))"; sp "$NCP" b5 bypassPermissions >/dev/null; assert_status 
 assert_contains "......says why" "$(cat "$T_TMP/sp.err")" "delegate file"; mkdel
 (cd "$H/app" && HM_AWAY_BYPASS=1 "$DB/hm-spawn" --agent b6 --role "$T_TMP/role.md" --rules "$T_TMP/RULES.md" --model sonnet --effort medium --mode bypassPermissions --still 2 --max-wait 10 >/dev/null 2>&1); assert_status "...a plain shell naming the marker itself is refused (only a Claude's launch environment counts)" $? 4
 assert_eq "the marker of a bypass agent is not left in its tmux session's environment" "$(hm_tmux show-environment -t "hm-$(hm_project_key "$H/app")" HM_AWAY_BYPASS 2>&1 | grep -c '^HM_AWAY_BYPASS=1')" "0"
+# a marked caller that starts the tmux server: tmux copies its whole environment into the server's GLOBAL one, and every later pane would carry the marker
+FS="$T_TMP/fresh.sock"
+fp=$(HM_TMUX_SOCKET="$FS" sp "$NCP" f1 auto); assert_status "a marked caller starting the tmux server with an agent that is not in bypass" $? 0
+assert_contains "...that agent has no marker" "$(HM_TMUX_SOCKET="$FS" screen "$fp")" "ENV2: HM_AWAY_BYPASS= HM_AWAY_HUB= HM_AWAY_MCP_ALLOW="
+assert_eq "...the server's global environment holds none of the three" "$(tmux -S "$FS" show-environment -g 2>/dev/null | grep -c '^HM_AWAY_')" "0"
+fp=$(HM_TMUX_SOCKET="$FS" sp "$NCP" f2 auto); assert_contains "...a later window of that server has no marker" "$(HM_TMUX_SOCKET="$FS" screen "$fp")" "ENV2: HM_AWAY_BYPASS= HM_AWAY_HUB= HM_AWAY_MCP_ALLOW="
+fp=$(HM_TMUX_SOCKET="$FS" PROJ=other sp "$NCO" f3 auto); assert_contains "...nor a new session of it, for another project" "$(HM_TMUX_SOCKET="$FS" screen "$fp")" "ENV2: HM_AWAY_BYPASS= HM_AWAY_HUB= HM_AWAY_MCP_ALLOW="
+fp=$(HM_TMUX_SOCKET="$FS" sp "$NCP" f4 bypassPermissions); assert_contains "...and a bypass agent on it still gets its own" "$(HM_TMUX_SOCKET="$FS" screen "$fp")" "ENV2: HM_AWAY_BYPASS=1 HM_AWAY_HUB=$H HM_AWAY_MCP_ALLOW=docs"
+tmux -S "$FS" kill-server 2>/dev/null
 p=$(sp "$NCP" a1 auto); sc=$(screen "$p")
 assert_contains "any other mode: the agent runs in it" "$sc" "ARGV: auto"
 assert_contains "...with no marker and no hook variables" "$sc" "ENV2: HM_AWAY_BYPASS= HM_AWAY_HUB= HM_AWAY_MCP_ALLOW="

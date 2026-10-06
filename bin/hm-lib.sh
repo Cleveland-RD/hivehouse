@@ -40,6 +40,8 @@ hm_pane_key() {  # hm_pane_key <socket> <pane id> -> filename-safe key
   printf '%s' "$1|$2" | shasum | cut -c1-16
 }
 hm_tmux() { if [ -n "${HM_TMUX_SOCKET:-}" ]; then tmux -S "$HM_TMUX_SOCKET" "$@"; else tmux "$@"; fi; }
+HM_AWAY_VARS="HM_AWAY_BYPASS HM_AWAY_HUB HM_AWAY_MCP_ALLOW"
+hm_tmux_unmarked() { if [ -n "${HM_TMUX_SOCKET:-}" ]; then /usr/bin/env -u HM_AWAY_BYPASS -u HM_AWAY_HUB -u HM_AWAY_MCP_ALLOW tmux -S "$HM_TMUX_SOCKET" "$@"; else /usr/bin/env -u HM_AWAY_BYPASS -u HM_AWAY_HUB -u HM_AWAY_MCP_ALLOW tmux "$@"; fi; }   # a tmux call whose client environment (copied into a new server) lacks the away variables
 # hm_tmux_on <socket, or empty for hivemind's own server> <tmux args>...: the one way to reach a session's pane on the server
 # it was recorded on (team.json .socket), which is not always hivemind's own
 hm_tmux_on() { local s="$1"; shift; if [ -n "$s" ]; then tmux -S "$s" "$@"; else hm_tmux "$@"; fi; }
@@ -656,11 +658,15 @@ hm_is_model_name() {  # hm_is_model_name <value>: 0 when it is one
 # hm_open_window <tmux session> <window name> <cwd> <command> [-e VAR=value]...: a window in that session, which is made when
 # it does not exist; prints the new pane. The one place hm-spawn and hm-hub open a pane.
 hm_open_window() {
-  local s="$1" n="$2" c="$3" cmd="$4" pane a prev=""; shift 4
+  local s="$1" n="$2" c="$3" cmd="$4" pane a prev="" v; shift 4
+  # A tmux server started by a marked caller copies that caller's whole environment into its GLOBAL environment, and every later pane
+  # of any mode would inherit it: the server is started without the three away variables, a server already holding them is cleaned,
+  # and a bypass agent gets its own through -e.
+  for v in $HM_AWAY_VARS; do hm_tmux set-environment -g -u "$v" 2>/dev/null; done
   if hm_tmux has-session -t "=$s" 2>/dev/null; then
     hm_tmux new-window -d -P -F '#{pane_id}' -t "=$s:" -n "$n" -c "$c" "$@" "$cmd"
   else
-    pane=$(hm_tmux new-session -d -P -F '#{pane_id}' -s "$s" -n "$n" -c "$c" "$@" "$cmd") || return $?
+    pane=$(hm_tmux_unmarked new-session -d -P -F '#{pane_id}' -s "$s" -n "$n" -c "$c" "$@" "$cmd") || return $?
     # -e on new-session sets the SESSION's environment, which every later window of it would inherit: the away marker of a bypass agent,
     # say, reaching an agent that is not in bypass. These variables belong to this one process, which already has them.
     for a in "$@"; do [ "$prev" = -e ] && hm_tmux set-environment -t "=$s" -u "${a%%=*}" 2>/dev/null; prev=$a; done
