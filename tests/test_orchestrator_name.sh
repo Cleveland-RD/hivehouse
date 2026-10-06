@@ -98,7 +98,9 @@ assert_contains "the orchestrator's pickup line names the hub" "$(hm_pickup_line
 SELF_NAME="owner-orch" selfrun "$T_TMP/s6.out" --self --agent orchestrator --hub 'bad"hub'
 assert_contains "a --hub that is not typable is refused" "$(cat "$T_TMP/s6.out")" "rc=4"
 SELF_NAME="owner-orch" selfrun "$T_TMP/s7.out" --self --agent orchestrator
-assert_eq "registering without --hub records none" "$(jq -r '.agents[]|select(.name=="orchestrator").hub // "none"' .hivemind/team.json)" "none"
+assert_eq "registering again without --hub keeps it (a restart's re-register must not lose it)" "$(jq -r '.agents[]|select(.name=="orchestrator").hub // "none"' .hivemind/team.json)" "hub"
+SELF_NAME="owner-orch" selfrun "$T_TMP/s8.out" --self --agent orchestrator --no-hub
+assert_eq "--no-hub drops it" "$(jq -r '.agents[]|select(.name=="orchestrator").hub // "none"' .hivemind/team.json)" "none"
 case "$(hm_pickup_line proj "$r" orchestrator)" in *"through"*) bad "a line names a hub nobody recorded" ;; *) ok "...and its line names none" ;; esac
 hm-spawn --agent x --role "$T_TMP/impl.md" --rules "$T_TMP/RULES.md" --model m --effort e --mode auto --hub h >/dev/null 2>&1
 assert_status "--hub without --self is a usage error" $? 64

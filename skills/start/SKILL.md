@@ -26,7 +26,8 @@ or the hub sends you `TASK <id>: read <file>`, read that file first: it holds th
 owner then talks to you only through the hub:
 
 - Register with the hub's name, so the link outlives a rotation: `hm-spawn --self --agent orchestrator --hub <hub>`
-  (step 6's form; again after a restart). Your pickup line then names the hub every time you are cleared.
+  (step 6's form). A later registration keeps it, after a restart too. Your pickup line names the hub every time you
+  are cleared.
 - Wherever this skill says to ask the owner, show them something or wait for their OK, send it to the hub with
   `SendMessage` instead, first line `TASK <id>: HM-CLARIFY`, `TASK <id>: HM-PLAN`, `TASK <id>: BLOCKED` or
   `TASK <id>: DONE`, and wait for its reply: a reply that begins `OWNER on TASK <id>:` carries the owner's own words.
@@ -40,7 +41,7 @@ Read the task, `CLAUDE.md`, `CLAUDE.local.md`, the memory index, `git status` an
 `manifest.jsonl`). If `.hivemind/team.json` has a team, resume it (`ListAgents`, `hm-context --all`) instead of
 starting again. After a restart (the machine's or tmux's) the team's panes are gone: `hm-context --all` marks each such
 session "(not running)", yours included. Register yourself again first, `hm-spawn --self --agent orchestrator` (step
-6's form), then `hm-spawn --respawn <agent>` for each agent marked "(not running)": it starts the agent again from its
+6's form; a hub you were registered with is kept, `--no-hub` drops it), then `hm-spawn --respawn <agent>` for each agent marked "(not running)": it starts the agent again from its
 own record and sends it back to its handoff. Tell the owner which agents you respawned.
 
 Then run `hm-adhd`. When it prints a path, the owner uses the i-have-adhd output style: Read that file and follow it
