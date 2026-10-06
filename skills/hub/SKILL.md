@@ -96,6 +96,7 @@ session it will be typed into and ask for their yes for that one run:
 
 - **running** orchestrator: `hm-hub run <project> overnight <task id>` or `hm-hub run <project> cleanup <task id>` (add
   `--disk` for temporary files only), with `--still`/`--max-wait` as the others take them. It refuses (exit 4) a task
+  already in an overnight run (so the line is never typed twice), a task
   that waits on the owner, an orchestrator that is stopped, unregistered or absent, and a second run while one is being
   typed. Exit 5 means a dialog is on that screen: tell the owner which pane, and once they have answered it there, run
   `hm-hub continue <project>`.
@@ -131,12 +132,15 @@ An orchestrator's message starts with what it is: `TASK <id>: HM-CLARIFY`, `HM-P
   word, with the project and session it is on. On their pick, run
   `hm-hub answer <project> [<agent>] --choice <n|esc> --seen <fingerprint>`, with the fingerprint `hm-hub dialog` gave:
   it sends the one key for that option if the screen is still the one they saw, and says whether the dialog went away.
-  Never pick for them. An option that saves a permission rule ("always allow", "don't ask again", "switch to accept
+  Never pick for them. Two dialogs in a row that read the same have the same fingerprint, so a stale press could answer
+  the second: the screen takes one press at a time, and you ask the owner afresh each time. An option that saves a permission rule ("always allow", "don't ask again", "switch to accept
   edits") is shown as it is, and labelled as saving a rule; the hub never picks it on its own. An option that needs the
   owner's own words ("Type something.", "Chat about this"), "Tab to amend", and a dialog whose options `hm-hub dialog`
   could not read are not answered here: tell the owner which pane and answer it in that tmux window. If `hm-hub answer`
   says the dialog changed, run `hm-hub dialog` again and show the owner the new one. A start stopped at its first dialog
-  is answered the same way, then continued with `hm-hub continue <project>`.
+  is answered the same way, then continued with `hm-hub continue <project>`. A multi-select or multi-question
+  AskUserQuestion dialog is untested: a digit may only toggle an option there, and `"dialog_gone":false` in the reply
+  shows it; tell the owner and let them finish it in the pane.
 - **A running orchestrator with stopped agents**: tell the owner; on their word, send it `RESPAWN: <agents> are not
   running; bring them back with hm-spawn --respawn <agent> and send me BACK.`
 

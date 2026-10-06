@@ -40,8 +40,9 @@ instead and wait for a reply that begins `OWNER on TASK <id>:`:
 - in the morning (step 7), once the report is written: `TASK <id>: DONE`, the report's path and its three to five most
   important lines.
 
-`hm-cleanup` and the other executables that ask permission still ask on this screen; the hub shows the owner such a
-dialog's presence, and the owner answers it in this pane.
+`hm-cleanup` and the other executables that ask permission still ask on this screen, each time. The hub reads such a
+dialog and shows the owner its text and options, and sends the one key for the option they choose; the owner no longer has
+to be at this pane.
 
 Run `hm-adhd`. When it prints a path, the owner uses the i-have-adhd output style: Read that file and follow it
 for every message to the owner, from now on (your pickup line after a rotation names it again). When it prints nothing,
@@ -106,7 +107,7 @@ Then set the heartbeat with `CronCreate`, every `${user_config.heartbeat_minutes
    At the ceiling, stop starting paid work and say so in the report.
 
 Record the `CronCreate` id in your handoff, so a rotated orchestrator can `CronDelete` it (`CronList` also finds it).
-A heartbeat is not known to survive a restart. When you were woken (resumed) in the middle of a night, run `CronList`
+A heartbeat does not survive a restart. When you were woken (resumed) in the middle of a night, run `CronList`
 first: if the heartbeat recorded in your handoff is gone, create it again and record the new id.
 Add a dated line to your handoff for each beat that changed something.
 

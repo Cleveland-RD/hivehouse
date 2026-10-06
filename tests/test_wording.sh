@@ -32,7 +32,7 @@ assert_contains "overnight tells the hub a blocker" "$(tr '\n' ' ' < skills/over
 assert_contains "a woken overnight orchestrator checks its heartbeat" "$(tr '\n' ' ' < skills/overnight/SKILL.md | tr -s ' ')" "run \`CronList\`"
 # the hub skill says how a dialog is read and answered, and what it never picks
 hubskill=$(tr '\n' ' ' < skills/hub/SKILL.md | tr -s ' ')
-for w in "hm-hub dialog" "hm-hub answer" "--seen <fingerprint>" "Type something." "Tab to amend" "saves a permission rule" "Never pick for them"; do
+for w in "hm-hub dialog" "hm-hub answer" "--seen <fingerprint>" "Type something." "Tab to amend" "saves a permission rule" "Never pick for them" "already in an overnight run" "same fingerprint" "multi-select"; do
   assert_contains "the hub skill: $w" "$hubskill" "$w"
 done
 [ "$FAILS" -eq 0 ] || exit 1
