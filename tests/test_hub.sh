@@ -73,6 +73,9 @@ case "$open" in *app-1*) bad "a done task is listed as open" ;; *) ok "a done ta
 assert_eq "--json carries the state" "$(hub tasks --json | jq -r '.[] | select(.id=="app-1") | .state')" "done"
 hub log app-1 note --note "a remark" >/dev/null
 assert_eq "...a note does not move it" "$(hub tasks --json | jq -r '.[] | select(.id=="app-1") | .state')" "done"
+hub log app-2 plan >/dev/null; assert_status "a plan to approve" $? 0
+assert_eq "...waits on the owner" "$(hub tasks --json | jq -r '.[] | select(.id=="app-2") | [.state, .needs_owner] | map(tostring) | join(" ")')" "plan true"
+assert_eq "...a done task does not" "$(hub tasks --json | jq -r '.[] | select(.id=="app-1") | .needs_owner')" "false"
 
 # ---- status: each project's orchestrator, agents, folders, open tasks ----
 s=$(hub status --json)
@@ -87,11 +90,14 @@ S="$H/back/.hivemind"
 kp=$(hm_tmux list-panes -t keep -F '#{pane_id}' | head -1); ki=$(hm_pane_identity "$HM_TMUX_SOCKET" "$kp")
 jq --arg k "$HM_TMUX_SOCKET" --arg kp "$kp" --arg p "${ki%%$'\t'*}" --arg s "${ki#*$'\t'}" '.agents += [{name:"orchestrator", pane:$kp, socket:$k, pane_pid:$p, pane_started:$s, claude_pid:"99999", claude_started:"Mon Jan  1 00:00:00 2001", name_full:"app-orchestrator"}]' \
   "$S/team.json" > "$S/team.json.t" && mv "$S/team.json.t" "$S/team.json"
-mkdir -p "$S/team/orchestrator"; jq -nc '{session_id:"sess-1", transcript_path:"/nonexistent"}' > "$S/team/orchestrator/session.json"
+mkdir -p "$S/team/orchestrator"; jq -nc --arg t "$HM_REPO_ROOT/tests/fixtures/transcript.jsonl" '{session_id:"sess-1", transcript_path:$t}' > "$S/team/orchestrator/session.json"
 s=$(hub status --json)
 assert_eq "an orchestrator whose Claude is gone is stopped" "$(printf '%s' "$s" | jq -r '.projects[] | select(.name=="app") | .orchestrator.state')" "stopped"
 assert_eq "...its session" "$(printf '%s' "$s" | jq -r '.projects[] | select(.name=="app") | .orchestrator.session_id')" "sess-1"
 assert_eq "...its agents" "$(printf '%s' "$s" | jq -c '[.projects[] | select(.name=="app") | .agents[] | [.name,.state]]')" '[["impl","running"]]'
+lv=$(cd "$H/back" && hm-context orchestrator)
+assert_eq "...its context level, as hm-context reads it" "$(printf '%s' "$s" | jq -r '.projects[] | select(.name=="app") | .orchestrator | [.context, .context_assumed] | map(tostring) | join(" ")')" "${lv%% *} true"
+assert_eq "...an agent with no level carries none" "$(printf '%s' "$s" | jq -r '.projects[] | select(.name=="app") | .agents[0] | has("context")')" "false"
 t=$(hub status)
 assert_contains "the plain status names the project" "$t" "app"
 assert_contains "...and what is stopped" "$t" "stopped"

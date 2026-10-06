@@ -10,10 +10,13 @@
 # 64 usage.
 set -u
 . "$(dirname "$0")/hm-lib.sh"
-# The ledger's vocabulary, declared once. A note never moves a task's state; done and cancelled close it.
-HUB_EVENTS="asked handed question answered blocked done cancelled note"
+# The ledger's vocabulary, declared once. A note never moves a task's state; done and cancelled close it; a plan to
+# approve, a question and a blocker wait on the owner.
+HUB_EVENTS="asked handed plan question answered blocked done cancelled note"
 HUB_CLOSED="done cancelled"
+HUB_NEEDS_OWNER="plan question blocked"
 HUB_CLOSED_JSON=$(printf '%s' "$HUB_CLOSED" | jq -Rc 'split(" ")')
+HUB_NEEDS_OWNER_JSON=$(printf '%s' "$HUB_NEEDS_OWNER" | jq -Rc 'split(" ")')
 # What an orchestrator's message to the hub begins with, after `TASK <id>:` (the hub and start skills read the same words)
 HUB_REPLIES="HM-CLARIFY HM-PLAN BLOCKED DONE"
 USAGE="usage: hm-hub init
@@ -245,6 +248,13 @@ status)
   # open tasks per project: those whose last event (a note aside) neither closes them
   opens=$(jq -s --argjson c "$HUB_CLOSED_JSON" '[group_by(.id)[] | {p: .[0].project, s: ([.[] | select(.event != "note")] | last | .event)}
     | select((.s as $s | $c | index($s)) | not)] | group_by(.p) | map({key: .[0].p, value: length}) | from_entries' "$root/.hivemind-hub/tasks.jsonl")
+  level() {  # level <agent>: {context, context_assumed} from this project's $levels when one was read, else {}
+    local l c x=false
+    l=$(printf '%s\n' "$levels" | awk -v a="$1" '$1 == a { print; exit }'); c=$(printf '%s' "$l" | awk '{print $2}')
+    case "$c" in ''|*[!0-9]*) echo '{}'; return ;; esac
+    case "$l" in *"(window assumed"*) x=true ;; esac   # never inside $(...): bash 3.2 misreads a case there
+    jq -nc --argjson c "$c" --argjson x "$x" '{context:$c, context_assumed:$x}'
+  }
   out='[]'
   for n in $(jq -r '.projects[]?.name' "$root/.hivemind-hub/projects.json"); do
     [ -z "$want" ] || [ "$n" = "$want" ] || continue
@@ -260,6 +270,8 @@ status)
       repos=$(printf '%s' "$repos" | jq -c --arg r "$r" --arg k "${k%% *}" --arg b "$br" --arg c "$ch" '. + [{folder:$r, kind:$k} + (if $b != "" then {branch:$b, changed:($c | tonumber)} else {} end)]')
     done < <(printf '%s' "$p" | jq -r '.repos[]')
     orch_state "$home"
+    # each session's context level as hm-context reads it: "<agent> <level>[ (window assumed N)][ (not running)]"
+    levels=$(HM_PROJECT="$home" "$(dirname "$0")/hm-context" --all 2>/dev/null) || levels=""
     starting='null'
     if [ "$O_STATE" != running ] && pending "$root" "$n"; then
       starting=$(jq -c '{pane, kind, at}' "$root/.hivemind-hub/panes/$n.json")
@@ -268,12 +280,12 @@ status)
     for a in $(jq -r '.agents[]?.name' "$home/.hivemind/team.json" 2>/dev/null); do
       hm_is_agent_name "$a" && [ "$a" != "$O_AGENT" ] || continue
       hm_team_agent_is "$home" "$a"; case $? in 0) st=running ;; 1) st=stopped ;; 2) st=unknown ;; *) st=unrecorded ;; esac
-      agents=$(printf '%s' "$agents" | jq -c --arg a "$a" --arg s "$st" '. + [{name:$a, state:$s}]')
+      agents=$(printf '%s' "$agents" | jq -c --arg a "$a" --arg s "$st" --argjson l "$(level "$a")" '. + [{name:$a, state:$s} + $l]')
     done
     open=$(printf '%s' "$opens" | jq -r --arg p "$n" '.[$p] // 0')
     out=$(printf '%s' "$out" | jq -c --arg n "$n" --arg h "$home" --argjson r "$repos" --argjson ag "$agents" --argjson st "$starting" \
-      --arg os "$O_STATE" --arg on "$O_NAME" --arg sid "$O_SID" --argjson ot "$open" \
-      '. + [{name:$n, home:$h, repos:$r, orchestrator:({state:$os} + (if $on != "" then {name:$on} else {} end) + (if $sid != "" then {session_id:$sid} else {} end) + (if $st != null then {starting:$st} else {} end)), agents:$ag, open_tasks:$ot}]')
+      --arg os "$O_STATE" --arg on "$O_NAME" --arg sid "$O_SID" --argjson ot "$open" --argjson ol "$( [ -n "$O_AGENT" ] && level "$O_AGENT" || echo '{}')" \
+      '. + [{name:$n, home:$h, repos:$r, orchestrator:({state:$os} + (if $on != "" then {name:$on} else {} end) + (if $sid != "" then {session_id:$sid} else {} end) + $ol + (if $st != null then {starting:$st} else {} end)), agents:$ag, open_tasks:$ot}]')
   done
   if [ "$json" = 1 ]; then
     jq -n --arg root "$root" --argjson h "$hub" --argjson p "$out" '{hub:({root:$root} + $h), projects:$p}'
@@ -332,11 +344,12 @@ tasks)
   want=""; open=0; json=0
   while [ $# -gt 0 ]; do case "$1" in --open) open=1 ;; --json) json=1 ;; -*) hm_die 64 "$USAGE" ;; *) want="$1" ;; esac; shift; done
   root=$(hub_root) || exit $?
-  rows=$(jq -s --arg w "$want" --argjson o "$open" --argjson c "$HUB_CLOSED_JSON" '
+  rows=$(jq -s --arg w "$want" --argjson o "$open" --argjson c "$HUB_CLOSED_JSON" --argjson ow "$HUB_NEEDS_OWNER_JSON" '
     [group_by(.id)[] | select($w == "" or .[0].project == $w)
      | {id: .[0].id, project: .[0].project, asked: .[0].at,
         state: ([.[] | select(.event != "note")] | last | .event),
         updated: (last | .at), last_note: ([.[] | select(.note)] | last | .note // null)}
+     | .needs_owner = (.state as $s | $ow | index($s) != null)
      | select($o == 0 or ((.state as $s | $c | index($s)) | not))] | sort_by(.asked)' "$root/.hivemind-hub/tasks.jsonl")
   if [ "$json" = 1 ]; then printf '%s\n' "$rows"
   else printf '%s' "$rows" | jq -r '.[] | "\(.id)\t\(.state)\t\(.updated)\(if .last_note then "\t\(.last_note)" else "" end)"'; fi ;;
