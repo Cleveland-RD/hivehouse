@@ -10,7 +10,8 @@ assert_contains "holder records the project" "$out" "\"project\":\"$r\""
 assert_eq "free after run" "$(hm-slot status)" "free"
 hm-slot run seven -- sh -c 'exit 7'; assert_status "the command's exit status is passed on" $? 7
 hm-slot run long -- sleep 3 & bg=$!; sleep 1
-hm-slot run other -- true 2>/dev/null; assert_status "busy is refused" $? 75
+hm-slot run other -- true 2>"$T_TMP/busy.err"; assert_status "busy is refused" $? 75
+assert_contains "...and the message names the lock's path, so a stuck one can be found" "$(cat "$T_TMP/busy.err")" "$LOCK"
 hm-slot acquire x --pid $$ 2>/dev/null; assert_status "acquire while busy is refused" $? 75
 # a second caller with a different environment (other project, HM_PROJECT of a third repo, plugin data set) meets the same lock
 r2=$(t_repo proj2); r3=$(t_repo proj3)

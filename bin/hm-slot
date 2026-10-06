@@ -18,7 +18,7 @@ take() {  # take <label> <pid>: 0 held, 75 busy (the holder is printed)
     --arg since "$(hm_now)" '{label:$label,project:$project,agent:$agent,since:$since}')") || return 1
   mkdir -p "$HOME_DIR"
   hm_lock_try "$LOCK" "$json" && return 0
-  cat "$LOCK/holder.json" >&2 2>/dev/null; return 75
+  cat "$LOCK/holder.json" >&2 2>/dev/null; echo "hm-slot: busy; the lock is $LOCK (a holder whose process is gone is taken over; remove the directory by hand only if it is not)" >&2; return 75
 }
 case "${1:-}" in
   run)
