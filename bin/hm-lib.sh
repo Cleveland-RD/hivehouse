@@ -198,7 +198,7 @@ hm_pane_working_seconds() {  # a pane on stdin: the elapsed seconds on Claude Co
   [ "$(printf '%s\n' "$text" | grep -cE '^[[:space:]]*(─){4,}')" -ge 2 ] || return 1
   top=$(printf '%s\n' "$text" | grep -nE '^[[:space:]]*(─){4,}' | tail -2 | head -1 | cut -d: -f1)
   lines=$(printf '%s\n' "$text" | head -n "$((top - 1))" | grep -v '^[[:space:]]*$')
-  while [ -n "$lines" ] && printf '%s\n' "$lines" | tail -1 | grep -qE "$HM_WORKING_TRAILER_RE"; do lines=$(printf '%s\n' "$lines" | sed '$d'); done
+  while printf '%s\n' "$lines" | tail -1 | grep -qE "$HM_WORKING_TRAILER_RE"; do lines=$(printf '%s\n' "$lines" | sed '$d'); done
   line=$(printf '%s\n' "$lines" | tail -1 | grep -E "$HM_WORKING_RE")
   [ -n "$line" ] || return 1
   ts=$(printf '%s' "$line" | sed -E 's/^[^(]*\(([0-9hms ]*s)( ·[^)]*)?\)[[:space:]]*$/\1/')
@@ -312,7 +312,7 @@ hm_session_holder() {  # hm_session_holder <session id>
   for f in "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/sessions/*.json; do
     [ -f "$f" ] || continue
     p=$(jq -r --arg s "$1" 'select(.sessionId == $s) | .pid // empty' "$f" 2>/dev/null) || continue
-    [ -n "$p" ] && hm_is_claude "$p" && { printf '%s\n' "$p"; return 0; }
+    hm_is_claude "$p" && { printf '%s\n' "$p"; return 0; }
   done
   return 1
 }
