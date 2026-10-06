@@ -41,7 +41,7 @@ mp=$(tmux -S "$HM_TMUX_SOCKET" display-message -p -t m '#{pane_id}'); mpp=$(tmux
 hm-manifest add tmux socket="$HM_TMUX_SOCKET" pane="$mp" agent=a >/dev/null; assert_status "add tmux" $? 0
 line=$(hm-manifest list --kind tmux)
 assert_eq "pane process captured" "$(printf '%s' "$line" | jq -r .pane_pid)" "$mpp"
-assert_eq "pane start time captured" "$(printf '%s' "$line" | jq -r .pane_started)" "$(ps -o lstart= -p "$mpp" | sed 's/^ *//;s/ *$//')"
+assert_eq "pane start time captured" "$(printf '%s' "$line" | jq -r .pane_started)" "$(LC_ALL=C ps -o lstart= -p "$mpp" | sed 's/^ *//;s/ *$//')"
 hm-manifest add tmux socket="$HM_TMUX_SOCKET" pane=%99 agent=a 2>/dev/null; assert_status "refuses a pane the server does not have" $? 4
 assert_eq "...and records nothing" "$(hm-manifest list --kind tmux | wc -l | tr -d ' ')" "1"
 
@@ -79,7 +79,7 @@ hm-manifest list | jq -e . >/dev/null; assert_status "every line is valid json" 
 
 # lock: stale holders are taken over, live ones are respected
 L="$r/.hivemind/manifest.lock"
-sleep 300 & live=$!; ls=$(ps -o lstart= -p $live | sed 's/^ *//;s/ *$//')
+sleep 300 & live=$!; ls=$(LC_ALL=C ps -o lstart= -p $live | sed 's/^ *//;s/ *$//')
 mkdir "$L"; jq -nc --argjson pid "$live" --arg l "$ls" '{pid:$pid,lstart:$l,created:0}' > "$L/holder.json"
 HM_LOCK_WAIT_S=1 hm-manifest add dir path="$T_TMP/l1" 2>/dev/null; assert_status "a live holder blocks" $? 75
 jq -nc --argjson pid "$live" '{pid:$pid,lstart:"Mon Jan  1 00:00:00 2001",created:0}' > "$L/holder.json"
