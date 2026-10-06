@@ -69,7 +69,7 @@ assert_contains "...the content names this hub" "$out" "hub=$H"
 assert_contains "...and its MCP list (empty here) as the fourth line" "$out" "mcp= | sudo tee"
 until_epoch=$(printf '%s\n' "$out" | sed -n 's/.*until=\([0-9]*\).*/\1/p' | head -1)
 [ "$until_epoch" -ge $((NOW + 7190)) ] && [ "$until_epoch" -le $((NOW + 7500)) ] && ok "...and the time asked for" || bad "until=$until_epoch is not about +2h"
-assert_contains "...the hub's start line is marked, in bypass, with only its allowed MCP servers" "$out" "HM_AWAY_BYPASS=1 HM_PROJECT=$H HM_AWAY_HUB=$H HM_AWAY_MCP_ALLOW='' claude --name hub --permission-mode bypassPermissions --strict-mcp-config --mcp-config $P/away-mcp.json /hivemind:hub"
+assert_contains "...the hub's start line is marked, in bypass, with only its allowed MCP servers" "$out" "HM_AWAY_BYPASS=1 HM_PROJECT=$H HM_AWAY_HUB=$H HM_AWAY_MCP_ALLOW='' claude --name hub --permission-mode bypassPermissions --no-chrome --strict-mcp-config --mcp-config $P/away-mcp.json /hivemind:hub"
 assert_contains "...with the hub's own project and hub folders for the away hook" "$out" "HM_PROJECT=$H HM_AWAY_HUB=$H"
 assert_contains "...before leaving: the one-time bypass warning, when it has not been accepted" "$out" "one-time warning"
 assert_contains "...and the folder trust, when the folder is not trusted" "$out" "not trusted by Claude Code yet"
@@ -87,7 +87,7 @@ assert_contains "...that messages to the hub are information only" "$out" "infor
 assert_contains "...and that no remote host is used" "$out" "No remote host"
 assert_eq "...the time away began is kept for the screen" "$(jq -r '.since | length' "$P/away.json")" "20"
 jq '.session_id = "sess-hub-1"' "$P/hub.json" > "$P/hub.json.t" && mv "$P/hub.json.t" "$P/hub.json"
-out=$(hub away --until +1d); assert_contains "with a session recorded, the hub is resumed" "$out" "claude --permission-mode bypassPermissions --strict-mcp-config --mcp-config $P/away-mcp.json --resume sess-hub-1"
+out=$(hub away --until +1d); assert_contains "with a session recorded, the hub is resumed" "$out" "claude --permission-mode bypassPermissions --no-chrome --strict-mcp-config --mcp-config $P/away-mcp.json --resume sess-hub-1"
 printf '{"mcpServers":{"docs":{"command":"docs-mcp","args":["--x"]}}}\n' > "$CLAUDE_CONFIG_DIR/.claude.json"
 out=$(hub away --until +1h --mcp-allow docs,nothere)
 assert_eq "an allowed server's definition is copied into the hub's MCP file" "$(jq -c '.mcpServers | keys' "$P/away-mcp.json")" '["docs"]'

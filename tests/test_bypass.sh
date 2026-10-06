@@ -135,6 +135,10 @@ assert_contains "...its project, as every hub launch carries" "$sc" "HM_PROJECT=
 assert_contains "...with only the allowed MCP servers, in a file beside its pane record" "$sc" "ARGV: $P/panes/app-mcp.json"
 assert_eq "......at mode 0600" "$(stat -f '%Lp' "$P/panes/app-mcp.json" 2>/dev/null || stat -c '%a' "$P/panes/app-mcp.json")" "600"
 assert_contains "...and no Chrome" "$sc" "ARGV: --no-chrome"
+# a second start while that pane lives is refused, and writes no MCP file (it may hold server secrets)
+rm -f "$P/panes/app-mcp.json"
+hh "$NCH" start app "$t1" --mode auto --still 2 --max-wait 15 >/dev/null; assert_status "a start refused because the first pane still lives" $? 4
+[ ! -e "$P/panes/app-mcp.json" ] && ok "...leaves no MCP file behind" || bad "a refused start left an MCP file"
 hm_tmux kill-pane -t "$hp"; sleep 0.5
 mkdel "$((NOW - 10))"
 hp=$(hh "$NCH" start app "$t1" --mode auto --still 2 --max-wait 15); assert_status "the owner back (the file expired): the same start runs in the owner's mode" $? 0

@@ -77,15 +77,14 @@ hub_root_cwd() {  # the work folder holding .hivemind-hub/, found from the cwd a
   done
   hm_die 2 "no hub here: run hm-hub init in your work folder"
 }
-# delegate_for_hub <hub root>: 0 when the owner's delegate file is valid and names this hub; AWAY_UNTIL is its epoch and AWAY_MCP
-# the MCP servers it allows
-AWAY_UNTIL=""; AWAY_MCP=""
+# delegate_for_hub <hub root>: 0 when the owner's delegate file is valid and names this hub; AWAY_UNTIL is its epoch
+AWAY_UNTIL=""
 delegate_for_hub() {
-  local out hub; AWAY_UNTIL=""; AWAY_MCP=""
+  local out hub; AWAY_UNTIL=""
   out=$(hm_delegate_now) || return 1
   hub=${out%%$'\t'*}; hub=$(cd "$hub" 2>/dev/null && pwd -P) || return 1
   [ "$hub" = "$1" ] || return 1
-  out=${out#*$'\t'}; AWAY_UNTIL=${out%%$'\t'*}; AWAY_MCP=${out#*$'\t'}
+  out=${out#*$'\t'}; AWAY_UNTIL=${out%%$'\t'*}
 }
 epoch_local() { date -r "$1" '+%Y-%m-%d %H:%M' 2>/dev/null || date -d "@$1" '+%Y-%m-%d %H:%M'; }   # epoch_local <epoch>
 epoch_iso() { date -u -r "$1" '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null || date -u -d "@$1" '+%Y-%m-%dT%H:%M:%SZ'; }
@@ -250,7 +249,8 @@ start_opts() {  # start_opts <model allowed 0|1> [--model m] [--mode m] [--still
 # sending <record>: 0 while the hm-hub that owns the record's line (a start, a wake or a continue) is still waiting to send
 # it: the pane is then coming up, not waiting on the owner, and nothing else may send its line
 sending() { local p; p=$(hm_json_get "$1" .sender_pid); [ -n "$p" ] && hm_alive "$p" && [ "$(hm_lstart "$p")" = "$(hm_json_get "$1" .sender_started)" ]; }
-# project_mode <home>: the owner's --mode, made stricter (never looser) by the project's own .hivemind/settings.json, as
+# project_mode <home>: the owner's --mode, made stricter by the project's own .hivemind/settings.json (and auto raised to bypass only
+# while the owner is away, A7), as
 # hm-spawn's agents get it (hm-settings); the hub's folder is no repository, so it is resolved in the project's home
 project_mode() {
   [ -z "$MODE" ] || MODE=$(HM_PROJECT="$1" "$HM_BIN/hm-settings" resolve permission_mode "$MODE") || exit $?
@@ -276,17 +276,19 @@ refuse_pending() {  # refuse_pending <hub root> <project>: under the lock, exits
 # line it is to be sent; then finish. The pane is the owner's, like the one an orchestrator registers with --self, so it is
 # never on a project's manifest (cleanup kills what the manifest names).
 launch() {
-  local root="$1" name="$2" kind="$3" cwd="$4" line="$5" task="$6" c pane socket ident envs
+  local root="$1" name="$2" kind="$3" cwd="$4" line="$5" task="$6" c pane socket ident envs mcpf rc
   shift 6
   HM_BP_ENVS=(); HM_BP_ARGS=()
-  # bypass (MODE, resolved by project_mode): the marker, the hook's variables and only the MCP servers the owner allowed; nothing for any other mode
-  if [ "$MODE" = bypassPermissions ]; then hm_bypass_launch "$cwd" "$root/.hivemind-hub/panes/$name-mcp.json" || hm_die 4 "cannot prepare the away MCP file for $name"; fi
+  lock "$root"
+  refuse_pending "$root" "$name"
+  # bypass (MODE, resolved by project_mode): the marker, the hook's variables and only the MCP servers the owner allowed; nothing for any other mode.
+  # The MCP file may hold server secrets, so it is written only once the start is not refused, and removed if the window does not open.
+  mcpf="$root/.hivemind-hub/panes/$name-mcp.json"
+  if [ "$MODE" = bypassPermissions ]; then mkdir -p "$root/.hivemind-hub/panes"; hm_bypass_launch "$cwd" "$mcpf" || { rm -f "$mcpf"; hm_die 4 "cannot prepare the away MCP file for $name"; }; fi
   c="exec $(printf '%q ' claude "$@" ${HM_BP_ARGS[@]+"${HM_BP_ARGS[@]}"})"
   envs=(-e "HIVEMIND_HOME=$(hm_home)" -e "HM_PROJECT=$cwd" ${HM_BP_ENVS[@]+"${HM_BP_ENVS[@]}"})
   [ -n "${HM_TMUX_SOCKET:-}" ] && envs+=(-e "HM_TMUX_SOCKET=$HM_TMUX_SOCKET")
-  lock "$root"
-  refuse_pending "$root" "$name"
-  pane=$(hm_open_window "$name" orchestrator "$cwd" "$c" "${envs[@]}") || exit $?
+  pane=$(hm_open_window "$name" orchestrator "$cwd" "$c" "${envs[@]}") || { rc=$?; rm -f "$mcpf"; exit $rc; }
   socket=$(hm_tmux display-message -p -t "$pane" '#{socket_path}') || exit $?
   ident=$(hm_pane_identity "$socket" "$pane") || hm_die 4 "cannot read the new pane $pane"
   mkdir -p "$root/.hivemind-hub/panes"
@@ -813,9 +815,9 @@ away)
   echo "# Then exit the running hub (so two do not share the folder) and start it again with these lines: marked, in bypass, with only its allowed MCP servers."
   printf 'cd %q\n' "$root"
   if [ -n "$sid" ]; then
-    printf 'HM_AWAY_BYPASS=1 HM_PROJECT=%q HM_AWAY_HUB=%q HM_AWAY_MCP_ALLOW=%q claude --permission-mode bypassPermissions --strict-mcp-config --mcp-config %q --resume %q\n' "$root" "$root" "$allow" "$mcp" "$sid"
+    printf 'HM_AWAY_BYPASS=1 HM_PROJECT=%q HM_AWAY_HUB=%q HM_AWAY_MCP_ALLOW=%q claude --permission-mode bypassPermissions --no-chrome --strict-mcp-config --mcp-config %q --resume %q\n' "$root" "$root" "$allow" "$mcp" "$sid"
   else
-    printf 'HM_AWAY_BYPASS=1 HM_PROJECT=%q HM_AWAY_HUB=%q HM_AWAY_MCP_ALLOW=%q claude --name hub --permission-mode bypassPermissions --strict-mcp-config --mcp-config %q /hivemind:hub\n' "$root" "$root" "$allow" "$mcp"
+    printf 'HM_AWAY_BYPASS=1 HM_PROJECT=%q HM_AWAY_HUB=%q HM_AWAY_MCP_ALLOW=%q claude --name hub --permission-mode bypassPermissions --no-chrome --strict-mcp-config --mcp-config %q /hivemind:hub\n' "$root" "$root" "$allow" "$mcp"
   fi
   # what Claude Code asks once, by hand, before the owner leaves: nobody is there to answer it later
   if [ "$(jq -r '.skipDangerousModePermissionPrompt // false' "$cdir/settings.json" 2>/dev/null)" != true ]; then

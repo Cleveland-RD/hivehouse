@@ -194,7 +194,7 @@ session=${session:-hm-$(hm_project_key "$ROOT")}
 owner_sl=$(hm_owner_statusline "$cwd")
 if [ -n "$owner_sl" ]; then printf '%s\n' "$owner_sl" > "$STATE/team/$agent/statusline.json"; else rm -f "$STATE/team/$agent/statusline.json"; fi
 rm -f "$STATE/team/$agent/context.json"
-settings=$(jq -nc --argjson o "${owner_sl:-null}" --arg bin "$(cd "$(dirname "$0")" && pwd -P)/hm-statusline" --arg dir "$STATE/team/$agent" \
+settings=$(jq -nc --argjson o "${owner_sl:-null}" --arg bin "$(cd "$HM_BIN" && pwd -P)/hm-statusline" --arg dir "$STATE/team/$agent" \
   '{statusLine: (($o // {}) + {type: "command", command: ([$bin, $dir] | map(@sh) | join(" "))})}') || exit $?
 # --resume: the agent's own recorded session, when it is still there and no live Claude already holds it (the owner resumed it by hand:
 # a second process on one conversation would fork it); otherwise today's respawn from the handoff
