@@ -75,9 +75,11 @@ or this session is not running in one of those modes (if you cannot tell, ask th
 on a permission prompt with nobody there, and what they must set (`permission_mode_local` to `auto`, and this session
 started in auto mode). Ask whether they want to change that or stop.
 
-Bypass permissions only on a host listed in `${user_config.dedicated_hosts}`, and only when the owner confirms it this
-time; a previous night's yes does not carry. `hm-spawn` refuses bypass on its own (exit 4), except the delegate-mode case above, which it checks against the owner's file. A bypass session on a remote
-host is started by `hm-remote-sync start-agent`, which asks permission each time.
+A dedicated host (`${user_config.dedicated_hosts}`) is where the owner may start a bypass session by hand, and only when they
+confirm it that time; a previous night's yes does not carry. hivemind never starts bypass itself except in away mode, on this
+machine, for a project the owner's delegate file lists: `hm-spawn` refuses it otherwise (exit 4), and so does the remote one.
+An agent on a remote host is started by `hm-remote-sync start-agent`, in the resolved mode and never in bypass, which asks
+permission each time.
 
 ## 4. Remote host (skip on this machine)
 

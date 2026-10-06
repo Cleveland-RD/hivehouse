@@ -200,6 +200,49 @@ LABEL="memory: the host drops while looking for a symlink"
 # memory: an unreachable host while looking for a symlink is unreachable (5), not a conflict
 HM_FAKE_DOWN_ON="test -L" refused 5 memory testhost "$r/mem" "$T_TMP/rmem"
 
+# ---- start-agent: the remote's own hm-spawn, in the resolved mode, never bypass --------------------------------------------
+env -u HIVEMIND_HOME tmux -S "$HM_TMUX_SOCKET" new-session -d -s keep 'sleep 600'
+sync check testhost --min-gb 0 --plugin-version 0.1.0 >/dev/null
+rra=$(t_repo remote-agent); mkdir -p "$rra/.hivemind/team/impl1"; echo role > "$rra/.hivemind/team/impl1/role.md"; echo rules > "$rra/.hivemind/team/impl1/RULES.md"
+SA=(start-agent testhost "$rra" impl1 --model 'opus[1m]' --effort medium --mode auto)
+: > "$HM_FAKE_LOG"; out=$(SHELL=/bin/bash sync "${SA[@]}" 2>"$T_TMP/err"); rc=$?
+assert_status "start-agent runs the remote's hm-spawn" $rc 0
+pane=$(printf '%s\n' "$out" | grep -E '^%[0-9]+$' | tail -1); [ -n "$pane" ] && ok "...and prints the new pane" || bad "no pane in: $out"
+log=$(cat "$HM_FAKE_LOG")
+assert_contains "...by the absolute install path check recorded" "$log" "$HM_REPO_ROOT/bin/hm-spawn"
+assert_contains "...under the remote's login shell" "$log" '-lc'
+assert_contains "...with an explicit PATH in front, then the login PATH" "$log" '/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:\$PATH'
+assert_contains "...the project is the remote root" "$log" "HM_PROJECT=$rra"
+assert_contains "...the role and rules are the remote copies under the remote root" "$log" "--role\\ $rra/.hivemind/team/impl1/role.md"
+assert_contains "......rules" "$log" "--rules\\ $rra/.hivemind/team/impl1/RULES.md"
+assert_contains "...the model is quoted: [ ] is a glob in some shells" "$log" 'opus\\\[1m\\\]'
+assert_contains "...in the mode it was given" "$log" "--mode\\ auto"
+[ -z "$pane" ] || assert_eq "...and the new window stays after its process exits, so a start that dies shows its error" "$(tmux -S "$HM_TMUX_SOCKET" show-options -w -v -t "$pane" remain-on-exit 2>&1)" "on"
+n=$(wc -l < "$HM_FAKE_LOG")
+sync "${SA[@]:0:4}" --model m --effort e --mode bypassPermissions >"$T_TMP/out" 2>"$T_TMP/err"; assert_status "start-agent --mode bypassPermissions is refused" $? 4
+assert_contains "...saying why" "$(cat "$T_TMP/err")" "never starts bypassPermissions"
+assert_eq "...before anything reached ssh" "$(wc -l < "$HM_FAKE_LOG")" "$n"
+refusedq() { local n; n=$(wc -l < "$HM_FAKE_LOG"); refused "$@"; assert_eq "......and nothing reached ssh (the remote hm-spawn would refuse it too, so the exit code alone proves nothing)" "$(wc -l < "$HM_FAKE_LOG")" "$n"; }
+LABEL="start-agent: a mode it does not pass on"; refusedq 4 start-agent testhost "$rra" impl1 --model m --effort e --mode yolo
+LABEL="start-agent: an agent name with a capital"; refusedq 4 start-agent testhost "$rra" Impl1 --model m --effort e --mode auto
+LABEL="start-agent: an agent name that is an option"; refusedq 4 start-agent testhost "$rra" -x --model m --effort e --mode auto
+LABEL="start-agent: a model with a ;"; refusedq 4 start-agent testhost "$rra" impl1 --model 'x;y' --effort e --mode auto
+LABEL="start-agent: an effort with a space"; refusedq 4 start-agent testhost "$rra" impl1 --model m --effort 'a b' --mode auto
+LABEL="start-agent: a relative remote root"; refusedq 4 start-agent testhost remote-agent impl1 --model m --effort e --mode auto
+LABEL="start-agent: a remote root with .."; refusedq 4 start-agent testhost "$rra/../x" impl1 --model m --effort e --mode auto
+LABEL="start-agent: a host with a leading -"; refusedq 4 start-agent -oProxyCommand=x "$rra" impl1 --model m --effort e --mode auto
+LABEL="start-agent: a host outside the allow-list"; HM_REMOTE_HOSTS="otherhost" refusedq 4 start-agent testhost "$rra" impl1 --model m --effort e --mode auto
+LABEL="start-agent: a worktree without branch and base"; refusedq 64 start-agent testhost "$rra" impl1 --model m --effort e --mode auto --worktree "$T_TMP/wt-x"
+LABEL="start-agent: a relative worktree"; refusedq 4 start-agent testhost "$rra" impl1 --model m --effort e --mode auto --worktree wt-x --branch b --base main
+LABEL="start-agent: a branch that is an option"; refusedq 4 start-agent testhost "$rra" impl1 --model m --effort e --mode auto --worktree "$T_TMP/wt-x" --branch -evil --base main
+LABEL="start-agent: no model"; refusedq 64 start-agent testhost "$rra" impl1 --effort e --mode auto
+LABEL="start-agent: an unknown option"; refusedq 64 start-agent testhost "$rra" impl1 --model m --effort e --mode auto --frob x
+LABEL="start-agent: role and rules not on the remote"; refused 4 start-agent testhost "$rra" nobody --model m --effort e --mode auto
+assert_contains "...says to send them first" "$(cat "$T_TMP/err")" "files first"
+HM_FAKE_SSH=down sync "${SA[@]}" >/dev/null 2>&1; assert_status "start-agent to a host that is down exits 5" $? 5
+rm -f "$r/.hivemind/remote/testhost.json"; sync "${SA[@]}" >/dev/null 2>&1; assert_status "start-agent without a check record is refused" $? 4
+sync check testhost --min-gb 0 --plugin-version 0.1.0 >/dev/null
+
 # ---- common --------------------------------------------------------------------------------------------------------
 sync check testhost --min-gb 0 --plugin-version 0.1.0 >/dev/null
 mkdir "$T_TMP/norepo"; (cd "$T_TMP/norepo" && hm-remote-sync check testhost --min-gb 0 --plugin-version 0.1.0 >/dev/null 2>&1); assert_status "outside a repo" $? 2
@@ -210,7 +253,7 @@ git rm -qf --cached .hivemind/leak
 grep -n 'ssh \|scp \|rsync ' "$HM_REPO_ROOT/bin/hm-remote-sync" | grep -vE '^[0-9]+:\s*#|hm_(ssh|scp|rsync)\(\)' | grep -E '(^[0-9]+:[[:space:]]*|[;&|({]|\$\()[[:space:]]*(ssh|scp|rsync) ' >/dev/null && bad "a bare ssh/scp/rsync call outside the hm_* functions" || ok "every ssh/scp/rsync goes through hm_ssh/hm_scp/hm_rsync"
 # ---- the away marker: a second layer behind hm-away-hook, which is the guard (a Bash command can unset the variable for itself)
 n=$(wc -l < "$HM_FAKE_LOG")
-for args in "check testhost --min-gb 0 --plugin-version 0.1.0" "branches testhost $rr" "files testhost $rr /dev/null" "memory testhost $T_TMP $T_TMP/m" "secret testhost $rr x" "" "bogus"; do
+for args in "check testhost --min-gb 0 --plugin-version 0.1.0" "branches testhost $rr" "files testhost $rr /dev/null" "memory testhost $T_TMP $T_TMP/m" "secret testhost $rr x" "start-agent testhost $rr impl1 --model m --effort e --mode auto" "" "bogus"; do
   HM_AWAY_BYPASS=1 hm-remote-sync $args >"$T_TMP/out" 2>"$T_TMP/err"; rc=$?
   [ "$rc" -eq 4 ] && ok "the away marker refuses: hm-remote-sync ${args:-<no arguments>}" || bad "hm-remote-sync $args: exit $rc, expected 4"
 done

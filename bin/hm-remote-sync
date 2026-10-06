@@ -5,6 +5,7 @@
 #   files    <host> <remote root> <list file>
 #   memory   <host> <local memory dir> <remote memory dir>
 #   secret   <host> <remote root> <relative path under .hivemind/tmp>
+#   start-agent <host> <remote root> <agent> --model m --effort e --mode m [--worktree abs --branch b --base b]
 # Remote paths, list entries and secret paths use only ASCII letters, digits and ._/@+_- (rsync's remote shell splits on a space or ;); anything else is refused (exit 4).
 # Every ssh, scp and rsync goes through hm_ssh, hm_scp, hm_rsync below, which call the tool by name: tests put shims first
 # on PATH, so no test uses a network. After `check`, remote hivemind executables are called by the absolute install path
@@ -14,10 +15,10 @@ set -u
 HM_BIN=${0%/*}; [ "$HM_BIN" != "$0" ] || HM_BIN=.   # parameter expansion, never dirname: under -p a function is ignored, an executable on PATH is not
 . "$HM_BIN/hm-lib.sh"
 hm_refuse_away hm-remote-sync
-USAGE="usage: hm-remote-sync check <host> --min-gb n --plugin-version v | branches <host> <root> [branch...] | files <host> <root> <list> | memory <host> <local dir> <remote dir> | secret <host> <root> <relative path>"
+USAGE="usage: hm-remote-sync check <host> --min-gb n --plugin-version v | branches <host> <root> [branch...] | files <host> <root> <list> | memory <host> <local dir> <remote dir> | secret <host> <root> <relative path> | start-agent <host> <root> <agent> --model m --effort e --mode m [--worktree abs --branch b --base b]"
 [ $# -ge 2 ] || hm_die 64 "$USAGE"
 sub="$1"; host="$2"; shift 2
-case "$sub" in check|branches|files|memory|secret) ;; *) hm_die 64 "$USAGE" ;; esac
+case "$sub" in check|branches|files|memory|secret|start-agent) ;; *) hm_die 64 "$USAGE" ;; esac
 
 # ---- validation ----------------------------------------------------------------------------------------------------
 has_ctrl() { printf '%s' "$1" | LC_ALL=C grep -q '[[:cntrl:]]'; }
@@ -233,6 +234,53 @@ secret)
   else
     rrun env "HM_PROJECT=$rroot" "$ip/bin/hm-manifest" add file "path=$rabs/$rel" >/dev/null 2>&1 || hm_die 1 "the remote manifest refused the entry"
     echo "recorded on the remote manifest: $rabs/$rel"
+  fi
+  exit 0 ;;
+
+# ---- start-agent ---------------------------------------------------------------------------------------------------
+# The remote's own hm-spawn, by the install path `check` recorded (A6), in the mode the caller resolved. Never bypassPermissions: the plan
+# keeps bypass to away mode (A5), where the owner's delegate file and marker decide, and the remote hm-spawn refuses it too. The role and
+# rules are the remote copies, under the remote root (send them with `files`). The model's [ ] would be a glob in some shells: every
+# argument goes through printf %q, and the whole is run by the remote's login shell with a PATH that has tmux and node in front.
+start-agent)
+  [ $# -ge 2 ] || hm_die 64 "$USAGE"
+  rroot="$1"; agent="$2"; shift 2
+  model=""; effort=""; mode=""; wt=""; branch=""; base=""
+  while [ $# -gt 0 ]; do
+    [ $# -ge 2 ] || hm_die 64 "$USAGE"
+    case "$1" in --model) model="$2" ;; --effort) effort="$2" ;; --mode) mode="$2" ;; --worktree) wt="$2" ;; --branch) branch="$2" ;; --base) base="$2" ;; *) hm_die 64 "$USAGE" ;; esac
+    shift 2
+  done
+  [ -n "$model" ] && [ -n "$effort" ] && [ -n "$mode" ] || hm_die 64 "$USAGE"
+  [ "$mode" != bypassPermissions ] || hm_die 4 "hm-remote-sync start-agent never starts bypassPermissions: bypass belongs to away mode (the owner's delegate file), and the remote hm-spawn refuses it too; start the agent in the resolved mode and answer its prompts"
+  case " $HM_PERMISSION_MODES " in *" $mode "*) ;; *) hm_die 4 "not a permission mode start-agent passes on: $mode" ;; esac
+  abs_ok "$rroot" || hm_die 4 "the remote root must be an absolute path without . or ..: $rroot"
+  hm_is_agent_name "$agent" || hm_die 4 "bad agent name: $agent"
+  hm_is_model_name "$model" || hm_die 4 "bad model: $model"
+  hm_is_model_name "$effort" || hm_die 4 "bad effort: $effort"
+  if [ -n "$wt$branch$base" ]; then
+    [ -n "$wt" ] && [ -n "$branch" ] && [ -n "$base" ] || hm_die 64 "--worktree needs --branch and --base"
+    abs_ok "$wt" || hm_die 4 "--worktree must be an absolute path without . or ..: $wt"
+    hm_is_branch_name "$branch" || hm_die 4 "bad branch name: $branch"
+    hm_is_branch_name "$base" || hm_die 4 "bad base: $base"
+  fi
+  ip=$(install_path) || exit $?
+  reach; need_remote_root "$rroot"
+  role="$rroot/.hivemind/team/$agent/role.md"; rules="$rroot/.hivemind/team/$agent/RULES.md"
+  for f in "$role" "$rules"; do rrun test -f "$f" || { [ $? -eq 255 ] && unreachable; hm_die 4 "$f is not on $host: send it with hm-remote-sync files first"; }; done
+  args=(--agent "$agent" --role "$role" --rules "$rules" --model "$model" --effort "$effort" --mode "$mode")
+  [ -z "$wt" ] || args+=(--worktree "$wt" --branch "$branch" --base "$base")
+  RPATH='/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin'
+  inner="export PATH=$RPATH:\$PATH; exec env HM_PROJECT=$(printf '%q' "$rroot") $(printf '%q ' "$ip/bin/hm-spawn" "${args[@]}")"
+  out=$(hm_ssh "\"\$SHELL\" -lc $(printf '%q' "$inner")" 2>&1); rc=$?
+  [ "$rc" -ne 255 ] || unreachable
+  printf '%s\n' "$out" | clean
+  [ "$rc" -eq 0 ] || exit "$rc"
+  # a start that dies later should show its error, not vanish with its window
+  pane=$(printf '%s\n' "$out" | grep -E '^%[0-9]+$' | tail -1)
+  if [ -n "$pane" ]; then
+    inner="export PATH=$RPATH:\$PATH; tmux \${HM_TMUX_SOCKET:+-S \"\$HM_TMUX_SOCKET\"} set-option -w -t $(printf '%q' "$pane") remain-on-exit on"
+    hm_ssh "\"\$SHELL\" -lc $(printf '%q' "$inner")" >/dev/null 2>&1 || echo "hm-remote-sync: could not set remain-on-exit for $pane on $host: a start that dies will close its window" >&2
   fi
   exit 0 ;;
 esac
