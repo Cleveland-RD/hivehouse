@@ -11,7 +11,7 @@ project's own orchestrator, carry messages between them word for word, keep note
 things stand. Read `${CLAUDE_PLUGIN_ROOT}/rules/RULES.md` first; its reporting and messaging rules hold here too.
 
 Call every `hm-hub` command on its own, never inside a compound command (`&&`, `;`, pipes, `$(...)`). `hm-hub wake`,
-`hm-hub start` and `hm-hub continue` are not pre-approved: they start a Claude session or type into one, so they ask
+`hm-hub start`, `hm-hub run` and `hm-hub continue` are not pre-approved: they start a Claude session or type into one, so they ask
 each time. That is intended.
 
 ## What you never do
@@ -87,6 +87,25 @@ folders). Add only what the owner confirmed: `hm-hub add <project> --home <folde
 project's own `.hivemind/settings.json` says so, never looser. Start the hub in that mode too: sessions in different modes
 hold each other's messages for an approval nobody sees.
 
+### Running overnight or cleanup for a project
+
+`/hivemind:overnight` and `/hivemind:cleanup` can only be started by typing them, so the owner asks you and `hm-hub`
+types the fixed line for them. Both go through a task, so record the owner's words first (step 2 above), then say which
+session it will be typed into and ask for their yes for that one run:
+
+- **running** orchestrator: `hm-hub run <project> overnight <task id>` or `hm-hub run <project> cleanup <task id>` (add
+  `--disk` for temporary files only), with `--still`/`--max-wait` as the others take them. It refuses (exit 4) a task
+  that waits on the owner, an orchestrator that is stopped, unregistered or absent, and a second run while one is being
+  typed. Exit 5 means a dialog is on that screen: tell the owner which pane, and once they have answered it there, run
+  `hm-hub continue <project>`.
+- **none**: `hm-hub start <project> <task id> --overnight` starts an orchestrator on the overnight line (with the
+  owner's yes, as any start). Cleanup needs a running orchestrator.
+- **stopped**: wake it first, as in step 3.
+
+The task then shows as `overnight` or `cleanup` (open, not waiting on the owner). Overnight's questions, queue and team
+arrive like any `HM-CLARIFY` and `HM-PLAN`, and a blocker as `BLOCKED`; carry them as in step 4. The morning's `DONE`
+carries the report's path.
+
 ## 4. Carrying messages
 
 An orchestrator's message starts with what it is: `TASK <id>: HM-CLARIFY`, `HM-PLAN`, `BLOCKED`, `DONE`, or `BACK`.
@@ -104,7 +123,8 @@ An orchestrator's message starts with what it is: `TASK <id>: HM-CLARIFY`, `HM-P
 - **"How is X going?"** `hm-hub status` and `hm-hub tasks` first. If they do not answer it, send the orchestrator
   `PROGRESS <id>?` and tell the owner you asked.
 - **After a restart** `hm-hub status` shows orchestrators stopped. List them and offer to wake them; one question for
-  all of them is fine.
+  all of them is fine. An overnight run that was stopped is woken like any orchestrator: it checks its own heartbeat and
+  sets it again if it is gone.
 - **A question nobody watches**: `question` true on an orchestrator or an agent means a dialog (a permission prompt,
   say) waits on its screen. Tell the owner which project, session and pane; they answer it in that tmux window.
 - **A running orchestrator with stopped agents**: tell the owner; on their word, send it `RESPAWN: <agents> are not
