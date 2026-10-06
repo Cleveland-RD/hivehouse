@@ -80,4 +80,12 @@ for p in $n1 $n2 $n3; do hm_is_claude "$p" && bad "mistaken for claude: $(ps -o 
 [ -z "$(hm_is_claude $n3 2>&1)" ] && ok "an option-like argv word prints nothing" || bad "hm_is_claude printed an error for an option-like argv word"
 hm_is_claude 999999 && bad "a dead pid is claude" || ok "a dead pid is not claude"
 kill $c1 $c2 $c3 $c4 $n1 $n2 $n3 2>/dev/null; wait $c1 $c2 $c3 $c4 $n1 $n2 $n3 2>/dev/null
+# a process's start time is read in one fixed format: recorded under one locale, it matches under another (ps prints it in the caller's own)
+if locale -a 2>/dev/null | grep -qi '^fr_FR\.UTF-8$'; then
+  fr=$(LC_ALL=fr_FR.UTF-8 /bin/ps -o lstart= -p $$ | sed 's/^ *//;s/ *$//'); c=$(LC_ALL=C /bin/ps -o lstart= -p $$ | sed 's/^ *//;s/ *$//')
+  [ "$fr" != "$c" ] && ok "(ps itself prints this time differently under fr_FR: $fr / $c)" || bad "fr_FR prints the same time as C: the test below proves nothing here"
+  rec_fr=$(LC_ALL=fr_FR.UTF-8 hm_lstart $$); rec_de=$(LC_ALL=de_DE.UTF-8 hm_lstart $$)
+  assert_eq "hm_lstart reads the same under fr_FR and C" "$rec_fr" "$(LC_ALL=C hm_lstart $$)"
+  assert_eq "...and under de_DE" "$rec_de" "$(LC_ALL=C hm_lstart $$)"
+else echo "  SKIP the fr_FR.UTF-8 locale is not installed: the start time's fixed format cannot be tested here"; fi
 t_done

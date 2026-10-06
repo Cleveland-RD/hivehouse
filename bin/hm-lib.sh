@@ -103,7 +103,9 @@ hm_socket() { if [ -n "${HM_TMUX_SOCKET:-}" ]; then echo "$HM_TMUX_SOCKET"; else
 # older than 10 s. A stale lock is taken over inside a guard directory "<lock>.takeover" (itself stale after 30 s),
 # after re-reading the holder, so exactly one contender removes it. `kill -9` of a holder frees its lock.
 hm_alive()  { /bin/ps -p "$1" >/dev/null 2>&1; }
-hm_lstart() { local s; s=$(/bin/ps -o lstart= -p "$1" 2>/dev/null); s=${s#"${s%%[![:space:]]*}"}; printf '%s\n' "${s%"${s##*[![:space:]]}"}"; }   # built-ins only: the away checks read it
+# ps prints a start time in the caller's locale (mar.  6 oct. in fr_FR, Tue Oct  6 in C): one fixed format, or a time recorded under
+# one locale never matches under another and a live session reads as gone
+hm_lstart() { local s; s=$(LC_ALL=C /bin/ps -o lstart= -p "$1" 2>/dev/null); s=${s#"${s%%[![:space:]]*}"}; printf '%s\n' "${s%"${s##*[![:space:]]}"}"; }   # built-ins only: the away checks read it
 hm_is_claude() {  # hm_is_claude <pid>: 0 when the process is Claude Code's, which hivemind never stops
   local args first second   # by argv: macOS ps reports comm from argv0 as well, so it would be the same reading
   args=$(/bin/ps -o args= -p "$1" 2>/dev/null) || return 1
@@ -500,11 +502,11 @@ hm_pane_dialog() {  # hm_pane_dialog <socket, or empty for hivemind's own server
 # content: a way to change them would be a way round the check. Valid means: the file, its folder and every folder above it
 # are not links (lstat) and not writable by group or others; the file and its folder are owned by the required user, the
 # folders above by the required user or root (with root required, root alone); the content is exactly
-#   hivemind-delegate 1 / hub=<absolute path> / until=<epoch seconds>
+#   hivemind-delegate 1 / hub=<absolute path> / until=<epoch seconds> / mcp=<comma-separated servers or tools, may be empty>
 # with `until` in the future and at most 7 days ahead (a CronCreate heartbeat does not outlive that). HM_DELEGATE_WHY is set
 # to the first check that failed.
 hm_delegate_path() {  # the fixed path: under /Library on macOS (/etc is a link there), /etc on Linux
-  case "$OSTYPE" in darwin*) echo '/Library/Application Support/hivemind/delegate' ;; *) echo '/etc/hivemind/delegate' ;; esac
+  if [ -d /System/Library ]; then echo '/Library/Application Support/hivemind/delegate'; else echo '/etc/hivemind/delegate'; fi   # macOS has /System; $OSTYPE would come through the environment
 }
 # Nothing here is found through PATH: every outside command is called by absolute path, and the rest is built-ins, so a fake
 # `date` or a function from BASH_ENV or the environment cannot revive an expired file (the executables that ask start with
@@ -527,8 +529,8 @@ hm_path_trusted() {  # hm_path_trusted <path> <file|dir> <uid> <strict|loose>: n
   if [ $((g & 2)) -ne 0 ] || [ $((o & 2)) -ne 0 ]; then HM_DELEGATE_WHY="$1 is writable by group or others (mode $m)"; return 1; fi
   return 0
 }
-hm_delegate_read() {  # hm_delegate_read <path> <uid> [<now>]: prints "<hub><TAB><until>" when the file is valid; 1 when it is not
-  local f="$1" want="$2" now="${3:-}" d p hub until i l1="" l2="" l3="" l4=""
+hm_delegate_read() {  # hm_delegate_read <path> <uid> [<now>]: prints "<hub><TAB><until><TAB><mcp>" when the file is valid; 1 when it is not
+  local f="$1" want="$2" now="${3:-}" d p hub until mcp i l1="" l2="" l3="" l4="" l5=""
   HM_DELEGATE_WHY=""
   [ -n "$now" ] || now=$(/bin/date +%s)
   case "$f" in /*) ;; *) HM_DELEGATE_WHY="the path is not absolute"; return 1 ;; esac
@@ -542,24 +544,28 @@ hm_delegate_read() {  # hm_delegate_read <path> <uid> [<now>]: prints "<hub><TAB
     [ "$p" = / ] && break
     p=${p%/*}; [ -n "$p" ] || p=/; i=$((i + 1)); [ "$i" -lt 64 ] || { HM_DELEGATE_WHY="the path is too deep"; return 1; }
   done
-  { IFS= read -r l1; IFS= read -r l2; IFS= read -r l3; IFS= read -r l4 && l4=x; } < "$f" 2>/dev/null
-  [ -z "$l4" ] || { HM_DELEGATE_WHY="the content is more than three lines"; return 1; }
-  case "$l1$l2$l3" in *$'\r'*) HM_DELEGATE_WHY="the content has carriage returns"; return 1 ;; esac
+  { IFS= read -r l1; IFS= read -r l2; IFS= read -r l3; IFS= read -r l4; IFS= read -r l5 && l5=x; } < "$f" 2>/dev/null
+  [ -z "$l5" ] || { HM_DELEGATE_WHY="the content is more than four lines"; return 1; }
+  case "$l1$l2$l3$l4" in *$'\r'*) HM_DELEGATE_WHY="the content has carriage returns"; return 1 ;; esac
   [ "$l1" = 'hivemind-delegate 1' ] || { HM_DELEGATE_WHY="the first line is not 'hivemind-delegate 1'"; return 1; }
   hub=$l2; until=$l3
   case "$hub" in hub=/*) hub=${hub#hub=} ;; *) HM_DELEGATE_WHY="line 2 is not hub=<absolute path>"; return 1 ;; esac
   hm_is_typed_path "$hub" || { HM_DELEGATE_WHY="the hub path is not one hivemind will type"; return 1; }
   case "$until" in until=*) until=${until#until=} ;; *) HM_DELEGATE_WHY="line 3 is not until=<epoch>"; return 1 ;; esac
   hm_is_number "$until" || { HM_DELEGATE_WHY="until is not a number"; return 1; }
+  case "$l4" in mcp=*) mcp=${l4#mcp=} ;; *) HM_DELEGATE_WHY="line 4 is not mcp=<list>"; return 1 ;; esac
+  case "$mcp" in *[!${HM_LOWER}${HM_UPPER}${HM_DIGITS}_,.:-]*) HM_DELEGATE_WHY="the mcp list has a character outside letters, digits and _ , . : -"; return 1 ;; esac
   [ "$until" -gt "$now" ] || { HM_DELEGATE_WHY="the file has expired"; return 1; }
   [ "$until" -le $((now + 604800)) ] || { HM_DELEGATE_WHY="until is more than 7 days ahead"; return 1; }
-  printf '%s\t%s\n' "$hub" "$until"
+  printf '%s\t%s\t%s\n' "$hub" "$until" "$mcp"
 }
 hm_delegate_now() { hm_delegate_read "$(hm_delegate_path)" 0; }
 # hm_env_has <pid> <NAME=value>: 0 the process was launched with it; 1 its environment is visible and lacks it; 2 no
 # environment is visible at all (the caller says so and does not pretend to have checked). Linux reads /proc/<pid>/environ,
 # which is exact. macOS `ps -E` prints the arguments and the environment on one line: the process's own arguments are
-# taken off the front first (so a marker spelled in an argument does not count), and the rest is matched as whole words.
+# taken off the front first (so a marker spelled in an argument does not count), and the rest is matched as whole words. The
+# variables are joined with spaces, so a marker spelled inside another variable's value (FOO="x HM_AWAY_BYPASS=1 y") counts:
+# macOS cannot tell them apart. Linux /proc/<pid>/environ is exact.
 # macOS shows no environment for Apple platform binaries (bash, sleep), so a non-platform process is needed to read one:
 # Claude Code is one.
 hm_env_has() {

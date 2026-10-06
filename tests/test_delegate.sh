@@ -7,9 +7,9 @@
 t_setup
 ME=$(id -u); NOW=$(date +%s)
 D="$T_TMP/dg/area"; F="$D/delegate"
-mkf() {  # mkf [until] [hub line]: a valid file, then what the case changes
+mkf() {  # mkf [until] [hub line] [mcp list]: a valid file, then what the case changes
   mkdir -p "$D"; chmod 755 "$D" "$T_TMP/dg"
-  printf 'hivemind-delegate 1\n%s\nuntil=%s\n' "${2:-hub=/work}" "${1:-$((NOW + 3600))}" > "$F"; chmod 644 "$F"
+  printf 'hivemind-delegate 1\n%s\nuntil=%s\nmcp=%s\n' "${2:-hub=/work}" "${1:-$((NOW + 3600))}" "${3:-}" > "$F"; chmod 644 "$F"
 }
 ok_() { hm_delegate_read "$F" "${1:-$ME}" "${2:-$NOW}" >/dev/null 2>&1; }
 mkf
@@ -20,15 +20,21 @@ if ! ok_; then
 fi
 
 # ---- the path and the one production line ----
-case "$(uname -s)" in
-  Darwin) assert_eq "the macOS path is under /Library (/etc is a link there)" "$(hm_delegate_path)" "/Library/Application Support/hivemind/delegate" ;;
-  *)      assert_eq "the Linux path" "$(hm_delegate_path)" "/etc/hivemind/delegate" ;;
-esac
+if [ -d /System/Library ]; then assert_eq "the macOS path is under /Library (/etc is a link there)" "$(hm_delegate_path)" "/Library/Application Support/hivemind/delegate"
+else assert_eq "the Linux path" "$(hm_delegate_path)" "/etc/hivemind/delegate"; fi
+assert_eq "...chosen without $OSTYPE, which comes through the environment" "$(OSTYPE=linux-gnu hm_delegate_path)" "$(hm_delegate_path)"
 assert_eq "production reads the fixed path as root, and nothing else" "$(grep -c '^hm_delegate_now() { hm_delegate_read "$(hm_delegate_path)" 0; }$' "$HM_REPO_ROOT/bin/hm-lib.sh")" "1"
 
 # ---- a valid file ----
 out=$(hm_delegate_read "$F" "$ME" "$NOW"); assert_status "a file as the root user would make it" $? 0
-assert_eq "...prints the hub and the time" "$out" "$(printf '/work\t%s' "$((NOW + 3600))")"
+assert_eq "...prints the hub, the time and the (empty) MCP list" "$out" "$(printf '/work\t%s\t' "$((NOW + 3600))")"
+mkf "" "" "docs,mcp__srv__tool"; out=$(hm_delegate_read "$F" "$ME" "$NOW"); assert_eq "...an MCP list is the fourth line, printed third" "${out##*$'\t'}" "docs,mcp__srv__tool"
+mkf; printf 'hivemind-delegate 1\nhub=/work\nuntil=%s\n' "$((NOW + 60))" > "$F"; ok_ && bad "the old three-line file is valid" || ok "a file with the old three lines is invalid"
+mkf "" "" "docs;rm"; ok_ && bad "a bad character in mcp= is valid" || ok "a character outside the class in mcp= is invalid"
+mkf "" "" 'a b'; ok_ && bad "a space in mcp= is valid" || ok "a space in mcp= is invalid"
+mkf; printf 'hivemind-delegate 1\nhub=/work\nuntil=%s\nmcp=\nmore\n' "$((NOW + 60))" > "$F"; ok_ && bad "a fifth line is valid" || ok "a fifth line is invalid"
+mkf; printf 'hivemind-delegate 1\nhub=/work\nuntil=%s\nnomcp\n' "$((NOW + 60))" > "$F"; ok_ && bad "a fourth line that is not mcp= is valid" || ok "a fourth line that is not mcp= is invalid"
+mkf
 ok_ "$((ME + 1))" && bad "a file owned by another user is valid" || ok "a file owned by someone else is refused"
 ok_ 0 && bad "a file this user wrote counts as root's" || ok "a file the user wrote is refused when root is required"
 

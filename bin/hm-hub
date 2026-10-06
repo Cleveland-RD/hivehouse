@@ -77,14 +77,15 @@ hub_root_cwd() {  # the work folder holding .hivemind-hub/, found from the cwd a
   done
   hm_die 2 "no hub here: run hm-hub init in your work folder"
 }
-# delegate_for_hub <hub root>: 0 when the owner's delegate file is valid and names this hub; AWAY_UNTIL is its epoch
-AWAY_UNTIL=""
+# delegate_for_hub <hub root>: 0 when the owner's delegate file is valid and names this hub; AWAY_UNTIL is its epoch and AWAY_MCP
+# the MCP servers it allows
+AWAY_UNTIL=""; AWAY_MCP=""
 delegate_for_hub() {
-  local out hub; AWAY_UNTIL=""
+  local out hub; AWAY_UNTIL=""; AWAY_MCP=""
   out=$(hm_delegate_now) || return 1
   hub=${out%%$'\t'*}; hub=$(cd "$hub" 2>/dev/null && pwd -P) || return 1
   [ "$hub" = "$1" ] || return 1
-  AWAY_UNTIL=${out#*$'\t'}
+  out=${out#*$'\t'}; AWAY_UNTIL=${out%%$'\t'*}; AWAY_MCP=${out#*$'\t'}
 }
 epoch_local() { date -r "$1" '+%Y-%m-%d %H:%M' 2>/dev/null || date -d "@$1" '+%Y-%m-%d %H:%M'; }   # epoch_local <epoch>
 epoch_iso() { date -u -r "$1" '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null || date -u -d "@$1" '+%Y-%m-%dT%H:%M:%SZ'; }
@@ -763,7 +764,7 @@ away)
   hm_is_number "$epoch" || hm_die 64 "--until is an epoch, +<n>m|h|d, or YYYY-MM-DD[ HH:MM] (local time): $until"
   [ "$epoch" -gt "$now" ] || hm_die 4 "--until is not in the future"
   [ "$epoch" -le $((now + 604800)) ] || hm_die 4 "away is at most 7 days: the hub's heartbeat does not outlive that"
-  file=$(hm_delegate_path); dir=${file%/*}; grp=root; case "$OSTYPE" in darwin*) grp=wheel ;; esac
+  file=$(hm_delegate_path); dir=${file%/*}; grp=root; [ ! -d /System/Library ] || grp=wheel
   mcp="$root/.hivemind-hub/away-mcp.json"
   cdir="${CLAUDE_CONFIG_DIR:-${HOME:-/}/.claude}"; cj="${CLAUDE_CONFIG_DIR:-${HOME:-/}}/.claude.json"
   ( umask 077; jq -n '{mcpServers:{}}' > "$mcp.tmp$$" ) && mv "$mcp.tmp$$" "$mcp" && chmod 600 "$mcp"
@@ -783,7 +784,7 @@ away)
   case "$sid" in ''|*[!${HM_LOWER}${HM_UPPER}${HM_DIGITS}-]*) sid="" ;; esac
   echo "# Away until $(epoch_local "$epoch") (at most 7 days). Paste these lines in a terminal: hivemind never runs sudo, and what runs as root is only this."
   printf 'sudo mkdir -p -- %q\n' "$dir"
-  printf "printf '%%s\\\\n' %q %q %q | sudo tee -- %q > /dev/null\n" 'hivemind-delegate 1' "hub=$root" "until=$epoch" "$file"
+  printf "printf '%%s\\\\n' %q %q %q %q | sudo tee -- %q > /dev/null\n" 'hivemind-delegate 1' "hub=$root" "until=$epoch" "mcp=$allow" "$file"
   printf 'sudo chown root:%s -- %q %q\n' "$grp" "$dir" "$file"
   printf 'sudo chmod 0755 -- %q\n' "$dir"
   printf 'sudo chmod 0644 -- %q\n' "$file"
@@ -884,7 +885,7 @@ recover)
   case "$mrc" in
     0) ;;
     1) hm_die 4 "this session was not started with the away marker (hm-hub away prints its start line): recover is for the hub that was" ;;
-    *) echo "hivemind: warning: this session's launch environment cannot be read here, so the away marker was not checked" >&2 ;;
+    *) hm_die 4 "this session's launch environment cannot be read, so the away marker cannot be checked: recover is refused" ;;
   esac
   now=$(/bin/date +%s); since=$((now - 86400))
   # every project's state is read first, with no lock held (tmux can be slow); the lock is taken only to write

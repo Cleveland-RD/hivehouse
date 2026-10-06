@@ -15,9 +15,9 @@ hub() { (cd "$H" && hm-hub "$@"); }
 idof() { printf '%s' "${1%%$'\t'*}"; }
 ME=$(id -u); NOW=$(date +%s)
 DD="$T_TMP/dg/area"; DF="$DD/delegate"
-mkdel() {  # mkdel [hub] [until]: the owner's delegate file, as root would have made it
+mkdel() {  # mkdel [hub] [until] [mcp list]: the owner's delegate file, as root would have made it
   mkdir -p "$DD"; chmod 755 "$DD" "$T_TMP/dg"
-  printf 'hivemind-delegate 1\nhub=%s\nuntil=%s\n' "${1:-$H}" "${2:-$((NOW + 3600))}" > "$DF"; chmod 644 "$DF"
+  printf 'hivemind-delegate 1\nhub=%s\nuntil=%s\nmcp=%s\n' "${1:-$H}" "${2:-$((NOW + 3600))}" "${3:-}" > "$DF"; chmod 644 "$DF"
 }
 mkdel
 if ! hm_delegate_read "$DF" "$ME" "$NOW" >/dev/null 2>&1; then
@@ -33,14 +33,15 @@ mkcl() {  # mkcl <bin dir> [noself]: a stand-in for the hub's Claude: it records
 }
 mkcl_node() {  # mkcl_node <bin dir>: the same stand-in as a node script named claude, which ps -E can show the environment of
   local d; d=$(mktemp -d "$T_TMP/cln.XXXXXX")
-  printf 'const { spawnSync } = require("child_process")\nspawnSync(%s, ["self", "--name", "hub"], { cwd: %s, stdio: "ignore" })\nconst r = spawnSync(%s, process.argv.slice(2), { cwd: %s, stdio: "inherit" })\nprocess.exit(r.status === null ? 1 : r.status)\n' "\"$1/hm-hub\"" "\"$H\"" "\"$1/hm-hub\"" "\"$H\"" > "$d/claude"; printf '%s\n' "$d/claude"
+  local e; e=$(jq -nc --arg PATH "$PATH" --arg HOME "$HOME" --arg HIVEMIND_HOME "$HIVEMIND_HOME" --arg HM_TMUX_SOCKET "$HM_TMUX_SOCKET" --arg CLAUDE_CONFIG_DIR "$CLAUDE_CONFIG_DIR" --arg HM_MANAGED_SETTINGS "$HM_MANAGED_SETTINGS" '$ARGS.named')
+  printf 'const { spawnSync } = require("child_process")\nconst env = Object.assign({}, %s, process.env)\nspawnSync(%s, ["self", "--name", "hub"], { cwd: %s, stdio: "ignore", env })\nconst r = spawnSync(%s, process.argv.slice(2), { cwd: %s, stdio: "inherit", env })\nprocess.exit(r.status === null ? 1 : r.status)\n' "$e" "\"$1/hm-hub\"" "\"$H\"" "\"$1/hm-hub\"" "\"$H\"" > "$d/claude"; printf '%s\n' "$d/claude"
 }
 CLP=$(mkcl "$HM_REPO_ROOT/bin"); CLD=$(mkcl "$DB")
 # where ps -E can show a process's environment (a non-platform binary on macOS: node), the stand-in is a node script and the
 # marker is really read; elsewhere it is a bash script, the environment cannot be read, and recover warns and goes on
 READABLE=0; ep=$(t_env_probe HM_PROBE=1) || ep=""
 if [ -n "$ep" ]; then t_track "$ep"; sleep 0.5; hm_env_has "$ep" HM_PROBE=1 && READABLE=1; kill "$ep" 2>/dev/null; fi
-[ "$READABLE" = 1 ] && CLN=$(mkcl_node "$DB")
+[ "$READABLE" = 1 ] && { CLN=$(mkcl_node "$DB"); NODEBIN=$(command -v node); }
 hub init >/dev/null
 for n in alpha beta gamma delta; do mk "$n"; hub add "$n" --home "$n" >/dev/null; done
 bash "$CLP" self --name hub >/dev/null; assert_status "the hub records itself" $? 0
@@ -65,6 +66,7 @@ case "$(uname -s)" in
 esac
 assert_contains "...mode 0644" "$out" 'sudo chmod 0644 -- '
 assert_contains "...the content names this hub" "$out" "hub=$H"
+assert_contains "...and its MCP list (empty here) as the fourth line" "$out" "mcp= | sudo tee"
 until_epoch=$(printf '%s\n' "$out" | sed -n 's/.*until=\([0-9]*\).*/\1/p' | head -1)
 [ "$until_epoch" -ge $((NOW + 7190)) ] && [ "$until_epoch" -le $((NOW + 7500)) ] && ok "...and the time asked for" || bad "until=$until_epoch is not about +2h"
 assert_contains "...the hub's start line is marked, in bypass, with only its allowed MCP servers" "$out" "HM_AWAY_BYPASS=1 HM_PROJECT=$H HM_AWAY_HUB=$H HM_AWAY_MCP_ALLOW='' claude --name hub --permission-mode bypassPermissions --strict-mcp-config --mcp-config $P/away-mcp.json /hivemind:hub"
@@ -90,6 +92,7 @@ printf '{"mcpServers":{"docs":{"command":"docs-mcp","args":["--x"]}}}\n' > "$CLA
 out=$(hub away --until +1h --mcp-allow docs,nothere)
 assert_eq "an allowed server's definition is copied into the hub's MCP file" "$(jq -c '.mcpServers | keys' "$P/away-mcp.json")" '["docs"]'
 assert_contains "...one that is not found is said so" "$out" "Not found (not loaded): nothere"
+assert_contains "...and the list is the delegate file's fourth line" "$out" "mcp=docs\\,nothere | sudo tee"
 out=$(hub back); assert_status "back" $? 0
 assert_contains "...prints the line that removes the file" "$out" "sudo rm -f -- "
 case "$out" in *HM_AWAY_BYPASS*|*bypassPermissions*) bad "the restart line after away is marked or in bypass" ;; *) ok "...and a restart line with no marker and no bypass" ;; esac
@@ -142,6 +145,20 @@ tc=$(idof "$(hub task alpha --text "Second")"); hub log "$tc" done >/dev/null
 printf 'Q\n=== ANSWER ===\nA\n' | dhub decide "$tc" --reason r >/dev/null 2>&1; assert_status "...a closed task" $? 4
 hub log "$ta" answered >/dev/null
 
+# ---- the sessions the hub starts or wakes are recorded, for the caps ----
+rj="$P/recovery.jsonl"
+: > "$rj"; mk eps; hub add eps --home eps >/dev/null; te=$(idof "$(hub task eps --text "New")")
+hub start eps "$te" --still 2 --max-wait 15 >/dev/null 2>&1; assert_status "a start" $? 0
+assert_eq "...is recorded with its time" "$(jq -s '[.[] | select(.action == "start" and .item == "eps" and (.epoch | type) == "number")] | length' "$rj")" "1"
+
+# recover (and what follows) needs a Claude whose launch environment can be read: where it cannot, recover refuses, and these are skipped
+if [ "$READABLE" != 1 ]; then
+  echo "  SKIP only Apple platform binaries were found (no node): macOS shows no environment for them in ps -E, so recover (which refuses an unreadable environment) cannot be tested here"
+  bash "$CLD" recover --json >/dev/null 2>"$T_TMP/m.err"; assert_status "recover refuses where the environment cannot be read" $? 4
+  assert_contains "...and says why" "$(cat "$T_TMP/m.err")" "cannot be read"
+  assert_eq "...hivemind ran no sudo anywhere" "$(cat "$HM_SUDO_LOG")" ""
+  t_done; exit 0
+fi
 # ---- recover: what is due on each beat, capped ----
 cp "$P/tasks.jsonl" "$T_TMP/tasks.saved"
 kp=$(hm_tmux list-panes -t keep -F '#{pane_id}' | head -1); ki=$(hm_pane_identity "$HM_TMUX_SOCKET" "$kp")
@@ -186,7 +203,7 @@ assert_contains "...says so" "$(cat "$T_TMP/n2.err")" "hub.json records"
 # recover reads every project's state without the hub's lock: a log meanwhile is not held up
 tmx=$(command -v tmux); slow="$T_TMP/slow"; mkdir -p "$slow"; rm -f "$T_TMP/slow.done"
 printf '#!/bin/sh\nif [ ! -e "%s/slow.done" ]; then touch "%s/slow.done"; sleep 4; fi\nexec "%s" "$@"\n' "$T_TMP" "$T_TMP" "$tmx" > "$slow/tmux"; chmod +x "$slow/tmux"
-( PATH="$slow:$PATH" HM_AWAY_BYPASS=1 bash "$CLD" recover --json > "$T_TMP/slowrec.out" 2>/dev/null ) & sr=$!; t_track "$sr"; sleep 1
+( PATH="$slow:$PATH" HM_AWAY_BYPASS=1 node "$CLN" recover --json > "$T_TMP/slowrec.out" 2>/dev/null ) & sr=$!; t_track "$sr"; sleep 1
 t0=$(date +%s); hub log "$ta" note --note "while recover reads" >/dev/null 2>&1; lrc=$?; t1=$(date +%s)
 assert_status "a log while recover is still reading state" "$lrc" 0
 [ $((t1 - t0)) -le 2 ] && ok "...is not held up by it" || bad "the log waited $((t1 - t0)) s for the lock"
@@ -215,19 +232,12 @@ assert_contains "...with its reason" "$(printf '%s' "$r" | jq -r '[.blocked[] | 
 : > "$rj"; r=$(rec --json --max-starts 2); assert_eq "...under the cap it is woken" "$(act "$r" | tr ',' '\n' | grep -c wake:alpha)" "1"
 hub recover --max-starts x >/dev/null 2>&1; assert_status "a daily cap that is a number" $? 4
 t=$(rec); case "$t" in *"wake alpha (task $ta)"*) ok "the plain output names each action" ;; *) bad "plain recover: $t" ;; esac
-# a hub started without the away marker does not recover; one started with it does, with nothing said on stderr
-if [ "$READABLE" = 1 ]; then
-  node "$CLN" recover --json >/dev/null 2>"$T_TMP/m.err"; assert_status "recover without the away marker" $? 4; assert_contains "...says why" "$(cat "$T_TMP/m.err")" "away marker"
-  HM_AWAY_BYPASS=1 node "$CLN" recover --json >/dev/null 2>"$T_TMP/m.err"; assert_status "recover with the away marker" $? 0
-  assert_eq "...and no warning that it could not check" "$(grep -c warning "$T_TMP/m.err")" "0"
-  HM_AWAY_BYPASS=0 node "$CLN" recover --json >/dev/null 2>&1; assert_status "...a marker with another value is none" $? 4
-else
-  echo "  SKIP only Apple platform binaries were found (no node): macOS shows no environment for them in ps -E, so the marker's absence cannot be tested here"
-  HM_AWAY_BYPASS=1 bash "$CLD" recover --json >/dev/null 2>"$T_TMP/m.err"; assert_contains "...a platform binary's environment cannot be read: it warns and goes on" "$(cat "$T_TMP/m.err")" "cannot be read"
-fi
-# the sessions the hub starts or wakes are recorded, for those caps
-: > "$rj"; mk eps; hub add eps --home eps >/dev/null; te=$(idof "$(hub task eps --text "New")")
-hub start eps "$te" --still 2 --max-wait 15 >/dev/null 2>&1; assert_status "a start" $? 0
-assert_eq "...is recorded with its time" "$(jq -s '[.[] | select(.action == "start" and .item == "eps" and (.epoch | type) == "number")] | length' "$rj")" "1"
+# a hub started without the away marker does not recover; one started with it does; one whose environment cannot be read is refused
+node "$CLN" recover --json >/dev/null 2>"$T_TMP/m.err"; assert_status "recover without the away marker" $? 4; assert_contains "...says why" "$(cat "$T_TMP/m.err")" "away marker"
+HM_AWAY_BYPASS=1 node "$CLN" recover --json >/dev/null 2>"$T_TMP/m.err"; assert_status "recover with the away marker" $? 0
+assert_eq "...and nothing said on stderr" "$(cat "$T_TMP/m.err")" ""
+HM_AWAY_BYPASS=0 node "$CLN" recover --json >/dev/null 2>&1; assert_status "...a marker with another value is none" $? 4
+env -i HM_AWAY_BYPASS=1 "$NODEBIN" "$CLN" recover --json >/dev/null 2>"$T_TMP/m.err"; assert_status "recover from a Claude whose environment shows no variables at all (cannot be read)" $? 4
+assert_contains "...is refused, saying it cannot be read" "$(cat "$T_TMP/m.err")" "cannot be read"
 assert_eq "...hivemind ran no sudo anywhere" "$(cat "$HM_SUDO_LOG")" ""
 t_done
