@@ -1,0 +1,50 @@
+
+[97m⏺[39m Done. File [94mmade-by-test.txt[39m created.                                                                                                                          
+
+[37m[100m❯ [97mUse the Write tool to create a file notes.txt containing the single word hello. Do nothing else.[39m                                                              
+
+[91m[49m⏺[39m [1mWrite[0m(]8;id=s8y6ur;file:///tmp/work/notes.txt\notes.txt]8;;\)
+[37m  ⎿  User rejected write to [1mnotes.txt
+[0m     [2m[37m 1 hello[0m                                                                                                                                                   
+                                     
+[37m[100m❯ [97mUse the AskUserQuestion tool to ask me one question: which colour do I prefer, with the two options red and blue. Then just say what I picked.[39m                
+
+[37m[49m⏺ [39mUser answered Claude's questions:
+[37m  ⎿  · Which colour do you prefer? → Blue
+
+[97m⏺[39m You picked Blue.
+
+[37m[100m❯ [97mWithout using any tools, write 60 numbered one-sentence facts about terminals.[39m                                                                                
+
+[97m[49m⏺[39m 1. Terminals are text-based interfaces for interacting with computers.
+  2. The first terminals were electromechanical teletypes connected to mainframes.
+  3. Unix terminals follow the POSIX standard for compatibility.                                                                                                
+  4. Bash is the most commonly used shell in modern terminals.                    
+  5. Terminal emulators like iTerm2 and GNOME Terminal provide graphical interfaces for shell access.                                                           
+  6. The ctrl+c keyboard shortcut sends a SIGINT signal to terminate running processes.              
+  7. Most terminals support ANSI color codes for colorized output.                                   
+  8. The [94mls[39m command lists files and directories in the current directory.              
+  9. Tab completion automatically finishes commands and filenames when you press the Tab key.        
+  10. Terminal multiplexers like tmux allow multiple sessions within a single window.        
+  11. The [94mcd[39m command changes the current working directory.                                          
+  12. Environment variables in terminals are set with the [94mexport[39m command.                            
+  13. The shell prompt typically shows the current user and directory.                               
+  14. Pipes ([94m|[39m) allow output from one command to be input to another.                                
+  15. Redirection operators ([94m>[39m, [94m<[39m, [94m>>[39m) control where data flows in terminals.                
+  16. Command history can be accessed using the up arrow key in most terminals.              
+  17. The [94mgrep[39m command searches for text patterns in files.                                  
+  18. Regular expressions enable powerful pattern matching in terminal commands.             
+  19. The [94mfind[39m command locates files based on various criteria.                      
+  20. SSH allows secure remote access to terminals on other computers.          
+  21. The [94mchmod[39m command changes file and directory permissions.              
+  22. The [94msudo[39m command executes commands with superuser privileges.             
+  23. Package managers like apt, brew, and pacman install software via terminals.
+  24. The [94mman[39m command displays manual pages for terminal commands.               
+  25. Aliases allow users to create shortcuts for frequently used commands.      
+  26.                                                              
+                                                                                                                                                              
+[37m─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── work ─
+❯ [39m                                                                              
+[37m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [36m/tmp/work[37m [32mmaster[37m [2m[Haiku 4.5][0m[37m [32mctx:23%
+[39m  [37m⏸ manual mode on · ← 2 agents[39m                                                                                                                                 

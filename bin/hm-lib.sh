@@ -160,6 +160,10 @@ hm_lock_release() {  # hm_lock_release <lock> <pid>: removes the lock only when 
 # so a dialog quoted in the conversation above is not mistaken for a live one; with fewer than two rules it is looked for
 # everywhere (a refusal to type is the safe error).
 HM_DIALOG_TEXT=("Do you trust" "Yes, proceed" "Esc to cancel" "Do you want to" "Allow this" "Press Enter to continue" "Enter to confirm" "I trust this folder")
+# Claude Code's working line, above the prompt box while it works: a spinner glyph, a verb and an ellipsis, then the elapsed time
+# and a detail in parentheses: "✳ Effecting… (3s · thinking)", "✽ Processing… (5m 29s · ↓ 7.2k tokens)" (hours as "1h 2m 3s",
+# which no capture has shown yet). Anything else is not a working line. Read by hm_pane_working_seconds.
+HM_WORKING_RE='^[[:space:]]*(✳|✶|✻|✽|✢|·|\*) [A-Za-z-]+(…|\.\.\.) \(([0-9]+h )?([0-9]+m )?[0-9]+s( ·[^)]*)?\)[[:space:]]*$'
 hm_pane_clean() {  # a pane captured with -e on stdin: drop dim runs (the placeholder), other escapes, and no-break spaces
   perl -pe 's/\e\[(?:[01];)?2m.*?(?:\e\[(?:0|22)?m|$)//g; s/\e\[[0-9;?]*[A-Za-z]//g; s/\xc2\xa0/ /g'
 }
@@ -181,6 +185,25 @@ hm_pane_idle_text() {  # a cleaned pane on stdin: 0 an empty prompt and no dialo
   region=$(printf '%s\n' "$text" | hm_pane_box)
   for p in "${HM_DIALOG_TEXT[@]}"; do case "$region" in *"$p"*) return 3 ;; esac; done
   printf '%s\n' "$text" | grep -v '^[[:space:]]*$' | tail -6 | grep -Eq '^(│| )*(>|❯)( |│)*$'
+}
+hm_pane_working_seconds() {  # a pane on stdin: the elapsed seconds on Claude Code's working line, or fails ("unknown": no such line)
+  # Only one of the four lines just above the prompt box counts: a working line quoted further up the conversation, or one in
+  # the footer, is not the session's own. Not seeing the box is unknown too. An unknown screen is never working and never hung.
+  local text top line ts t secs=0
+  text=$(hm_pane_clean)
+  [ "$(printf '%s\n' "$text" | grep -cE '^[[:space:]]*(─){4,}')" -ge 2 ] || return 1
+  top=$(printf '%s\n' "$text" | grep -nE '^[[:space:]]*(─){4,}' | tail -2 | head -1 | cut -d: -f1)
+  line=$(printf '%s\n' "$text" | head -n "$((top - 1))" | grep -v '^[[:space:]]*$' | tail -4 | grep -E "$HM_WORKING_RE" | tail -1)
+  [ -n "$line" ] || return 1
+  ts=$(printf '%s' "$line" | sed -E 's/^[^(]*\(([0-9hms ]*s)( ·[^)]*)?\)[[:space:]]*$/\1/')
+  for t in $ts; do
+    case "$t" in
+      *h) secs=$((secs + ${t%h} * 3600)) ;;
+      *m) secs=$((secs + ${t%m} * 60)) ;;
+      *s) secs=$((secs + ${t%s})) ;;
+    esac
+  done
+  printf '%s\n' "$secs"
 }
 # wait_idle <pane> <seconds still> <max seconds> [socket]: 0 idle, 1 timed out, 3 a dialog on screen (the caller tells the
 # orchestrator; nothing here ever types into a pane). A dialog that has been still as long as idle must be is told then,
@@ -248,6 +271,11 @@ hm_pickup_line() {  # hm_pickup_line <project name> <project root> <agent>
   fi
   printf 'You are %s-%s. Read %s/.hivemind/handoffs/%s.md from the top: its START HERE block is your prompt, and %s/.hivemind/team/%s/ holds your role and the rules. Report to %s. Wait for its first message before any work.' \
     "$1" "$3" "$2" "$3" "$2" "$3" "$(hm_orchestrator_name "$2")"
+}
+# What an agent resumed with its own session (hm-spawn --respawn --resume) is typed instead of the pickup line: its session
+# already holds the work, so it is told only why it was restarted and where its handoff is.
+hm_resume_line() {  # hm_resume_line <project root> <agent>
+  printf 'You were restarted by hivemind after your session stopped responding. Carry on where you were; your handoff is %s/.hivemind/handoffs/%s.md.' "$1" "$2"
 }
 
 # The ASCII letters and digits, listed and never written as a range: under bash 3.2 a bracket range follows the locale's
@@ -339,6 +367,11 @@ hm_is_agent_name() {  # hm_is_agent_name <name>: 0 when it is one
 
 # A git branch as hivemind takes one (hm-spawn's --branch and --base, the manifest's base): letters, digits, '.', '_',
 # '/' and '-', not starting with '-', which git would read as an option.
+# How strict a permission mode is, for "only ever stricter": plan and dontAsk are the same, bypassPermissions the loosest. Fails for
+# anything else. (hm-settings keeps its own copy, which refuses bypassPermissions as a local value.)
+hm_mode_rank() {  # hm_mode_rank <mode>
+  case "$1" in plan|dontAsk) echo 0 ;; default) echo 1 ;; acceptEdits) echo 2 ;; auto) echo 3 ;; bypassPermissions) echo 4 ;; *) return 1 ;; esac
+}
 hm_is_branch_name() {  # hm_is_branch_name <name>: 0 when it is one
   case "$1" in ''|-*|*[!${HM_LOWER}${HM_UPPER}${HM_DIGITS}._/-]*) return 1 ;; esac
   return 0
