@@ -6,7 +6,7 @@
 set -u
 . "$(dirname "$0")/hm-lib.sh"
 USAGE="usage: hm-spawn --agent <n> --role <file> --rules <file> --model <m> --effort <e> --mode <m> [--worktree <abs> --branch <b> --base <b>] [--session <s>] [--window <tokens>] [--still <s>] [--max-wait <s>]
-       hm-spawn --self --agent <n> [--name <orchestrator session name>] [--window <tokens>]
+       hm-spawn --self --agent <n> [--name <orchestrator session name>] [--hub <hub session name>] [--window <tokens>]
        hm-spawn --respawn <n> [--still <s>] [--max-wait <s>]"
 # The only commands an agent may run without asking (A16): nothing here runs an arbitrary command, writes a chosen path
 # (no git: --output=<path> writes anywhere; Claude Code already runs the read-only forms unprompted) or edits the
@@ -14,12 +14,12 @@ USAGE="usage: hm-spawn --agent <n> --role <file> --rules <file> --model <m> --ef
 ALLOWED='Bash(hm-slot status) Bash(hm-slot release *) Bash(hm-context *) Bash(hm-gate-verify *) Bash(hm-settings resolve *) Bash(hm-disk *)'
 
 agent=""; role=""; rules=""; model=""; effort=""; mode=""; wt=""; branch=""; base=""; session=""; window=200000
-still=5; maxwait=90; self=0; others=0; oname=""; respawn=""; settings=0; wgiven=0
+still=5; maxwait=90; self=0; others=0; oname=""; respawn=""; settings=0; wgiven=0; hub=""
 while [ $# -gt 0 ]; do
   [ $# -ge 2 ] || [ "$1" = --self ] || hm_die 64 "$USAGE"
   case "$1" in
     --self) self=1; shift; continue ;;
-    --agent) agent="$2" ;; --window) window="$2"; wgiven=1 ;; --name) oname="$2" ;; --respawn) respawn="$2" ;;
+    --agent) agent="$2" ;; --window) window="$2"; wgiven=1 ;; --name) oname="$2" ;; --respawn) respawn="$2" ;; --hub) hub="$2" ;;
     --role) role="$2"; others=1; settings=1 ;; --rules) rules="$2"; others=1; settings=1 ;; --model) model="$2"; others=1; settings=1 ;;
     --effort) effort="$2"; others=1; settings=1 ;; --mode) mode="$2"; others=1; settings=1 ;; --worktree) wt="$2"; others=1; settings=1 ;;
     --branch) branch="$2"; others=1; settings=1 ;; --base) base="$2"; others=1; settings=1 ;; --session) session="$2"; others=1; settings=1 ;;
@@ -28,13 +28,12 @@ while [ $# -gt 0 ]; do
   esac
   shift 2
 done
-num() { case "$1" in ''|*[!0-9]*) return 1 ;; esac; }
 # --respawn: an agent that stopped (a restart took its pane) is started again from its own record, exactly as spawned:
 # model, effort, mode, worktree, branch and window from team.json, the worktree's base from the manifest, role and rules
 # from the copies in its team dir. Its handoff is kept, so the pickup line sends it back to its START HERE block. Only an
 # agent proven stopped is respawned; the --self orchestrator registers again with --self instead.
 if [ -n "$respawn" ]; then
-  [ "$self" = 0 ] && [ "$settings" = 0 ] && [ -z "$agent" ] && [ -z "$oname" ] && [ "$wgiven" = 0 ] \
+  [ "$self" = 0 ] && [ "$settings" = 0 ] && [ -z "$agent" ] && [ -z "$oname" ] && [ -z "$hub" ] && [ "$wgiven" = 0 ] \
     || hm_die 64 "--respawn takes only --still and --max-wait: everything else comes from the agent's record"
   hm_is_agent_name "$respawn" || hm_die 4 "bad agent name: $respawn"
   ROOT=$(hm_project_root) || exit $?
@@ -55,12 +54,14 @@ if [ -n "$respawn" ]; then
 fi
 [ -n "$agent" ] || hm_die 64 "$USAGE"
 hm_is_agent_name "$agent" || hm_die 4 "bad agent name: $agent"
-num "$window" && [ "$window" -gt 0 ] || hm_die 4 "--window must be a positive number: $window"
-num "$still" && num "$maxwait" || hm_die 4 "--still and --max-wait must be numbers"
+hm_is_number "$window" && [ "$window" -gt 0 ] || hm_die 4 "--window must be a positive number: $window"
+hm_is_number "$still" && hm_is_number "$maxwait" || hm_die 4 "--still and --max-wait must be numbers"
 
 if [ "$self" = 1 ]; then
-  [ "$others" = 0 ] || hm_die 64 "--self takes only --agent, --name and --window"
+  [ "$others" = 0 ] || hm_die 64 "--self takes only --agent, --name, --hub and --window"
   [ -z "$oname" ] || hm_is_session_name "$oname" || hm_die 4 "--name must be one line of letters, digits, space, - _ . ( ), at most 64: $oname"
+  # the owner's hub, when the owner talks to this orchestrator through it: every pickup line names it (hm_pickup_line)
+  [ -z "$hub" ] || hm_is_session_name "$hub" || hm_die 4 "--hub must be one line of letters, digits, space, - _ . ( ), at most 64: $hub"
   [ -n "${TMUX_PANE:-}" ] || hm_die 2 "--self must run inside the tmux pane to register"
   ROOT=$(hm_project_root) || exit $?
   hm_ensure_state || exit $?
@@ -72,12 +73,12 @@ if [ "$self" = 1 ]; then
   mode="" ; model=""; effort=""; session=""; branch=""; wt=""
 else
   [ -z "$oname" ] || hm_die 64 "--name is for --self only"
+  [ -z "$hub" ] || hm_die 64 "--hub is for --self only"
   for v in role rules model effort mode; do [ -n "${!v}" ] || hm_die 64 "$USAGE"; done
-  case "$mode" in plan|dontAsk|default|acceptEdits|auto) ;; bypassPermissions) hm_die 4 "bypassPermissions is never started by hm-spawn" ;; *) hm_die 4 "unknown permission mode: $mode" ;; esac
+  hm_check_mode "$mode" hm-spawn
   [ -f "$role" ] && [ -f "$rules" ] || hm_die 4 "--role and --rules must be files"
-  case "$model$effort" in *[!${HM_LOWER}${HM_UPPER}${HM_DIGITS}._\[\]-]*) hm_die 4 "bad model or effort" ;; esac
-  case "$model" in -*) hm_die 4 "a model starting with - would be read as an option: $model" ;; esac
-  case "$effort" in -*) hm_die 4 "an effort starting with - would be read as an option: $effort" ;; esac
+  hm_is_model_name "$model" || hm_die 4 "bad model (a value starting with - would be read as an option): $model"
+  hm_is_model_name "$effort" || hm_die 4 "bad effort (a value starting with - would be read as an option): $effort"
   if [ -n "$wt" ]; then
     [ -n "$branch" ] && [ -n "$base" ] || hm_die 64 "--worktree needs --branch and --base"
     case "$wt" in /*) ;; *) hm_die 4 "--worktree must be an absolute path" ;; esac
@@ -123,8 +124,8 @@ if [ "$self" = 1 ]; then
   register "$pane" "$socket" || exit $?
   # the session's own name, as agents are told to report to it (hm_orchestrator_name reads it live; this is its fallback)
   [ -n "$oname" ] || { oname=$(hm_session_record "$CLAUDE_PID" .name); hm_is_session_name "$oname" || oname=""; }
-  upsert_team "$(jq -nc --arg n "$agent" --arg p "$pane" --arg s "$socket" --argjson w "$window" --arg pp "$PANE_PID" --arg ps "$PANE_STARTED" --arg cp "$CLAUDE_PID" --arg cs "$CLAUDE_STARTED" --arg nf "$oname" \
-    '{name:$n, pane:$p, socket:$s, window:$w, pane_pid:$pp, pane_started:$ps} + (if $cp != "" then {claude_pid:$cp, claude_started:$cs} else {} end) + (if $nf != "" then {name_full:$nf} else {} end)')"
+  upsert_team "$(jq -nc --arg n "$agent" --arg p "$pane" --arg s "$socket" --argjson w "$window" --arg pp "$PANE_PID" --arg ps "$PANE_STARTED" --arg cp "$CLAUDE_PID" --arg cs "$CLAUDE_STARTED" --arg nf "$oname" --arg hub "$hub" \
+    '{name:$n, pane:$p, socket:$s, window:$w, pane_pid:$pp, pane_started:$ps} + (if $cp != "" then {claude_pid:$cp, claude_started:$cs} else {} end) + (if $nf != "" then {name_full:$nf} else {} end) + (if $hub != "" then {hub:$hub} else {} end)')"
   # Its SessionStart hook ran before this registration existed, so it wrote nothing: the session is recorded here, from Claude
   # Code's own record of this process. The hook writes it again after a /clear.
   sid=$(hm_session_record "$CLAUDE_PID" .sessionId)
@@ -176,11 +177,7 @@ settings=$(jq -nc --argjson o "${owner_sl:-null}" --arg bin "$(cd "$(dirname "$0
 cmd="exec $(printf '%q ' claude --name "$project-$agent" --model "$model" --effort "$effort" --permission-mode "$mode" --allowedTools "$ALLOWED" --settings "$settings")"
 envs=(-e "HM_AGENT=$agent" -e "HM_PROJECT=$ROOT" -e "HIVEMIND_HOME=$(hm_home)")
 [ -n "${HM_TMUX_SOCKET:-}" ] && envs+=(-e "HM_TMUX_SOCKET=$HM_TMUX_SOCKET")
-if hm_tmux has-session -t "=$session" 2>/dev/null; then
-  pane=$(hm_tmux new-window -d -P -F '#{pane_id}' -t "=$session:" -n "$agent" -c "$cwd" "${envs[@]}" "$cmd") || exit $?
-else
-  pane=$(hm_tmux new-session -d -P -F '#{pane_id}' -s "$session" -n "$agent" -c "$cwd" "${envs[@]}" "$cmd") || exit $?
-fi
+pane=$(hm_open_window "$session" "$agent" "$cwd" "$cmd" "${envs[@]}") || exit $?
 socket=$(hm_tmux display-message -p -t "$pane" '#{socket_path}') || exit $?
 hm-manifest add tmux socket="$socket" pane="$pane" agent="$agent" >/dev/null || exit $?   # first: what is on the manifest can be cleaned up
 register "$pane" "$socket" || exit $?

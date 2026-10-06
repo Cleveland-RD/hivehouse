@@ -76,9 +76,16 @@ hm_team_agent_is() {  # hm_team_agent_is <project root> <agent>
   [ -n "$e" ] || return 3
   IFS=$'\x1f' read -r socket pane ppid pstarted cpid cstarted <<< "$e"
   [ -n "$pane" ] && [ -n "$ppid" ] && [ -n "$pstarted" ] || return 3
-  if [ -n "$cpid" ]; then hm_claude_is "$cpid" "$cstarted" || return 1
-  else hm_alive "$ppid" && [ "$(hm_lstart "$ppid")" = "$pstarted" ] || return 1; fi
+  [ -n "$cpid" ] || { hm_recorded_pane_is "$socket" "$pane" "$ppid" "$pstarted"; return; }
+  hm_claude_is "$cpid" "$cstarted" || return 1
   hm_agent_is "$socket" "$pane" "$ppid" "$pstarted" "$cpid" "$cstarted"
+}
+# hm_recorded_pane_is <socket> <pane> <pid> <started>: is a recorded pane still that pane? 0 yes; 1 no; 2 cannot tell. Its
+# process first: a missing pane reads to tmux as "cannot be read", the same as a server that does not answer, yet after a
+# restart it is simply gone. hm_team_agent_is (a spawned agent) and hm-hub (a pane the hub started) both read it here.
+hm_recorded_pane_is() {
+  [ -n "$3" ] && hm_alive "$3" && [ "$(hm_lstart "$3")" = "$4" ] || return 1
+  hm_pane_is "$1" "$2" "$3" "$4"
 }
 hm_socket() { if [ -n "${HM_TMUX_SOCKET:-}" ]; then echo "$HM_TMUX_SOCKET"; else tmux display -p '#{socket_path}'; fi; }
 
@@ -225,6 +232,11 @@ hm_write_session() {  # hm_write_session <project root> <agent> <session id> <tr
 hm_pickup_line() {  # hm_pickup_line <project name> <project root> <agent>
   if [ "$(hm_self_entry "$2" | jq -r '.name // empty' 2>/dev/null)" = "$3" ]; then
     printf 'You are %s. Read %s/.hivemind/handoffs/%s.md from the top: its START HERE block is your prompt.' "$(hm_orchestrator_name "$2")" "$2" "$3"
+    # registered with --hub: the owner talks to it through the hub, which a /clear would otherwise forget
+    local hub; hub=$(hm_self_entry "$2" | jq -r '.hub // empty' 2>/dev/null)
+    if [ -n "$hub" ] && hm_is_session_name "$hub"; then
+      printf ' The owner talks to you only through %s: send it your questions, plans, blockers and finished work with SendMessage, and take its OWNER replies as the owner'"'"'s words.' "$hub"
+    fi
     # the owner's output style, when installed, is read again after every clear (a /clear wipes it with the rest)
     local style; style=$(hm_adhd_skill 2>/dev/null) || return 0
     if hm_is_typed_path "$style"; then printf ' Read %s and follow it for every message to the owner.' "$style"
@@ -334,4 +346,35 @@ hm_is_branch_name() {  # hm_is_branch_name <name>: 0 when it is one
 hm_is_host_name() {  # hm_is_host_name <name>: 0 when it is one
   case "$1" in ''|-*|*[!${HM_LOWER}${HM_UPPER}${HM_DIGITS}._@-]*) return 1 ;; esac
   return 0
+}
+
+# A permission mode hivemind starts a session in (hm-spawn's and hm-hub's --mode): never bypassPermissions.
+HM_PERMISSION_MODES="plan dontAsk default acceptEdits auto"
+hm_check_mode() {  # hm_check_mode <mode> <who>: exits 4 unless hivemind may start a session in that mode
+  [ "$1" = bypassPermissions ] && hm_die 4 "bypassPermissions is never started by $2"
+  case " $HM_PERMISSION_MODES " in *" $1 "*) return 0 ;; esac
+  hm_die 4 "unknown permission mode: $1"
+}
+hm_is_number() { case "$1" in ''|*[!0-9]*) return 1 ;; esac; }   # hm_is_number <value>: digits only
+# A model or an effort as hivemind passes one to claude: letters, digits, '.', '_', '[', ']' and '-', not starting with '-'.
+hm_is_model_name() {  # hm_is_model_name <value>: 0 when it is one
+  case "$1" in ''|-*|*[!${HM_LOWER}${HM_UPPER}${HM_DIGITS}._\[\]-]*) return 1 ;; esac
+  return 0
+}
+# hm_open_window <tmux session> <window name> <cwd> <command> [-e VAR=value]...: a window in that session, which is made when
+# it does not exist; prints the new pane. The one place hm-spawn and hm-hub open a pane.
+hm_open_window() {
+  local s="$1" n="$2" c="$3" cmd="$4"; shift 4
+  if hm_tmux has-session -t "=$s" 2>/dev/null; then
+    hm_tmux new-window -d -P -F '#{pane_id}' -t "=$s:" -n "$n" -c "$c" "$@" "$cmd"
+  else
+    hm_tmux new-session -d -P -F '#{pane_id}' -s "$s" -n "$n" -c "$c" "$@" "$cmd"
+  fi
+}
+hm_pane_question() {  # hm_pane_question <socket, or empty for hivemind's own server> <pane>: 0 when a dialog waits on its screen
+  local t
+  [ -n "$2" ] || return 1
+  if [ -n "$1" ]; then t=$(tmux -S "$1" capture-pane -p -e -J -t "$2" 2>/dev/null) || return 1
+  else t=$(hm_tmux capture-pane -p -e -J -t "$2" 2>/dev/null) || return 1; fi
+  printf '%s\n' "$t" | hm_pane_idle_text; [ $? -eq 3 ]
 }

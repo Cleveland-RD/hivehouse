@@ -59,7 +59,8 @@ cached even if deleted.
 **Verdict first, then evidence, then what was not run.** "PASS" or "FAIL" or "DONE" on the first line; the commands and
 paths that back it next; the checks skipped and why last. A report that buries the verdict is read as no report.
 
-**Answers to the owner are short and plain.** Only the orchestrator talks to the owner. State the result, the one thing
+**Answers to the owner are short and plain.** Only the orchestrator talks to the owner: directly, or through the
+owner's hub when the task came through it (the start skill says how). Agents never do. State the result, the one thing
 they must decide, and stop. End every message to the owner with either "Nothing needed from you." or one short
 sentence saying what you need from them.
 
