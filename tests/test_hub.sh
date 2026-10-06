@@ -10,6 +10,7 @@ H="$T_TMP/work"; mkdir -p "$H"; H=$(cd "$H" && pwd -P)
 mk() { local d="$H/$1"; mkdir -p "$d"; git -C "$d" init -q -b main; git -C "$d" config user.email t@t; git -C "$d" config user.name t
        echo x > "$d/README"; git -C "$d" add README; git -C "$d" commit -qm init; }
 hub() { (cd "$H" && hm-hub "$@"); }
+idof() { printf '%s' "${1%%$'\t'*}"; }   # hm-hub task prints "<id><TAB><task file>"
 P="$H/.hivemind-hub"
 
 # ---- no hub yet ----
@@ -54,13 +55,14 @@ bash "$T_TMP/cl/claude" --name 'hub;rm' >/dev/null 2>&1; assert_status "a name h
 assert_eq "...the record stays" "$(jq -r .name "$P/hub.json")" "hub"
 
 # ---- tasks: a ledger of what the owner asked ----
-id=$(hub task app --text "Add the export button"); assert_status "task" $? 0
-assert_eq "...ids per project" "$id" "app-1"
+out=$(hub task app --text "Add the export button"); assert_status "task" $? 0
+assert_eq "...ids per project" "$(idof "$out")" "app-1"
 tf="$P/tasks/app-1.md"
+assert_eq "...and its file, absolute, so an orchestrator in another folder can read it" "${out#*$'\t'}" "$tf"
 assert_contains "...the text is kept in its file" "$(cat "$tf")" "Add the export button"
 assert_contains "...which says who it came through" "$(cat "$tf")" "through hub"
 assert_contains "...and lists the project's folders" "$(cat "$tf")" "$H/front"
-id2=$(printf 'Fix the totals\n' | hub task app); assert_eq "the text from stdin" "$id2" "app-2"
+id2=$(printf 'Fix the totals\n' | hub task app); assert_eq "the text from stdin" "$(idof "$id2")" "app-2"
 assert_contains "...kept" "$(cat "$P/tasks/app-2.md")" "Fix the totals"
 hub task app --text "" >/dev/null 2>&1; assert_status "an empty task" $? 4
 hub task nope --text x >/dev/null 2>&1; assert_status "a task for no project" $? 2
@@ -104,12 +106,17 @@ assert_contains "...and what is stopped" "$t" "stopped"
 
 # ---- wake: a stopped orchestrator is resumed and sent back to its team ----
 hub wake two >/dev/null 2>&1; assert_status "wake with no orchestrator recorded" $? 2
-wp=$(hub wake app --still 2 --max-wait 15 2>"$T_TMP/wake.err"); assert_status "wake" $? 0
+hub wake app --model opus >/dev/null 2>&1; assert_status "a resumed session keeps its own model" $? 64
+hub wake app --mode bypassPermissions >/dev/null 2>&1; assert_status "never in bypass" $? 4
+wp=$(hub wake app --mode auto --still 2 --max-wait 15 2>"$T_TMP/wake.err"); assert_status "wake" $? 0
 [ ! -s "$T_TMP/wake.err" ] && ok "...nothing on stderr" || bad "stderr: $(cat "$T_TMP/wake.err")"
 screen=$(hm_tmux capture-pane -p -J -S - -t "$wp")
 assert_contains "...its own conversation" "$screen" "ARGV: --resume"
 assert_contains "...that session" "$screen" "ARGV: sess-1"
 assert_contains "...under its name" "$screen" "ARGV: app-orchestrator"
+assert_contains "...in the hub's permission mode" "$screen" "ARGV: --permission-mode"
+case "$screen" in *"ARGV: --model"*) bad "a model was forced on the resumed session" ;; *) ok "...with its own model" ;; esac
+assert_contains "...and told it works through the hub, which survives a rotation" "$screen" "--hub hub"
 assert_contains "...told to register again" "$screen" "hm-spawn --self --agent orchestrator"
 assert_contains "...and to report to the hub" "$screen" "send hub one line"
 assert_eq "...in the project's tmux session" "$(hm_tmux display-message -p -t "$wp" '#{session_name}')" "app"
@@ -125,7 +132,7 @@ hub wake app >/dev/null 2>&1; assert_status "a running orchestrator is not woken
 hm_tmux kill-pane -t "$wp"   # it has registered: the pane this hub started is no longer what stops a second start
 
 # ---- start: a project with no orchestrator gets one, on a task ----
-t2=$(hub task two --text "Write the guide"); assert_eq "a task for the second project" "$t2" "two-1"
+t2=$(hub task two --text "Write the guide"); assert_eq "a task for the second project" "$(idof "$t2")" "two-1"
 hub start two app-2 >/dev/null 2>&1; assert_status "a task of another project" $? 4
 hub start two two-9 >/dev/null 2>&1; assert_status "a task nobody asked" $? 2
 sp=$(hub start two two-1 --still 2 --max-wait 15 2>"$T_TMP/start.err"); assert_status "start" $? 0
@@ -142,6 +149,66 @@ hub start app app-2 --still 2 --max-wait 15 >/dev/null 2>&1; assert_status "neve
 hub log two-1 done >/dev/null
 hub start two two-1 >/dev/null 2>&1; assert_status "never started on a closed task" $? 4
 
+# ---- an orchestrator already running outside hivemind is found, never doubled ----
+# Claude Code keeps a record of every running session (<config>/sessions/<pid>.json: its name, folder and tmux pane)
+mk tri; hub add tri --home tri >/dev/null; t3=$(idof "$(hub task tri --text "Fix it")")
+live() {  # live <name> <cwd>: a running process named claude, with Claude Code's record of it
+  ( exec -a claude sleep 60 ) >/dev/null 2>&1 & local p=$!; disown "$p"; t_track "$p"; sleep 0.2   # its output never holds the \$(...)
+  mkdir -p "$CLAUDE_CONFIG_DIR/sessions"
+  jq -nc --argjson p "$p" --arg n "$1" --arg c "$2" '{pid:$p, name:$n, cwd:$c, tmux:"work:@3.%77", kind:"interactive"}' > "$CLAUDE_CONFIG_DIR/sessions/$p.json"
+  echo "$p"
+}
+lp=$(live tri-builder "$H/tri")
+assert_eq "a session that is no orchestrator is not one" "$(hub status tri --json | jq -r '.projects[0].orchestrator.state')" "none"
+lp=$(live tri-orchestrator "$H/tri")
+s=$(hub status tri --json)
+assert_eq "a running orchestrator hivemind never registered is found" "$(printf '%s' "$s" | jq -r '.projects[0].orchestrator.state')" "unregistered"
+assert_eq "...by its name, process and pane" "$(printf '%s' "$s" | jq -r '.projects[0].orchestrator | [.name, .pid, .pane] | map(tostring) | join(" ")')" "tri-orchestrator $lp %77"
+hub start tri "$t3" --still 2 --max-wait 15 >/dev/null 2>"$T_TMP/tri.err"; assert_status "...and never started a second time" $? 4
+assert_contains "...the refusal says how it joins" "$(cat "$T_TMP/tri.err")" "hm-spawn --self"
+assert_contains "the plain status says so" "$(hub status tri)" "not registered"
+kill "$lp" 2>/dev/null; sleep 0.3
+assert_eq "...gone once it ends" "$(hub status tri --json | jq -r '.projects[0].orchestrator.state')" "none"
+
+# ---- a start stopped at a question: shown, kept, and continued once the owner answers ----
+hm_tmux set-environment -g HM_FAKE_CLAUDE dialoganswer
+qp=$(hub start tri "$t3" --mode auto --still 2 --max-wait 30 2>"$T_TMP/q.err"); assert_status "a question stops the start" $? 5
+assert_contains "...and says how to go on" "$(cat "$T_TMP/q.err")" "hm-hub continue tri"
+hm_tmux set-environment -g -u HM_FAKE_CLAUDE
+st=$(hub status tri --json | jq -c '.projects[0].orchestrator.starting')
+assert_eq "...status shows it waiting on the owner" "$(printf '%s' "$st" | jq -r '[.typed, .question] | map(tostring) | join(" ")')" "false true"
+qp=$(printf '%s' "$st" | jq -r .pane)
+hub start tri "$t3" --still 2 --max-wait 15 >/dev/null 2>"$T_TMP/q2.err"; assert_status "...never started again" $? 4
+assert_contains "...it points at continue" "$(cat "$T_TMP/q2.err")" "hm-hub continue tri"
+hub continue tri --still 2 --max-wait 15 >/dev/null 2>&1; assert_status "continue while the question is still there" $? 5
+hm_tmux send-keys -t "$qp" 1 Enter; sleep 0.5   # the owner answers it
+cp2=$(hub continue tri --still 2 --max-wait 15 2>"$T_TMP/c.err"); assert_status "continue" $? 0
+assert_eq "...in the same pane" "$cp2" "$qp"
+assert_contains "...the start's line is typed" "$(hm_tmux capture-pane -p -J -S - -t "$qp")" "GOT: /hivemind:start Task $t3: read $P/tasks/$t3.md"
+assert_eq "...the task is handed" "$(hub tasks --json | jq -r --arg i "$t3" '.[] | select(.id==$i) | .state')" "handed"
+hub continue tri --still 2 --max-wait 15 >/dev/null 2>&1; assert_status "nothing left to continue" $? 4
+hub continue app >/dev/null 2>&1; assert_status "continue where this hub started nothing" $? 2
+
+# ---- a question in an agent's window is shown, since nobody watches it ----
+hm_tmux set-environment -g HM_FAKE_CLAUDE dialog
+(cd "$H/back" && hm-spawn --agent dlg --role "$T_TMP/impl.md" --rules "$T_TMP/RULES.md" --model sonnet --effort medium --mode auto --still 2 --max-wait 6 >/dev/null 2>&1)
+hm_tmux set-environment -g -u HM_FAKE_CLAUDE
+s=$(hub status app --json)
+assert_eq "an agent with a question on its screen" "$(printf '%s' "$s" | jq -r '.projects[0].agents[] | select(.name=="dlg") | .question')" "true"
+assert_eq "...one without has none" "$(printf '%s' "$s" | jq -r '.projects[0].agents[] | select(.name=="impl") | .question')" "false"
+assert_contains "the plain status says so" "$(hub status app)" "question"
+
+# ---- the words orchestrators and the hub exchange: declared once in hm-hub, held to both skills ----
+for v in HUB_REPLIES HUB_ASKS; do
+  words=$(sed -n "s/^$v=\"\(.*\)\"$/\1/p" "$HM_REPO_ROOT/bin/hm-hub")
+  [ -n "$words" ] && ok "$v is declared" || bad "$v is not declared in bin/hm-hub"
+  for w in $words; do
+    for sk in hub start; do
+      grep -q -- "$w" "$HM_REPO_ROOT/skills/$sk/SKILL.md" && ok "$w is in the $sk skill" || bad "$w ($v) is missing from skills/$sk/SKILL.md"
+    done
+  done
+done
+
 # ---- the session hook: the hub's folder makes the session the hub, and only that folder ----
 hk() { printf '{"cwd":"%s","session_id":"x","source":"%s"}' "$1" "${2:-startup}" | hm-session-hook; }
 out=$(hk "$H"); assert_status "hook in the hub's folder" $? 0
@@ -153,5 +220,5 @@ out=$(hk "$T_TMP"); assert_eq "nothing elsewhere" "$out" ""
 # ---- remove ----
 hub remove two >/dev/null; assert_status "remove" $? 0
 hub remove two >/dev/null 2>&1; assert_status "remove what is not there" $? 2
-assert_eq "...the other stays" "$(jq -r '[.projects[].name] | join(",")' "$P/projects.json")" "app"
+assert_eq "...the others stay" "$(jq -r '[.projects[].name] | join(",")' "$P/projects.json")" "app,tri"
 cd /; t_teardown; t_done

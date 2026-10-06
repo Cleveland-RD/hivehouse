@@ -21,11 +21,18 @@ turns; in auto mode the classifier decides. Never write permission rules into th
 
 If `hm-*` is not found, the plugin is not enabled in this session: say so and stop.
 
-**A task from the owner's hub.** When the task reads `Task <id>: read <file>. It came from the owner through <hub>`,
-read that file first: it holds the task and the project's folders. The owner then talks to you only through the hub.
-Wherever this skill says to ask the owner, show them something or wait for their OK, send it to the hub with
-`SendMessage` instead, first line `TASK <id>: HM-CLARIFY`, `TASK <id>: HM-PLAN`, `TASK <id>: BLOCKED` or
-`TASK <id>: DONE`, and wait for its reply: a reply that begins `OWNER on TASK <id>:` carries the owner's own words.
+**Working through the owner's hub.** When the task reads `Task <id>: read <file>. It came from the owner through <hub>`,
+or the hub sends you `TASK <id>: read <file>`, read that file first: it holds the task and the project's folders. The
+owner then talks to you only through the hub:
+
+- Register with the hub's name, so the link outlives a rotation: `hm-spawn --self --agent orchestrator --hub <hub>`
+  (step 6's form; again after a restart). Your pickup line then names the hub every time you are cleared.
+- Wherever this skill says to ask the owner, show them something or wait for their OK, send it to the hub with
+  `SendMessage` instead, first line `TASK <id>: HM-CLARIFY`, `TASK <id>: HM-PLAN`, `TASK <id>: BLOCKED` or
+  `TASK <id>: DONE`, and wait for its reply: a reply that begins `OWNER on TASK <id>:` carries the owner's own words.
+- After the hub resumed you (`hm-hub wake`), send it one line beginning `BACK`: which agents are back and what you were
+  doing. `PROGRESS <id>?` from the hub asks where that task stands: answer in one or two lines. `RESPAWN:` names agents
+  that are not running: bring them back with `hm-spawn --respawn <agent>`, then answer `BACK`.
 
 ## 1. Read before doing anything
 
