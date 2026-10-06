@@ -34,4 +34,15 @@ BASH_ENV="$T_TMP/benv.sh" hm-cleanup >/dev/null 2>&1; rc=$?
 [ ! -e "$T_TMP/benv-ran" ] && ok "hm-cleanup ignores BASH_ENV" || bad "hm-cleanup ran BASH_ENV"
 assert_eq "hm-cleanup ignores an inherited function too" "$rc" "64"
 unset -f dirname
+echo "-- a fake dirname executable first on PATH changes nothing (the scripts find their library by parameter expansion)"
+mkdir -p "$T_TMP/fakebin"; printf '#!/bin/sh\necho called >> "%s/dirname.log"\necho /nonexistent\n' "$T_TMP" > "$T_TMP/fakebin/dirname"; chmod +x "$T_TMP/fakebin/dirname"
+for s in hm-push hm-remote-sync hm-cleanup; do
+  PATH="$T_TMP/fakebin:$PATH" "$s" >/dev/null 2>&1; assert_status "$s with a fake dirname on PATH still reaches its usage error" $? 64
+  PATH="$T_TMP/fakebin:$PATH" HM_AWAY_BYPASS=1 "$s" --finish >/dev/null 2>&1; rc=$?
+  assert_status "$s with a fake dirname on PATH still refuses in a marked session" $rc 4
+done
+for s in hm-push hm-remote-sync hm-cleanup; do
+  (cd "$HM_REPO_ROOT/bin" && bash "$s" >/dev/null 2>&1); assert_status "$s run as 'bash $s' from its own folder (no slash in \$0) finds its library" $? 64
+done
+[ ! -e "$T_TMP/dirname.log" ] && ok "...and the fake dirname was never called at start-up" || bad "a fake dirname on PATH was called: $(cat "$T_TMP/dirname.log" | wc -l) times"
 cd /; t_teardown; t_done

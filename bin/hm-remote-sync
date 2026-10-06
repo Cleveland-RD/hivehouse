@@ -11,7 +11,8 @@
 # it recorded (A6). Exit: 0 ok, 1 findings (mismatch, conflict, version, space), 2 no project, 3 .hivemind tracked,
 # 4 refused, 5 host unreachable, 64 usage.
 set -u
-. "$(dirname "$0")/hm-lib.sh"
+HM_BIN=${0%/*}; [ "$HM_BIN" != "$0" ] || HM_BIN=.   # parameter expansion, never dirname: under -p a function is ignored, an executable on PATH is not
+. "$HM_BIN/hm-lib.sh"
 hm_refuse_away hm-remote-sync
 USAGE="usage: hm-remote-sync check <host> --min-gb n --plugin-version v | branches <host> <root> [branch...] | files <host> <root> <list> | memory <host> <local dir> <remote dir> | secret <host> <root> <relative path>"
 [ $# -ge 2 ] || hm_die 64 "$USAGE"

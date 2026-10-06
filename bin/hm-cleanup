@@ -8,8 +8,9 @@
 #   --dry-run prints the same lines and changes nothing
 # Exit: 2 no project, 3 .hivemind tracked, 64 usage, 75 another cleanup is running here.
 set -u
-. "$(dirname "$0")/hm-lib.sh"
-. "$(dirname "$0")/hm-paths.sh"
+HM_BIN=${0%/*}; [ "$HM_BIN" != "$0" ] || HM_BIN=.   # parameter expansion, never dirname: under -p a function is ignored, an executable on PATH is not
+. "$HM_BIN/hm-lib.sh"
+. "$HM_BIN/hm-paths.sh"
 USAGE="usage: hm-cleanup --disk | --finish [--dry-run]"
 mode=""; dry=0
 while [ $# -gt 0 ]; do
