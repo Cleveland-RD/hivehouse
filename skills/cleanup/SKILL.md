@@ -3,7 +3,7 @@ name: cleanup
 description: Full owner cleanup of a hivemind run: preview what the manifest recorded, remove it on the owner's word, and report free disk before and after. Use when the owner types /hivemind:cleanup after or during a run.
 argument-hint: [--disk]
 disable-model-invocation: true
-allowed-tools: Bash(hm-disk *) Bash(hm-manifest list) Bash(hm-manifest list *) Bash(hm-slot status) Read
+allowed-tools: Bash(hm-disk *) Bash(hm-manifest list) Bash(hm-manifest list *) Bash(hm-slot status) Read SendMessage
 ---
 
 # hivemind: cleanup
@@ -17,6 +17,13 @@ git rule is pre-approved, so each `git` call asks.
 never on anything it merely finds. A process is stopped only if its start time and command line still match what was
 recorded; a tmux pane is killed by server and pane id, never by name; a worktree is removed only if clean and merged;
 anything uncertain moves to `.hivemind/trash/<date>/` rather than being deleted. Claude sessions are never touched.
+
+**Working through the owner's hub.** When you were started with `/hivemind:cleanup` by the owner's hub (the hub's task
+file, `TASK <id>`, says so), the owner is not at this screen. Send what this skill says to show or ask them to the hub
+with `SendMessage` instead, and wait for a reply that begins `OWNER on TASK <id>:`: the table of what is recorded and
+the questions about worktrees whose work has not landed (first line `TASK <id>: HM-CLARIFY`), then the preview and
+"proceed?" (`TASK <id>: HM-PLAN`). The final report goes as `TASK <id>: DONE`. `hm-cleanup` still asks permission on
+this screen each time, by design; that dialog reaches the owner through the hub.
 
 ## 1. Look first
 

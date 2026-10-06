@@ -26,6 +26,23 @@ never was. Overnight therefore only runs unattended in auto mode, where the clas
 
 If `hm-*` is not found, the plugin is not enabled in this session: say so and stop.
 
+**Working through the owner's hub.** When the work reads `Task <id>: read <file>. It came from the owner through <hub>`,
+read that file first and register with the hub's name as the start skill's "Working through the owner's hub" says
+(`hm-spawn --self --agent orchestrator --hub <hub>`). The owner is then not at this screen: they read and answer only
+through the hub, so everywhere this skill says to ask them or wait for their OK, send it to the hub with `SendMessage`
+instead and wait for a reply that begins `OWNER on TASK <id>:`:
+
+- step 1's questions, step 2's queue, step 3's question (where to run, and the mode check) and step 5's team: first line
+  `TASK <id>: HM-CLARIFY` for a question and `TASK <id>: HM-PLAN` for the queue or the team, then the same text you would
+  have shown on this screen;
+- a blocker during the night goes in the report as before, and also to the hub as `TASK <id>: BLOCKED` with one line, so
+  an owner looking at the hub from elsewhere sees it;
+- in the morning (step 7), once the report is written: `TASK <id>: DONE`, the report's path and its three to five most
+  important lines.
+
+`hm-cleanup` and the other executables that ask permission still ask on this screen; the hub shows the owner such a
+dialog's presence, and the owner answers it in this pane.
+
 Run `hm-adhd`. When it prints a path, the owner uses the i-have-adhd output style: Read that file and follow it
 for every message to the owner, from now on (your pickup line after a rotation names it again). When it prints nothing,
 carry on as usual; never install or enable it. The morning report follows it too.
@@ -89,6 +106,8 @@ Then set the heartbeat with `CronCreate`, every `${user_config.heartbeat_minutes
    At the ceiling, stop starting paid work and say so in the report.
 
 Record the `CronCreate` id in your handoff, so a rotated orchestrator can `CronDelete` it (`CronList` also finds it).
+A heartbeat is not known to survive a restart. When you were woken (resumed) in the middle of a night, run `CronList`
+first: if the heartbeat recorded in your handoff is gone, create it again and record the new id.
 Add a dated line to your handoff for each beat that changed something.
 
 If a call in a beat is refused (a classifier denial or a permission error): log it in the

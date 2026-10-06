@@ -1,6 +1,7 @@
 # Morning report template
 
-Short and plain. Dates and times from `date`, never from memory.
+Short and plain. Dates and times from `date`, never from memory. Working through the owner's hub, also send it
+`TASK <id>: DONE` with this report's path and its three to five most important lines.
 
 ## Landed
 One line each: what, the full commit hash, the gate log path.

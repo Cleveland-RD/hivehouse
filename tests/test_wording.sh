@@ -21,4 +21,13 @@ done
 for f in rules/RULES.md skills/start/SKILL.md skills/overnight/SKILL.md skills/overnight/morning-report.md skills/cleanup/SKILL.md; do
   grep -q '"Nothing needed from you."' "$f" && ok "$f: a message to the owner ends with what is needed" || bad "$f: does not say how a message to the owner ends"
 done
+# the two skills the hub starts for the owner say how the owner is reached through it, and with which words
+for f in skills/overnight/SKILL.md skills/cleanup/SKILL.md; do
+  t=$(tr '\n' ' ' < "$f" | tr -s ' ')
+  for w in "Working through the owner's hub" "TASK <id>: HM-CLARIFY" "TASK <id>: HM-PLAN" "TASK <id>: DONE" "OWNER on TASK <id>:"; do
+    assert_contains "$f: $w" "$t" "$w"
+  done
+done
+assert_contains "overnight tells the hub a blocker" "$(tr '\n' ' ' < skills/overnight/SKILL.md | tr -s ' ')" "TASK <id>: BLOCKED"
+assert_contains "a woken overnight orchestrator checks its heartbeat" "$(tr '\n' ' ' < skills/overnight/SKILL.md | tr -s ' ')" "run \`CronList\`"
 [ "$FAILS" -eq 0 ] || exit 1
