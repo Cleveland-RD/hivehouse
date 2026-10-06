@@ -34,6 +34,10 @@ new_pane() {  # new_pane <fake claude behaviour> -> pane id running the fake cla
 pane=$(new_pane idle); wait_idle "$pane" 2 20; assert_status "idle pane is idle" $? 0
 assert_contains "fake claude printed its argv" "$(hm_tmux capture-pane -p -t "$pane")" "ARGV: --name"
 pane=$(new_pane dialog); wait_idle "$pane" 2 6; assert_status "a dialog is never idle, and is told apart" $? 3
+# a dialog does not go away by itself: once it has been still, it is told at once rather than waited out
+pane=$(new_pane dialog); t0=$(date +%s); wait_idle "$pane" 2 60; rc=$?; took=$(( $(date +%s) - t0 ))
+assert_status "a still dialog is told" "$rc" 3
+[ "$took" -lt 20 ] && ok "...as soon as it is still (${took}s of 60)" || bad "a still dialog was waited out: ${took}s of 60"
 pane=$(new_pane bare); wait_idle "$pane" 2 6; assert_status "still with no prompt is not idle" $? 1
 pane=$(new_pane dialogprompt); wait_idle "$pane" 2 6; assert_status "a dialog above an empty prompt is not idle" $? 3
 pane=$(new_pane ticking); wait_idle "$pane" 2 5; assert_status "an empty prompt that keeps changing is not idle" $? 1

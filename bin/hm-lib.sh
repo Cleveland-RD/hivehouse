@@ -172,8 +172,9 @@ hm_pane_idle_text() {  # a cleaned pane on stdin: 0 an empty prompt and no dialo
   for p in "${HM_DIALOG_TEXT[@]}"; do case "$region" in *"$p"*) return 3 ;; esac; done
   printf '%s\n' "$text" | grep -v '^[[:space:]]*$' | tail -6 | grep -Eq '^(│| )*(>|❯)( |│)*$'
 }
-# wait_idle <pane> <seconds still> <max seconds>: 0 idle, 1 timed out, 3 timed out with a dialog on screen (the caller
-# tells the orchestrator; nothing here ever types into a pane).
+# wait_idle <pane> <seconds still> <max seconds>: 0 idle, 1 timed out, 3 a dialog on screen (the caller tells the
+# orchestrator; nothing here ever types into a pane). A dialog that has been still as long as idle must be is told then,
+# not waited out: it does not go away by itself.
 wait_idle() {
   local prev="" cur text still=0 waited=0 rc=1
   while [ "$waited" -lt "$3" ]; do
@@ -184,6 +185,7 @@ wait_idle() {
     prev="$cur"
     printf '%s\n' "$text" | hm_pane_idle_text; rc=$?
     [ "$still" -ge "$2" ] && [ "$rc" -eq 0 ] && return 0
+    [ "$still" -ge "$2" ] && [ "$rc" -eq 3 ] && return 3
     sleep 1; waited=$((waited + 1))
   done
   [ "$rc" -eq 3 ] && return 3
