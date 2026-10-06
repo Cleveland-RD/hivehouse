@@ -15,7 +15,7 @@ const EVERY_MS = 20_000
 const WAKE_TIMEOUT_MS = 150_000 // hm-hub waits up to 90 s for a started session to be idle
 const ANSWER_TIMEOUT_MS = 30_000 // hm-hub answer sends its keys and then watches a few seconds
 
-const EMPTY: HubView = { root: '', hubName: '', projects: [], tasks: [], dialogs: {}, updatedAt: 0, error: '' }
+const EMPTY: HubView = { root: '', hubName: '', projects: [], tasks: [], dialogs: {}, away: null, updatedAt: 0, error: '' }
 const view = atom({ plugin: 'hivemind', key: 'hubView' } as const, EMPTY)
 // the project a press is acting on, one at a time
 const acting = atom({ plugin: 'hivemind', key: 'hubResuming' } as const, '')
@@ -46,7 +46,7 @@ async function refresh($: EngineInterface): Promise<void> {
       $.process.run([hmHub($), 'tasks', '--json'], { cwd: root, timeoutMs: 30_000 }),
     ])
     if (status.exitCode !== 0) throw new Error(lastLine(status.stderr) || `hm-hub status exited ${status.exitCode}`)
-    const s = JSON.parse(status.stdout) as { hub?: { root?: string; name?: string }; projects?: HubProject[] }
+    const s = JSON.parse(status.stdout) as { hub?: { root?: string; name?: string; away?: { until: number; since?: string } }; projects?: HubProject[] }
     const t = tasks.exitCode === 0 ? (JSON.parse(tasks.stdout) as HubTask[]) : []
     const projects = s.projects ?? []
     const next: HubView = {
@@ -55,6 +55,7 @@ async function refresh($: EngineInterface): Promise<void> {
       projects,
       tasks: t,
       dialogs: await readDialogs($, root, projects),
+      away: s.hub?.away ?? null,
       updatedAt: await $.clock.now(),
       // the projects still draw when only the ledger could not be read, and the screen says so
       error: tasks.exitCode === 0 ? '' : `tasks not read: ${lastLine(tasks.stderr) || `hm-hub tasks exited ${tasks.exitCode}`}`,
@@ -375,6 +376,13 @@ export const register: Register = (on, options) => {
       }
     }
 
+    // what the hub decided for the owner since they left, newest first
+    const decided = (v.tasks ?? [])
+      .flatMap(t => (t.decisions ?? []).map(d => ({ id: t.id, ...d })))
+      .filter(d => !v.away?.since || d.at >= v.away.since)
+      .sort((a, b) => (a.at < b.at ? 1 : -1))
+      .slice(0, 8)
+
     const row = (label: string, ...lines: JSX.Element[]) => (
       <Box flexDirection="row" paddingLeft={1}>
         <Box width={14} flexShrink={0}>
@@ -483,6 +491,7 @@ export const register: Register = (on, options) => {
             </Text>
           </Box>
           <Box flexShrink={0} paddingLeft={2}>
+            <Text color={v.away ? 'magenta' : 'gray'}>{v.away ? `away until ${untilLabel(v.away.until * 1000, now)}  ` : v.updatedAt ? 'relay  ' : ''}</Text>
             <Text color="gray">{v.updatedAt ? clock(v.updatedAt) : 'reading…'}</Text>
           </Box>
         </Box>
@@ -507,6 +516,24 @@ export const register: Register = (on, options) => {
                 </Box>
                 {n.dialog ?? null}
                 {n.action ? <Box paddingLeft={2}>{n.action}</Box> : null}
+              </Box>
+            ))}
+          </Box>
+        ) : null}
+        {v.away && decided.length > 0 ? (
+          <Box flexDirection="column" marginTop={1}>
+            <Text bold color="cyan">
+              DECIDED WHILE YOU WERE AWAY
+            </Text>
+            {decided.map(d => (
+              <Box key={`d-${d.id}-${d.at}`} flexDirection="row" justifyContent="space-between" paddingLeft={1}>
+                <Box flexDirection="row" flexShrink={1}>
+                  <Text bold color="white">
+                    {d.id}
+                  </Text>
+                  <Text color="white" wrap="wrap">{`  ${d.reason}`}</Text>
+                </Box>
+                <Text color="gray">{ago(d.at, now)}</Text>
               </Box>
             ))}
           </Box>
@@ -562,6 +589,11 @@ function waitLook(state: string): { glyph: string; words: string; color: string 
 
 function clock(ms: number): string {
   return new Date(ms).toTimeString().slice(0, 5)
+}
+
+// When the owner is away until: the time today, else the weekday and the time
+function untilLabel(ms: number, now: number): string {
+  return sameDay(new Date(ms).toISOString(), now) ? clock(ms) : `${new Date(ms).toDateString().slice(0, 3)} ${clock(ms)}`
 }
 
 function sameDay(iso: string, now: number): boolean {

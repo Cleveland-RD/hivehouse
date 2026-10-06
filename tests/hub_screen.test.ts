@@ -60,7 +60,7 @@ const PROJECTS = {
 }
 const TASKS = [
   { id: 'app-1', project: 'app', asked: '2026-10-05T11:00:00Z', state: 'plan', updated: '2026-10-05T11:58:00Z', last_note: null, needs_owner: true },
-  { id: 'app-2', project: 'app', asked: '2026-10-05T11:10:00Z', state: 'handed', updated: '2026-10-05T11:20:00Z', last_note: null, needs_owner: false },
+  { id: 'app-2', project: 'app', asked: '2026-10-05T11:10:00Z', state: 'handed', updated: '2026-10-05T11:20:00Z', last_note: null, needs_owner: false, decisions: [{ at: '2026-10-05T11:30:00Z', reason: 'matches the existing pages' }, { at: '2026-10-04T09:00:00Z', reason: 'decided before you left' }] },
   { id: 'app-3', project: 'app', asked: '2026-10-05T11:15:00Z', state: 'overnight', updated: '2026-10-05T11:30:00Z', last_note: null, needs_owner: false },
   { id: 'app-4', project: 'app', asked: '2026-10-05T11:16:00Z', state: 'cleanup', updated: '2026-10-05T11:31:00Z', last_note: null, needs_owner: false },
 ]
@@ -86,6 +86,7 @@ const DIALOGS: Record<string, unknown> = {
     ],
   },
 }
+const AWAY = { on: false }
 const ANSWER = { code: 0, stdout: '{"answered":true,"session":"rev","choice":"1","option":"Yes","dialog_gone":true}', stderr: '' }
 const TOASTS: string[] = []
 const PANE = {
@@ -124,7 +125,7 @@ function world(on: On, runs: string[][], opened: string[] = [], commands: string
   on('process.run', async (_$, e) => {
     runs.push([...e.argv])
     const sub = e.argv[1]
-    if (sub === 'status') return ran(0, JSON.stringify(STATUS))
+    if (sub === 'status') return ran(0, JSON.stringify(AWAY.on ? { ...STATUS, hub: { ...STATUS.hub, away: { until: NOW / 1000 + 5 * 3600, since: '2026-10-05T10:00:00Z' } } } : STATUS))
     if (sub === 'tasks') return ran(0, JSON.stringify(TASKS))
     if (sub === 'wake' || sub === 'continue') return ran(0, '%7\n')
     if (sub === 'dialog') {
@@ -258,6 +259,33 @@ test('the screen: what needs the owner first, then each project, and Resume wake
   expect(TOASTS.some(t => t.includes('the dialog changed; look again'))).toBe(true)
   expect(runs.filter(r => r[1] === 'status').length).toBeGreaterThan(reads)
   await ui.unmount()
+})
+
+test('the screen says relay or away in its header, and lists what the hub decided only while away', async ($, on) => {
+  const runs: string[][] = []
+  const clock = mock.clock(on, { now: NOW })
+  mock.env(on, { HOME: '/home' })
+  world(on, runs)
+  await $.session.start({ cwd: ROOT, surface: 'terminal', isInteractive: true })
+  await clock.settle()
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  expect(await ui.find({ type: 'Text', text: /relay/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /away until/ })).toBeUndefined()
+  expect(await ui.find({ type: 'Text', text: 'DECIDED WHILE YOU WERE AWAY' })).toBeUndefined()
+  await ui.unmount()
+  AWAY.on = true
+  try {
+    await clock.advance(20_000) // the next beat reads the status again
+    const away = await $.ui.mount({ ...PANE, surface: 'terminal' })
+    expect(await away.find({ type: 'Text', text: /away until \d\d:\d\d/ })).toBeDefined()
+    expect(await away.find({ type: 'Text', text: 'DECIDED WHILE YOU WERE AWAY' })).toBeDefined()
+    expect(await away.find({ type: 'Text', text: /matches the existing pages/ })).toBeDefined()
+    // a decision made before the owner left is not "while away"
+    expect(await away.find({ type: 'Text', text: /decided before you left/ })).toBeUndefined()
+    await away.unmount()
+  } finally {
+    AWAY.on = false
+  }
 })
 
 test('the screen reads hm-hub only while it is open, and once per tick', async ($, on) => {

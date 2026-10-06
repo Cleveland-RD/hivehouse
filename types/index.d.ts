@@ -44,6 +44,8 @@ export type HubTask = {
   updated: string
   last_note: string | null
   needs_owner: boolean
+  // what the hub decided for the owner on this task while they were away, each with its one-line reason
+  decisions?: { at: string; reason: string }[]
 }
 
 // A dialog on a session's screen, as `hm-hub dialog` reads it. offered: the hub may answer with this option (one that needs
@@ -59,6 +61,8 @@ export type HubView = {
   tasks: HubTask[]
   // by session: "<project>" for its orchestrator, "<project>/<agent>" for an agent
   dialogs: Record<string, HubDialog>
+  // delegate mode: the owner is away until this epoch (seconds), since this time; null in relay mode
+  away: { until: number; since?: string } | null
   updatedAt: number
   error: string
 }
