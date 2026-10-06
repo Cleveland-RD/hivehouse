@@ -326,6 +326,55 @@ finish() {
   unlock
   echo "$pane"
 }
+# session_target <home> <agent>: the recorded identity of a team member's Claude and its screen, "<socket> <pane> <pid> <started>"
+# separated by the unit separator: the --self orchestrator's own Claude, else (a spawned agent) the pane's process, which is its Claude
+session_target() {
+  jq -r --arg a "$2" '[.agents[]? | select(.name == $a)][0] // empty | [.socket, .pane, (.claude_pid // .pane_pid), (.claude_started // .pane_started)]
+    | map(. // "" | tostring) | join("\u001f")' "$1/.hivemind/team.json" 2>/dev/null
+}
+# hung_try <project> <kind orchestrator|agent> <agent> <task> <socket> <pane> <pid> <started>: recover's look at one running session
+# (Phase 4.3, A10). Hung needs positive evidence: Claude Code's working line recognised, with its elapsed time unchanged for 15 minutes
+# (hung-state.json holds what each beat saw: the same process, the same time, and since when). Any other screen is unknown: never hung,
+# nothing kept. A hung session is stopped (hm_stop_hung) within the cap of 3 restarts of one session in 24 hours, and recover has
+# already refused unless the delegate file is valid and this hub's marker was read (away_hub_caller); the action that brings it
+# back is added. Sets HUNG_STOPPED=1 when it stopped one. It works on recover's variables: now, since, rjf, hstates, newhs, newrec,
+# actions, blocked.
+hung_try() {
+  local n="$1" kind="$2" a="$3" task="$4" socket="$5" pane="$6" pid="$7" started="$8" key secs hsince tries seen mins why rc
+  HUNG_STOPPED=0; key="$n/$a"
+  [ -n "$pid" ] && [ -n "$started" ] || return 0
+  secs=$(hm_pane_text "$pane" "$socket" | hm_pane_working_seconds) || return 0
+  hsince=$(printf '%s' "$hstates" | jq -r --arg k "$key" --arg p "$pid" --arg s "$started" --argjson c "$secs" \
+    '.[$k] | select(.pid == $p and .started == $s and .secs == $c) | .since // empty')
+  [ -n "$hsince" ] || hsince=$now
+  newhs=$(printf '%s' "$newhs" | jq -c --arg k "$key" --arg p "$pid" --arg s "$started" --argjson c "$secs" --argjson t "$hsince" '. + {($k): {pid:$p, started:$s, secs:$c, since:$t}}')
+  [ $((now - hsince)) -ge 900 ] || return 0
+  mins=$(((now - hsince) / 60))
+  why="hung: its working line has not changed for $mins minutes"
+  tries=$(jq -s --arg i "$key" --argjson s "$since" '[.[] | select(.epoch > $s and .action == "restart" and .item == $i)] | length' "$rjf")
+  seen=$(jq -s --arg i "$key" --argjson s "$since" '[.[] | select(.epoch > $s and .action == "blocked-restart" and .item == $i)] | length' "$rjf")
+  if [ "$tries" -ge 3 ]; then
+    [ "$seen" -gt 0 ] || {
+      blocked=$(printf '%s' "$blocked" | jq -c --arg p "$n" --arg a "$a" --arg t "$task" '. + [{action:"restart", project:$p, agents:[$a], task:$t, reason:"restarted 3 times in 24 hours and hung again"}]')
+      newrec="$newrec$(jq -nc --arg i "$key" --argjson e "$now" '{epoch:$e, action:"blocked-restart", item:$i}')"$'\n'; }
+    return 0
+  fi
+  hm_stop_hung "$pid" "$started" "$socket" "$pane" "$secs"; rc=$?
+  case "$rc" in
+    0) ;;
+    3) blocked=$(printf '%s' "$blocked" | jq -c --arg p "$n" --arg a "$a" --arg t "$task" --arg w "$why" '. + [{action:"restart", project:$p, agents:[$a], task:$t, reason:($w + " and did not stop when asked")}]')
+       return 0 ;;
+    *) return 0 ;;   # not that process any more, or its screen moved: not hung after all
+  esac
+  newhs=$(printf '%s' "$newhs" | jq -c --arg k "$key" 'del(.[$k])')
+  newrec="$newrec$(jq -nc --arg i "$key" --argjson e "$now" '{epoch:$e, action:"restart", item:$i}')"$'\n'
+  HUNG_STOPPED=1
+  if [ "$kind" = orchestrator ]; then
+    actions=$(printf '%s' "$actions" | jq -c --arg p "$n" --arg t "$task" --arg w "$why; hivemind stopped it" '. + [{action:"wake", project:$p, task:$t, why:$w}]')
+  else
+    actions=$(printf '%s' "$actions" | jq -c --arg p "$n" --arg a "$a" --arg w "$why; hivemind stopped it: bring it back with hm-spawn --respawn $a --resume" '. + [{action:"restart", project:$p, agents:[$a], why:$w}]')
+  fi
+}
 # dialog_target <hub root> <project> <agent or empty>: the screen a dialog is read from and answered on. Sets T_SOCKET, T_PANE
 # and T_SESSION. The orchestrator by default: its registered pane, else the pane this hub started for it and it has not
 # registered from (a start's first dialog), else the pane of one running outside hivemind. An agent must be on the team
@@ -914,6 +963,8 @@ recover)
   rj="$root/.hivemind-hub/recovery.jsonl"; rjf="$rj"; [ -f "$rj" ] || rjf=/dev/null; newrec=""
   rs="$root/.hivemind-hub/recovery-state.json"
   states=$(jq -c . "$rs" 2>/dev/null) || states='{}'
+  # what each hung check saw last beat, and what it sees now (only what is seen again is kept)
+  hs="$root/.hivemind-hub/hung-state.json"; hstates=$(jq -c . "$hs" 2>/dev/null) || hstates='{}'; newhs='{}'
   # tasks that can go on without the owner: open, and not waiting on them
   work=$(jq -s --argjson c "$HUB_CLOSED_JSON" --argjson ow "$HUB_NEEDS_OWNER_JSON" '[group_by(.id)[]
     | {p: .[0].project, id: .[0].id, s: ([.[] | select(.event != "note")] | last | .event)}
@@ -931,12 +982,22 @@ recover)
     for a in $(jq -r '.agents[]?.name' "$HOME_DIR/.hivemind/team.json" 2>/dev/null); do
       hm_is_agent_name "$a" && [ "$a" != "$O_AGENT" ] || continue
       hm_team_agent_is "$HOME_DIR" "$a"; case $? in 0) st=running ;; 1) st=stopped ;; *) st=unknown ;; esac
+      if [ "$st" = running ]; then
+        IFS=$'\x1f' read -r tsock tpane tpid tstart <<< "$(session_target "$HOME_DIR" "$a")"
+        hung_try "$n" agent "$a" "$task" "$tsock" "$tpane" "$tpid" "$tstart"
+        [ "$HUNG_STOPPED" = 0 ] || st=restarted   # not "stopped since the last beat": its restart is already an action
+      fi
       nowag=$(printf '%s' "$nowag" | jq -c --arg a "$a" --arg s "$st" '. + {($a): $s}')
       if [ "$st" = stopped ] && [ "$(printf '%s' "$prevag" | jq -r --arg a "$a" '.[$a] // empty')" = running ]; then
         newly=$(printf '%s' "$newly" | jq -c --arg a "$a" '. + [$a]')
       fi
     done
     states=$(printf '%s' "$states" | jq -c --arg p "$n" --argjson v "$nowag" '. + {($p): $v}')
+    if [ "$O_STATE" = running ] && [ -n "$O_AGENT" ]; then
+      IFS=$'\x1f' read -r tsock tpane tpid tstart <<< "$(session_target "$HOME_DIR" "$O_AGENT")"
+      hung_try "$n" orchestrator "$O_AGENT" "$task" "$tsock" "$tpane" "$tpid" "$tstart"
+      [ "$HUNG_STOPPED" = 0 ] || continue   # stopped: the wake action is its restart
+    fi
     # a start or wake waiting on a dialog is the owner's: listed, never capped
     if [ "$O_STATE" != running ] && pending "$root" "$n"; then
       if hm_pane_question "$(hm_json_get "$root/.hivemind-hub/panes/$n.json" .socket)" "$(hm_json_get "$root/.hivemind-hub/panes/$n.json" .pane)"; then
@@ -971,6 +1032,7 @@ recover)
   lock "$root"
   [ -z "$newrec" ] || printf '%s' "$newrec" >> "$rj"
   printf '%s\n' "$states" > "$rs.tmp$$" && mv "$rs.tmp$$" "$rs"
+  printf '%s\n' "$newhs" > "$hs.tmp$$" && mv "$hs.tmp$$" "$hs"
   unlock
   if [ "$json" = 1 ]; then
     jq -nc --argjson u "$AWAY_UNTIL" --argjson a "$actions" --argjson b "$blocked" '{away:true, until:$u, actions:$a, blocked:$b}'

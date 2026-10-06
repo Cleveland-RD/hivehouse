@@ -255,5 +255,82 @@ jq -nc --arg t "$T_TMP" '{projects:{($t):{hasTrustDialogAccepted:true}}}' > "$CL
 out4=$(hub away --until +1h)
 assert_eq "a worktree and its main repository listed together give one line (one key)" "$(printf '%s\n' "$out4" | grep -c "Start claude in $H/zeta once")" "1"
 rm -f "$CLAUDE_CONFIG_DIR/.claude.json"
+# ---- hung sessions: positive evidence, then the stop (Phase 4.3, A10, A27) ----
+# The screens are REAL captures (tests/fixtures/working/06-working-7s.ansi, "6s"; dialogs/07-idle-after-answer.ansi) drawn in a pane whose
+# process is a `sleep` named claude. "Frozen for 15 minutes" is HAND-BUILT: a beat records the elapsed time it saw and when it first saw it
+# (hung-state.json), and the test moves that time back, since waiting 15 real minutes is not a test.
+HS="$P/hung-state.json"; WF="$HM_REPO_ROOT/tests/fixtures/working/06-working-7s.ansi"; IF="$HM_REPO_ROOT/tests/fixtures/dialogs/07-idle-after-answer.ansi"
+: > "$rj"
+hpane() {  # hpane <fixture> [trap] [claude]: a pane drawing the capture, then a process named claude (TERM ignored with "trap"); sets HPANE HPID HSTART
+  local pre=""; [ "${2:-}" = trap ] && pre="trap '' TERM; "
+  HPANE=$(hm_tmux new-window -d -P -F '#{pane_id}' -t keep: -n h "exec bash -c \"cat '$1'; ${pre}exec -a claude sleep 600\""); sleep 1
+  local id; id=$(hm_pane_identity "$HM_TMUX_SOCKET" "$HPANE"); HPID=${id%%$'\t'*}; HSTART=${id#*$'\t'}; t_track "$HPID"
+}
+hagent() {  # hagent <project> <agent> <fixture> [trap]: a registered agent on such a pane
+  hpane "$3" "${4:-}"
+  jq --arg k "$HM_TMUX_SOCKET" --arg p "$HPANE" --arg pp "$HPID" --arg ps "$HSTART" --arg n "$2" '.agents += [{name:$n, pane:$p, socket:$k, pane_pid:$pp, pane_started:$ps}]' \
+    "$H/$1/.hivemind/team.json" > "$T_TMP/tj" && mv "$T_TMP/tj" "$H/$1/.hivemind/team.json"
+}
+ago() { jq --arg k "$1" --argjson d "$2" '.[$k].since -= $d' "$HS" > "$T_TMP/hs" && mv "$T_TMP/hs" "$HS"; }   # ago <key> <seconds>: first seen that long ago
+restarts() { printf '%s' "$1" | jq -r '[.actions[] | select(.action == "restart") | .agents[]] | join(",")'; }
+live() { hm_alive "$1" && [ "$(hm_lstart "$1")" = "$2" ]; }
+hagent beta hung "$WF"; HUNG_PID=$HPID; HUNG_START=$HSTART
+r=$(rec --json)
+assert_eq "a frozen working line seen for the first time is not hung" "$(restarts "$r")" ""
+assert_eq "...its elapsed time and the moment it was first seen are kept" "$(jq -r '.["beta/hung"] | "\(.pid) \(.secs)"' "$HS")" "$HUNG_PID 6"
+ago beta/hung 850; r=$(rec --json)
+assert_eq "frozen for 14 minutes: not yet hung" "$(restarts "$r")" ""
+live "$HUNG_PID" "$HUNG_START" && ok "...and not stopped" || bad "stopped after 14 minutes"
+ago beta/hung 110; r=$(rec --json)
+assert_eq "frozen for 15 minutes: hung, and the agent is named for a restart" "$(restarts "$r")" "hung"
+live "$HUNG_PID" "$HUNG_START" && bad "the hung session is still running" || ok "...its Claude was stopped"
+assert_eq "...logged against the session, for the cap" "$(jq -s '[.[] | select(.action == "restart" and .item == "beta/hung")] | length' "$rj")" "1"
+assert_eq "...its hung state is dropped" "$(jq -r '.["beta/hung"] // "none"' "$HS")" "none"
+assert_contains "...and a hung agent is told as a restart, in plain words" "$(printf '%s' "$r" | jq -r '.actions[] | select(.action == "restart") | .why')" "hung"
+r=$(rec --json); assert_eq "...once: the next beat does not restart or respawn it again" "$(restarts "$r")$(act "$r" | tr ',' '\n' | grep -c respawn)" "0"
+# a timer that moved is not hung (A27): the state says 5s was seen 16 minutes ago, the screen now says 6s
+hagent beta moving "$WF"; MV_PID=$HPID; MV_START=$HSTART
+rec --json >/dev/null; ago beta/moving 960; jq '.["beta/moving"].secs = 5' "$HS" > "$T_TMP/hs" && mv "$T_TMP/hs" "$HS"
+r=$(rec --json); assert_eq "a working line whose time moved is not hung" "$(restarts "$r")" ""
+live "$MV_PID" "$MV_START" && ok "...and not stopped" || bad "a session whose timer moved was stopped"
+assert_eq "...and counted again from now" "$(jq -r '.["beta/moving"].since >= '"$(( $(date +%s) - 5 ))"'' "$HS")" "true"
+# a process that is not the one seen frozen (the pid reused, or the agent restarted by hand) starts the count again
+ago beta/moving 960; jq '.["beta/moving"].started = "Mon Jan  1 00:00:00 2001"' "$HS" > "$T_TMP/hs" && mv "$T_TMP/hs" "$HS"
+r=$(rec --json); assert_eq "frozen state recorded for another process (same pid, another start time) is not this one's" "$(restarts "$r")" ""
+live "$MV_PID" "$MV_START" && ok "...and nothing was stopped" || bad "a process was stopped on another process's evidence"
+# an unrecognised screen is unknown: never hung
+hagent beta calm "$IF"; CALM_PID=$HPID; CALM_START=$HSTART
+jq --arg p "$CALM_PID" --arg s "$CALM_START" '.["beta/calm"] = {pid:$p, started:$s, secs:6, since:1}' "$HS" > "$T_TMP/hs" && mv "$T_TMP/hs" "$HS"
+r=$(rec --json); assert_eq "a screen with no working line is unknown, never hung, however long it has been still" "$(restarts "$r")" ""
+live "$CALM_PID" "$CALM_START" && ok "...and not stopped" || bad "an unknown screen was stopped"
+assert_eq "...and nothing is kept for it" "$(jq -r '.["beta/calm"] // "none"' "$HS")" "none"
+# a project the owner holds is left alone
+hagent beta held "$WF"; HELD_PID=$HPID; HELD_START=$HSTART
+rec --json >/dev/null; ago beta/held 960; hub hold beta >/dev/null
+r=$(rec --json); live "$HELD_PID" "$HELD_START" && ok "a held project's hung session is left alone" || bad "a held project's session was stopped"
+hub hold beta --off >/dev/null
+r=$(rec --json); assert_eq "...and when released it is watched afresh, not hung at once" "$(restarts "$r")" ""
+ago beta/held 960; r=$(rec --json); assert_eq "...then hung" "$(restarts "$r")" "held"
+# the caps: 3 restarts of one session in 24 hours, then blocked
+hagent beta capd "$WF"; CAP_PID=$HPID; CAP_START=$HSTART
+rec --json >/dev/null; ago beta/capd 960
+for i in 1 2 3; do jq -nc --argjson e "$((NOW - 100 * i))" '{epoch:$e, action:"restart", item:"beta/capd"}' >> "$rj"; done
+r=$(rec --json); assert_eq "restarted 3 times in 24 hours and hung again: not stopped" "$(restarts "$r")" ""
+live "$CAP_PID" "$CAP_START" && ok "...it is left running" || bad "a session at its cap was stopped"
+assert_eq "...and reported blocked, for the owner" "$(printf '%s' "$r" | jq -r '[.blocked[] | select(.action == "restart")][0].agents | join(",")')" "capd"
+assert_contains "...with its reason" "$(printf '%s' "$r" | jq -r '[.blocked[] | select(.action == "restart")][0].reason')" "3 times"
+r=$(rec --json); assert_eq "...said once: the next beat does not repeat it" "$(printf '%s' "$r" | jq -r '[.blocked[] | select(.action == "restart")] | length')" "0"
+: > "$rj"; jq -nc --argjson e "$((NOW - 90000))" '{epoch:$e, action:"restart", item:"beta/capd"}' >> "$rj"; ago beta/capd 0
+r=$(rec --json); assert_eq "restarts older than 24 hours do not count" "$(restarts "$r")" "capd"
+# an orchestrator is a session too: its Claude is the recorded claude pid, its screen the registered pane; it is woken, not respawned
+opane=$(hm_tmux new-window -d -P -F '#{pane_id}' -t keep: -n orch "exec bash -c \"cat '$WF'; exec sleep 600\""); sleep 1; oi=$(hm_pane_identity "$HM_TMUX_SOCKET" "$opane")
+jq --arg p "$opane" --arg pp "${oi%%$'\t'*}" --arg ps "${oi#*$'\t'}" '(.agents[] | select(.name == "orchestrator")) |= (.pane = $p | .pane_pid = $pp | .pane_started = $ps)' \
+  "$H/beta/.hivemind/team.json" > "$T_TMP/tj" && mv "$T_TMP/tj" "$H/beta/.hivemind/team.json"
+: > "$rj"; rec --json >/dev/null; ago beta/orchestrator 960
+r=$(rec --json); assert_eq "a hung orchestrator is stopped and woken for its open task" "$(act "$r" | tr ',' '\n' | grep -c wake:beta)" "1"
+assert_contains "...saying why" "$(printf '%s' "$r" | jq -r '[.actions[] | select(.action == "wake" and .project == "beta")][0].why')" "hung"
+live "$bpid" "$(jq -r '.agents[] | select(.name == "orchestrator") | .claude_started' "$H/beta/.hivemind/team.json")" && bad "the orchestrator's Claude is still running" || ok "...its Claude was stopped"
+hm_alive "${oi%%$'\t'*}" && ok "...its pane (the owner's shell) was not" || bad "the orchestrator's pane process was stopped: only its Claude is"
+assert_eq "...logged against the session" "$(jq -s '[.[] | select(.action == "restart" and .item == "beta/orchestrator")] | length' "$rj")" "1"
 assert_eq "...hivemind ran no sudo anywhere" "$(cat "$HM_SUDO_LOG")" ""
 t_done
