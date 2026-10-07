@@ -57,6 +57,21 @@ assert_status "a group-writable project home is refused too" $rc 4
 case "$out" in *sudo*) bad "a sudo line was printed for a group-writable home" ;; *) ok "...no sudo line" ;; esac
 assert_contains "...the home is named, with its fix" "$(cat "$T_TMP/away.err")$out" "chmod go-w -- $H/alpha"
 chmod 755 "$H/alpha"
+# a team root in a worktree of a listed home is checked as the bypass check checks it, so a group-writable one is refused here, seen, with its fix
+git -C "$H/alpha" worktree add -q "$H/alpha-wt" -b wt; mkdir -p "$H/alpha-wt/.hivemind"; echo '{"agents":[]}' > "$H/alpha-wt/.hivemind/team.json"
+git -C "$H/alpha" worktree add -q "$H/alpha-plain" -b plain
+chmod 775 "$H/alpha-plain"
+out=$(hub away --until +1h 2>"$T_TMP/away.err"); rc=$?
+assert_status "a group-writable worktree that holds no team is no team root: not refused" $rc 0
+chmod 755 "$H/alpha-plain"
+chmod 775 "$H/alpha-wt"
+out=$(hub away --until +1h 2>"$T_TMP/away.err"); rc=$?
+assert_status "a group-writable worktree team root of a listed home is refused" $rc 4
+case "$out" in *sudo*) bad "a sudo line was printed for a group-writable team root" ;; *) ok "...no sudo line" ;; esac
+assert_contains "...the team root is named, with its fix" "$(cat "$T_TMP/away.err")$out" "chmod go-w -- $H/alpha-wt"
+chmod 755 "$H/alpha-wt"
+out=$(hub away --until +1h 2>/dev/null); assert_status "...and once it is put right, away prints its lines" $? 0
+rm -f "$P/away.json"
 # a home owned by root is refused too (strict, not "or root"), and no chmod line is offered for what this user does not own
 cp "$P/projects.json" "$T_TMP/projects.saved"
 jq '.projects += [{name:"sys",home:"/usr",repos:[]}]' "$T_TMP/projects.saved" > "$P/projects.json"

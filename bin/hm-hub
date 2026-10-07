@@ -995,7 +995,7 @@ away)
   hm_is_number "$epoch" || hm_die 64 "--until is an epoch, +<n>m|h|d, or YYYY-MM-DD[ HH:MM] (local time): $until"
   [ "$epoch" -gt "$now" ] || hm_die 4 "--until is not in the future"
   [ "$epoch" -le $((now + 604800)) ] || hm_die 4 "away is at most 7 days: the hub's heartbeat does not outlive that"
-  # the hub's records and each project home are checked as the delegate check will check them, before anything is printed: an away that
+  # the hub's records, each project home and each worktree team root of one are checked as the delegate check will check them, before anything is printed: an away that
   # would be refused unseen is not worth the owner's sudo. The group-writable ones this user owns are fixed by a line needing no sudo.
   hm_jq_resolve
   [ -n "$HM_JQ" ] || hm_die 4 "no root-owned jq was found (/usr/bin/jq, /usr/local/bin/jq or /opt/homebrew/bin/jq): away mode reads its records with one, so it cannot be switched on here"
@@ -1005,7 +1005,10 @@ away)
     [ -n "$home" ] || continue
     case "$home" in /*) a=$home ;; *) a="$root/$home" ;; esac
     a=$(cd "$a" 2>/dev/null && pwd -P) || continue
-    hm_path_trusted "$a" dir "$me" strict || bad="$bad$a"$'\t'"$HM_DELEGATE_WHY"$'\n'
+    # the home, then each worktree team root of it: hm_delegate_for_project checks them the same strict way
+    while IFS= read -r t; do
+      hm_path_trusted "$t" dir "$me" strict || bad="$bad$t"$'\t'"$HM_DELEGATE_WHY"$'\n'
+    done < <(hm_team_roots "$a")
   done < <(jq -r '.projects[]? | [.name, .home] | @tsv' "$root/.hivemind-hub/projects.json" 2>/dev/null)
   if [ -n "$bad" ]; then
     echo "# Not away: the delegate check would refuse this hub, so no line to paste is printed."
