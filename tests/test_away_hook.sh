@@ -180,6 +180,25 @@ ERR=$(printf '%s' "$(fileop Write "$PROOT/bin/x")" | HH_AWAY_BYPASS=1 HH_PROJECT
 tool_allowed "Write to an ordinary project file" "$(fileop Write "$proj/src/a.ts")"
 tool_allowed "Edit of an ordinary file" "$(fileop Edit "$proj/README")"
 tool_allowed "Write to memory" "$(fileop Write "$CD/projects/p/memory/n.md")"
+echo "-- 0.5.1 E: custom/ is writable in an away session (nothing in it can loosen away mode: grants come only from the root-owned delegate file); the plugin, settings and hooks are not"
+tool_allowed "E Write to the project's custom role" "$(fileop Write "$proj/$T_STATE/$T_CUSTOM/roles/x.md")"
+tool_allowed "E Edit of the project's custom rules" "$(fileop Edit "$proj/$T_STATE/$T_CUSTOM/rules/RULES.md")"
+tool_allowed "E Write to the user's custom rules" "$(fileop Write "$HIVEHOUSE_HOME/$T_CUSTOM/rules/RULES.md")"
+tool_allowed "E Write to the user's custom brief template" "$(fileop Write "$HIVEHOUSE_HOME/$T_CUSTOM/rules/brief-template.md")"
+tool_allowed "E Write to another project's custom role" "$(fileop Write "$other/$T_STATE/$T_CUSTOM/roles/x.md")"
+allowed "E a redirect into the project's custom role" "echo x > $proj/$T_STATE/$T_CUSTOM/roles/x.md"
+allowed "E a redirect into the user's custom rules" "echo x > $HIVEHOUSE_HOME/$T_CUSTOM/rules/RULES.md"
+EPR="$T_TMP/eplugin"; mkdir -p "$EPR/roles" "$EPR/hooks" "$EPR/.claude-plugin"
+ehook() {  # ehook <json>: as hook(), with CLAUDE_PLUGIN_ROOT set to the stand-in plugin folder
+  ERR=$(printf '%s' "$1" | HH_AWAY_BYPASS=1 HH_PROJECT="$proj" HH_AWAY_HUB="$hub" HH_AWAY_MCP_ALLOW= CLAUDE_PLUGIN_ROOT="$EPR" "$HOOK" 2>&1 >/dev/null); RC=$?
+}
+etool_denied() { ehook "$2"; [ "$RC" -eq 2 ] && [ -n "$ERR" ] && ok "$1" || bad "$1: exit $RC [$ERR]"; }
+etool_denied "E Write to a role in the plugin's folder is still refused" "$(fileop Write "$EPR/roles/implementer.md")"
+etool_denied "E Write to the plugin's hooks is still refused" "$(fileop Write "$EPR/hooks/hooks.json")"
+etool_denied "E Write to the plugin's manifest is still refused" "$(fileop Write "$EPR/.claude-plugin/plugin.json")"
+tool_denied "E Write to Claude Code's settings is still refused" "$(fileop Write "$CD/settings.json")"
+tool_denied "E Write to a project's .claude/settings.json is still refused" "$(fileop Write "$proj/.claude/settings.json")"
+tool_denied "E Write to the config dir's hooks is still refused" "$(fileop Write "$CD/hooks/x.sh")"
 tool_allowed "Write to settings.json inside an unrelated folder" "$(fileop Write "$proj/docs/settings.json")"
 tool_denied "Write with no path" '{"tool_name":"Write","cwd":"/","tool_input":{}}'
 
