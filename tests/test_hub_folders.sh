@@ -61,6 +61,16 @@ hub add app --repo front >/dev/null; assert_eq "a dropped folder can be added ba
 hub drop app front >/dev/null; hub add other --repo front >/dev/null; assert_status "a dropped folder can join another project" $? 0
 assert_eq "...there" "$(repos other)" '["solo","front"]'
 
+# ---- the records stay at most 755/644 (a hub made group-writable is put right by the next write) ----
+mode() { stat -f %Lp "$1"; }
+mkdir "$H/notes2"
+chmod 664 "$P/projects.json"; chmod 775 "$P"; hub add app --repo notes2 >/dev/null
+assert_eq "add --repo seals the hub's records" "$(mode "$P/projects.json") $(mode "$P")" "644 755"
+chmod 664 "$P/projects.json"; chmod 775 "$P"; hub drop app notes2 >/dev/null
+assert_eq "drop seals the hub's records" "$(mode "$P/projects.json") $(mode "$P")" "644 755"
+chmod 775 "$P"; hub name keepme >/dev/null
+assert_eq "name seals the hub's folder" "$(mode "$P")" "755"; rm -f "$P/name"
+
 # ---- the hub's name ----
 live() {  # live <name> <cwd>: a running process named claude, with Claude Code's record of it
   ( exec -a claude sleep 60 ) >/dev/null 2>&1 & local p=$!; disown "$p"; t_track "$p"; sleep 0.2

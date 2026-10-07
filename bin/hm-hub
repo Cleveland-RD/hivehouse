@@ -514,6 +514,7 @@ add)
     f="$root/.hivemind-hub/projects.json"
     jq --arg n "$name" --args '.projects |= map(if .name == $n then .repos += $ARGS.positional else . end)' ${list[@]+"${list[@]}"} < "$f" > "$f.tmp$$" \
       && mv "$f.tmp$$" "$f" || { rm -f "$f.tmp$$"; exit 1; }
+    seal_hub "$root"
     echo "$name"; exit 0
   fi
   h=$(stored "$root" "$home") || hm_die 4 "no such folder: $home"
@@ -553,6 +554,7 @@ drop)
   f="$root/.hivemind-hub/projects.json"
   jq --arg n "$1" --arg f "$s" '.projects |= map(if .name == $n then .repos |= map(select(. != $f)) else . end)' "$f" > "$f.tmp$$" \
     && mv "$f.tmp$$" "$f" || { rm -f "$f.tmp$$"; exit 1; }
+  seal_hub "$root"
   echo "$1" ;;
 
 name)
@@ -562,6 +564,7 @@ name)
   if [ $# -eq 0 ]; then hub_chosen_name "$root"; exit $?; fi
   hm_is_agent_name "$1" || hm_die 4 "the hub's name is lower-case letters, digits, '_' and '-': $1"
   printf '%s\n' "$1" > "$root/.hivemind-hub/name.tmp$$" && mv "$root/.hivemind-hub/name.tmp$$" "$root/.hivemind-hub/name"
+  seal_hub "$root"
   echo "$1" ;;
 
 remove)
