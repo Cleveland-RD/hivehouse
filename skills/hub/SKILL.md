@@ -95,8 +95,9 @@ memory. Both change what the hub covers, so ask the owner first; neither is pre-
    - **unknown**: say so, and ask the owner to look at the project's tmux window.
 
 `--mode` is the owner's local permission mode, the one hivemind's agents run in; `hm-hub` makes it stricter where a
-project's own `.hivemind/settings.json` says so; only while the owner is away does `auto` become `bypassPermissions` (`hm-hub away`). Start the hub in that mode too: sessions in different modes
-hold each other's messages for an approval nobody sees.
+project's own `.hivemind/settings.json` says so; only while the owner is away does `auto` become `bypassPermissions` (`hm-hub away`). Start the hub in that mode too. Measured on Claude Code 2.1.292, `SendMessage` between sessions in different modes
+(`dontAsk` and `bypassPermissions`, `dontAsk` and `auto`, `auto` and `bypassPermissions`) was delivered at once; but a session can
+still hold a message for its own user's approval (Claude Code's tool text says so), and nobody is at an unattended hub to give it.
 
 ### Running overnight or cleanup for a project
 
