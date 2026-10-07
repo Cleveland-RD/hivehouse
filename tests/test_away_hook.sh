@@ -359,6 +359,34 @@ r=$(printf '%s' "$(msg hub1)" | HH_AWAY_BYPASS=1 HH_PROJECT="$hub/" HH_AWAY_HUB=
 r=$(printf '%s' "$(msg main)" | HH_AWAY_BYPASS=1 HH_PROJECT="$T_TMP/gone" HH_AWAY_HUB="$hub" HH_AWAY_MCP_ALLOW= "$HOOK" 2>&1 >/dev/null); assert_status "main still passes, the check is by target" $? 0
 r=$(printf '%s' "$(msg proj-orchestrator)" | HH_AWAY_BYPASS=1 HH_PROJECT="$T_TMP/gone" HH_AWAY_HUB="$hub" HH_AWAY_MCP_ALLOW= "$HOOK" 2>&1 >/dev/null); assert_status "an unreadable HH_PROJECT denies a named target" $? 2
 
+echo "-- KI-23: a heredoc body is data unless the command it feeds runs it"
+nl=$'\n'
+allowed "an hh-hub task heredoc with ssh and git push in its text" "hh-hub task proj <<'EOF'${nl}please ssh to the host and git push the branch${nl}EOF"
+allowed "...the same with a <<- tab-stripped terminator" "hh-hub task proj <<-'EOF'${nl}	ssh h; git push${nl}	EOF"
+allowed "...and with a backslash-quoted delimiter" "hh-hub task proj <<\\EOF${nl}git push${nl}EOF"
+allowed "cat of a quoted heredoc into a file in the project" "cat > notes.txt <<'EOF'${nl}git push origin main${nl}EOF"
+allowed "a closed single-quoted word before the <<" "hh-hub task 'proj' <<'EOF'${nl}git push${nl}EOF"
+allowed "a closed double-quoted word with an escaped quote before the <<" "hh-hub task \"pr\\\"oj\" <<'EOF'${nl}git push${nl}EOF"
+denied "ssh as a real command after the heredoc" "hh-hub task proj <<'EOF'${nl}text${nl}EOF${nl}ssh h ls"
+denied "git push as a real command after the heredoc" "cat <<'EOF'${nl}text${nl}EOF${nl}git push"
+denied "bash <<'EOF' holding git push" "bash <<'EOF'${nl}git push${nl}EOF"
+denied "sh <<EOF holding git push" "sh <<EOF${nl}git push${nl}EOF"
+denied "python3 <<'EOF' holding git push" "python3 <<'EOF'${nl}import os; os.system('git push')${nl}EOF"
+denied "ssh h <<'EOF' holding a command" "ssh h <<'EOF'${nl}ls${nl}EOF"
+denied "cat <<'EOF' | bash (a later stage runs the body)" "cat <<'EOF' | bash${nl}git push${nl}EOF"
+denied "cat <<'EOF' | sudo sh -s" "cat <<'EOF' | sudo sh -s${nl}git push${nl}EOF"
+denied "a heredoc whose line ends in a pipe (the runner may be on the next line)" "cat <<'EOF' |${nl}git push${nl}EOF${nl}bash"
+denied "xargs reads the body as arguments" "cat <<'EOF' | xargs${nl}git push${nl}EOF"
+denied "a <<EOF inside double quotes opens no heredoc" "cat \"<<EOF\"${nl}git push${nl}EOF"
+denied "a <<EOF inside single quotes opens no heredoc" "cat '<<EOF'${nl}git push${nl}EOF"
+denied "a quote still open at the end of the << line hides nothing" "cat <<'EOF' \"a${nl}b\" && git push${nl}EOF"
+denied "a reader that is not known (tclsh) keeps its body checked" "tclsh <<'EOF'${nl}git push${nl}EOF"
+denied "an arithmetic 1<<A opens no heredoc" "x=\$((1<<A))${nl}git push${nl}A"
+denied "an unquoted heredoc body is still scanned for \$( )" "cat <<EOF${nl}\$(git push)${nl}EOF"
+denied "an unquoted heredoc body is still scanned for backticks" "cat <<EOF${nl}\`ssh h ls\`${nl}EOF"
+denied "a heredoc fed to a command that is not a known reader (tee to a protected file)" "tee $CLAUDE_CONFIG_DIR/settings.json <<'EOF'${nl}{}${nl}EOF"
+denied "a heredoc without a terminator keeps nothing hidden from a runner" "bash <<'EOF'${nl}git push"
+
 echo "-- the env the Bash tool sees does not matter"
 r=$(printf '%s' "$(tc 'git push')" | HH_AWAY_BYPASS=1 HH_PROJECT="$other" HH_AWAY_HUB="$hub" HH_AWAY_MCP_ALLOW= "$HOOK" 2>&1 >/dev/null); assert_status "any project in the env: still refused" $? 2
 
