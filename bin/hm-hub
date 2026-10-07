@@ -480,12 +480,6 @@ dialog_target() {
 type_line() { hm_tmux_on "${3:-}" send-keys -t "$1" -l "$2"; hm_tmux_on "${3:-}" send-keys -t "$1" Enter; }   # type_line <pane> <fixed line> [socket]
 overnight_line() { printf '/%s:overnight Task %s: read %s. It came from the owner through %s.' "$PLUGIN" "$1" "$2" "$3"; }   # overnight_line <task id> <task file> <hub name>
 
-old_shared() {  # old_shared <delegate base>: when the 0.3.0 shared file is still there, says it is no longer read and prints the line that removes it
-  [ -e "$1/delegate" ] || [ -L "$1/delegate" ] || return 0
-  echo "# $1/delegate is no longer read (it is the 0.3.0 shared file). Remove it:"
-  printf 'sudo rm -f -- %q\n' "$1/delegate"
-}
-
 seal_hub() {  # seal_hub <hub root>: takes group and others' write off $HM_HUB_DIR/ and all inside it, which this user owns
   chmod -R go-w "$1/$HM_HUB_DIR" || hm_die 4 "cannot take group and others' write off $1/$HM_HUB_DIR"
 }
@@ -1048,7 +1042,6 @@ away)
   printf 'sudo chown root:%s -- %q %q %q\n' "$grp" "$base" "$dir" "$file"
   printf 'sudo chmod 0755 -- %q %q\n' "$base" "$dir"
   printf 'sudo chmod 0644 -- %q\n' "$file"
-  old_shared "$base"
   echo "# Then exit the running hub (so two do not share the folder) and start it again with these lines: marked, in bypass, with only its allowed MCP servers."
   printf 'cd %q\n' "$root"
   if [ -n "$sid" ]; then
@@ -1090,7 +1083,6 @@ back)
   case "$sid" in ''|*[!${HM_LOWER}${HM_UPPER}${HM_DIGITS}-]*) sid="" ;; esac
   echo "# Away ends when this file is gone. Paste the line in a terminal:"
   printf 'sudo rm -f -- %q\n' "$file"
-  old_shared "${file%/*/*}"
   echo "# Then exit the hub and start it again without bypass, so each action it takes asks you again:"
   printf 'cd %q\n' "$root"
   if [ -n "$sid" ]; then printf 'claude --resume %q\n' "$sid"; else printf 'claude --name %q /%s:hub\n' "$(hub_chosen_name "$root" 2>/dev/null || echo hub)" "$PLUGIN"; fi ;;

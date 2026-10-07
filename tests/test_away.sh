@@ -114,20 +114,11 @@ assert_contains "...prints the line that removes the file" "$out" "sudo rm -f --
 assert_contains "......the user's own, under delegate.d" "$out" "/delegate.d/$REALUID"
 case "$out" in *HM_AWAY_BYPASS*|*bypassPermissions*) bad "the restart line after away is marked or in bypass" ;; *) ok "...and a restart line with no marker and no bypass" ;; esac
 assert_contains "...which resumes the hub" "$out" "claude --resume sess-hub-1"
-# the 0.3.0 file, <base>/delegate: no longer read, so both commands say so and print the line that removes it
+# a scratch base: away and back print the line that removes the user's own delegate file
 OB="$T_TMP/oldbase"; mkdir -p "$OB"
 OBIN=$(t_base_bin oldbin "$OB") || bad "t_base_bin"
-out=$(cd "$H" && "$OBIN/hm-hub" away --until +1h); assert_status "away with no old shared file" $? 0
-case "$out" in *"$OB/delegate"$'\n'*|*"$OB/delegate "*) bad "away names an old shared file that is not there" ;; *) ok "...names no old shared file" ;; esac
-out=$(cd "$H" && "$OBIN/hm-hub" back); case "$out" in *"$OB/delegate"$'\n'*) bad "back names an old shared file that is not there" ;; *) ok "back names no old shared file either" ;; esac
-printf "$T_DELEGATE_LINE1"'\n' > "$OB/delegate"
-out=$(cd "$H" && "$OBIN/hm-hub" away --until +1h); assert_status "away with the 0.3.0 shared file present" $? 0
-assert_contains "...says it is no longer read" "$out" "$OB/delegate is no longer read"
-assert_contains "...and prints the line that removes it" "$out" "sudo rm -f -- $OB/delegate"
-out=$(cd "$H" && "$OBIN/hm-hub" back); assert_contains "back says it too" "$out" "$OB/delegate is no longer read"
-assert_contains "...with the line that removes it" "$out" "sudo rm -f -- $OB/delegate"
-assert_contains "...and the user's own file's line" "$out" "sudo rm -f -- $OB/delegate.d/$REALUID"
-rm -f "$OB/delegate"
+out=$(cd "$H" && "$OBIN/hm-hub" away --until +1h); assert_status "away under a scratch base" $? 0
+out=$(cd "$H" && "$OBIN/hm-hub" back); assert_contains "back prints the line that removes the user's own file" "$out" "sudo rm -f -- $OB/delegate.d/$REALUID"
 assert_eq "...and still no sudo ran" "$(cat "$HM_SUDO_LOG")" ""
 
 # ---- status shows away, from the file ----
