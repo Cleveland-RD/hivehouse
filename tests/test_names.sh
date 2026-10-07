@@ -24,7 +24,7 @@ assert_eq "types/index.d.ts keys the atoms by the plugin's name" "$(sed -n 's/^ 
 assert_eq "hooks/hub.tsx declares 3 atoms" "$(grep -c "atom({ plugin: '" hooks/hub.tsx)" "3"
 assert_eq "...each in the plugin's name" "$(grep -o "atom({ plugin: '[^']*'" hooks/hub.tsx | sort -u)" "atom({ plugin: '$T_PLUGIN'"
 # the constants are where the grep says they are, once each
-for c in HH_PREFIX HH_STATE_DIR HH_HUB_DIR HH_HOME_DIR HH_MAC_BASE HH_LINUX_BASE HH_LINUX_SLOT HH_DELEGATE_LINE1; do
+for c in HH_PREFIX HH_STATE_DIR HH_HUB_DIR HH_HOME_DIR HH_MAC_BASE HH_LINUX_BASE HH_LINUX_SLOT HH_DELEGATE_TAG HH_DELEGATE_VERSIONS HH_DELEGATE_WRITE; do
   assert_eq "bin/hh-lib.sh defines $c once" "$(grep -c "^$c=" bin/hh-lib.sh)" "1"
 done
 for c in PLUGIN PREFIX HUB_DIR PANE; do
@@ -42,7 +42,7 @@ assert_eq "hooks/names.ts HUB_DIR is the helper's" "$(tsval hooks/names.ts HUB_D
 assert_eq "tests/names.ts HUB_DIR is the helper's" "$(tsval tests/names.ts HUB_DIR)" "$T_HUB"
 assert_eq "hooks/names.ts PANE is the helper's" "$(tsval hooks/names.ts PANE)" "$T_PANE"
 assert_eq "tests/names.ts PANE_ID is the helper's" "$(tsval tests/names.ts PANE_ID)" "$T_PANE"
-for pair in HH_PREFIX:T_PREFIX HH_STATE_DIR:T_STATE HH_HUB_DIR:T_HUB HH_HOME_DIR:T_HOMEDIR HH_MAC_BASE:T_MAC_BASE HH_LINUX_BASE:T_LINUX_BASE HH_LINUX_SLOT:T_LINUX_SLOT HH_DELEGATE_LINE1:T_DELEGATE_LINE1; do
+for pair in HH_PREFIX:T_PREFIX HH_STATE_DIR:T_STATE HH_HUB_DIR:T_HUB HH_HOME_DIR:T_HOMEDIR HH_MAC_BASE:T_MAC_BASE HH_LINUX_BASE:T_LINUX_BASE HH_LINUX_SLOT:T_LINUX_SLOT HH_DELEGATE_TAG:T_DELEGATE_TAG; do
   v=$(bash -c '. "$1/bin/hh-lib.sh"; eval "printf %s \"\$$2\""' _ "$HH_REPO_ROOT" "${pair%%:*}"); w=$(eval "printf %s \"\$${pair##*:}\"")
   assert_eq "${pair%%:*} is the helper ${pair##*:}" "$v" "$w"
 done

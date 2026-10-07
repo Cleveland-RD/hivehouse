@@ -50,7 +50,7 @@ ok_ "$((ME + 1))" && bad "a file owned by another user is valid" || ok "a file o
 ok_ 0 && bad "a file this user wrote counts as root's" || ok "a file the user wrote is refused when root is required"
 
 # ---- the content is exactly as specified, and in the future, at most 7 days ahead ----
-mkf; printf '%s\nhub=/work\nuntil=%s\n' "${T_DELEGATE_LINE1%1}2" "$((NOW + 60))" > "$F"; ok_ && bad "another version is valid" || ok "another version is refused"
+mkf; printf '%s\nhub=/work\nuntil=%s\nmcp=\n' "${T_DELEGATE_LINE1%1}3" "$((NOW + 60))" > "$F"; ok_ && bad "another version is valid" || ok "another version is refused"
 mkf; printf 'hub=/work\n'"$T_DELEGATE_LINE1"'\nuntil=%s\n' "$((NOW + 60))" > "$F"; ok_ && bad "reordered lines are valid" || ok "reordered lines are refused"
 mkf; printf "$T_DELEGATE_LINE1"'\nhub=/work\nuntil=%s\nmore\n' "$((NOW + 60))" > "$F"; ok_ && bad "an extra line is valid" || ok "an extra line is refused"
 mkf; printf "$T_DELEGATE_LINE1"'\nhub=/work\n' > "$F"; ok_ && bad "a missing until is valid" || ok "a missing line is refused"
@@ -63,6 +63,35 @@ mkf "$((NOW + 7 * 86400))"; ok_ && ok "exactly 7 days ahead is valid" || bad "7 
 mkf; printf "$T_DELEGATE_LINE1"'\r\nhub=/work\r\nuntil=%s\r\n' "$((NOW + 60))" > "$F"; ok_ && bad "carriage returns are valid" || ok "carriage returns are refused"
 mkf; : > "$F"; ok_ && bad "an empty file is valid" || ok "an empty file is refused"
 mkf; ok_ "$ME" "$((NOW + 3601))" && bad "the time is not read from the clock argument" || ok "...expiry is judged at the time given"
+
+# ---- version 2: hosts= and allow= (0.5.1) ----
+mk2() {  # mk2 <hosts line> <allow line> [until]: a version 2 file
+  mkf; printf "$T_DELEGATE_LINE2"'\nhub=/work\nuntil=%s\nmcp=\n%s\n%s\n' "${3:-$((NOW + 3600))}" "$1" "$2" > "$F"
+}
+mk2 "hosts=" "allow="; ok_ && ok "v2 with empty hosts= and allow= is valid" || bad "v2 empty is refused: $HH_DELEGATE_WHY"
+mk2 "hosts=night.example.org,ops@10.0.0.7,a_b-c" "allow=scp,rsync,sftp"; hh_delegate_read "$F" "$ME" "$NOW" > "$T_TMP/dg.out"; assert_status "v2 with hosts and allowances is valid" $? 0
+assert_eq "...still prints hub, time and mcp (three columns)" "$(cat "$T_TMP/dg.out")" "$(printf '/work\t%s\t' "$((NOW + 3600))")"
+assert_eq "...HH_DR_HOSTS holds the hosts" "$HH_DR_HOSTS" "night.example.org,ops@10.0.0.7,a_b-c"
+assert_eq "...HH_DR_ALLOW holds the allowed words" "$HH_DR_ALLOW" "scp,rsync,sftp"
+mkf; hh_delegate_read "$F" "$ME" "$NOW" >/dev/null; assert_eq "a v1 file has no hosts" "$HH_DR_HOSTS" ""
+assert_eq "...and no allowances" "$HH_DR_ALLOW" ""
+for w in claude tmux hh-push hh-remote-sync vercel netlify ssh bash zzz SCP "scp rsync"; do
+  mk2 "hosts=" "allow=$w"; ok_ && bad "allow=$w is valid" || { case "$HH_DELEGATE_WHY" in *"$w"*) ok "allow=$w makes the file invalid, naming the word" ;; *) bad "allow=$w refused without naming it: $HH_DELEGATE_WHY" ;; esac; }
+done
+mk2 "hosts=" "allow=scp,claude"; ok_ && bad "one forbidden word among good ones is valid" || ok "one forbidden word among good ones makes the file invalid"
+mk2 "hosts=" "allow=scp,,sftp"; ok_ && bad "an empty entry in allow= is valid" || ok "an empty entry in allow= is invalid"
+for h in -x -o ops@-x u@-o a/b "a b" 'a;b' 'a$b' 'a`b' "a:b" "@h" "u@" "a@b@c" "a,,b" ",a" "a,"; do
+  mk2 "hosts=$h" "allow="; ok_ && bad "hosts=$h is valid" || ok "hosts=$h is invalid"
+done
+mk2 "hosts=ok,-bad" "allow="; ok_ && bad "a host starting with - after a good one is valid" || ok "a later host starting with - is invalid"
+mk2 "host=a" "allow="; ok_ && bad "line 5 not hosts= is valid" || ok "line 5 that is not hosts= is invalid"
+mk2 "hosts=" "permit="; ok_ && bad "line 6 not allow= is valid" || ok "line 6 that is not allow= is invalid"
+mk2 "hosts=" "allow="; printf 'extra\n' >> "$F"; ok_ && bad "a v2 file with 7 lines is valid" || ok "a v2 file with 7 lines is invalid"
+mkf; printf "$T_DELEGATE_LINE2"'\nhub=/work\nuntil=%s\nmcp=\nhosts=\n' "$((NOW + 60))" > "$F"; ok_ && bad "a v2 file with 5 lines is valid" || ok "a v2 file with 5 lines is invalid"
+mkf; printf "$T_DELEGATE_LINE1"'\nhub=/work\nuntil=%s\nmcp=\nhosts=\nallow=\n' "$((NOW + 60))" > "$F"; ok_ && bad "a v1 file with 6 lines is valid" || ok "a v1 file with 6 lines is invalid"
+mkf; printf "$T_DELEGATE_LINE1"'\nhub=/work\nuntil=%s\nmcp=\nhosts=a\n' "$((NOW + 60))" > "$F"; ok_ && bad "a v1 file with 5 lines is valid" || ok "a v1 file with 5 lines is still refused"
+mk2 "hosts=a" "allow="; printf '%s\r\n' x >> "$F"; ok_ && bad "carriage return in a v2 file is valid" || ok "a carriage return in a v2 file is invalid"
+mkf; printf "$T_DELEGATE_LINE2"'\r\nhub=/work\r\nuntil=%s\r\nmcp=\r\nhosts=\r\nallow=\r\n' "$((NOW + 60))" > "$F"; ok_ && bad "a v2 file with carriage returns in lines 5 and 6 is valid" || ok "carriage returns in a v2 file are refused"
 
 # ---- who can write it ----
 mkf; chmod 664 "$F"; ok_ && bad "a group-writable file is valid" || ok "a group-writable file is refused"

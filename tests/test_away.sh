@@ -71,7 +71,7 @@ assert_contains "...a comment names the user and the uid" "$out" "# This file is
 assert_contains "...and says an administrator can paste the lines from another account" "$out" "an administrator can paste these lines from another account"
 assert_contains "...mode 0644" "$out" 'sudo chmod -- 0644 '
 assert_contains "...the content names this hub" "$out" "hub=$H"
-assert_contains "...and its MCP list (empty here) as the fourth line" "$out" "mcp= | sudo tee"
+assert_contains "...and its MCP list (empty here) as the fourth line" "$out" "mcp= hosts= allow= | sudo tee"
 until_epoch=$(printf '%s\n' "$out" | sed -n 's/.*until=\([0-9]*\).*/\1/p' | head -1)
 [ "$until_epoch" -ge $((NOW + 7190)) ] && [ "$until_epoch" -le $((NOW + 7500)) ] && ok "...and the time asked for" || bad "until=$until_epoch is not about +2h"
 assert_contains "...the hub's start line is marked, in bypass, with only its allowed MCP servers" "$out" "HH_AWAY_BYPASS=1 HH_PROJECT=$H HH_AWAY_HUB=$H HH_AWAY_MCP_ALLOW='' claude --name hub --permission-mode bypassPermissions --no-chrome --strict-mcp-config --mcp-config $P/away-mcp.json /$T_PLUGIN:hub"
@@ -108,7 +108,7 @@ printf '{"mcpServers":{"docs":{"command":"docs-mcp","args":["--x"]}}}\n' > "$CLA
 out=$(hub away --until +1h --mcp-allow docs,nothere)
 assert_eq "an allowed server's definition is copied into the hub's MCP file" "$(jq -c '.mcpServers | keys' "$P/away-mcp.json")" '["docs"]'
 assert_contains "...one that is not found is said so" "$out" "Not found (not loaded): nothere"
-assert_contains "...and the list is the delegate file's fourth line" "$out" "mcp=docs\\,nothere | sudo tee"
+assert_contains "...and the list is the delegate file's fourth line" "$out" "mcp=docs\\,nothere hosts= allow= | sudo tee"
 out=$(hub back); assert_status "back" $? 0
 assert_contains "...prints the line that removes the file" "$out" "sudo rm -f -- "
 assert_contains "......the user's own, under delegate.d" "$out" "/delegate.d/$REALUID"
@@ -121,6 +121,29 @@ out=$(cd "$H" && "$OBIN/hh-hub" away --until +1h); assert_status "away under a s
 # every sudo line it printed, run as this user on the scratch base: BSD chown and chmod read an option after the owner or the mode as a
 # file ("chown: --: No such file or directory"), which GNU accepts, so only a Mac shows it
 t_run_printed "$(printf '%s\n' "$out" | grep -E '^sudo |\| sudo ')"; assert_status "...and each sudo line it printed runs (options before the owner and the mode)" $? 0
+# ---- version 2: --remote-allow and --allow (0.5.1) ----
+DFILE="$OB/delegate.d/$REALUID"
+assert_eq "the plain away writes a version 2 file: tag, hub, until, mcp, empty hosts and allow" "$(sed 's/until=[0-9]*/until=N/; s|^hub=.*|hub=H|' "$DFILE" | tr '\n' ' ')" "$T_DELEGATE_TAG 2 hub=H until=N mcp= hosts= allow= "
+assert_contains "...and says no remote host is used" "$out" "No remote host"
+out=$(cd "$H" && "$OBIN/hh-hub" away --until +1h --remote-allow night.example.org,ops@10.0.0.7 --allow scp,sftp); assert_status "away with --remote-allow and --allow" $? 0
+t_run_printed "$(printf '%s\n' "$out" | grep -E '^sudo |\| sudo ')"; assert_status "...its sudo lines run" $? 0
+assert_eq "...the file holds hosts= and allow= as lines 5 and 6" "$(sed -n '5,6p' "$DFILE" | tr '\n' ' ')" "hosts=night.example.org,ops@10.0.0.7 allow=scp,sftp "
+assert_eq "...in six lines, with the tag naming version 2" "$(wc -l < "$DFILE" | tr -d ' ') $(head -1 "$DFILE")" "6 $T_DELEGATE_TAG 2"
+hh_delegate_read "$DFILE" "$ME" "$NOW" >/dev/null; assert_status "...and the file reads as valid" $? 0
+assert_contains "...the text names the hosts" "$out" "Remote hosts allowed while away: night.example.org,ops@10.0.0.7"
+assert_contains "...and the commands allowed by hand" "$out" "Commands allowed while away: scp,sftp"
+case "$out" in *"No remote host is used"*) bad "the no-remote-host line is printed with hosts allowed" ;; *) ok "...and not the no-remote-host line" ;; esac
+for bad_allow in claude tmux hh-push hh-remote-sync vercel netlify ssh bash "scp rsync" "scp,,sftp" 'a;b'; do
+  o=$(cd "$H" && "$OBIN/hh-hub" away --until +1h --allow "$bad_allow" 2>"$T_TMP/away.err"); rc=$?
+  assert_status "--allow '$bad_allow' is refused" $rc 4
+  case "$o" in *sudo*) bad "--allow '$bad_allow' printed a sudo line" ;; *) ok "...and prints no sudo line" ;; esac
+done
+for bad_host in -x -o "a b" 'a;b' 'a/b' "@h" "u@" "a,,b"; do
+  o=$(cd "$H" && "$OBIN/hh-hub" away --until +1h --remote-allow "$bad_host" 2>"$T_TMP/away.err"); rc=$?
+  assert_status "--remote-allow '$bad_host' is refused" $rc 4
+  case "$o" in *sudo*) bad "--remote-allow '$bad_host' printed a sudo line" ;; *) ok "...and prints no sudo line" ;; esac
+done
+(cd "$H" && "$OBIN/hh-hub" away --until +1h --allow >/dev/null 2>&1); assert_status "--allow needs a value" $? 64
 out=$(cd "$H" && "$OBIN/hh-hub" back); assert_contains "back prints the line that removes the user's own file" "$out" "sudo rm -f -- $OB/delegate.d/$REALUID"
 assert_eq "...and still no sudo ran" "$(cat "$HH_SUDO_LOG")" ""
 
@@ -128,6 +151,12 @@ assert_eq "...and still no sudo ran" "$(cat "$HH_SUDO_LOG")" ""
 case "$(hub status --json | jq -c '.hub | has("away")')" in false) ok "no valid file for this hub: not away" ;; *) bad "away shown with no valid file" ;; esac
 s=$(dhub status --json); assert_eq "with a valid file for this hub, status says until when" "$(printf '%s' "$s" | jq -r .hub.away.until)" "$((NOW + 3600))"
 assert_contains "...and the plain status" "$(dhub status)" "away until"
+assert_eq "...a version 1 file: no hosts and no allowances in the status" "$(printf '%s' "$s" | jq -c '[.hub.away.hosts, .hub.away.allow]')" '["",""]'
+printf "$T_DELEGATE_LINE2"'\nhub=%s\nuntil=%s\nmcp=\nhosts=night.example.org\nallow=scp\n' "$H" "$((NOW + 3600))" > "$DF"
+s=$(dhub status --json); assert_eq "a version 2 file: status shows the hosts" "$(printf '%s' "$s" | jq -r .hub.away.hosts)" "night.example.org"
+assert_eq "...and the allowances" "$(printf '%s' "$s" | jq -r .hub.away.allow)" "scp"
+assert_eq "...and until, as before" "$(printf '%s' "$s" | jq -r .hub.away.until)" "$((NOW + 3600))"
+mkdel
 mkdel "$T_TMP"; case "$(dhub status --json | jq -c '.hub | has("away")')" in false) ok "a file naming another hub is not this hub's away" ;; *) bad "away shown for another hub's file" ;; esac
 mkdel "$H" "$((NOW - 10))"; case "$(dhub status --json | jq -c '.hub | has("away")')" in false) ok "an expired file is not away" ;; *) bad "away shown for an expired file" ;; esac
 mkdel; chmod 666 "$DF"; case "$(dhub status --json | jq -c '.hub | has("away")')" in false) ok "a file anyone could write is not away" ;; *) bad "away shown for a writable file" ;; esac

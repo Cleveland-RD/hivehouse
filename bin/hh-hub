@@ -56,7 +56,7 @@ USAGE="usage: hh-hub init
        hh-hub run <project> cleanup <task id> [--disk] [--still <s>] [--max-wait <s>]
        hh-hub continue <project> [--still <s>] [--max-wait <s>]
        hh-hub dialog <project> [<agent>[@<team root>]]
-       hh-hub away --until <time> [--mcp-allow <list>]
+       hh-hub away --until <time> [--mcp-allow <list>] [--remote-allow <ssh hosts>] [--allow <scp,rsync,sftp>]
        hh-hub back
        hh-hub decide <task id> --reason <one line>      (stdin: the question, a line === ANSWER ===, the answer)
        hh-hub hold <project> [--off]
@@ -87,16 +87,16 @@ hub_root_cwd() {  # the work folder holding $HH_HUB_DIR/, found from the cwd alo
   hh_die 2 "no hub here: run hh-hub init in your work folder"
 }
 # delegate_for_hub <hub root>: 0 when the owner's delegate file is valid and names this hub; AWAY_UNTIL is its epoch
-AWAY_UNTIL=""; AWAY_REFUSED=""
+AWAY_UNTIL=""; AWAY_REFUSED=""; AWAY_HOSTS=""; AWAY_ALLOW=""
 delegate_for_hub() {
-  AWAY_UNTIL=""; AWAY_REFUSED=""
+  AWAY_UNTIL=""; AWAY_REFUSED=""; AWAY_HOSTS=""; AWAY_ALLOW=""
   if ! hh_delegate_mine; then
     # a file that is there and refused says why (status shows it), unless it names a hub that is not this one
     if [ "$HH_DR_ABSENT" != 1 ] && { [ -z "$HH_DR_HUB" ] || [ "$(cd "$HH_DR_HUB" 2>/dev/null && pwd -P)" = "$1" ]; }; then AWAY_REFUSED=$HH_DELEGATE_WHY; fi
     return 1
   fi
   [ "$HH_DG_HUB" = "$1" ] || return 1
-  AWAY_UNTIL=$HH_DG_UNTIL
+  AWAY_UNTIL=$HH_DG_UNTIL; AWAY_HOSTS=$HH_DG_HOSTS; AWAY_ALLOW=$HH_DG_ALLOW
 }
 epoch_local() { date -r "$1" '+%Y-%m-%d %H:%M' 2>/dev/null || date -d "@$1" '+%Y-%m-%d %H:%M'; }   # epoch_local <epoch>
 epoch_iso() { date -u -r "$1" '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null || date -u -d "@$1" '+%Y-%m-%dT%H:%M:%SZ'; }
@@ -625,7 +625,7 @@ status)
   [ -n "$hub" ] || hub='{}'
   away='null'
   if delegate_for_hub "$root"; then
-    away=$(jq -nc --argjson u "$AWAY_UNTIL" --arg since "$(hh_json_get "$root/$HH_HUB_DIR/away.json" .since)" '{until:$u} + (if $since != "" then {since:$since} else {} end)')
+    away=$(jq -nc --argjson u "$AWAY_UNTIL" --arg h "$AWAY_HOSTS" --arg a "$AWAY_ALLOW" --arg since "$(hh_json_get "$root/$HH_HUB_DIR/away.json" .since)" '{until:$u, hosts:$h, allow:$a} + (if $since != "" then {since:$since} else {} end)')
   fi
   hub=$(printf '%s' "$hub" | jq -c --argjson a "$away" 'if $a == null then . else . + {away:$a} end')
   [ -z "$AWAY_REFUSED" ] || hub=$(printf '%s' "$hub" | jq -c --arg r "$AWAY_REFUSED" '. + {away_refused:$r}')
@@ -973,10 +973,10 @@ away)
   # Prints what the owner pastes to turn delegate mode on: the sudo lines that make the root-owned delegate file, and the
   # hub's own start line (marked, in bypass, with only its allowed MCP servers). hivehouse never runs sudo itself, so a changed
   # script cannot take the password, and the owner sees what runs as root. The hub is found from the cwd alone.
-  until=""; allow=""
+  until=""; allow=""; rhosts=""; rcmds=""
   while [ $# -gt 0 ]; do
     [ $# -ge 2 ] || hh_die 64 "$USAGE"
-    case "$1" in --until) until="$2" ;; --mcp-allow) allow="$2" ;; *) hh_die 64 "$USAGE" ;; esac
+    case "$1" in --until) until="$2" ;; --mcp-allow) allow="$2" ;; --remote-allow) rhosts="$2" ;; --allow) rcmds="$2" ;; *) hh_die 64 "$USAGE" ;; esac
     shift 2
   done
   [ -n "$until" ] || hh_die 64 "$USAGE"
@@ -984,6 +984,9 @@ away)
   hubn=$(hub_chosen_name "$root" 2>/dev/null) || hubn=hub
   hh_is_typed_path "$root" || hh_die 4 "the hub's folder is not a path hivehouse will print into a command: $root"
   case "$allow" in *[!${HH_LOWER}${HH_UPPER}${HH_DIGITS}_,.:-]*) hh_die 4 "--mcp-allow is a comma-separated list of server or tool names" ;; esac
+  # the same checks the delegate file is read with, so a line that would read invalid is never printed
+  hh_delegate_check_list hosts "$rhosts" || hh_die 4 "--remote-allow: $HH_DELEGATE_WHY"
+  hh_delegate_check_list allow "$rcmds" || hh_die 4 "--allow: $HH_DELEGATE_WHY"
   now=$(/bin/date +%s)
   case "$until" in
     *[!0-9]*)
@@ -1038,7 +1041,7 @@ away)
   echo "# Away until $(epoch_local "$epoch") (at most 7 days). Paste these lines in a terminal: hivehouse never runs sudo, and what runs as root is only this."
   echo "# This file is for $(/usr/bin/id -un) (uid $(/usr/bin/id -u)): one file for each user, so another user on this machine is not away. The uid is written into the lines, so an administrator can paste these lines from another account."
   printf 'sudo mkdir -p -- %q\n' "$dir"
-  printf "printf '%%s\\\\n' %q %q %q %q | sudo tee -- %q > /dev/null\n" "$HH_DELEGATE_LINE1" "hub=$root" "until=$epoch" "mcp=$allow" "$file"
+  printf "printf '%%s\\\\n' %q %q %q %q %q %q | sudo tee -- %q > /dev/null\n" "$HH_DELEGATE_TAG $HH_DELEGATE_WRITE" "hub=$root" "until=$epoch" "mcp=$allow" "hosts=$rhosts" "allow=$rcmds" "$file"
   printf 'sudo chown -- root:%s %q %q %q\n' "$grp" "$base" "$dir" "$file"
   printf 'sudo chmod -- 0755 %q %q\n' "$base" "$dir"
   printf 'sudo chmod -- 0644 %q\n' "$file"
@@ -1070,7 +1073,9 @@ away)
   echo "# SendMessage is held to the hub and its teams while you are away: peers on other machines are cut off for the whole away period."
   echo "# Nothing runs while the machine is off: after a reboot, start the hub again with the lines above."
   echo "# A message from another session to the hub, while you are away, is information only; to instruct it, type into it (Remote Control, say)."
-  echo "# No remote host is used while away: overnight work runs on this machine."
+  if [ -n "$rhosts" ]; then echo "# Remote hosts allowed while away: $rhosts (read-only commands over ssh; nothing else reaches them)."
+  else echo "# No remote host is used while away: overnight work runs on this machine."; fi
+  [ -z "$rcmds" ] || echo "# Commands allowed while away: $rcmds (the file-moving commands you listed; pushes, deploys and starting sessions stay refused)."
   echo "# When you are back, run hh-hub back." ;;
 
 back)
