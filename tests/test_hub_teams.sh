@@ -158,6 +158,29 @@ hub wake res --still 2 --max-wait 15 >/dev/null 2>"$T_TMP/w.err"; assert_status 
 assert_contains "...and says so" "$(cat "$T_TMP/w.err")" "already open in a live session"
 kill "$hp2" 2>/dev/null
 
+# ---- two different orchestrators: a stale one in the home, a live one in a worktree. The live one is the orchestrator ----
+mk two; hub add two --home two >/dev/null
+T2="$H/two-wt"; git -C "$H/two" worktree add -q "$T2" -b two-team; T2=$(cd "$T2" && pwd -P); mkdir -p "$T2/.hivemind/team/orchestrator" "$H/two/.hivemind/team/orchestrator"
+T3="$H/two-wt3"; git -C "$H/two" worktree add -q "$T3" -b two-team3; T3=$(cd "$T3" && pwd -P); mkdir -p "$T3/.hivemind"
+DEAD=$( ( exec -a claude sleep 0.1 ) >/dev/null 2>&1 & echo $! ); sleep 0.4
+jq -nc --arg k "$HM_TMUX_SOCKET" --arg kp "$kp" --arg p "${ki%%$'\t'*}" --arg c "$DEAD" \
+  '{agents:[{name:"orchestrator", pane:$kp, socket:$k, pane_pid:$p, pane_started:"Mon Jan  1 00:00:00 2001", claude_pid:$c, claude_started:"Mon Jan  1 00:00:00 2001", name_full:"two-orchestrator"}]}' > "$H/two/.hivemind/team.json"
+jq -nc --arg t "$HM_REPO_ROOT/tests/fixtures/transcript.jsonl" '{session_id:"sess-home-old", transcript_path:$t}' > "$H/two/.hivemind/team/orchestrator/session.json"
+TP=$(live two-orchestrator "$T2")
+rm -f "$CLAUDE_CONFIG_DIR/sessions/$TP.json"   # Claude Code records nothing of it: only team.json says it runs
+jq -nc --arg k "$HM_TMUX_SOCKET" --arg kp "$kp" --arg p "${ki%%$'\t'*}" --arg s "${ki#*$'\t'}" --arg c "$TP" --arg cs "$(hm_lstart "$TP")" \
+  '{agents:[{name:"orchestrator", pane:$kp, socket:$k, pane_pid:$p, pane_started:$s, claude_pid:$c, claude_started:$cs, name_full:"two-orchestrator"},
+            {name:"impl", pane:$kp, socket:$k, pane_pid:$p, pane_started:$s}]}' > "$T2/.hivemind/team.json"
+jq -nc --arg k "$HM_TMUX_SOCKET" --arg kp "$kp" --arg p "${ki%%$'\t'*}" --arg s "${ki#*$'\t'}" \
+  '{agents:[{name:"orchestrator", pane:$kp, socket:$k, pane_pid:$p, pane_started:$s}]}' > "$T3/.hivemind/team.json"
+ts() { hub status two --json | jq -r "$1"; }
+assert_eq "a live orchestrator in a worktree wins over a stale one in the home: running" "$(ts '.projects[0].orchestrator.state')" "running"
+assert_eq "...the agents are the impl alone, plus the spawned agent that only shares the orchestrator's name in a third root" "$(ts '.projects[0].agents | map([.name, (.worktree | sub(".*/"; ""))] | join("@")) | join(",")')" "impl@two-wt,orchestrator@two-wt3"
+hub wake two --mode auto --still 2 --max-wait 15 >/dev/null 2>"$T_TMP/w2.err"; assert_status "wake refuses: the live orchestrator is running" $? 4
+assert_contains "...saying so" "$(cat "$T_TMP/w2.err")" "running"
+assert_eq "...and no pane was started for it" "$(ls "$P/panes" 2>/dev/null | grep -c '^two\.json$')" "0"
+kill "$TP" 2>/dev/null
+
 # ---- hm-hub run reaches an orchestrator registered only in a worktree: its pane is read from that root's team.json ----
 mk wr; hub add wr --home wr >/dev/null
 WR="$H/wr-wt"; git -C "$H/wr" worktree add -q "$WR" -b wr-team; WR=$(cd "$WR" && pwd -P); mkdir -p "$WR/.hivemind/team/orchestrator"

@@ -225,15 +225,22 @@ unreg_pane_ok() {
 # screen of a running orchestrator's pane).
 orch_state() {
   local entry="" l r
-  O_AGENT=""; O_NAME=""; O_SID=""; O_STATE=none; O_PID=""; O_PANE=""; O_TMUX=""; O_QUESTION=false; O_ROOT=$3
+  O_AGENT=""; O_CPID=""; O_CSTART=""; O_NAME=""; O_SID=""; O_STATE=none; O_PID=""; O_PANE=""; O_TMUX=""; O_QUESTION=false; O_ROOT=$3
   # the team roots, read once per call and kept for the caller (status uses them for the agents and their levels)
   O_ROOTS=(); while IFS= read -r r; do O_ROOTS+=("$r"); done < <(hm_team_roots "$3")
-  # the first team root (the home, then each worktree with a team) that holds the --self orchestrator's entry; one registered in two counts once
+  # the --self orchestrator's entry: the first team root (the home, then each worktree with a team) whose entry is running; failing that the
+  # first with an entry (a stopped one). A live entry anywhere wins over a stale one in the home; one process registered in two roots counts once
+  local cand cname first="" firstroot=""
   for r in "${O_ROOTS[@]}"; do
-    entry=$(hm_self_entry "$r"); [ -z "$entry" ] || { O_ROOT=$r; break; }
+    cand=$(hm_self_entry "$r"); [ -n "$cand" ] || continue
+    cname=$(printf '%s' "$cand" | jq -r '.name // empty')
+    if hm_is_agent_name "$cname" && hm_team_agent_is "$r" "$cname"; then entry=$cand; O_ROOT=$r; break; fi
+    [ -n "$first" ] || { first=$cand; firstroot=$r; }
   done
+  [ -n "$entry" ] || { entry=$first; [ -z "$firstroot" ] || O_ROOT=$firstroot; }
   if [ -n "$entry" ]; then
     O_AGENT=$(printf '%s' "$entry" | jq -r '.name // empty')
+    O_CPID=$(printf '%s' "$entry" | jq -r '.claude_pid // empty'); O_CSTART=$(printf '%s' "$entry" | jq -r '.claude_started // empty')
     if hm_is_agent_name "$O_AGENT"; then
       O_NAME=$(hm_orchestrator_name "$O_ROOT" 2>/dev/null)
       O_SID=$(hm_json_get "$O_ROOT/.hivemind/team/$O_AGENT/session.json" .session_id)
@@ -258,6 +265,18 @@ orch_state() {
     [ -n "$O_NAME" ] || O_NAME="$2-orchestrator"
     [ "$O_STATE" != none ] || O_STATE=resumable
   fi
+}
+# is_orchestrator_entry <team root> <agent>: 0 when that team.json entry is the orchestrator orch_state found, or another record of the same process
+# (a root and an entry, not a name: a spawned agent that shares its name in another root is an agent). A --self entry of the same name (it holds a
+# Claude pid) in another root is an orchestrator's record too, a stale one, and is no agent either.
+is_orchestrator_entry() {
+  local e cpid cstart
+  [ -n "$O_AGENT" ] || return 1
+  [ "$1" = "$O_ROOT" ] && [ "$2" = "$O_AGENT" ] && return 0
+  e=$(jq -r --arg a "$2" '[.agents[]? | select(.name == $a)][0] // empty | [.claude_pid, .claude_started] | map(. // "" | tostring) | join("\u001f")' "$1/.hivemind/team.json" 2>/dev/null)
+  IFS=$'\x1f' read -r cpid cstart <<< "$e"
+  [ -n "$cpid" ] || return 1
+  { [ "$cpid" = "$O_CPID" ] && [ "$cstart" = "$O_CSTART" ]; } || [ "$2" = "$O_AGENT" ]
 }
 start_opts() {  # start_opts <model allowed 0|1> [--model m] [--mode m] [--still s] [--max-wait s]: MODEL, MODE, STILL, MAXWAIT
   local allow="$1"; shift
@@ -661,7 +680,7 @@ status)
     for tr in "${O_ROOTS[@]}"; do   # the agents of every team root, each with its worktree
       levels=${lv[$ri]-}; ri=$((ri + 1))
       for a in $(jq -r '.agents[]?.name' "$tr/.hivemind/team.json" 2>/dev/null); do
-        hm_is_agent_name "$a" && [ "$a" != "$O_AGENT" ] || continue
+        hm_is_agent_name "$a" && ! is_orchestrator_entry "$tr" "$a" || continue
         hm_team_agent_is "$tr" "$a"; case $? in 0) st=running ;; 1) st=stopped ;; 2) st=unknown ;; *) st=unrecorded ;; esac
         q=false
         [ "$st" != running ] || ! hm_pane_question "$(jq -r --arg a "$a" '[.agents[] | select(.name == $a)][0].socket // empty' "$tr/.hivemind/team.json")" \
@@ -1138,7 +1157,7 @@ recover)
     nowag='{}'; newly='[]'
     while IFS= read -r tr <&3; do   # every team root of the project, the home first
     for a in $(jq -r '.agents[]?.name' "$tr/.hivemind/team.json" 2>/dev/null); do
-      hm_is_agent_name "$a" && [ "$a" != "$O_AGENT" ] || continue
+      hm_is_agent_name "$a" && ! is_orchestrator_entry "$tr" "$a" || continue
       hm_team_agent_is "$tr" "$a"; case $? in 0) st=running ;; 1) st=stopped ;; *) st=unknown ;; esac
       if [ "$st" = running ]; then
         IFS=$'\x1f' read -r tsock tpane tpid tstart <<< "$(session_target "$tr" "$a")"
