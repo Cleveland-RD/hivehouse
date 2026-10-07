@@ -19,7 +19,7 @@ hm_project_root() {
     || hm_die 2 "not inside a git repository and HM_PROJECT is not set"
   case "$common" in */.git) (cd "${common%/.git}" && pwd -P) ;; *) hm_die 2 "unsupported repository layout: $common" ;; esac
 }
-hm_project_key() {  # basename plus a short hash of the full path: webapp and webapp-impl never clash
+hm_project_key() {  # basename plus a short hash of the full path: app and app-impl never clash
   local p="$1"; printf '%s-%s\n' "$(basename "$p")" "$(printf '%s' "$p" | shasum | cut -c1-6)"
 }
 hm_state() { local root; root=$(hm_project_root) || exit $?; printf '%s/.hivemind\n' "$root"; }
