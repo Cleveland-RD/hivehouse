@@ -222,17 +222,64 @@ const GIT_WRITES =
 // A command with the words it only carries taken out: a quoted string or a heredoc body is the owner's text, passed word for
 // word (a task, a note), never a command the shell runs. What the shell does run inside text it otherwise leaves alone: single
 // quotes and $'...' never; double quotes and an unquoted heredoc (<<EOF) only their $(...) and backtick spans, which are kept
-// for the match; a quoted heredoc (<<'EOF', <<"EOF", <<\EOF) not at all. Quoting follows the shell's own: '...' has no escapes
-// (an apostrophe inside it is written '\'' : close, escaped apostrophe, open), "..." and $'...' take a backslash escape, and a
-// backslash outside quotes escapes the next character, so an escaped quote opens nothing. A quote that never closes holds the rest.
+// for the match; a quoted heredoc (<<'EOF', <<"EOF", <<\EOF, <<E"OF": a quote or backslash anywhere in the delimiter word makes
+// it quoted, and the delimiter is the whole word with them removed) not at all. A here-string (<<<) is no heredoc. Quoting
+// follows the shell's own: '...' has no escapes (an apostrophe inside it is written '\'' : close, escaped apostrophe, open),
+// "..." and $'...' take a backslash escape, and a backslash outside quotes escapes the next character, so an escaped quote
+// opens nothing. A quote that never closes holds the rest. Inside $( ) the same rules decide where the span ends: a ) in quotes,
+// backticks or after a backslash is no closing paren.
+
+// Where a quoted span that opened just before text[j] ends (just past its closing mark), or the end of the text. In "..." a
+// backslash escapes the next character and a $(...) or backtick span is the shell's own, so its quotes are not this span's.
+function skipSingle(text: string, j: number): number {
+  const k = text.indexOf("'", j)
+  return k < 0 ? text.length : k + 1
+}
+function skipAnsi(text: string, j: number): number {
+  while (j < text.length && text.charAt(j) !== "'") j += text.charAt(j) === '\\' ? 2 : 1
+  return Math.min(j + 1, text.length)
+}
+function skipBacktick(text: string, j: number): number {
+  while (j < text.length && text.charAt(j) !== '`') j += text.charAt(j) === '\\' ? 2 : 1
+  return Math.min(j + 1, text.length)
+}
+function skipDouble(text: string, j: number): number {
+  while (j < text.length && text.charAt(j) !== '"') {
+    const c = text.charAt(j)
+    if (c === '\\') j += 2
+    else if (c === '`') j = skipBacktick(text, j + 1)
+    else if (c === '$' && text.charAt(j + 1) === '(') {
+      const k = closeParen(text, j + 2)
+      j = k < 0 ? text.length : k + 1
+    } else j++
+  }
+  return Math.min(j + 1, text.length)
+}
+// The position of the ) that closes a $( whose body starts at text[from], or -1: parens count only outside quotes and escapes.
+function closeParen(text: string, from: number): number {
+  let depth = 1
+  for (let j = from; j < text.length; ) {
+    const c = text.charAt(j)
+    if (c === '\\') j += 2
+    else if (c === "'") j = skipSingle(text, j + 1)
+    else if (c === '$' && text.charAt(j + 1) === "'") j = skipAnsi(text, j + 2)
+    else if (c === '"') j = skipDouble(text, j + 1)
+    else if (c === '`') j = skipBacktick(text, j + 1)
+    else {
+      if (c === '(') depth++
+      else if (c === ')' && --depth === 0) return j
+      j++
+    }
+  }
+  return -1
+}
 
 // The $(...) or `...` span that starts at text[i], as the shell would run it, and where it ends; null when none starts there.
 function expansionAt(text: string, i: number): [string, number] | null {
   if (text.charAt(i) === '$' && text.charAt(i + 1) === '(') {
-    let depth = 1
-    let j = i + 2
-    for (; j < text.length && depth > 0; j++) depth += text.charAt(j) === '(' ? 1 : text.charAt(j) === ')' ? -1 : 0
-    return [`$(${commandsOnly(text.slice(i + 2, depth ? j : j - 1))}) `, j]
+    const k = closeParen(text, i + 2)
+    const end = k < 0 ? text.length : k
+    return [`$(${commandsOnly(text.slice(i + 2, end))}) `, k < 0 ? text.length : k + 1]
   }
   if (text.charAt(i) === '`') {
     let j = i + 1
@@ -269,10 +316,11 @@ function commandsOnly(command: string): string {
       else if (unquoted) ran += expansionsOf(line) + '\n'
       continue
     }
-    const opens = /<<-?\s*(\\?)(['"]?)([A-Za-z_][A-Za-z0-9_]*)\2/.exec(line)
+    const opens = /(?<!<)<<(?!<)-?\s*([^\s;&|<>()]+)/.exec(line)
     if (opens) {
-      until = opens[3] ?? ''
-      unquoted = !opens[1] && !opens[2]
+      const word = opens[1] ?? ''
+      until = word.replace(/['"\\]/g, '')
+      unquoted = !/['"\\]/.test(word)
     }
     kept.push(line)
   }

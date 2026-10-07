@@ -235,6 +235,43 @@ test('the hub keeps off the projects, and off nothing else', async ($, on) => {
   expect((await bash("echo 'unterminated; git commit -m x")).deny).toBeUndefined()
 })
 
+test('the guard reads quotes inside $( ) and here-strings and partly quoted heredoc words as the shell does', async ($, on) => {
+  world(on, [])
+  const bash = (command: string) => $.tool.call({ tool: 'Bash', tool_use_id: 't', command } as never)
+  const refused = async (why: string, command: string) => expect((await bash(command)).deny, why).toContain('changes a repository')
+  const passes = async (why: string, command: string) => expect((await bash(command)).deny, why).toBeUndefined()
+  // a ) or a quote or a backtick inside quotes within $( ) does not end the span: the shell still runs the git push
+  await refused('a ) in single quotes inside $( )', `echo "$(printf ')' ; git push)"`)
+  await refused('a ) in double quotes inside $( )', `echo "$(printf ")" ; git push)"`)
+  await refused('a ) in backticks inside $( )', 'echo "$(printf `echo )` ; git push)"')
+  await refused('an escaped ) inside $( )', 'echo "$(printf \\) ; git push)"')
+  await refused('a " inside single quotes inside $( )', `echo "$(printf '"' ; git push)"`)
+  await refused('a backtick inside single quotes inside $( )', "echo \"$(printf '`' ; git push)\"")
+  await refused('the same unquoted', `echo $(printf ')' ; git push)`)
+  await refused('a nested $( ) with its own quotes', 'echo "$(echo "$(printf \')\' ; git push)")"')
+  await passes('a ) in quotes inside $( ), and no git write', `echo "$(printf ')' ; echo done)"`)
+  await refused('a $( ) with its own quotes and a ) inside double quotes inside $( ), then a real git push', `echo "$(echo "$(printf "%s)" a)" ; git push)"`)
+  // the span ends at the right paren, so the words after it in the outer quotes are text, not a command
+  await passes('a ) in double quotes inside $( ), then git push as plain quoted text', `echo "$(printf ")" ; echo x) git push"`)
+  await passes('a ) in backticks inside $( ), then git push as plain quoted text', 'echo "$(printf `echo )` ; echo x) git push"')
+  await passes('a $( ) inside double quotes inside $( ), then git push as plain quoted text', `echo "$(echo "$(echo a)" ; echo b) git push"`)
+  await passes('a $( ) with its own quotes inside double quotes inside $( ), then git push as quoted text', `echo "$(echo "$(printf "%s)" a)" ; echo b) git push"`)
+  await passes('a git push only in a quoted string inside $( )', `echo "$(echo 'git push')"`)
+  // a here-string is no heredoc: the lines after it are commands
+  await refused('a here-string <<<"x" then a command', 'cat <<<"hello"\ngit commit -m y')
+  await refused("a here-string <<<'x' then a command", "cat <<<'hello'\ngit commit -m y")
+  await passes("a here-string alone", "cat <<<'git push'")
+  await passes('a here-string with a git word in it', 'cat <<<"git push later"')
+  // a partly quoted delimiter is the whole word, quotes removed, and any quote or backslash makes the body unexpanded
+  await refused('<<E"OF": a command after the real EOF line', 'cat <<E"OF"\nbody\nEOF\ngit push')
+  await refused("<<E'OF': a command after the real EOF line", "cat <<E'OF'\nbody\nEOF\ngit push")
+  await refused('<<"E"OF: a command after the real EOF line', 'cat <<"E"OF\nbody\nEOF\ngit push')
+  await passes('<<E"OF": a $( ) in the body is quoted text, not run', 'cat <<E"OF"\n$(git push)\nEOF')
+  await passes("<<E\\OF: a backtick in the body is quoted text", 'cat <<E\\OF\n`git push`\nEOF')
+  await refused('<<EOF unquoted: a $( ) in the body is run', 'cat <<EOF\n$(git push)\nEOF')
+  await passes('<<-EOF with a tab-indented end', 'cat <<-EOF\nnote: git push later\n\tEOF')
+})
+
 test('the screen: what needs the owner first, then each project, and Resume wakes a stopped orchestrator', async ($, on) => {
   const runs: string[][] = []
   const opened: string[] = []
