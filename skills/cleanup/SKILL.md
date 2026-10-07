@@ -3,12 +3,12 @@ name: cleanup
 description: Full owner cleanup of a hivehouse run: preview what the manifest recorded, remove it on the owner's word, and report free disk before and after. Use when the owner types /hivehouse:cleanup after or during a run.
 argument-hint: [--disk]
 disable-model-invocation: true
-allowed-tools: Bash(hh-disk *) Bash(hh-manifest list) Bash(hh-manifest list *) Bash(hh-slot status) Read SendMessage
+allowed-tools: Bash(hh-resolve *) Bash(hh-disk *) Bash(hh-manifest list) Bash(hh-manifest list *) Bash(hh-slot status) Read SendMessage
 ---
 
 # hivehouse: cleanup
 
-Read `${CLAUDE_PLUGIN_ROOT}/rules/RULES.md` first. `hh-cleanup` is the executable that does the work; this skill is the
+Run `hh-resolve rules` and read the file it prints first (the project's or the user's own `custom/rules/RULES.md`, else the plugin's). `hh-cleanup` is the executable that does the work; this skill is the
 owner's full, supervised pass. `hh-cleanup` is deliberately not pre-approved: it prompts every time, so the owner sees
 the exact command. Call each `hh-*` executable and each `git` command on its own, never inside a compound command; no
 git rule is pre-approved, so each `git` call asks.

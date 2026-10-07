@@ -2,12 +2,12 @@
 name: gate
 description: Run the project's gate into a log file, verify every step's result line and the commit rules, and refuse to call anything green without the log. Use before landing or handing back work, and when verifying a builder's gate log.
 when_to_use: When asked to "run the gate", "gate this", "verify the gate log", or before reporting work as done or green.
-allowed-tools: Bash(hh-gate-verify *) Bash(hh-slot status) Bash(hh-slot release *) Bash(hh-settings resolve *) Read
+allowed-tools: Bash(hh-resolve *) Bash(hh-gate-verify *) Bash(hh-slot status) Bash(hh-slot release *) Bash(hh-settings resolve *) Read
 ---
 
 # hivehouse: gate
 
-Read `${CLAUDE_PLUGIN_ROOT}/rules/RULES.md` first. Call every `hh-*` executable and every `git` command on its own, never
+Run `hh-resolve rules` and read the file it prints first (the project's or the user's own `custom/rules/RULES.md`, else the plugin's). Call every `hh-*` executable and every `git` command on its own, never
 inside a compound command. No git rule is pre-approved, so each `git` call asks; `hh-gate` and `hh-slot run` are not
 pre-approved either and will ask. That is intended.
 
