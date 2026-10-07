@@ -234,6 +234,17 @@ hm_tmux kill-pane -t "$aw"; sleep 0.5
 r=$(rec --json); assert_eq "an agent that stopped since the last beat: its orchestrator is told" "$(act "$r" | tr ',' '\n' | grep respawn)" "respawn:beta"
 assert_eq "...naming it" "$(printf '%s' "$r" | jq -r '[.actions[] | select(.action == "respawn")][0].agents | join(",")')" "impl"
 r=$(rec --json); assert_eq "...and once: the next beat does not say it again" "$(act "$r" | tr ',' '\n' | grep -c respawn)" "0"
+# an agent of a team that sits in a worktree of the project's home is seen too
+mk eps; hub add eps --home eps >/dev/null
+( exec -a claude sleep 600 ) >/dev/null 2>&1 & epid=$!; disown "$epid"; t_track "$epid"; sleep 0.3
+mkorch eps "$epid"
+EW="$H/eps-wt"; git -C "$H/eps" worktree add -q "$EW" -b eps-team; EW=$(cd "$EW" && pwd -P); mkdir -p "$EW/.hivemind"
+ew=$(hm_tmux new-window -d -P -F '#{pane_id}' -t keep: -n wimpl 'sleep 600'); ei=$(hm_pane_identity "$HM_TMUX_SOCKET" "$ew")
+jq -nc --arg k "$HM_TMUX_SOCKET" --arg p "$ew" --arg pp "${ei%%$'\t'*}" --arg ps "${ei#*$'\t'}" '{agents:[{name:"wimpl", pane:$p, socket:$k, pane_pid:$pp, pane_started:$ps}]}' > "$EW/.hivemind/team.json"
+rec --json >/dev/null
+hm_tmux kill-pane -t "$ew"; sleep 0.5
+r=$(rec --json); assert_eq "an agent of a worktree team that stopped since the last beat: its orchestrator is told" "$(act "$r" | tr ',' '\n' | grep 'respawn:eps')" "respawn:eps"
+assert_eq "...naming it" "$(printf '%s' "$r" | jq -r '[.actions[] | select(.action == "respawn" and .project == "eps")][0].agents | join(",")')" "wimpl"
 # a Claude that is not the hub hub.json records does not recover, marker or not
 CLX=$(mkcl "$DB" noself)
 HM_AWAY_BYPASS=1 bash "$CLX" recover --json >/dev/null 2>"$T_TMP/n2.err"; assert_status "recover from a Claude that is not the recorded hub" $? 4

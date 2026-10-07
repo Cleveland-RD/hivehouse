@@ -146,4 +146,20 @@ jq -nc --argjson p "$hp2" --arg s "bbbb2222-0000-0000-0000-000000000002" --arg c
 hub wake res --still 2 --max-wait 15 >/dev/null 2>"$T_TMP/w.err"; assert_status "a live Claude already holding that conversation refuses the wake" $? 4
 assert_contains "...and says so" "$(cat "$T_TMP/w.err")" "already open in a live session"
 kill "$hp2" 2>/dev/null
+
+# ---- hm-hub run reaches an orchestrator registered only in a worktree: its pane is read from that root's team.json ----
+mk wr; hub add wr --home wr >/dev/null
+WR="$H/wr-wt"; git -C "$H/wr" worktree add -q "$WR" -b wr-team; WR=$(cd "$WR" && pwd -P); mkdir -p "$WR/.hivemind/team/orchestrator"
+SB="$T_TMP/b.sock"
+WRPANE=$(env -u HIVEMIND_HOME tmux -S "$SB" new-session -d -x 200 -y 56 -P -F '#{pane_id}' -s wrb -c "$WR" -e "HM_FAKE_CLAUDE=idle" 'exec claude --name wr-orchestrator') || WRPANE=""
+t_track "$(tmux -S "$SB" display -p '#{pid}')"
+( exec -a claude sleep 300 ) >/dev/null 2>&1 & WRC=$!; disown "$WRC"; t_track "$WRC"; sleep 0.3
+wi=$(hm_pane_identity "$SB" "$WRPANE")
+jq -nc --arg k "$SB" --arg p "$WRPANE" --arg pp "${wi%%$'\t'*}" --arg ps "${wi#*$'\t'}" --arg c "$WRC" --arg cs "$(hm_lstart "$WRC")" \
+  '{agents:[{name:"orchestrator", pane:$p, socket:$k, pane_pid:$pp, pane_started:$ps, claude_pid:$c, claude_started:$cs, name_full:"wr-orchestrator"}]}' > "$WR/.hivemind/team.json"
+jq -nc --arg t "$HM_REPO_ROOT/tests/fixtures/transcript.jsonl" '{session_id:"sess-wr", transcript_path:$t}' > "$WR/.hivemind/team/orchestrator/session.json"
+wt1=$(hub task wr --text "Work the queue"); wt1=${wt1%%$'\t'*}
+rp=$(hub run wr overnight "$wt1" --still 2 --max-wait 15 2>"$T_TMP/r.err"); assert_status "run overnight for an orchestrator registered in a worktree" $? 0
+assert_eq "...typed into its pane, on its own server" "$rp" "$WRPANE"
+assert_contains "...the fixed line" "$(tmux -S "$SB" capture-pane -p -J -S - -t "$WRPANE")" "GOT: /hivemind:overnight Task $wt1"
 t_done
