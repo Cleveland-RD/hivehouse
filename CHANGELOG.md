@@ -2,7 +2,7 @@
 
 ## 0.5.0
 
-- **hivemind is now hivehouse.** A new user installs hivehouse and never meets the old name. This release knows only the new names: it reads nothing under an old name, so a machine that ran hivemind moves once, by hand (the plugin, then each folder below).
+- **hivemind is now hivehouse.** A new user installs hivehouse and never meets the old name. This release knows only the new names: it reads nothing under an old name, so a machine that ran hivemind moves once, by hand, in this order: stop the teams, migrate each folder below (every project, the hub and `--home`), and only then reinstall the plugin and start sessions. A 0.5.0 session started before the migration creates the new folders, and the migration then refuses because both the old and the new exist.
 
   | What | Was | Is |
   |---|---|---|
