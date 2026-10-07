@@ -30,6 +30,22 @@ done
 for c in PLUGIN PREFIX HUB_DIR PANE; do
   assert_eq "hooks/names.ts exports $c once" "$(grep -c "^export const $c " hooks/names.ts)" "1"
 done
+# every name stated twice (bin/ or hooks/ against the test helper) agrees, and the plugin's name is the one in plugin.json
+tsval() {  # tsval <file> <export name>: the string a `export const NAME = '...'` line gives
+  sed -n "s/^export const $2\( as const\)\{0,1\} = '\([^']*\)'.*/\2/p" "$1"
+}
+assert_eq "hooks/names.ts PLUGIN is plugin.json's name" "$(tsval hooks/names.ts PLUGIN)" "$T_PLUGIN"
+assert_eq "tests/names.ts PLUGIN is plugin.json's name" "$(tsval tests/names.ts PLUGIN)" "$T_PLUGIN"
+assert_eq "hooks/names.ts PREFIX is the helper's" "$(tsval hooks/names.ts PREFIX)" "$T_PREFIX"
+assert_eq "tests/names.ts PREFIX is the helper's" "$(tsval tests/names.ts PREFIX)" "$T_PREFIX"
+assert_eq "hooks/names.ts HUB_DIR is the helper's" "$(tsval hooks/names.ts HUB_DIR)" "$T_HUB"
+assert_eq "tests/names.ts HUB_DIR is the helper's" "$(tsval tests/names.ts HUB_DIR)" "$T_HUB"
+assert_eq "hooks/names.ts PANE is the helper's" "$(tsval hooks/names.ts PANE)" "$T_PANE"
+assert_eq "tests/names.ts PANE_ID is the helper's" "$(tsval tests/names.ts PANE_ID)" "$T_PANE"
+for pair in HM_PREFIX:T_PREFIX HM_STATE_DIR:T_STATE HM_HUB_DIR:T_HUB HM_HOME_DIR:T_HOMEDIR HM_MAC_BASE:T_MAC_BASE HM_LINUX_BASE:T_LINUX_BASE HM_LINUX_SLOT:T_LINUX_SLOT HM_DELEGATE_LINE1:T_DELEGATE_LINE1; do
+  v=$(bash -c '. "$1/bin/hm-lib.sh"; eval "printf %s \"\$$2\""' _ "$HM_REPO_ROOT" "${pair%%:*}"); w=$(eval "printf %s \"\$${pair##*:}\"")
+  assert_eq "${pair%%:*} is the helper ${pair##*:}" "$v" "$w"
+done
 # ---- the plugin's name is read, not spelled: a plugin folder whose name is zz speaks of /zz: ----
 P="$T_TMP/zz-plugin"; mkdir -p "$P/.claude-plugin"; cp -R "$HM_REPO_ROOT/bin" "$P/bin"
 jq '.name = "zz"' "$HM_REPO_ROOT/.claude-plugin/plugin.json" > "$P/.claude-plugin/plugin.json"
