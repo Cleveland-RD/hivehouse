@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+# Each name is spelled in one place (the rename plan's phase 1): a folder or path name only in its constant (bin/hm-lib.sh,
+# hooks/names.ts) or its test helper (tests/lib.sh, tests/names.ts); the plugin's name only in .claude-plugin/plugin.json,
+# read by hm_plugin_name. Docs (README, skills, roles, rules, workflows, evals) and comments are not held to this.
+. "$(dirname "$0")/lib.sh"
+t_setup
+cd "$HM_REPO_ROOT"
+# ---- the grep: what is left once the allowed places and the comments are taken away ----
+NAMES='\.hivemind|hivemind-(hub|delegate)|/hivemind($|[^a-z-])|["'"'"'`]hivemind: |hivemind:[a-z]|hivemind@'
+stray() {  # stray <file>...: the lines of those files that spell a name outside a comment; a constants line is allowed
+  local f
+  for f in "$@"; do
+    sed -e 's/^[[:space:]]*#.*$//' -e 's/^[[:space:]]*\/\/.*$//' -e 's/[[:space:]]#[[:space:]].*$//' -e 's/[[:space:]]\/\/[[:space:]].*$//' "$f" \
+      | grep -nE "$NAMES" | grep -vE '^[0-9]+:(HM_[A-Z_0-9]+|T_[A-Z_0-9]+)=|^[0-9]+:export const [A-Z_]+ =' | sed "s|^|$f:|"
+  done
+}
+prod=$(stray bin/hm-* hooks/*.tsx hooks/hooks.json)
+assert_eq "bin/ and hooks/ spell no folder, path or command name outside their constants" "$prod" ""
+tests=$(stray tests/test_*.sh tests/*.test.ts tests/bin/* | grep -v '^tests/test_names.sh:')
+assert_eq "the tests spell none outside tests/lib.sh and tests/names.ts" "$tests" ""
+# the one other place the plugin's name is a literal: the key of the atoms' types, which TypeScript cannot take from a constant
+assert_eq "types/index.d.ts keys the atoms by the plugin's name" "$(sed -n 's/^    \([a-z-]*\): { hubView.*/\1/p' types/index.d.ts)" "$T_PLUGIN"
+# ...and the atoms' plugin, a literal the engine reads from the source of hooks/hub.tsx
+assert_eq "hooks/hub.tsx declares 3 atoms" "$(grep -c "atom({ plugin: '" hooks/hub.tsx)" "3"
+assert_eq "...each in the plugin's name" "$(grep -o "atom({ plugin: '[^']*'" hooks/hub.tsx | sort -u)" "atom({ plugin: '$T_PLUGIN'"
+# the constants are where the grep says they are, once each
+for c in HM_PREFIX HM_STATE_DIR HM_HUB_DIR HM_HOME_DIR HM_MAC_BASE HM_LINUX_BASE HM_LINUX_SLOT HM_DELEGATE_LINE1; do
+  assert_eq "bin/hm-lib.sh defines $c once" "$(grep -c "^$c=" bin/hm-lib.sh)" "1"
+done
+for c in PLUGIN PREFIX HUB_DIR PANE; do
+  assert_eq "hooks/names.ts exports $c once" "$(grep -c "^export const $c " hooks/names.ts)" "1"
+done
+# ---- the plugin's name is read, not spelled: a plugin folder whose name is zz speaks of /zz: ----
+P="$T_TMP/zz-plugin"; mkdir -p "$P/.claude-plugin"; cp -R "$HM_REPO_ROOT/bin" "$P/bin"
+jq '.name = "zz"' "$HM_REPO_ROOT/.claude-plugin/plugin.json" > "$P/.claude-plugin/plugin.json"
+assert_eq "hm_plugin_name reads .claude-plugin/plugin.json" "$(bash -c '. "$1/bin/hm-lib.sh"; hm_plugin_name' _ "$P")" "zz"
+HUBF="$T_TMP/hubf"; mkdir -p "$HUBF/$T_HUB"
+out=$(printf '{"cwd":"%s","session_id":"x","source":"startup"}' "$HUBF" | "$P/bin/hm-session-hook")
+assert_contains "the session hook names the hub skill by the plugin's name" "$out" "invoke the zz:hub skill"
+out=$("$P/bin/hm-disk" --hook --min-gb 99999999)
+assert_contains "the low-disk line names the cleanup skill by the plugin's name" "$out" "Run /zz:cleanup"
+rm "$P/.claude-plugin/plugin.json"
+out=$(bash -c '. "$1/bin/hm-lib.sh"; hm_plugin_name' _ "$P" 2>&1); rc=$?
+assert_status "...and an unreadable plugin.json is an error, not an empty name" "$rc" 2
+assert_contains "...that says so" "$out" "cannot read the plugin's name"
+t_done
