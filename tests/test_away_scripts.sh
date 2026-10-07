@@ -14,7 +14,7 @@ for a in "--finish" "--finish --dry-run" "--dry-run --finish"; do
 done
 assert_contains "...saying it is hivemind's away mode" "$(cat "$T_TMP/err")" "away mode"
 assert_contains "...and to tell the owner" "$(cat "$T_TMP/err")" "owner"
-[ ! -e "$r/.hivemind" ] && ok "...before anything is written" || bad "the refused --finish wrote .hivemind"
+[ ! -e "$r/$T_STATE" ] && ok "...before anything is written" || bad "the refused --finish wrote $T_STATE"
 HM_AWAY_BYPASS=1 hm-cleanup --disk >"$T_TMP/out" 2>"$T_TMP/err"; assert_status "hm-cleanup --disk stays allowed with the marker" $? 0
 HM_AWAY_BYPASS=1 hm-cleanup --bogus >/dev/null 2>&1; assert_status "a usage error is still a usage error" $? 64
 HM_AWAY_BYPASS=1 hm-cleanup >/dev/null 2>&1; assert_status "...and no mode too" $? 64

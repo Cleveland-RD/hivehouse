@@ -102,9 +102,9 @@ clC=$(LC_ALL=C /bin/ps -o lstart= -p "$cl" | trim); clL=$(/bin/ps -o lstart= -p 
 hm_claude_is "$cl" "$clC"; assert_status "a Claude recorded in C" $? 0
 hm_claude_is "$cl" "$clL"; assert_status "a Claude recorded in the caller's locale" $? 0
 hm_claude_is "$cl" "$FR"; assert_status "a Claude recorded in a third locale's form reads as gone" $? 1
-R="$T_TMP/proj"; mkdir -p "$R/.hivemind"
+R="$T_TMP/proj"; mkdir -p "$R/$T_STATE"
 tj() { jq -nc --arg k "$HM_TMUX_SOCKET" --arg p "$pane" --arg pp "$pp" --arg ps "$1" --arg c "$cl" --arg cs "$2" \
-  '{agents:[{name:"impl", pane:$p, socket:$k, pane_pid:$pp, pane_started:$ps, claude_pid:$c, claude_started:$cs}]}' > "$R/.hivemind/team.json"; }
+  '{agents:[{name:"impl", pane:$p, socket:$k, pane_pid:$pp, pane_started:$ps, claude_pid:$c, claude_started:$cs}]}' > "$R/$T_STATE/team.json"; }
 tj "$ppL" "$clL"; hm_team_agent_is "$R" impl; assert_status "an agent recorded by 0.2.0 (caller's locale) is running" $? 0
 tj "$ppC" "$clC"; hm_team_agent_is "$R" impl; assert_status "...recorded in C is running" $? 0
 tj "$FR" "$FR"; hm_team_agent_is "$R" impl; assert_status "...recorded in a third locale's form reads as stopped" $? 1

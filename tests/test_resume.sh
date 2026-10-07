@@ -6,7 +6,7 @@
 t_setup
 r=$(t_repo proj); cd "$r"; echo role > "$T_TMP/impl.md"; echo rules > "$T_TMP/RULES.md"
 env -u HIVEMIND_HOME tmux -S "$HM_TMUX_SOCKET" new-session -d -s keep 'sleep 600'
-S="$r/.hivemind"
+S="$r/$T_STATE"
 spawn() { hm-spawn --agent "$1" --role "$T_TMP/impl.md" --rules "$T_TMP/RULES.md" --model sonnet --effort medium --mode "${2:-auto}" --still 2 --max-wait 15; }
 respawn() { hm-spawn --respawn "$@" --still 2 --max-wait 15; }
 pane() { jq -r '.agents[]|select(.name=="impl").pane' "$S/team.json"; }
@@ -110,10 +110,10 @@ np=$(respawn impl --resume); sc=$(screen "$np"); assert_contains "a broken sessi
 rm -f "$CLAUDE_CONFIG_DIR/sessions/1.json"
 
 echo "-- hm_mode_rank and hm-settings agree on the five local modes (they merge when A7 lands)"
-rk=$(t_repo ranks); mkdir -p "$rk/.hivemind"
+rk=$(t_repo ranks); mkdir -p "$rk/$T_STATE"
 agree=0; total=0
 for x in plan dontAsk default acceptEdits auto; do for y in plan dontAsk default acceptEdits auto; do
-  printf '{"permission_mode":"%s"}\n' "$x" > "$rk/.hivemind/settings.json"
+  printf '{"permission_mode":"%s"}\n' "$x" > "$rk/$T_STATE/settings.json"
   got=$(cd "$rk" && hm-settings resolve permission_mode "$y" 2>/dev/null)
   if [ "$(hm_mode_rank "$x")" -lt "$(hm_mode_rank "$y")" ]; then want=$x; else want=$y; fi
   total=$((total + 1)); [ "$got" = "$want" ] && agree=$((agree + 1)) || bad "project $x, owner $y: hm-settings gave [$got], hm_mode_rank says [$want]"

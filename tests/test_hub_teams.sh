@@ -5,7 +5,7 @@
 . "$HM_REPO_ROOT/bin/hm-lib.sh"
 t_setup
 env -u HIVEMIND_HOME tmux -S "$HM_TMUX_SOCKET" new-session -d -s keep 'sleep 600'
-H="$T_TMP/work"; mkdir -p "$H"; H=$(cd "$H" && pwd -P); P="$H/.hivemind-hub"
+H="$T_TMP/work"; mkdir -p "$H"; H=$(cd "$H" && pwd -P); P="$H/$T_HUB"
 hub() { (cd "$H" && hm-hub "$@"); }
 mk() { local d="$H/$1"; mkdir -p "$d"; git -C "$d" init -q -b main; git -C "$d" config user.email t@t; git -C "$d" config user.name t
        echo x > "$d/README"; git -C "$d" add README; git -C "$d" commit -qm init; }
@@ -20,7 +20,7 @@ mk app; mk other
 hub init >/dev/null; hub add app --home app >/dev/null; hub add other --home other >/dev/null
 mkdir -p "$T_TMP/cl"; printf '#!/usr/bin/env bash\ncd "%s" && hm-hub self "$@"\n' "$H" > "$T_TMP/cl/claude"; bash "$T_TMP/cl/claude" --name hub >/dev/null
 WT="$H/app-wt"; git -C "$H/app" worktree add -q "$WT" -b team; WT=$(cd "$WT" && pwd -P)
-mkdir -p "$WT/.hivemind/team/orchestrator"
+mkdir -p "$WT/$T_STATE/team/orchestrator"
 kp=$(hm_tmux list-panes -t keep -F '#{pane_id}' | head -1); ki=$(hm_pane_identity "$HM_TMUX_SOCKET" "$kp")
 
 # ---- a team registered in a worktree of the home is seen ----
@@ -28,7 +28,7 @@ assert_eq "no team anywhere: none" "$(proj '.projects[0].orchestrator.state')" "
 CP=$(live app-orchestrator "$WT")
 jq -nc --arg k "$HM_TMUX_SOCKET" --arg kp "$kp" --arg p "${ki%%$'\t'*}" --arg s "${ki#*$'\t'}" --arg c "$CP" --arg cs "$(hm_lstart "$CP")" \
   '{agents:[{name:"orchestrator", pane:$kp, socket:$k, pane_pid:$p, pane_started:$s, claude_pid:$c, claude_started:$cs, name_full:"app-orchestrator"},
-            {name:"impl", pane:$kp, socket:$k, pane_pid:$p, pane_started:$s}]}' > "$WT/.hivemind/team.json"
+            {name:"impl", pane:$kp, socket:$k, pane_pid:$p, pane_started:$s}]}' > "$WT/$T_STATE/team.json"
 assert_eq "an orchestrator registered in a worktree of the home runs" "$(proj '.projects[0].orchestrator.state')" "running"
 assert_eq "...its agents are listed, each with its worktree" "$(proj '.projects[0].agents | map([.name, .worktree] | join("@")) | join(",")')" "impl@$WT"
 assert_contains "...the plain status names it" "$(hub status app)" "running"
@@ -40,16 +40,16 @@ assert_eq "hm-context ran once for each team root in one status call" "$(sort "$
 assert_eq "...for the home and the worktree" "$(wc -l < "$T_TMP/ctx.calls" | tr -d ' ')" "2"
 # an orchestrator whose tokens exceed the window that is only assumed shows as unknown, never as a percent over 100
 jq -nc '{type:"assistant", isSidechain:false, message:{model:"claude-sonnet-5-5", usage:{input_tokens:300000, cache_read_input_tokens:0, cache_creation_input_tokens:0, output_tokens:0}}}' > "$T_TMP/big.jsonl"
-jq -nc --arg t "$T_TMP/big.jsonl" '{session_id:"sess-big", transcript_path:$t}' > "$WT/.hivemind/team/orchestrator/session.json"
+jq -nc --arg t "$T_TMP/big.jsonl" '{session_id:"sess-big", transcript_path:$t}' > "$WT/$T_STATE/team/orchestrator/session.json"
 assert_eq "the status carries no context number when the window is unknown" "$(proj '.projects[0].orchestrator | has("context")')" "false"
 assert_eq "...it says the window is unknown, with the tokens" "$(proj '.projects[0].orchestrator | [.context_unknown, .context_tokens] | map(tostring) | join(" ")')" "true 300000"
 assert_eq "...and no context in the whole status is over 100" "$(hub status app --json | jq '[.. | .context? | numbers | select(. > 100)] | length')" "0"
-rm "$WT/.hivemind/team/orchestrator/session.json"
-mkdir -p "$H/app/.hivemind"
-jq -c '{agents: [.agents[] | select(.name == "orchestrator")]}' "$WT/.hivemind/team.json" > "$H/app/.hivemind/team.json"
+rm "$WT/$T_STATE/team/orchestrator/session.json"
+mkdir -p "$H/app/$T_STATE"
+jq -c '{agents: [.agents[] | select(.name == "orchestrator")]}' "$WT/$T_STATE/team.json" > "$H/app/$T_STATE/team.json"
 assert_eq "registered in both roots (same process): it counts once, as running" "$(proj '.projects[0].orchestrator.state')" "running"
 assert_eq "...and is not listed among the agents" "$(proj '.projects[0].agents | map(.name) | sort | join(",")')" "impl"
-rm "$H/app/.hivemind/team.json"
+rm "$H/app/$T_STATE/team.json"
 assert_eq "a team in a worktree of another project's home is not this project's" "$(hub status other --json | jq -r '.projects[0].orchestrator.state')" "none"
 hub dialog app impl >/dev/null 2>"$T_TMP/d.err"; rc=$?
 case "$(cat "$T_TMP/d.err")" in *"no agent named"*) bad "an agent in a worktree's team is not found by dialog" ;; *) ok "an agent in a worktree's team is found by hm-hub dialog (exit $rc)" ;; esac
@@ -58,7 +58,7 @@ kill "$CP" 2>/dev/null; sleep 0.3
 assert_eq "its Claude gone: stopped" "$(proj '.projects[0].orchestrator.state')" "stopped"
 
 # ---- wake resumes from the root the orchestrator was found in ----
-jq -nc --arg t "$HM_REPO_ROOT/tests/fixtures/transcript.jsonl" '{session_id:"sess-wt", transcript_path:$t}' > "$WT/.hivemind/team/orchestrator/session.json"
+jq -nc --arg t "$HM_REPO_ROOT/tests/fixtures/transcript.jsonl" '{session_id:"sess-wt", transcript_path:$t}' > "$WT/$T_STATE/team/orchestrator/session.json"
 wp=$(hub wake app --mode auto --still 2 --max-wait 15 2>"$T_TMP/wake.err"); assert_status "wake of a worktree orchestrator" $? 0
 screen=$(hm_tmux capture-pane -p -J -S - -t "$wp")
 assert_contains "...resumes the session recorded in the worktree" "$screen" "ARGV: sess-wt"
@@ -66,7 +66,7 @@ assert_eq "...in the worktree it was found in" "$(hm_tmux display-message -p -t 
 hm_tmux kill-pane -t "$wp"; rm -f "$P/panes/app.json"
 
 # ---- a session named after the project, in the home, is its orchestrator ----
-rm -rf "$WT/.hivemind/team.json"
+rm -rf "$WT/$T_STATE/team.json"
 assert_eq "no team.json and no session: none" "$(proj '.projects[0].orchestrator.state')" "none"
 lp=$(live app "$H/app")
 assert_eq "a live session named just <project>, running in the home, counts" "$(proj '.projects[0].orchestrator.state')" "unregistered"
@@ -82,7 +82,7 @@ kill "$lp" 2>/dev/null
 # Nothing is recorded (no team.json entry, no session.json): the transcript under the folder key of a team root, whose last custom-title is
 # <project>-orchestrator and whose records all carry that root as cwd, is the conversation. Its key is the path with / . _ & and space as '-'.
 mk res; hub add res --home res >/dev/null
-RT="$H/res-wt"; git -C "$H/res" worktree add -q "$RT" -b rteam; RT=$(cd "$RT" && pwd -P); mkdir -p "$RT/.hivemind"; echo '{"agents":[]}' > "$RT/.hivemind/team.json"
+RT="$H/res-wt"; git -C "$H/res" worktree add -q "$RT" -b rteam; RT=$(cd "$RT" && pwd -P); mkdir -p "$RT/$T_STATE"; echo '{"agents":[]}' > "$RT/$T_STATE/team.json"
 key() { printf '%s' "$1" | tr '/._& ' '-----'; }
 # tr_file <root> <session id> <title> <cwd in records> <touch -t stamp>: a transcript under <root>'s key folder
 tr_file() {
@@ -161,19 +161,19 @@ kill "$hp2" 2>/dev/null
 
 # ---- two different orchestrators: a stale one in the home, a live one in a worktree. The live one is the orchestrator ----
 mk two; hub add two --home two >/dev/null
-T2="$H/two-wt"; git -C "$H/two" worktree add -q "$T2" -b two-team; T2=$(cd "$T2" && pwd -P); mkdir -p "$T2/.hivemind/team/orchestrator" "$H/two/.hivemind/team/orchestrator"
-T3="$H/two-wt3"; git -C "$H/two" worktree add -q "$T3" -b two-team3; T3=$(cd "$T3" && pwd -P); mkdir -p "$T3/.hivemind"
+T2="$H/two-wt"; git -C "$H/two" worktree add -q "$T2" -b two-team; T2=$(cd "$T2" && pwd -P); mkdir -p "$T2/$T_STATE/team/orchestrator" "$H/two/$T_STATE/team/orchestrator"
+T3="$H/two-wt3"; git -C "$H/two" worktree add -q "$T3" -b two-team3; T3=$(cd "$T3" && pwd -P); mkdir -p "$T3/$T_STATE"
 DEAD=$( ( exec -a claude sleep 0.1 ) >/dev/null 2>&1 & echo $! ); sleep 0.4
 jq -nc --arg k "$HM_TMUX_SOCKET" --arg kp "$kp" --arg p "${ki%%$'\t'*}" --arg c "$DEAD" \
-  '{agents:[{name:"orchestrator", pane:$kp, socket:$k, pane_pid:$p, pane_started:"Mon Jan  1 00:00:00 2001", claude_pid:$c, claude_started:"Mon Jan  1 00:00:00 2001", name_full:"two-orchestrator"}]}' > "$H/two/.hivemind/team.json"
-jq -nc --arg t "$HM_REPO_ROOT/tests/fixtures/transcript.jsonl" '{session_id:"sess-home-old", transcript_path:$t}' > "$H/two/.hivemind/team/orchestrator/session.json"
+  '{agents:[{name:"orchestrator", pane:$kp, socket:$k, pane_pid:$p, pane_started:"Mon Jan  1 00:00:00 2001", claude_pid:$c, claude_started:"Mon Jan  1 00:00:00 2001", name_full:"two-orchestrator"}]}' > "$H/two/$T_STATE/team.json"
+jq -nc --arg t "$HM_REPO_ROOT/tests/fixtures/transcript.jsonl" '{session_id:"sess-home-old", transcript_path:$t}' > "$H/two/$T_STATE/team/orchestrator/session.json"
 TP=$(live two-orchestrator "$T2")
 rm -f "$CLAUDE_CONFIG_DIR/sessions/$TP.json"   # Claude Code records nothing of it: only team.json says it runs
 jq -nc --arg k "$HM_TMUX_SOCKET" --arg kp "$kp" --arg p "${ki%%$'\t'*}" --arg s "${ki#*$'\t'}" --arg c "$TP" --arg cs "$(hm_lstart "$TP")" \
   '{agents:[{name:"orchestrator", pane:$kp, socket:$k, pane_pid:$p, pane_started:$s, claude_pid:$c, claude_started:$cs, name_full:"two-orchestrator"},
-            {name:"impl", pane:$kp, socket:$k, pane_pid:$p, pane_started:$s}]}' > "$T2/.hivemind/team.json"
+            {name:"impl", pane:$kp, socket:$k, pane_pid:$p, pane_started:$s}]}' > "$T2/$T_STATE/team.json"
 jq -nc --arg k "$HM_TMUX_SOCKET" --arg kp "$kp" --arg p "${ki%%$'\t'*}" --arg s "${ki#*$'\t'}" \
-  '{agents:[{name:"orchestrator", pane:$kp, socket:$k, pane_pid:$p, pane_started:$s}]}' > "$T3/.hivemind/team.json"
+  '{agents:[{name:"orchestrator", pane:$kp, socket:$k, pane_pid:$p, pane_started:$s}]}' > "$T3/$T_STATE/team.json"
 ts() { hub status two --json | jq -r "$1"; }
 assert_eq "a live orchestrator in a worktree wins over a stale one in the home: running" "$(ts '.projects[0].orchestrator.state')" "running"
 assert_eq "...the agents are the impl alone, plus the spawned agent that only shares the orchestrator's name in a third root" "$(ts '.projects[0].agents | map([.name, (.worktree | sub(".*/"; ""))] | join("@")) | join(",")')" "impl@two-wt,orchestrator@two-wt3"
@@ -184,11 +184,11 @@ kill "$TP" 2>/dev/null
 
 # ---- an agent name used in two team roots of one project: told apart by the root ----
 mk dup; hub add dup --home dup >/dev/null
-DW="$H/dup-wt"; git -C "$H/dup" worktree add -q "$DW" -b dup-team; DW=$(cd "$DW" && pwd -P); mkdir -p "$DW/.hivemind" "$H/dup/.hivemind"
+DW="$H/dup-wt"; git -C "$H/dup" worktree add -q "$DW" -b dup-team; DW=$(cd "$DW" && pwd -P); mkdir -p "$DW/$T_STATE" "$H/dup/$T_STATE"
 pb=$(hm_tmux new-window -d -P -F '#{pane_id}' -t keep: -n twin 'sleep 600'); pbi=$(hm_pane_identity "$HM_TMUX_SOCKET" "$pb")
 for pair in "$H/dup:$kp:${ki%%$'\t'*}:${ki#*$'\t'}" "$DW:$pb:${pbi%%$'\t'*}:${pbi#*$'\t'}"; do
   IFS=: read -r droot dpane dpp dps <<< "$pair"
-  jq -nc --arg k "$HM_TMUX_SOCKET" --arg p "$dpane" --arg pp "$dpp" --arg ps "$dps" '{agents:[{name:"impl", pane:$p, socket:$k, pane_pid:$pp, pane_started:$ps}]}' > "$droot/.hivemind/team.json"
+  jq -nc --arg k "$HM_TMUX_SOCKET" --arg p "$dpane" --arg pp "$dpp" --arg ps "$dps" '{agents:[{name:"impl", pane:$p, socket:$k, pane_pid:$pp, pane_started:$ps}]}' > "$droot/$T_STATE/team.json"
 done
 ds() { hub status dup --json | jq -r "$1"; }
 assert_eq "the name is listed once per root, each with its root" "$(ds '.projects[0].agents | map(.worktree) | sort | join(",")')" "$(printf '%s\n%s' "$H/dup" "$DW" | sort | tr '\n' ',' | sed 's/,$//')"
@@ -207,17 +207,17 @@ assert_contains "the plain status names the root of a stopped one of two same-na
 
 # ---- hm-hub run reaches an orchestrator registered only in a worktree: its pane is read from that root's team.json ----
 mk wr; hub add wr --home wr >/dev/null
-WR="$H/wr-wt"; git -C "$H/wr" worktree add -q "$WR" -b wr-team; WR=$(cd "$WR" && pwd -P); mkdir -p "$WR/.hivemind/team/orchestrator"
+WR="$H/wr-wt"; git -C "$H/wr" worktree add -q "$WR" -b wr-team; WR=$(cd "$WR" && pwd -P); mkdir -p "$WR/$T_STATE/team/orchestrator"
 SB="$T_TMP/b.sock"
 WRPANE=$(env -u HIVEMIND_HOME tmux -S "$SB" new-session -d -x 200 -y 56 -P -F '#{pane_id}' -s wrb -c "$WR" -e "HM_FAKE_CLAUDE=idle" 'exec claude --name wr-orchestrator') || WRPANE=""
 t_track "$(tmux -S "$SB" display -p '#{pid}')"
 ( exec -a claude sleep 300 ) >/dev/null 2>&1 & WRC=$!; disown "$WRC"; t_track "$WRC"; sleep 0.3
 wi=$(hm_pane_identity "$SB" "$WRPANE")
 jq -nc --arg k "$SB" --arg p "$WRPANE" --arg pp "${wi%%$'\t'*}" --arg ps "${wi#*$'\t'}" --arg c "$WRC" --arg cs "$(hm_lstart "$WRC")" \
-  '{agents:[{name:"orchestrator", pane:$p, socket:$k, pane_pid:$pp, pane_started:$ps, claude_pid:$c, claude_started:$cs, name_full:"wr-orchestrator"}]}' > "$WR/.hivemind/team.json"
-jq -nc --arg t "$HM_REPO_ROOT/tests/fixtures/transcript.jsonl" '{session_id:"sess-wr", transcript_path:$t}' > "$WR/.hivemind/team/orchestrator/session.json"
+  '{agents:[{name:"orchestrator", pane:$p, socket:$k, pane_pid:$pp, pane_started:$ps, claude_pid:$c, claude_started:$cs, name_full:"wr-orchestrator"}]}' > "$WR/$T_STATE/team.json"
+jq -nc --arg t "$HM_REPO_ROOT/tests/fixtures/transcript.jsonl" '{session_id:"sess-wr", transcript_path:$t}' > "$WR/$T_STATE/team/orchestrator/session.json"
 wt1=$(hub task wr --text "Work the queue"); wt1=${wt1%%$'\t'*}
 rp=$(hub run wr overnight "$wt1" --still 2 --max-wait 15 2>"$T_TMP/r.err"); assert_status "run overnight for an orchestrator registered in a worktree" $? 0
 assert_eq "...typed into its pane, on its own server" "$rp" "$WRPANE"
-assert_contains "...the fixed line" "$(tmux -S "$SB" capture-pane -p -J -S - -t "$WRPANE")" "GOT: /hivemind:overnight Task $wt1"
+assert_contains "...the fixed line" "$(tmux -S "$SB" capture-pane -p -J -S - -t "$WRPANE")" "GOT: /$T_PLUGIN:overnight Task $wt1"
 t_done

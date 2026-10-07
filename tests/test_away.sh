@@ -8,7 +8,7 @@
 t_setup
 export HM_SUDO_LOG="$T_TMP/sudo.log"; : > "$HM_SUDO_LOG"
 env -u HIVEMIND_HOME tmux -S "$HM_TMUX_SOCKET" new-session -d -s keep 'sleep 600'
-H="$T_TMP/work"; mkdir -p "$H"; H=$(cd "$H" && pwd -P); P="$H/.hivemind-hub"
+H="$T_TMP/work"; mkdir -p "$H"; H=$(cd "$H" && pwd -P); P="$H/$T_HUB"
 mk() { local d="$H/$1"; mkdir -p "$d"; git -C "$d" init -q -b main; git -C "$d" config user.email t@t; git -C "$d" config user.name t
        echo x > "$d/README"; git -C "$d" add README; git -C "$d" commit -qm init; }
 hub() { (cd "$H" && hm-hub "$@"); }
@@ -17,7 +17,7 @@ ME=$(id -u); REALUID=$(/usr/bin/id -u); NOW=$(date +%s)
 DD="$T_TMP/dg/area"; DF="$DD/delegate"
 mkdel() {  # mkdel [hub] [until] [mcp list]: the owner's delegate file, as root would have made it
   mkdir -p "$DD"; chmod 755 "$DD" "$T_TMP/dg"
-  printf 'hivemind-delegate 1\nhub=%s\nuntil=%s\nmcp=%s\n' "${1:-$H}" "${2:-$((NOW + 3600))}" "${3:-}" > "$DF"; chmod 644 "$DF"
+  printf "$T_DELEGATE_LINE1"'\nhub=%s\nuntil=%s\nmcp=%s\n' "${1:-$H}" "${2:-$((NOW + 3600))}" "${3:-}" > "$DF"; chmod 644 "$DF"
 }
 mkdel
 if ! hm_delegate_read "$DF" "$ME" "$NOW" >/dev/null 2>&1; then
@@ -54,17 +54,18 @@ hub away --until +8d >/dev/null 2>&1; assert_status "...at most 7 days" $? 4
 hub away --until +1h --mcp-allow 'x;y' >/dev/null 2>&1; assert_status "...an MCP list it can print safely" $? 4
 (cd "$T_TMP" && HM_HUB="$H" hm-hub away --until +1h >/dev/null 2>&1); assert_status "the hub is found from the cwd, never from HM_HUB" $? 2
 out=$(hub away --until +2h 2>"$T_TMP/away.err"); assert_status "away" $? 0
-assert_eq "...hivemind ran no sudo" "$(cat "$HM_SUDO_LOG")" ""
+assert_eq "...$T_PREFIX ran no sudo" "$(cat "$HM_SUDO_LOG")" ""
 assert_eq "...only mkdir, tee, chown and chmod are named after sudo" "$(printf '%s\n' "$out" | grep -o 'sudo [a-z]*' | sort -u | tr '\n' ' ')" "sudo chmod sudo chown sudo mkdir sudo tee "
+QB=$(printf '%q' "$T_MAC_BASE")   # as the printed sudo lines quote it
 case "$(uname -s)" in
-  Darwin) assert_contains "...the folder, quoted for the shell" "$out" 'sudo mkdir -p -- /Library/Application\ Support/hivemind/delegate.d'
-          assert_contains "...the user's own file made by tee" "$out" "| sudo tee -- /Library/Application\\ Support/hivemind/delegate.d/$REALUID > /dev/null"
-          assert_contains "...owned by root, with the folders above it" "$out" "sudo chown root:wheel -- /Library/Application\\ Support/hivemind /Library/Application\\ Support/hivemind/delegate.d /Library/Application\\ Support/hivemind/delegate.d/$REALUID"
-          assert_contains "...the folders at 0755" "$out" 'sudo chmod 0755 -- /Library/Application\ Support/hivemind /Library/Application\ Support/hivemind/delegate.d' ;;
-  *)      assert_contains "...the folder" "$out" 'sudo mkdir -p -- /etc/hivemind/delegate.d'
-          assert_contains "...the user's own file made by tee" "$out" "| sudo tee -- /etc/hivemind/delegate.d/$REALUID > /dev/null"
-          assert_contains "...owned by root, with the folders above it" "$out" "sudo chown root:root -- /etc/hivemind /etc/hivemind/delegate.d /etc/hivemind/delegate.d/$REALUID"
-          assert_contains "...the folders at 0755" "$out" 'sudo chmod 0755 -- /etc/hivemind /etc/hivemind/delegate.d' ;;
+  Darwin) assert_contains "...the folder, quoted for the shell" "$out" "sudo mkdir -p -- ${QB}/delegate.d"
+          assert_contains "...the user's own file made by tee" "$out" "| sudo tee -- ${QB}/delegate.d/$REALUID > /dev/null"
+          assert_contains "...owned by root, with the folders above it" "$out" "sudo chown root:wheel -- ${QB} ${QB}/delegate.d ${QB}/delegate.d/$REALUID"
+          assert_contains "...the folders at 0755" "$out" "sudo chmod 0755 -- ${QB} ${QB}/delegate.d" ;;
+  *)      assert_contains "...the folder" "$out" 'sudo mkdir -p -- '"$T_LINUX_BASE"'/delegate.d'
+          assert_contains "...the user's own file made by tee" "$out" "| sudo tee -- $T_LINUX_BASE/delegate.d/$REALUID > /dev/null"
+          assert_contains "...owned by root, with the folders above it" "$out" "sudo chown root:root -- $T_LINUX_BASE $T_LINUX_BASE/delegate.d $T_LINUX_BASE/delegate.d/$REALUID"
+          assert_contains "...the folders at 0755" "$out" 'sudo chmod 0755 -- '"$T_LINUX_BASE"' '"$T_LINUX_BASE"'/delegate.d' ;;
 esac
 assert_contains "...a comment names the user and the uid" "$out" "# This file is for $(/usr/bin/id -un) (uid $REALUID)"
 assert_contains "...and says an administrator can paste the lines from another account" "$out" "an administrator can paste these lines from another account"
@@ -73,7 +74,7 @@ assert_contains "...the content names this hub" "$out" "hub=$H"
 assert_contains "...and its MCP list (empty here) as the fourth line" "$out" "mcp= | sudo tee"
 until_epoch=$(printf '%s\n' "$out" | sed -n 's/.*until=\([0-9]*\).*/\1/p' | head -1)
 [ "$until_epoch" -ge $((NOW + 7190)) ] && [ "$until_epoch" -le $((NOW + 7500)) ] && ok "...and the time asked for" || bad "until=$until_epoch is not about +2h"
-assert_contains "...the hub's start line is marked, in bypass, with only its allowed MCP servers" "$out" "HM_AWAY_BYPASS=1 HM_PROJECT=$H HM_AWAY_HUB=$H HM_AWAY_MCP_ALLOW='' claude --name hub --permission-mode bypassPermissions --no-chrome --strict-mcp-config --mcp-config $P/away-mcp.json /hivemind:hub"
+assert_contains "...the hub's start line is marked, in bypass, with only its allowed MCP servers" "$out" "HM_AWAY_BYPASS=1 HM_PROJECT=$H HM_AWAY_HUB=$H HM_AWAY_MCP_ALLOW='' claude --name hub --permission-mode bypassPermissions --no-chrome --strict-mcp-config --mcp-config $P/away-mcp.json /$T_PLUGIN:hub"
 assert_contains "...with the hub's own project and hub folders for the away hook" "$out" "HM_PROJECT=$H HM_AWAY_HUB=$H"
 assert_contains "...before leaving: the one-time bypass warning, when it has not been accepted" "$out" "one-time warning"
 assert_contains "...and the folder trust, when the folder is not trusted" "$out" "not trusted by Claude Code yet"
@@ -99,7 +100,7 @@ assert_contains "...and that no remote host is used" "$out" "No remote host"
 assert_eq "...the time away began is kept for the screen" "$(jq -r '.since | length' "$P/away.json")" "20"
 printf 'lead\n' > "$P/name"; out3=$(hub away --until +1h); out4=$(hub back)
 assert_contains "the start line names the hub as its folder chose" "$out3" "claude --name lead --permission-mode bypassPermissions"
-assert_contains "...and so does back's" "$out4" "claude --name lead /hivemind:hub"
+assert_contains "...and so does back's" "$out4" "claude --name lead /$T_PLUGIN:hub"
 rm -f "$P/name"
 jq '.session_id = "sess-hub-1"' "$P/hub.json" > "$P/hub.json.t" && mv "$P/hub.json.t" "$P/hub.json"
 out=$(hub away --until +1d); assert_contains "with a session recorded, the hub is resumed" "$out" "claude --permission-mode bypassPermissions --no-chrome --strict-mcp-config --mcp-config $P/away-mcp.json --resume sess-hub-1"
@@ -119,7 +120,7 @@ OBIN=$(t_base_bin oldbin "$OB") || bad "t_base_bin"
 out=$(cd "$H" && "$OBIN/hm-hub" away --until +1h); assert_status "away with no old shared file" $? 0
 case "$out" in *"$OB/delegate"$'\n'*|*"$OB/delegate "*) bad "away names an old shared file that is not there" ;; *) ok "...names no old shared file" ;; esac
 out=$(cd "$H" && "$OBIN/hm-hub" back); case "$out" in *"$OB/delegate"$'\n'*) bad "back names an old shared file that is not there" ;; *) ok "back names no old shared file either" ;; esac
-printf 'hivemind-delegate 1\n' > "$OB/delegate"
+printf "$T_DELEGATE_LINE1"'\n' > "$OB/delegate"
 out=$(cd "$H" && "$OBIN/hm-hub" away --until +1h); assert_status "away with the 0.3.0 shared file present" $? 0
 assert_contains "...says it is no longer read" "$out" "$OB/delegate is no longer read"
 assert_contains "...and prints the line that removes it" "$out" "sudo rm -f -- $OB/delegate"
@@ -198,14 +199,14 @@ if [ "$READABLE" != 1 ]; then
   echo "  SKIP only Apple platform binaries were found (no node): macOS shows no environment for them in ps -E, so recover (which refuses an unreadable environment) cannot be tested here"
   bash "$CLD" recover --json >/dev/null 2>"$T_TMP/m.err"; assert_status "recover refuses where the environment cannot be read" $? 4
   assert_contains "...and says why" "$(cat "$T_TMP/m.err")" "cannot be read"
-  assert_eq "...hivemind ran no sudo anywhere" "$(cat "$HM_SUDO_LOG")" ""
+  assert_eq "...$T_PREFIX ran no sudo anywhere" "$(cat "$HM_SUDO_LOG")" ""
   t_done; exit 0
 fi
 # ---- recover: what is due on each beat, capped ----
 cp "$P/tasks.jsonl" "$T_TMP/tasks.saved"
 kp=$(hm_tmux list-panes -t keep -F '#{pane_id}' | head -1); ki=$(hm_pane_identity "$HM_TMUX_SOCKET" "$kp")
 mkorch() {  # mkorch <project> <claude pid>: a registered orchestrator on the keep pane
-  local S="$H/$1/.hivemind"; mkdir -p "$S/team/orchestrator"
+  local S="$H/$1/$T_STATE"; mkdir -p "$S/team/orchestrator"
   jq -nc --arg k "$HM_TMUX_SOCKET" --arg kp "$kp" --arg p "${ki%%$'\t'*}" --arg s "${ki#*$'\t'}" --arg c "$2" --arg cs "$( [ "$2" = 99999 ] && echo 'Mon Jan  1 00:00:00 2001' || hm_lstart "$2")" --arg n "$1-orchestrator" \
     '{agents:[{name:"orchestrator", pane:$kp, socket:$k, pane_pid:$p, pane_started:$s, claude_pid:$c, claude_started:$cs, name_full:$n}]}' > "$S/team.json"
   jq -nc --arg t "$HM_REPO_ROOT/tests/fixtures/transcript.jsonl" '{session_id:"sess-x", transcript_path:$t}' > "$S/team/orchestrator/session.json"
@@ -216,7 +217,7 @@ mkorch alpha 99999; mkorch gamma 99999; mkorch delta 99999
 mkorch beta "$bpid"
 # beta's one agent runs in a window of its own
 aw=$(hm_tmux new-window -d -P -F '#{pane_id}' -t keep: -n impl 'sleep 600'); ai=$(hm_pane_identity "$HM_TMUX_SOCKET" "$aw")
-jq --arg k "$HM_TMUX_SOCKET" --arg p "$aw" --arg pp "${ai%%$'\t'*}" --arg ps "${ai#*$'\t'}" '.agents += [{name:"impl", pane:$p, socket:$k, pane_pid:$pp, pane_started:$ps}]' "$H/beta/.hivemind/team.json" > "$T_TMP/tj" && mv "$T_TMP/tj" "$H/beta/.hivemind/team.json"
+jq --arg k "$HM_TMUX_SOCKET" --arg p "$aw" --arg pp "${ai%%$'\t'*}" --arg ps "${ai#*$'\t'}" '.agents += [{name:"impl", pane:$p, socket:$k, pane_pid:$pp, pane_started:$ps}]' "$H/beta/$T_STATE/team.json" > "$T_TMP/tj" && mv "$T_TMP/tj" "$H/beta/$T_STATE/team.json"
 rec() { if [ "$READABLE" = 1 ]; then HM_AWAY_BYPASS=1 node "$CLN" recover "$@" 2>/dev/null; else HM_AWAY_BYPASS=1 bash "$CLD" recover "$@" 2>/dev/null; fi; }
 act() { printf '%s' "$1" | jq -r '[.actions[] | "\(.action):\(.project)"] | join(",")'; }
 blk() { printf '%s' "$1" | jq -r '[.blocked[] | "\(.action):\(.project)"] | join(",")'; }
@@ -242,9 +243,9 @@ r=$(rec --json); assert_eq "...and once: the next beat does not say it again" "$
 mk eps; hub add eps --home eps >/dev/null
 ( exec -a claude sleep 600 ) >/dev/null 2>&1 & epid=$!; disown "$epid"; t_track "$epid"; sleep 0.3
 mkorch eps "$epid"
-EW="$H/eps-wt"; git -C "$H/eps" worktree add -q "$EW" -b eps-team; EW=$(cd "$EW" && pwd -P); mkdir -p "$EW/.hivemind"
+EW="$H/eps-wt"; git -C "$H/eps" worktree add -q "$EW" -b eps-team; EW=$(cd "$EW" && pwd -P); mkdir -p "$EW/$T_STATE"
 ew=$(hm_tmux new-window -d -P -F '#{pane_id}' -t keep: -n wimpl 'sleep 600'); ei=$(hm_pane_identity "$HM_TMUX_SOCKET" "$ew")
-jq -nc --arg k "$HM_TMUX_SOCKET" --arg p "$ew" --arg pp "${ei%%$'\t'*}" --arg ps "${ei#*$'\t'}" '{agents:[{name:"wimpl", pane:$p, socket:$k, pane_pid:$pp, pane_started:$ps}]}' > "$EW/.hivemind/team.json"
+jq -nc --arg k "$HM_TMUX_SOCKET" --arg p "$ew" --arg pp "${ei%%$'\t'*}" --arg ps "${ei#*$'\t'}" '{agents:[{name:"wimpl", pane:$p, socket:$k, pane_pid:$pp, pane_started:$ps}]}' > "$EW/$T_STATE/team.json"
 rec --json >/dev/null
 hm_tmux kill-pane -t "$ew"; sleep 0.5
 r=$(rec --json); assert_eq "an agent of a worktree team that stopped since the last beat: its orchestrator is told" "$(act "$r" | tr ',' '\n' | grep 'respawn:eps')" "respawn:eps"
@@ -337,7 +338,7 @@ hpane() {  # hpane <fixture> [trap] [claude]: a pane drawing the capture, then a
 hagent() {  # hagent <project> <agent> <fixture> [trap]: a registered agent on such a pane
   hpane "$3" "${4:-}"
   jq --arg k "$HM_TMUX_SOCKET" --arg p "$HPANE" --arg pp "$HPID" --arg ps "$HSTART" --arg n "$2" '.agents += [{name:$n, pane:$p, socket:$k, pane_pid:$pp, pane_started:$ps}]' \
-    "$H/$1/.hivemind/team.json" > "$T_TMP/tj" && mv "$T_TMP/tj" "$H/$1/.hivemind/team.json"
+    "$H/$1/$T_STATE/team.json" > "$T_TMP/tj" && mv "$T_TMP/tj" "$H/$1/$T_STATE/team.json"
 }
 ago() { jq --arg k "$1" --argjson d "$2" '.[$k].since -= $d' "$HS" > "$T_TMP/hs" && mv "$T_TMP/hs" "$HS"; }   # ago <key> <seconds>: first seen that long ago
 restarts() { printf '%s' "$1" | jq -r '[.actions[] | select(.action == "restart") | .agents[]] | join(",")'; }
@@ -359,14 +360,14 @@ r=$(rec --json); assert_eq "...once: the next beat does not restart or respawn i
 # a hung agent of a team that sits in a worktree is found through that root's own team.json, and stopped
 hpane "$WF"; WH_PID=$HPID; WH_START=$HSTART
 jq --arg k "$HM_TMUX_SOCKET" --arg p "$HPANE" --arg pp "$HPID" --arg ps "$HSTART" '.agents += [{name:"whung", pane:$p, socket:$k, pane_pid:$pp, pane_started:$ps}]' \
-  "$EW/.hivemind/team.json" > "$T_TMP/tj" && mv "$T_TMP/tj" "$EW/.hivemind/team.json"
+  "$EW/$T_STATE/team.json" > "$T_TMP/tj" && mv "$T_TMP/tj" "$EW/$T_STATE/team.json"
 r=$(rec --json); ago "eps/$EW:whung" 1000; r=$(rec --json)
 assert_eq "a frozen agent of a worktree team: named for a restart" "$(restarts "$r")" "whung"
 live "$WH_PID" "$WH_START" && bad "the hung worktree agent is still running" || ok "...and its Claude was stopped"
 # the same agent name in two team roots of one project is two agents: each is judged on its own state
 hpane "$WF"; HD1=$HPID; HS1=$HSTART; HP1=$HPANE; hpane "$WF"; HD2=$HPID; HS2=$HSTART; HP2=$HPANE
-jq --arg k "$HM_TMUX_SOCKET" --arg p "$HP1" --arg pp "$HD1" --arg ps "$HS1" '.agents += [{name:"hdup", pane:$p, socket:$k, pane_pid:$pp, pane_started:$ps}]' "$H/eps/.hivemind/team.json" > "$T_TMP/tj" && mv "$T_TMP/tj" "$H/eps/.hivemind/team.json"
-jq --arg k "$HM_TMUX_SOCKET" --arg p "$HP2" --arg pp "$HD2" --arg ps "$HS2" '.agents += [{name:"hdup", pane:$p, socket:$k, pane_pid:$pp, pane_started:$ps}]' "$EW/.hivemind/team.json" > "$T_TMP/tj" && mv "$T_TMP/tj" "$EW/.hivemind/team.json"
+jq --arg k "$HM_TMUX_SOCKET" --arg p "$HP1" --arg pp "$HD1" --arg ps "$HS1" '.agents += [{name:"hdup", pane:$p, socket:$k, pane_pid:$pp, pane_started:$ps}]' "$H/eps/$T_STATE/team.json" > "$T_TMP/tj" && mv "$T_TMP/tj" "$H/eps/$T_STATE/team.json"
+jq --arg k "$HM_TMUX_SOCKET" --arg p "$HP2" --arg pp "$HD2" --arg ps "$HS2" '.agents += [{name:"hdup", pane:$p, socket:$k, pane_pid:$pp, pane_started:$ps}]' "$EW/$T_STATE/team.json" > "$T_TMP/tj" && mv "$T_TMP/tj" "$EW/$T_STATE/team.json"
 r=$(rec --json); ago "eps/hdup" 1000; ago "eps/$EW:hdup" 1000; r=$(rec --json)
 assert_eq "a hung agent name in two roots: both are stopped, each by its own record" "$(restarts "$r")" "hdup,hdup"
 live "$HD1" "$HS1" && bad "the home's hdup is still running" || ok "...the home's was stopped"
@@ -409,11 +410,11 @@ r=$(rec --json); assert_eq "three restarts older than 24 hours do not count" "$(
 # shell, as a --self orchestrator's does); it is woken, not respawned
 printf 'cat "$1"; (exec -a claude sleep 600) & echo $! > "$2"; wait; exec sleep 600\n' > "$T_TMP/orch.sh"
 opane=$(hm_tmux new-window -d -P -F '#{pane_id}' -t keep: -n orch "exec bash '$T_TMP/orch.sh' '$WF' '$T_TMP/oclaude.pid'"); sleep 1; oi=$(hm_pane_identity "$HM_TMUX_SOCKET" "$opane")
-OC=$(cat "$T_TMP/oclaude.pid"); t_track "$OC"; OCS=$(hm_lstart "$OC"); BPS=$(jq -r '.agents[] | select(.name == "orchestrator") | .claude_started' "$H/beta/.hivemind/team.json")
+OC=$(cat "$T_TMP/oclaude.pid"); t_track "$OC"; OCS=$(hm_lstart "$OC"); BPS=$(jq -r '.agents[] | select(.name == "orchestrator") | .claude_started' "$H/beta/$T_STATE/team.json")
 setorch() {  # setorch <claude pid> <its start>: beta's orchestrator on the orch pane, with that Claude
   jq --arg p "$opane" --arg pp "${oi%%$'\t'*}" --arg ps "${oi#*$'\t'}" --arg c "$1" --arg cs "$2" \
     '(.agents[] | select(.name == "orchestrator")) |= (.pane = $p | .pane_pid = $pp | .pane_started = $ps | .claude_pid = $c | .claude_started = $cs)' \
-    "$H/beta/.hivemind/team.json" > "$T_TMP/tj" && mv "$T_TMP/tj" "$H/beta/.hivemind/team.json"
+    "$H/beta/$T_STATE/team.json" > "$T_TMP/tj" && mv "$T_TMP/tj" "$H/beta/$T_STATE/team.json"
 }
 # a frozen screen on a pane the recorded Claude is not under (a stale or edited team.json) stops nothing
 setorch "$bpid" "$BPS"; : > "$rj"; rec --json >/dev/null; ago beta/orchestrator 960
@@ -444,5 +445,5 @@ ZK="$CLAUDE_CONFIG_DIR/projects/$(printf '%s' "$H/zeta" | tr '/._& ' '-----')"; 
 assert_eq "(zeta is resumable)" "$(hub status zeta --json | jq -r '.projects[0].orchestrator.state')" "resumable"
 : > "$rj"; r=$(rec --json)
 assert_eq "recover wakes a resumable orchestrator with an open task" "$(act "$r" | tr ',' '\n' | grep -c wake:zeta)" "1"
-assert_eq "...hivemind ran no sudo anywhere" "$(cat "$HM_SUDO_LOG")" ""
+assert_eq "...$T_PREFIX ran no sudo anywhere" "$(cat "$HM_SUDO_LOG")" ""
 t_done

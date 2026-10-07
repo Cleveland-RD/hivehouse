@@ -22,7 +22,7 @@ selfrun() {  # selfrun <out> <session id> [hook input]
     "bash $T_TMP/cl/claude --self --agent orchestrator >/dev/null"
   sleep 2
 }
-sj=.hivemind/team/orchestrator/session.json
+sj=$T_STATE/team/orchestrator/session.json
 hookin=$(jq -nc --arg t "$T_TMP/after.jsonl" '{session_id:"after-clear", transcript_path:$t, source:"clear"}')
 selfrun "$T_TMP/a.out" sid-a "$hookin"
 assert_contains "--self ran" "$(cat "$T_TMP/a.out")" "rc=0"
@@ -30,7 +30,7 @@ assert_eq "--self records its session" "$(jq -r .session_id $sj)" "sid-a"
 assert_eq "...with the one transcript of that name" "$(jq -r .transcript_path $sj)" "$CLAUDE_CONFIG_DIR/projects/-a-proj/sid-a.jsonl"
 assert_eq "...from --self" "$(jq -r .source $sj)" "self"
 assert_eq "...and nothing on stderr" "$(cat "$T_TMP/a.out.err")" ""
-assert_eq "--self with no --window and no reading records no window" "$(jq -r '.agents[] | select(.name == "orchestrator") | has("window")' .hivemind/team.json)" "false"
+assert_eq "--self with no --window and no reading records no window" "$(jq -r '.agents[] | select(.name == "orchestrator") | has("window")' $T_STATE/team.json)" "false"
 assert_eq "hm-context now reads the orchestrator" "$(hm-context orchestrator)" "50 (window assumed 200000)"
 assert_eq "...and so does --all" "$(hm-context --all)" "orchestrator 50 (window assumed 200000)"
 # a later /clear: the hook writes it again, as for any agent
@@ -57,20 +57,20 @@ selfrun "$T_TMP/d.out" '*'
 # the one writer keeps its guards for both callers
 hm_write_session "$r" "../evil" s t self; assert_status "a bad agent name is not written" $? 1
 hm_write_session "$r" orchestrator "" t self; assert_status "no session id is not written" $? 1
-mkdir -p .hivemind; echo x > .hivemind/leak; git add -f .hivemind/leak
-hm_write_session "$r" orchestrator s t self; assert_status "a tracked .hivemind is not written to" $? 1
-git rm -qf --cached .hivemind/leak
+mkdir -p $T_STATE; echo x > $T_STATE/leak; git add -f $T_STATE/leak
+hm_write_session "$r" orchestrator s t self; assert_status "a tracked $T_STATE is not written to" $? 1
+git rm -qf --cached $T_STATE/leak
 hm_write_session "$r" orchestrator s t self; assert_status "otherwise written" $? 0
-[ -z "$(ls .hivemind/team/orchestrator | grep tmp)" ] && ok "...with no temporary file left" || bad "a temporary file was left"
+[ -z "$(ls $T_STATE/team/orchestrator | grep tmp)" ] && ok "...with no temporary file left" || bad "a temporary file was left"
 # the window Claude Code reported for this very session (hm-statusline's context.json), when there is one, is what --self records
-echo '{"window":1000000,"used_percentage":9,"session_id":"sid-m","at":"t"}' > .hivemind/team/orchestrator/context.json
+echo '{"window":1000000,"used_percentage":9,"session_id":"sid-m","at":"t"}' > $T_STATE/team/orchestrator/context.json
 selfrun "$T_TMP/m.out" sid-m
 assert_contains "--self with a reading of this session" "$(cat "$T_TMP/m.out")" "rc=0"
-assert_eq "...records the window Claude Code reported" "$(jq -r '.agents[] | select(.name == "orchestrator") | .window // "none"' .hivemind/team.json)" "1000000"
-echo '{"window":1000000,"used_percentage":9,"session_id":"an-older-session","at":"t"}' > .hivemind/team/orchestrator/context.json
+assert_eq "...records the window Claude Code reported" "$(jq -r '.agents[] | select(.name == "orchestrator") | .window // "none"' $T_STATE/team.json)" "1000000"
+echo '{"window":1000000,"used_percentage":9,"session_id":"an-older-session","at":"t"}' > $T_STATE/team/orchestrator/context.json
 selfrun "$T_TMP/n.out" sid-n
-assert_eq "a reading of another session is stale: no window" "$(jq -r '.agents[] | select(.name == "orchestrator") | .window // "none"' .hivemind/team.json)" "none"
-rm -f .hivemind/team/orchestrator/context.json
+assert_eq "a reading of another session is stale: no window" "$(jq -r '.agents[] | select(.name == "orchestrator") | .window // "none"' $T_STATE/team.json)" "none"
+rm -f $T_STATE/team/orchestrator/context.json
 selfrun "$T_TMP/w.out" sid-w
-assert_eq "no reading at all: no window" "$(jq -r '.agents[] | select(.name == "orchestrator") | .window // "none"' .hivemind/team.json)" "none"
+assert_eq "no reading at all: no window" "$(jq -r '.agents[] | select(.name == "orchestrator") | .window // "none"' $T_STATE/team.json)" "none"
 cd /; t_teardown; t_done

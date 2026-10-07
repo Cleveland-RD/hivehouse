@@ -9,7 +9,7 @@ home=$(t_repo proj); home=$(cd "$home" && pwd -P)
 wt1="$T_TMP/wt1"; wt2="$T_TMP/wt2"
 git -C "$home" worktree add -q "$wt1" -b b1; git -C "$home" worktree add -q "$wt2" -b b2
 wt1=$(cd "$wt1" && pwd -P); wt2=$(cd "$wt2" && pwd -P)
-mkdir -p "$wt1/.hivemind" "$home/sub" "$wt1/sub"; echo '{"agents":[]}' > "$wt1/.hivemind/team.json"   # wt2 has no team
+mkdir -p "$wt1/$T_STATE" "$home/sub" "$wt1/sub"; echo '{"agents":[]}' > "$wt1/$T_STATE/team.json"   # wt2 has no team
 lines() { tr '\n' ' '; }
 
 echo "-- hm_repo_home"
@@ -30,19 +30,19 @@ badg="$T_TMP/badg"; mkdir -p "$badg"; echo "not a pointer" > "$badg/.git"; hm_re
 
 echo "-- hm_team_roots"
 assert_eq "the home first, then each worktree with a team.json" "$(hm_team_roots "$home" | lines)" "$home $wt1 "
-mkdir -p "$wt2/.hivemind"; echo '{}' > "$wt2/.hivemind/team.json"
+mkdir -p "$wt2/$T_STATE"; echo '{}' > "$wt2/$T_STATE/team.json"
 assert_eq "a second worktree with a team is listed too" "$(hm_team_roots "$home" | lines)" "$home $wt1 $wt2 "
-rm -rf "$wt2/.hivemind"
+rm -rf "$wt2/$T_STATE"
 assert_eq "a home with no worktrees is its own only root" "$(hm_team_roots "$(t_repo solo)" | sed "s|.*/||" | lines)" "solo "
 # a worktree entry whose own .git file does not point back is not a team root
-mkdir -p "$home/.git/worktrees/fake" "$stranger/.hivemind"; echo "$stranger/.git" > "$home/.git/worktrees/fake/gitdir"; echo '{}' > "$stranger/.hivemind/team.json"
+mkdir -p "$home/.git/worktrees/fake" "$stranger/$T_STATE"; echo "$stranger/.git" > "$home/.git/worktrees/fake/gitdir"; echo '{}' > "$stranger/$T_STATE/team.json"
 assert_eq "an entry whose folder's .git does not point back is not a root" "$(hm_team_roots "$home" | lines)" "$home $wt1 "
 echo "gitdir: $home/.git/worktrees/fake" > "$stranger/.git"
 assert_eq "...and one that does point back is (listed in the order of the entries' names)" "$(hm_team_roots "$home" | lines)" "$home $stranger $wt1 "
 rm -rf "$home/.git/worktrees/fake" "$stranger/.git"
 # a fake git first on PATH that names a stranger's folder as a worktree changes nothing
 mkdir -p "$T_TMP/fakegit"; printf '#!/bin/sh\nprintf "worktree %s\\n" "%s"\necho "$@" > "%s/git.called"\n' '%s' "$T_TMP/other" "$T_TMP" > "$T_TMP/fakegit/git"; chmod +x "$T_TMP/fakegit/git"
-mkdir -p "$T_TMP/other/.hivemind"; echo '{}' > "$T_TMP/other/.hivemind/team.json"
+mkdir -p "$T_TMP/other/$T_STATE"; echo '{}' > "$T_TMP/other/$T_STATE/team.json"
 assert_eq "a fake git on PATH naming another folder changes nothing" "$(PATH="$T_TMP/fakegit:$PATH" hm_team_roots "$home" | lines)" "$home $wt1 "
 assert_eq "...and it was never called" "$([ -e "$T_TMP/git.called" ] && echo called || echo not)" "not"
 assert_eq "...nor in hm_repo_home" "$(PATH="$T_TMP/fakegit:$PATH" hm_repo_home "$wt1")" "$home"
@@ -50,7 +50,7 @@ assert_eq "...nor in hm_project_home" "$(PATH="$T_TMP/fakegit:$PATH" hm_project_
 assert_eq "...git was never called" "$([ -e "$T_TMP/git.called" ] && echo called || echo not)" "not"
 
 echo "-- worktrees recorded with relative paths (git 2.48+ worktree.useRelativePaths)"
-wtr="$T_TMP/wtrel"; mkdir -p "$wtr/.hivemind" "$home/.git/worktrees/wtrel"; echo '{}' > "$wtr/.hivemind/team.json"
+wtr="$T_TMP/wtrel"; mkdir -p "$wtr/$T_STATE" "$home/.git/worktrees/wtrel"; echo '{}' > "$wtr/$T_STATE/team.json"
 echo "../../../../wtrel/.git" > "$home/.git/worktrees/wtrel/gitdir"; echo "gitdir: ../proj/.git/worktrees/wtrel" > "$wtr/.git"
 assert_eq "a relative pair is found" "$(hm_team_roots "$home" | lines)" "$home $wt1 $(cd "$wtr" && pwd -P) "
 assert_eq "...and hm_repo_home resolves the relative line against the .git file's folder" "$(hm_repo_home "$wtr")" "$home"

@@ -5,27 +5,27 @@ t_setup
 r=$(t_repo proj); cd "$r"; echo role > "$T_TMP/impl.md"; echo rules > "$T_TMP/RULES.md"
 env -u HIVEMIND_HOME tmux -S "$HM_TMUX_SOCKET" new-session -d -s keep 'sleep 600'
 spawn() { hm-spawn --agent "$1" --role "$T_TMP/impl.md" --rules "$T_TMP/RULES.md" --model sonnet --effort medium --mode auto --still 2 --max-wait 6 >/dev/null 2>&1; }
-paneof() { jq -r --arg a "$1" '.agents[]|select(.name==$a).pane' .hivemind/team.json; }
+paneof() { jq -r --arg a "$1" '.agents[]|select(.name==$a).pane' $T_STATE/team.json; }
 screen() { hm_tmux capture-pane -p -J -S - -t "$(paneof "$1")"; }
-log() { cat .hivemind/rotate.log 2>/dev/null; }
+log() { cat $T_STATE/rotate.log 2>/dev/null; }
 
 spawn impl
 hm-rotate impl --still 2 --settle 1 >/dev/null; assert_status "an idle agent is rotated" $? 0
 assert_contains "the pane was cleared" "$(screen impl)" "CLEARED"
-assert_contains "the pickup line followed the clear" "$(screen impl)" "GOT: You are proj-impl. Read $r/.hivemind/handoffs/impl.md"
+assert_contains "the pickup line followed the clear" "$(screen impl)" "GOT: You are proj-impl. Read $r/$T_STATE/handoffs/impl.md"
 assert_eq "rotate.log has one line" "$(log | wc -l | tr -d ' ')" "1"
 assert_contains "the log names the agent and the percents (unknown here)" "$(log)" "rotated impl ? -> ?"
 # the percent comes from hm-context when a session is recorded
-jq -nc --arg t "$HM_REPO_ROOT/tests/fixtures/transcript.jsonl" '{session_id:"s",transcript_path:$t}' > .hivemind/team/impl/session.json
+jq -nc --arg t "$HM_REPO_ROOT/tests/fixtures/transcript.jsonl" '{session_id:"s",transcript_path:$t}' > $T_STATE/team/impl/session.json
 hm-rotate impl --still 2 --settle 1 >/dev/null
 assert_contains "the log carries the level, and says the window was a guess" "$(log | tail -1)" "rotated impl 50% (window assumed 200000) -> 50% (window assumed 200000)"
 # a reading over the assumed window is tokens, not a percent: the log must not print "300000%"
 jq -nc '{type:"assistant", isSidechain:false, message:{model:"claude-sonnet-5-5", usage:{input_tokens:300000, cache_read_input_tokens:0, cache_creation_input_tokens:0, output_tokens:0}}}' > "$T_TMP/big.jsonl"
-cp .hivemind/team/impl/session.json "$T_TMP/impl-session.json"
-jq -nc --arg t "$T_TMP/big.jsonl" '{session_id:"s",transcript_path:$t}' > .hivemind/team/impl/session.json
+cp $T_STATE/team/impl/session.json "$T_TMP/impl-session.json"
+jq -nc --arg t "$T_TMP/big.jsonl" '{session_id:"s",transcript_path:$t}' > $T_STATE/team/impl/session.json
 hm-rotate impl --still 2 --settle 1 >/dev/null
 assert_contains "a level over the assumed window is logged as tokens, not a percent" "$(log | tail -1)" "rotated impl 300000 tokens (window unknown) -> 300000 tokens (window unknown)"
-cp "$T_TMP/impl-session.json" .hivemind/team/impl/session.json
+cp "$T_TMP/impl-session.json" $T_STATE/team/impl/session.json
 hm-rotate nobody 2>/dev/null; assert_status "an unknown agent" $? 2
 hm-rotate 2>/dev/null; assert_status "usage" $? 64
 
@@ -55,10 +55,10 @@ assert_contains "it is logged" "$(log | tail -1)" "cleared-but-not-idle cb"
 
 # only into the pane and process that were recorded: a recycled pane id, an older record and a dead Claude get nothing typed
 spawn rec
-setteam() { jq --arg a "$1" "(.agents[] | select(.name == \$a)) |= ($2)" .hivemind/team.json > .hivemind/team.json.n && mv .hivemind/team.json.n .hivemind/team.json; }
-getteam() { jq -r --arg a "$1" ".agents[] | select(.name == \$a) | $2" .hivemind/team.json; }
+setteam() { jq --arg a "$1" "(.agents[] | select(.name == \$a)) |= ($2)" $T_STATE/team.json > $T_STATE/team.json.n && mv $T_STATE/team.json.n $T_STATE/team.json; }
+getteam() { jq -r --arg a "$1" ".agents[] | select(.name == \$a) | $2" $T_STATE/team.json; }
 cleared() { screen rec | grep -c CLEARED; }
-good=$(jq -c --arg a rec '.agents[] | select(.name == $a)' .hivemind/team.json); c0=$(cleared); n=$(log | wc -l | tr -d ' ')
+good=$(jq -c --arg a rec '.agents[] | select(.name == $a)' $T_STATE/team.json); c0=$(cleared); n=$(log | wc -l | tr -d ' ')
 setteam rec '.pane_pid = "1"'
 hm-rotate rec --still 2 --settle 1 >/dev/null 2>&1; assert_status "another pane process (a recycled id) exits 6" $? 6
 assert_eq "...and nothing was typed" "$(cleared)" "$c0"
@@ -77,9 +77,9 @@ setteam rec ". + {claude_pid: $(printf '%s' "$good" | jq -r .pane_pid | jq -R .)
 hm-rotate rec --still 2 --settle 1 >/dev/null 2>&1; assert_status "the recorded pane and Claude are rotated" $? 0
 setteam rec '.pane_pid = "1"'
 hm-self-rotate rec --still 2 --settle 1 >/dev/null 2>&1; assert_status "self-rotate forks" $? 0
-t=0; while ! grep -q "not the one recorded" .hivemind/rotate.out 2>/dev/null && [ $t -lt 20 ]; do sleep 1; t=$((t + 1)); done
-assert_contains "self-rotate refuses a mismatched pane, nothing typed" "$(cat .hivemind/rotate.out 2>/dev/null)" "not the one recorded"
-rm -f .hivemind/rotate.out
+t=0; while ! grep -q "not the one recorded" $T_STATE/rotate.out 2>/dev/null && [ $t -lt 20 ]; do sleep 1; t=$((t + 1)); done
+assert_contains "self-rotate refuses a mismatched pane, nothing typed" "$(cat $T_STATE/rotate.out 2>/dev/null)" "not the one recorded"
+rm -f $T_STATE/rotate.out
 
 # the identity is checked again just before each send: a pane that changed during the wait for an idle prompt gets nothing
 spawn mid; mpane=$(paneof mid)
@@ -104,11 +104,11 @@ assert_eq "an identity that changed before the retried /clear exits 6" "$(cat "$
 assert_eq "...and no second /clear was typed" "$(hm_tmux capture-pane -p -J -S - -t "$m3" | grep -c CLEARED)" "0"
 
 # a tracked .hivemind is refused
-echo x > .hivemind/leak; git add -f .hivemind/leak
-hm-rotate impl --still 2 --settle 1 >/dev/null 2>&1; assert_status "tracked .hivemind refused" $? 3
-hm-self-rotate impl --still 2 --settle 1 >/dev/null 2>&1; assert_status "self-rotate refuses a tracked .hivemind before forking" $? 3
-[ -e .hivemind/rotate.out ] && bad "self-rotate wrote rotate.out into a tracked .hivemind" || ok "...and wrote nothing"
-git rm -qf --cached .hivemind/leak
+echo x > $T_STATE/leak; git add -f $T_STATE/leak
+hm-rotate impl --still 2 --settle 1 >/dev/null 2>&1; assert_status "tracked $T_STATE refused" $? 3
+hm-self-rotate impl --still 2 --settle 1 >/dev/null 2>&1; assert_status "self-rotate refuses a tracked $T_STATE before forking" $? 3
+[ -e $T_STATE/rotate.out ] && bad "self-rotate wrote rotate.out into a tracked $T_STATE" || ok "...and wrote nothing"
+git rm -qf --cached $T_STATE/leak
 
 # hm-self-rotate returns at once and the rotation finishes detached
 spawn selfy
@@ -121,6 +121,6 @@ assert_eq "...and sent the pickup line a second time" "$(screen selfy | grep -c 
 assert_contains "...and logged it" "$(log)" "rotated selfy"
 # a fresh repo: self-rotate sets .hivemind up through hm_ensure_state, so it is excluded and a `git add -A` cannot track it
 fresh=$(t_repo fresh); (cd "$fresh" && hm-self-rotate nobody --still 1 --settle 1 >/dev/null 2>&1)
-grep -qx '/.hivemind/' "$fresh/.git/info/exclude" && ok "self-rotate excludes .hivemind in a fresh repo" || bad "self-rotate left .hivemind unexcluded in a fresh repo"
+grep -qx '/'"$T_STATE"'/' "$fresh/.git/info/exclude" && ok "self-rotate excludes $T_STATE in a fresh repo" || bad "self-rotate left $T_STATE unexcluded in a fresh repo"
 [ -z "$(git -C "$fresh" status --porcelain)" ] && ok "...so the repo stays clean" || bad "the fresh repo shows untracked files: $(git -C "$fresh" status --porcelain)"
 cd /; t_teardown; t_done

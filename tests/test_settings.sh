@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 . "$(dirname "$0")/lib.sh"
 t_setup
-r=$(t_repo proj); cd "$r"; mkdir -p .hivemind
-set_project() { printf '%s\n' "$1" > .hivemind/settings.json; }
+r=$(t_repo proj); cd "$r"; mkdir -p $T_STATE
+set_project() { printf '%s\n' "$1" > $T_STATE/settings.json; }
 res() { hm-settings resolve "$1" "$2" 2>/dev/null; }
 
 # no project file: the owner's value, for every key
-rm -f .hivemind/settings.json
+rm -f $T_STATE/settings.json
 assert_eq "no file: mode" "$(res permission_mode auto)" "auto"
 assert_eq "no file: ceiling" "$(res overnight_ceiling_usd 50)" "50"
 assert_eq "no file: attribution" "$(res allow_attribution false)" "false"
@@ -56,12 +56,12 @@ set_project '{not json'; hm-settings resolve files_per_commit 5 >/dev/null 2>&1;
 hm-settings resolve >/dev/null 2>&1; assert_status "usage" $? 64
 
 # a tracked .hivemind is refused, with no value printed
-set_project '{"files_per_commit":1}'; git add -f .hivemind/settings.json; git -c user.email=t@t -c user.name=t commit -qm track
+set_project '{"files_per_commit":1}'; git add -f $T_STATE/settings.json; git -c user.email=t@t -c user.name=t commit -qm track
 out=$(hm-settings resolve files_per_commit 5 2>/dev/null); assert_status "tracked refused" $? 3
 assert_eq "tracked prints nothing" "$out" ""
 
 # outside any repo: exit 2, nothing written
 cd /; other=$(mktemp -d "$T_TMP/o.XXXXXX"); cd "$other"
 hm-settings resolve files_per_commit 5 >/dev/null 2>&1; assert_status "outside a repo" $? 2
-[ ! -e "$other/.hivemind" ] && ok "nothing written" || bad "wrote .hivemind outside a repo"
+[ ! -e "$other/$T_STATE" ] && ok "nothing written" || bad "wrote $T_STATE outside a repo"
 cd /; t_teardown; t_done

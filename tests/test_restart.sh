@@ -9,7 +9,7 @@ env -u HIVEMIND_HOME tmux -S "$HM_TMUX_SOCKET" new-session -d -s keep 'sleep 600
 # the repository is trusted in this run's own Claude config, so hm-spawn's folder-trust warning (a worktree stops at the dialog until its main repository is trusted) is not on stderr here
 jq -nc --arg p "$(cd "$r" && pwd -P)" '{projects:{($p):{hasTrustDialogAccepted:true}}}' > "$CLAUDE_CONFIG_DIR/.claude.json"
 spawn() { hm-spawn --agent "$1" --role "$T_TMP/impl.md" --rules "$T_TMP/RULES.md" --model sonnet --effort medium --mode auto --still 2 --max-wait 15 "${@:2}"; }
-S="$r/.hivemind"
+S="$r/$T_STATE"
 addteam() { jq --argjson a "$1" '.agents += [$a]' "$S/team.json" > "$S/team.json.t" && mv "$S/team.json.t" "$S/team.json"; }
 me_started=$(hm_lstart $$)
 
@@ -64,7 +64,7 @@ assert_eq "its role is kept" "$(cat "$S/team/impl/role.md")" "role"
 assert_eq "it starts in its worktree" "$(hm_tmux display-message -p -t "$np" '#{pane_current_path}')" "$(cd "$T_TMP/proj-impl" && pwd -P)"
 screen=$(hm_tmux capture-pane -p -J -S - -t "$np")
 assert_contains "with its recorded model" "$screen" "ARGV: sonnet"
-assert_contains "and is sent its pickup line" "$screen" "GOT: You are proj-impl. Read $r/.hivemind/handoffs/impl.md"
+assert_contains "and is sent its pickup line" "$screen" "GOT: You are proj-impl. Read $r/$T_STATE/handoffs/impl.md"
 hm_team_agent_is "$r" impl; assert_status "it runs as recorded again" $? 0
 case "$(hm-context impl)" in *"not running"*) bad "still marked after the respawn" ;; *) ok "no longer marked" ;; esac
 hm-spawn --respawn impl --still 2 --max-wait 15 >/dev/null 2>&1; assert_status "a running agent is not respawned" $? 4

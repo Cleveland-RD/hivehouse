@@ -5,7 +5,7 @@
 . "$(dirname "$0")/lib.sh"
 . "$HM_REPO_ROOT/bin/hm-lib.sh"
 t_setup
-H="$T_TMP/work"; mkdir -p "$H"; H=$(cd "$H" && pwd -P); P="$H/.hivemind-hub"
+H="$T_TMP/work"; mkdir -p "$H"; H=$(cd "$H" && pwd -P); P="$H/$T_HUB"
 hub() { (cd "$H" && hm-hub "$@"); }
 mk() { local d="$H/$1"; mkdir -p "$d"; git -C "$d" init -q -b main; git -C "$d" config user.email t@t; git -C "$d" config user.name t
        echo x > "$d/README"; git -C "$d" add README; git -C "$d" commit -qm init; }
@@ -58,7 +58,7 @@ case "$out" in *sudo*) bad "a sudo line was printed for a group-writable home" ;
 assert_contains "...the home is named, with its fix" "$(cat "$T_TMP/away.err")$out" "chmod go-w -- $H/alpha"
 chmod 755 "$H/alpha"
 # a team root in a worktree of a listed home is checked as the bypass check checks it, so a group-writable one is refused here, seen, with its fix
-git -C "$H/alpha" worktree add -q "$H/alpha-wt" -b wt; mkdir -p "$H/alpha-wt/.hivemind"; echo '{"agents":[]}' > "$H/alpha-wt/.hivemind/team.json"
+git -C "$H/alpha" worktree add -q "$H/alpha-wt" -b wt; mkdir -p "$H/alpha-wt/$T_STATE"; echo '{"agents":[]}' > "$H/alpha-wt/$T_STATE/team.json"
 git -C "$H/alpha" worktree add -q "$H/alpha-plain" -b plain
 chmod 775 "$H/alpha-plain"
 out=$(hub away --until +1h 2>"$T_TMP/away.err"); rc=$?

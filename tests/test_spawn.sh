@@ -12,9 +12,9 @@ spawn() { hm-spawn --agent "$1" --role "$T_TMP/impl.md" --rules "$T_TMP/RULES.md
 pane=$(spawn impl --worktree "$T_TMP/proj-impl" --branch feat/x --base main --window 123456)
 assert_status "spawn ok" $? 0
 assert_contains "pane id" "$pane" "%"
-assert_eq "role copied" "$(cat .hivemind/team/impl/role.md)" "role"
-assert_eq "rules copied" "$(cat .hivemind/team/impl/RULES.md)" "rules"
-assert_contains "handoff skeleton" "$(cat .hivemind/handoffs/impl.md)" "START HERE"
+assert_eq "role copied" "$(cat $T_STATE/team/impl/role.md)" "role"
+assert_eq "rules copied" "$(cat $T_STATE/team/impl/RULES.md)" "rules"
+assert_contains "handoff skeleton" "$(cat $T_STATE/handoffs/impl.md)" "START HERE"
 assert_eq "worktree on manifest" "$(hm-manifest list --kind worktree | jq -r .path)" "$T_TMP/proj-impl"
 assert_eq "worktree is on its branch" "$(git -C "$T_TMP/proj-impl" rev-parse --abbrev-ref HEAD)" "feat/x"
 assert_eq "tmux on manifest" "$(hm-manifest list --kind tmux | jq -r .pane)" "$pane"
@@ -22,16 +22,16 @@ assert_eq "registered" "$(jq -r .agent "$(hm_registry_dir)/$(hm_pane_key "$HM_TM
 assert_eq "registered project" "$(jq -r .project "$(hm_registry_dir)/$(hm_pane_key "$HM_TMUX_SOCKET" "$pane").json")" "$r"
 rf="$(hm_registry_dir)/$(hm_pane_key "$HM_TMUX_SOCKET" "$pane").json"
 assert_eq "registered with the pane's process and start time" "$(jq -r '.pane_pid + "|" + .pane_started' "$rf")" "$(hm_pane_identity "$HM_TMUX_SOCKET" "$pane" | tr '\t' '|')"
-assert_eq "team.json model" "$(jq -r '.agents[0].model' .hivemind/team.json)" "sonnet"
-assert_eq "team.json window" "$(jq -r '.agents[0].window' .hivemind/team.json)" "123456"
-assert_eq "team.json pane" "$(jq -r '.agents[0].pane' .hivemind/team.json)" "$pane"
+assert_eq "team.json model" "$(jq -r '.agents[0].model' $T_STATE/team.json)" "sonnet"
+assert_eq "team.json window" "$(jq -r '.agents[0].window' $T_STATE/team.json)" "123456"
+assert_eq "team.json pane" "$(jq -r '.agents[0].pane' $T_STATE/team.json)" "$pane"
 screen=$(hm_tmux capture-pane -p -J -S - -t "$pane")
 assert_contains "named for project and agent" "$screen" "ARGV: proj-impl"
 assert_contains "model passed" "$screen" "ARGV: sonnet"
 assert_contains "mode passed" "$screen" "ARGV: auto"
 assert_contains "machine home handed to the pane (A3)" "$screen" "HIVEMIND_HOME=$HIVEMIND_HOME"
 assert_contains "agent and project handed to the pane" "$screen" "HM_AGENT=impl HM_PROJECT=$r"
-assert_contains "pickup line sent once idle" "$screen" "Read $r/.hivemind/handoffs/impl.md"
+assert_contains "pickup line sent once idle" "$screen" "Read $r/$T_STATE/handoffs/impl.md"
 assert_contains "pickup line names the orchestrator" "$screen" "Report to proj-orchestrator"
 allowed=$(printf '%s\n' "$screen" | grep -A0 'ARGV: Bash(hm-slot status)' | sed 's/^ARGV: //')
 assert_eq "allowed tools are exactly the A16 list" "$allowed" "Bash(hm-slot status) Bash(hm-slot release *) Bash(hm-context *) Bash(hm-gate-verify *) Bash(hm-settings resolve *) Bash(hm-disk *)"
@@ -58,13 +58,13 @@ done
 for loc in C en_US.UTF-8; do   # bash 3.2's [a-z] takes capitals in en_US.UTF-8, so the rule is checked under both
   (export LC_ALL=$loc; spawn Upper >/dev/null 2>&1); assert_status "a capital in an agent name is refused under $loc" $? 4
 done
-[ ! -e "$r/.hivemind/evil" ] && [ -z "$(hm_tmux list-windows -a -F '#{window_name}' | grep evil)" ] && ok "a refused name wrote and started nothing" || bad "a refused agent name left state behind"
+[ ! -e "$r/$T_STATE/evil" ] && [ -z "$(hm_tmux list-windows -a -F '#{window_name}' | grep evil)" ] && ok "a refused name wrote and started nothing" || bad "a refused agent name left state behind"
 spawn z --no-claude cat >/dev/null 2>&1; assert_status "no --no-claude (A21)" $? 64
 
 # a dialog is never answered: stop with exit 5 and nothing typed
 hm_tmux set-environment -g HM_FAKE_CLAUDE dialog
 pane=$(spawn dlg 2>/dev/null); assert_status "a dialog stops the spawn" $? 5
-assert_eq "no pickup line typed into a dialog" "$(hm_tmux capture-pane -p -J -S - -t "$(jq -r '.agents[]|select(.name=="dlg").pane' .hivemind/team.json)" | grep -c 'Read .*handoffs')" "0"
+assert_eq "no pickup line typed into a dialog" "$(hm_tmux capture-pane -p -J -S - -t "$(jq -r '.agents[]|select(.name=="dlg").pane' $T_STATE/team.json)" | grep -c 'Read .*handoffs')" "0"
 hm_tmux set-environment -g -u HM_FAKE_CLAUDE
 
 # model and effort are not options to claude
@@ -93,11 +93,11 @@ fpid=$(hm_pane_pid "$HM_TMUX_SOCKET" "$fpane"); hm_is_claude "$fpid" && ok "a sp
 # a spawned agent's SessionStart hook writes its session (its pane process is Claude), and a nested Claude below it does not
 hm_tmux set-environment -g HM_FAKE_CLAUDE hook; hpane=$(spawn hk 2>/dev/null); hm_tmux set-environment -g -u HM_FAKE_CLAUDE
 sleep 6
-assert_eq "a spawned agent's own Claude records its session" "$(jq -r .session_id .hivemind/team/hk/session.json 2>/dev/null)" "sp"
+assert_eq "a spawned agent's own Claude records its session" "$(jq -r .session_id $T_STATE/team/hk/session.json 2>/dev/null)" "sp"
 hm_tmux set-environment -g HM_FAKE_CLAUDE nested; npane=$(spawn nst 2>/dev/null); hm_tmux set-environment -g -u HM_FAKE_CLAUDE
 sleep 6
-[ -e .hivemind/team/nst/session.json ] && bad "a nested Claude overwrote a spawned agent's session" || ok "a nested Claude below a spawned agent writes nothing"
-[ -e "$(hm_registry_dir)/$(hm_pane_key "$HM_TMUX_SOCKET" "$(jq -r '.agents[]|select(.name=="nst").pane' .hivemind/team.json)").json" ] \
+[ -e $T_STATE/team/nst/session.json ] && bad "a nested Claude overwrote a spawned agent's session" || ok "a nested Claude below a spawned agent writes nothing"
+[ -e "$(hm_registry_dir)/$(hm_pane_key "$HM_TMUX_SOCKET" "$(jq -r '.agents[]|select(.name=="nst").pane' $T_STATE/team.json)").json" ] \
   && ok "...and the agent's registry file stays" || bad "a nested Claude removed the agent's registry file"
 
 # --self runs inside a Claude session: a stand-in whose argv reads as one (an interpreter running a script named claude)
@@ -113,35 +113,35 @@ sleep 2
 k=$(hm_pane_key "$HM_TMUX_SOCKET" "$tmux_o")
 assert_eq "self: registered" "$(jq -r .agent "$(hm_registry_dir)/$k.json")" "orchestrator"
 assert_eq "self: registered with the pane's identity" "$(jq -r '.pane_pid + "|" + .pane_started' "$(hm_registry_dir)/$k.json")" "$(hm_pane_identity "$HM_TMUX_SOCKET" "$tmux_o" | tr '\t' '|')"
-assert_eq "self: the Claude process is recorded in the registry and team.json alike" "$(jq -r '.claude_pid + "|" + .claude_started' "$(hm_registry_dir)/$k.json")" "$(jq -r '.agents[]|select(.name=="orchestrator")|.claude_pid + "|" + .claude_started' .hivemind/team.json)"
+assert_eq "self: the Claude process is recorded in the registry and team.json alike" "$(jq -r '.claude_pid + "|" + .claude_started' "$(hm_registry_dir)/$k.json")" "$(jq -r '.agents[]|select(.name=="orchestrator")|.claude_pid + "|" + .claude_started' $T_STATE/team.json)"
 cpid=$(jq -r .claude_pid "$(hm_registry_dir)/$k.json"); hm_claude_is "$cpid" "$(jq -r .claude_started "$(hm_registry_dir)/$k.json")" && ok "...and it is that live Claude process" || bad "the recorded Claude process is not live Claude"
 assert_eq "a spawned agent records no Claude process (its pane lives as long as its command)" "$(jq -r 'select(.agent=="impl")|.claude_pid // "none"' "$rf")" "none"
-assert_eq "self: team.json" "$(jq -r '.agents[]|select(.name=="orchestrator")|.pane' .hivemind/team.json)" "$tmux_o"
-assert_eq "self: window" "$(jq -r '.agents[]|select(.name=="orchestrator")|.window' .hivemind/team.json)" "200000"
+assert_eq "self: team.json" "$(jq -r '.agents[]|select(.name=="orchestrator")|.pane' $T_STATE/team.json)" "$tmux_o"
+assert_eq "self: window" "$(jq -r '.agents[]|select(.name=="orchestrator")|.window' $T_STATE/team.json)" "200000"
 assert_eq "self: not on the manifest (cleanup would kill the owner's pane)" "$(hm-manifest list --kind tmux | jq -r --arg p "$tmux_o" 'select(.pane==$p)|.pane')" ""
 hm_tmux send-keys -t "$tmux_o" C-c 2>/dev/null
-n1=$(jq '.agents|length' .hivemind/team.json)
+n1=$(jq '.agents|length' $T_STATE/team.json)
 tmux_o2=$(hm_tmux new-session -d -s orch2 -c "$r" -P -F '#{pane_id}' -e "HIVEMIND_HOME=$HIVEMIND_HOME" -e "SELF_OUT=$T_TMP/self2.out" "bash $T_TMP/cl/claude --self --agent orchestrator --window 200000 >$T_TMP/self2.out 2>&1")
 sleep 2
-assert_eq "self: idempotent per agent (one orchestrator entry)" "$(jq '[.agents[]|select(.name=="orchestrator")]|length' .hivemind/team.json)" "1"
-assert_eq "self: second call moves the entry to the calling pane" "$(jq -r '.agents[]|select(.name=="orchestrator")|.pane' .hivemind/team.json)" "$tmux_o2"
+assert_eq "self: idempotent per agent (one orchestrator entry)" "$(jq '[.agents[]|select(.name=="orchestrator")]|length' $T_STATE/team.json)" "1"
+assert_eq "self: second call moves the entry to the calling pane" "$(jq -r '.agents[]|select(.name=="orchestrator")|.pane' $T_STATE/team.json)" "$tmux_o2"
 hm-spawn --self --agent orchestrator --window 1 >/dev/null 2>&1; assert_status "self outside tmux refused" $? 2
 hm-spawn --self --agent orchestrator --window 1 --model m >/dev/null 2>&1; assert_status "self takes no spawn arguments" $? 64
 # --self for a name that belongs to a spawned pane is refused (it would re-point a managed agent at the caller)
 hm_tmux new-session -d -s orchx -c "$r" -e "HIVEMIND_HOME=$HIVEMIND_HOME" "hm-spawn --self --agent impl --window 1 >$T_TMP/selfx.out 2>&1; echo rc=\$? >>$T_TMP/selfx.out; sleep 30"
 sleep 2
 assert_contains "self refused for a managed agent's name" "$(cat "$T_TMP/selfx.out")" "rc=4"
-assert_eq "...and impl's pane is unchanged" "$(jq -r '.agents[]|select(.name=="impl").pane' .hivemind/team.json)" "$(hm-manifest list --kind tmux | jq -r 'select(.agent=="impl")|.pane')"
+assert_eq "...and impl's pane is unchanged" "$(jq -r '.agents[]|select(.name=="impl").pane' $T_STATE/team.json)" "$(hm-manifest list --kind tmux | jq -r 'select(.agent=="impl")|.pane')"
 # with no --session an agent goes beside the pane that spawns it, when that pane is on the server it is spawned on
-assert_eq "outside tmux: the project's own session" "$(jq -r '.agents[]|select(.name=="impl").session' .hivemind/team.json)" "hm-$(hm_project_key "$r")"
+assert_eq "outside tmux: the project's own session" "$(jq -r '.agents[]|select(.name=="impl").session' $T_STATE/team.json)" "hm-$(hm_project_key "$r")"
 orchpane=$(hm_tmux new-session -d -s myorch -c "$r" -P -F '#{pane_id}' 'sleep 600')
 TMUX="$HM_TMUX_SOCKET,1,0" TMUX_PANE="$orchpane" spawn beside >/dev/null; assert_status "spawn from inside a pane" $? 0
-assert_eq "...lands in that pane's own session" "$(hm_tmux display-message -p -t "$(jq -r '.agents[]|select(.name=="beside").pane' .hivemind/team.json)" '#{session_name}')" "myorch"
-assert_eq "...and team.json says so" "$(jq -r '.agents[]|select(.name=="beside").session' .hivemind/team.json)" "myorch"
+assert_eq "...lands in that pane's own session" "$(hm_tmux display-message -p -t "$(jq -r '.agents[]|select(.name=="beside").pane' $T_STATE/team.json)" '#{session_name}')" "myorch"
+assert_eq "...and team.json says so" "$(jq -r '.agents[]|select(.name=="beside").session' $T_STATE/team.json)" "myorch"
 TMUX="/nonexistent/other-server,1,0" TMUX_PANE="$orchpane" spawn elsewhere >/dev/null; assert_status "spawn from a pane on another server" $? 0
-assert_eq "...goes to the project's own session" "$(jq -r '.agents[]|select(.name=="elsewhere").session' .hivemind/team.json)" "hm-$(hm_project_key "$r")"
+assert_eq "...goes to the project's own session" "$(jq -r '.agents[]|select(.name=="elsewhere").session' $T_STATE/team.json)" "hm-$(hm_project_key "$r")"
 TMUX="$HM_TMUX_SOCKET,1,0" TMUX_PANE="$orchpane" spawn named --session chosen >/dev/null; assert_status "spawn with --session from inside a pane" $? 0
-assert_eq "...--session still wins" "$(jq -r '.agents[]|select(.name=="named").session' .hivemind/team.json)" "chosen"
+assert_eq "...--session still wins" "$(jq -r '.agents[]|select(.name=="named").session' $T_STATE/team.json)" "chosen"
 # the agent's statusLine is hm-statusline (Claude Code's window for hm-context), which runs the owner's own; the plugin's path
 # and the project's are quoted, so a space in either works
 echo '{"statusLine":{"type":"command","command":"echo OWNER; exit 4","padding":2}}' > "$CLAUDE_CONFIG_DIR/settings.json"
@@ -152,13 +152,13 @@ assert_status "spawn with spaces in the plugin's and the project's paths" $? 0
 sset=$(hm_tmux capture-pane -p -J -S - -t "$spane" | grep '^ARGV: {"statusLine"' | sed 's/^ARGV: //')
 assert_eq "--settings carries one statusLine" "$(printf '%s' "$sset" | jq -r '.statusLine.type')" "command"
 assert_eq "...keeping the owner's other keys" "$(printf '%s' "$sset" | jq -r '.statusLine.padding')" "2"
-assert_eq "the owner's statusLine is recorded for the agent" "$(jq -r .command "$sp/.hivemind/team/sl/statusline.json")" "echo OWNER; exit 4"
+assert_eq "the owner's statusLine is recorded for the agent" "$(jq -r .command "$sp/$T_STATE/team/sl/statusline.json")" "echo OWNER; exit 4"
 scmd=$(printf '%s' "$sset" | jq -r '.statusLine.command')
 out=$(printf '%s' '{"session_id":"q","context_window":{"context_window_size":1000000,"used_percentage":1}}' | /bin/sh -c "$scmd"); rc=$?
 assert_eq "run as Claude Code runs it, it shows the owner's line" "$out" "OWNER"
 assert_status "...with the owner's status" "$rc" 4
-assert_eq "...and keeps the window in the agent's dir" "$(jq -r .window "$sp/.hivemind/team/sl/context.json")" "1000000"
+assert_eq "...and keeps the window in the agent's dir" "$(jq -r .window "$sp/$T_STATE/team/sl/context.json")" "1000000"
 rm "$CLAUDE_CONFIG_DIR/settings.json"
 "$T_TMP/plug in/bin/hm-spawn" --agent sl2 --role "$T_TMP/impl.md" --rules "$T_TMP/RULES.md" --model sonnet --effort medium --mode auto --still 2 --max-wait 15 >/dev/null
-[ ! -e "$sp/.hivemind/team/sl2/statusline.json" ] && ok "no owner statusLine: none recorded" || bad "an owner statusLine was recorded from nowhere"
+[ ! -e "$sp/$T_STATE/team/sl2/statusline.json" ] && ok "no owner statusLine: none recorded" || bad "an owner statusLine was recorded from nowhere"
 cd /; t_teardown; t_done

@@ -12,11 +12,11 @@ assert_eq "no args: report only" "$(field "$out" .mode)" "report"
 assert_eq "no args: the current project, named by its folder" "$(field "$out" '.groups|join(",")')" "proj"
 assert_contains "no args: one small agent finds the root" "$(field "$out" '.calls|join(",")')" "find-project-root"
 prompt=$(field "$out" .reportPrompt)
-assert_contains "no args: the report goes under .hivemind/reports, not docs/" "$prompt" "write the report to /some/proj/.hivemind/reports/docs-health-report-<date>.md"
+assert_contains "no args: the report goes under $T_STATE/reports, not docs/" "$prompt" "write the report to /some/proj/$T_STATE/reports/docs-health-report-<date>.md"
 case "$prompt" in */some/proj/docs/*) bad "no args: nothing is written under docs/" ;; *) ok "no args: nothing is written under docs/" ;; esac
-assert_contains "no args: the report agent makes git ignore .hivemind/ first" "$prompt" "grep -qx '/.hivemind/' \"\$common/info/exclude\" || echo '/.hivemind/' >> \"\$common/info/exclude\""
+assert_contains "no args: the report agent makes git ignore $T_STATE/ first" "$prompt" "grep -qx '/$T_STATE/' \"\$common/info/exclude\" || echo '/$T_STATE/' >> \"\$common/info/exclude\""
 assert_contains "no args: that is the line hm_ensure_state writes" "$(grep -n "grep -qx" "$HM_REPO_ROOT/bin/hm-lib.sh")" 'grep -qx "/$HM_STATE_DIR/" "$excl" || echo "/$HM_STATE_DIR/" >> "$excl"'
-assert_contains "no args: it appends only when absent and refuses to write into a tracked .hivemind/" "$prompt" "ls-files -- .hivemind"
+assert_contains "no args: it appends only when absent and refuses to write into a tracked $T_STATE/" "$prompt" "ls-files -- $T_STATE"
 out=$(run '{"reportPath":"/elsewhere/report.md"}' /some/proj)
 prompt=$(field "$out" .reportPrompt)
 assert_contains "a given reportPath is used as it is" "$prompt" "Write the report to /elsewhere/report.md"
@@ -48,14 +48,14 @@ out=$(run '{"groups":[{"name":"A","repos":["/a"]}],"group":"zzz"}' /never); asse
 # the write line is conditional on the tracked check, which comes first; nothing writes to .hivemind/reports unconditionally (S1)
 out=$(run undefined /some/proj); prompt=$(field "$out" .reportPrompt)
 before_tracked=${prompt%%those files are tracked*}; before_cond=${prompt%%'Unless the check above sent the report to'*}
-if [ "$before_tracked" != "$prompt" ] && [ "$before_cond" != "$prompt" ] && [ ${#before_tracked} -lt ${#before_cond} ]; then ok "the tracked-.hivemind sentence comes before the conditional write line"; else bad "the tracked-.hivemind sentence comes before the conditional write line"; fi
-assert_contains "the write line is conditional" "$prompt" 'Unless the check above sent the report to ${TMPDIR:-/tmp}, write the report to /some/proj/.hivemind/reports/docs-health-report-<date>.md'
-case "$prompt" in *"Write the report to /some/proj/.hivemind"*) bad "no unconditional write line to .hivemind/reports" ;; *) ok "no unconditional write line to .hivemind/reports" ;; esac
+if [ "$before_tracked" != "$prompt" ] && [ "$before_cond" != "$prompt" ] && [ ${#before_tracked} -lt ${#before_cond} ]; then ok "the tracked-$T_STATE sentence comes before the conditional write line"; else bad "the tracked-$T_STATE sentence comes before the conditional write line"; fi
+assert_contains "the write line is conditional" "$prompt" 'Unless the check above sent the report to ${TMPDIR:-/tmp}, write the report to /some/proj/'"$T_STATE"'/reports/docs-health-report-<date>.md'
+case "$prompt" in *"Write the report to /some/proj/$T_STATE"*) bad "no unconditional write line to $T_STATE/reports" ;; *) ok "no unconditional write line to $T_STATE/reports" ;; esac
 case "$prompt" in *"the path above"*) bad "no ambiguous 'the path above'" ;; *) ok "no ambiguous 'the path above'" ;; esac
-assert_contains "the only in-repo exception is named by its path" "$prompt" 'anywhere but at /some/proj/.hivemind/reports/docs-health-report-<date>.md, and never under .hivemind/ when the check above found it tracked'
+assert_contains "the only in-repo exception is named by its path" "$prompt" 'anywhere but at /some/proj/'"$T_STATE"'/reports/docs-health-report-<date>.md, and never under '"$T_STATE"'/ when the check above found it tracked'
 out=$(run '{"reportPath":"/elsewhere/report.md"}' /some/proj); prompt=$(field "$out" .reportPrompt)
 assert_contains "a given path is written unconditionally" "$prompt" 'Write the report to /elsewhere/report.md (create the file'
-case "$prompt" in *"Unless the check above"*|*"never under .hivemind/"*) bad "a given path has no tracked-check wording" ;; *) ok "a given path has no tracked-check wording" ;; esac
+case "$prompt" in *"Unless the check above"*|*"never under $T_STATE/"*) bad "a given path has no tracked-check wording" ;; *) ok "a given path has no tracked-check wording" ;; esac
 
 # a report that cannot go under .hivemind/ goes outside every repository, never into the working directory (S1 again)
 for spec in undefined '{"reportPath":"/elsewhere/report.md"}'; do
@@ -66,7 +66,7 @@ for spec in undefined '{"reportPath":"/elsewhere/report.md"}'; do
   case "$prompt" in *"current directory"*) bad "fallback ($spec): never the current directory" ;; *) ok "fallback ($spec): never the current directory" ;; esac
 done
 out=$(run undefined /some/proj); prompt=$(field "$out" .reportPrompt)
-assert_contains "a tracked .hivemind/ is never written to" "$prompt" 'those files are tracked, so do not write under .hivemind/ at all'
+assert_contains "a tracked $T_STATE/ is never written to" "$prompt" 'those files are tracked, so do not write under '"$T_STATE"'/ at all'
 
 # args.groups is shape-checked: the workflow's own message, never a TypeError
 for bad_groups in '[{"name":"A"}]' '[{"name":"A","repos":[]}]' '[{"name":"A","repos":[7]}]' '[{"name":"A","repos":["relative/path"]}]' '[{"repos":["/a"]}]' '[null]' '[]' '"A"' '{"name":"A","repos":["/a"]}'; do

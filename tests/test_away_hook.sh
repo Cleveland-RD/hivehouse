@@ -4,8 +4,8 @@
 . "$(dirname "$0")/lib.sh"
 . "$HM_REPO_ROOT/bin/hm-lib.sh"
 t_setup
-proj=$(t_repo proj); hub="$T_TMP/hub"; mkdir -p "$hub/.hivemind-hub" "$proj/.hivemind"
-other=$(t_repo other); mkdir -p "$other/.hivemind"
+proj=$(t_repo proj); hub="$T_TMP/hub"; mkdir -p "$hub/$T_HUB" "$proj/$T_STATE"
+other=$(t_repo other); mkdir -p "$other/$T_STATE"
 # Stand-ins for Claude sessions: an interpreter running a script named claude (what hm_is_claude reads as one).
 mkdir -p "$T_TMP/cl"; printf '#!/usr/bin/env bash\nfor i in $(seq 120); do sleep 1; done\n' > "$T_TMP/cl/claude"
 SP=""; SS=""
@@ -19,13 +19,13 @@ spawn proj-orchestrator; OP=$SP; OS=$SS
 spawn proj-implementer; IP=$SP; IS=$SS
 spawn other-orchestrator; XP=$SP; XS=$SS
 sleep 1.1; spawn stranger; SGP=$SP; SGS=$SS
-jq -nc --arg p "$HP" --arg s "$HS" '{name:"hub1",claude_pid:$p,claude_started:$s}' > "$hub/.hivemind-hub/hub.json"
-jq -nc --arg a "$proj" --arg b "$other" '{projects:[{name:"proj",home:$a,repos:[]},{name:"other",home:$b,repos:[]}]}' > "$hub/.hivemind-hub/projects.json"
+jq -nc --arg p "$HP" --arg s "$HS" '{name:"hub1",claude_pid:$p,claude_started:$s}' > "$hub/$T_HUB/hub.json"
+jq -nc --arg a "$proj" --arg b "$other" '{projects:[{name:"proj",home:$a,repos:[]},{name:"other",home:$b,repos:[]}]}' > "$hub/$T_HUB/projects.json"
 jq -nc --arg op "$OP" --arg os "$OS" --arg ip "$IP" --arg is "$IS" --arg sg "$SGP" \
   '{agents:[{name:"orchestrator",claude_pid:$op,claude_started:$os,name_full:"proj-orchestrator",pane_pid:"1",pane_started:"x"},
             {name:"implementer",pane_pid:$ip,pane_started:$is},
-            {name:"reused",pane_pid:$sg,pane_started:"Mon Jan  1 00:00:00 2001"}]}' > "$proj/.hivemind/team.json"
-jq -nc --arg op "$XP" --arg os "$XS" '{agents:[{name:"orchestrator",claude_pid:$op,claude_started:$os,name_full:"other-orchestrator",pane_pid:"1",pane_started:"x"}]}' > "$other/.hivemind/team.json"
+            {name:"reused",pane_pid:$sg,pane_started:"Mon Jan  1 00:00:00 2001"}]}' > "$proj/$T_STATE/team.json"
+jq -nc --arg op "$XP" --arg os "$XS" '{agents:[{name:"orchestrator",claude_pid:$op,claude_started:$os,name_full:"other-orchestrator",pane_pid:"1",pane_started:"x"}]}' > "$other/$T_STATE/team.json"
 HOOK="${HM_AWAY_HOOK_TEST:-$HM_REPO_ROOT/bin/hm-away-hook}"
 ALLOW=""; ROLE=proj
 hook() {  # hook <json>: the hook as a marked session of $ROLE; sets RC and ERR
@@ -62,7 +62,7 @@ hook '{"tool_name":"Bash","tool_input":{}}'; assert_status "Bash with no command
 hook '{"tool_name":"Bash","tool_input":{"command":5}}'; assert_status "Bash with a non-string command" $RC 2
 hook '{"tool_name":"Read","cwd":"/","tool_input":{}}'; assert_status "a tool outside its matcher" $RC 2
 r=$(printf '%s' "$(tc ls)" | HM_AWAY_BYPASS=1 HM_PROJECT="$proj" HM_AWAY_MCP_ALLOW= "$HOOK" 2>&1); assert_status "no hub folder in the env" $? 2
-r=$(printf '%s' "$(tc ls)" | HM_AWAY_BYPASS=1 HM_PROJECT="$proj" HM_AWAY_HUB="$other" HM_AWAY_MCP_ALLOW= "$HOOK" 2>&1); assert_status "hub folder with no .hivemind-hub" $? 2
+r=$(printf '%s' "$(tc ls)" | HM_AWAY_BYPASS=1 HM_PROJECT="$proj" HM_AWAY_HUB="$other" HM_AWAY_MCP_ALLOW= "$HOOK" 2>&1); assert_status "hub folder with no $T_HUB" $? 2
 r=$(printf '%s' "$(tc ls)" | HM_AWAY_BYPASS=1 HM_PROJECT="$proj" HM_AWAY_HUB="$T_TMP/none" HM_AWAY_MCP_ALLOW= "$HOOK" 2>&1); assert_status "hub folder that does not exist" $? 2
 mkdir -p "$T_TMP/nojq"; for b in bash cat dirname basename ps sed tr grep sleep; do ln -sf "$(command -v $b)" "$T_TMP/nojq/$b"; done
 # a PATH without jq changes nothing (the hook fixes its own); what denies is no root-owned jq at the three fixed paths (tests/test_jq_fixed.sh has the rest)
@@ -183,8 +183,8 @@ tool_denied "Write with no path" '{"tool_name":"Write","cwd":"/","tool_input":{}
 echo "-- the hub's records and a team's team.json are written by hivemind's scripts, never by a session's tools (final review S1)"
 # hub.json is the identity away_hub_caller checks and the "own hub" a SendMessage resolves by pid; projects.json lists what the hub may
 # bypass; team.json names every agent's process. A marked agent that could write them could pass as the hub.
-HR="$hub/.hivemind-hub"; echo '{}' > "$HR/tasks.jsonl"; mkdir -p "$HR/memory"
-ln -s "$HR/hub.json" "$T_TMP/lnk-hubjson"; ln -s "$HR" "$T_TMP/lnk-hubdir"; ln -s "$proj/.hivemind/team.json" "$T_TMP/lnk-teamjson"
+HR="$hub/$T_HUB"; echo '{}' > "$HR/tasks.jsonl"; mkdir -p "$HR/memory"
+ln -s "$HR/hub.json" "$T_TMP/lnk-hubjson"; ln -s "$HR" "$T_TMP/lnk-hubdir"; ln -s "$proj/$T_STATE/team.json" "$T_TMP/lnk-teamjson"
 ROLE=proj
 for t in Edit Write MultiEdit NotebookEdit; do tool_denied "an agent's $t on hub.json" "$(fileop $t "$HR/hub.json")"; done
 tool_denied "an agent's Write to projects.json" "$(fileop Write "$HR/projects.json")"
@@ -192,27 +192,27 @@ tool_denied "an agent's Write to the hub's tasks ledger" "$(fileop Write "$HR/ta
 tool_denied "an agent's Write to the hub's memory folder" "$(fileop Write "$HR/memory/n.md")"
 tool_denied "an agent's Write through a link to hub.json" "$(fileop Write "$T_TMP/lnk-hubjson")"
 tool_denied "an agent's Write through a link to the hub's records folder" "$(fileop Write "$T_TMP/lnk-hubdir/hub.json")"
-tool_denied "an agent's Write through .." "$(fileop Write "$hub/x/../.hivemind-hub/hub.json")"
+tool_denied "an agent's Write through .." "$(fileop Write "$hub/x/../$T_HUB/hub.json")"
 denied "an agent's redirect into hub.json" "echo x > $HR/hub.json"
 denied "an agent's tee into projects.json" "tee $HR/projects.json"
 denied "an agent's cp onto hub.json" "cp a $HR/hub.json"
 denied "an agent's sed -i on the ledger" "sed -i s/a/b/ $HR/tasks.jsonl"
 denied "an agent's redirect through a link to hub.json" "echo x > $T_TMP/lnk-hubjson"
 allowed "an agent reads hub.json" "cat $HR/hub.json"
-tool_allowed "an agent's Write to its own handoff" "$(fileop Write "$proj/.hivemind/handoffs/impl.md")"
+tool_allowed "an agent's Write to its own handoff" "$(fileop Write "$proj/$T_STATE/handoffs/impl.md")"
 tool_allowed "an agent's Write to a file named hub.json elsewhere" "$(fileop Write "$proj/src/hub.json")"
 for R in proj hub; do
   ROLE=$R
-  tool_denied "a $R session's Write to a project's team.json" "$(fileop Write "$proj/.hivemind/team.json")"
-  tool_denied "a $R session's Edit of another project's team.json" "$(fileop Edit "$other/.hivemind/team.json")"
+  tool_denied "a $R session's Write to a project's team.json" "$(fileop Write "$proj/$T_STATE/team.json")"
+  tool_denied "a $R session's Edit of another project's team.json" "$(fileop Edit "$other/$T_STATE/team.json")"
   tool_denied "a $R session's Write through a link to team.json" "$(fileop Write "$T_TMP/lnk-teamjson")"
-  denied "a $R session's redirect into team.json" "echo x > $proj/.hivemind/team.json"
-  denied "a $R session's sed -i on team.json" "sed -i s/a/b/ $proj/.hivemind/team.json"
-  tool_allowed "a $R session's Write to a team.json outside any .hivemind" "$(fileop Write "$proj/src/team.json")"
+  denied "a $R session's redirect into team.json" "echo x > $proj/$T_STATE/team.json"
+  denied "a $R session's sed -i on team.json" "sed -i s/a/b/ $proj/$T_STATE/team.json"
+  tool_allowed "a $R session's Write to a team.json outside any $T_STATE" "$(fileop Write "$proj/src/team.json")"
 done
 ROLE=proj
 hook "$(fileop Write "$HR/hub.json")"; assert_contains "the refusal for the hub's records says so" "$ERR" "hub's records"
-hook "$(fileop Write "$proj/.hivemind/team.json")"; assert_contains "the refusal for a team.json says so" "$ERR" "team.json"
+hook "$(fileop Write "$proj/$T_STATE/team.json")"; assert_contains "the refusal for a team.json says so" "$ERR" "team.json"
 hook "$(fileop Write "$CD/settings.json")"; assert_contains "the refusal for settings still says so" "$ERR" "settings"
 r=$(printf '%s' "$(fileop Write "$HR/hub.json")" | HM_AWAY_BYPASS=1 HM_PROJECT="$T_TMP/no-such-project" HM_AWAY_HUB="$hub" HM_AWAY_MCP_ALLOW= "$HOOK" 2>&1 >/dev/null); assert_status "a session whose project folder cannot be read is not the hub: hub.json is refused" $? 2
 ROLE=hub
@@ -318,18 +318,18 @@ tool_denied "hub to a bridge address" "$(msg bridge:x)"
 r=$(printf '%s' "$(msg proj-orchestrator)" | HM_AWAY_BYPASS=1 HM_PROJECT="$hub" HM_AWAY_HUB="$hub" HM_AWAY_MCP_ALLOW= "$HOOK" 2>&1 >/dev/null); assert_status "HM_PROJECT equal to the hub's folder is the hub" $? 0
 r=$(printf '%s' "$(msg proj-implementer)" | HM_AWAY_BYPASS=1 HM_PROJECT="$hub" HM_AWAY_HUB="$hub" HM_AWAY_MCP_ALLOW= "$HOOK" 2>&1 >/dev/null); assert_status "...and has no agents to message" $? 2
 # a team registered in a worktree of a listed home: the hub can message its orchestrator, and only that
-wtp="$T_TMP/proj-wt"; git -C "$proj" worktree add -q "$wtp" -b wtteam; wtp=$(cd "$wtp" && pwd -P); mkdir -p "$wtp/.hivemind"
+wtp="$T_TMP/proj-wt"; git -C "$proj" worktree add -q "$wtp" -b wtteam; wtp=$(cd "$wtp" && pwd -P); mkdir -p "$wtp/$T_STATE"
 spawn wt-orchestrator; WP=$SP; WS=$SS
-jq -nc --arg op "$WP" --arg os "$WS" '{agents:[{name:"orchestrator",claude_pid:$op,claude_started:$os,name_full:"wt-orchestrator",pane_pid:"1",pane_started:"x"}]}' > "$wtp/.hivemind/team.json"
+jq -nc --arg op "$WP" --arg os "$WS" '{agents:[{name:"orchestrator",claude_pid:$op,claude_started:$os,name_full:"wt-orchestrator",pane_pid:"1",pane_started:"x"}]}' > "$wtp/$T_STATE/team.json"
 tool_allowed "hub to the orchestrator of a team in a worktree of a listed home, by name" "$(msg wt-orchestrator)"
 tool_allowed "...and by uds" "$(msg "uds:/tmp/cc-socks/$WP.sock")"
 tool_denied "...a stranger is still refused" "$(msg stranger)"
 spawn wt2-orchestrator; XWP=$SP; XWS=$SS
-unl="$T_TMP/unlisted"; git -C "$other" worktree add -q "$unl" -b unl >/dev/null 2>&1; rm -rf "$unl/.hivemind"; mkdir -p "$unl/.hivemind"
-jq -nc --arg op "$XWP" --arg os "$XWS" '{agents:[{name:"orchestrator",claude_pid:$op,claude_started:$os,name_full:"wt2-orchestrator",pane_pid:"1",pane_started:"x"}]}' > "$unl/.hivemind/team.json"
+unl="$T_TMP/unlisted"; git -C "$other" worktree add -q "$unl" -b unl >/dev/null 2>&1; rm -rf "$unl/$T_STATE"; mkdir -p "$unl/$T_STATE"
+jq -nc --arg op "$XWP" --arg os "$XWS" '{agents:[{name:"orchestrator",claude_pid:$op,claude_started:$os,name_full:"wt2-orchestrator",pane_pid:"1",pane_started:"x"}]}' > "$unl/$T_STATE/team.json"
 tool_allowed "a worktree of the other listed project counts the same" "$(msg wt2-orchestrator)"
-unl2="$T_TMP/not-a-root"; mkdir -p "$unl2/.hivemind"; spawn nr-orchestrator; NRP=$SP; NRS=$SS
-jq -nc --arg op "$NRP" --arg os "$NRS" '{agents:[{name:"orchestrator",claude_pid:$op,claude_started:$os,name_full:"nr-orchestrator",pane_pid:"1",pane_started:"x"}]}' > "$unl2/.hivemind/team.json"
+unl2="$T_TMP/not-a-root"; mkdir -p "$unl2/$T_STATE"; spawn nr-orchestrator; NRP=$SP; NRS=$SS
+jq -nc --arg op "$NRP" --arg os "$NRS" '{agents:[{name:"orchestrator",claude_pid:$op,claude_started:$os,name_full:"nr-orchestrator",pane_pid:"1",pane_started:"x"}]}' > "$unl2/$T_STATE/team.json"
 tool_denied "a folder that is no worktree of a listed home is not a team root" "$(msg nr-orchestrator)"
 ROLE=proj
 tool_denied "an agent of the project does not reach the worktree team's orchestrator" "$(msg wt-orchestrator)"

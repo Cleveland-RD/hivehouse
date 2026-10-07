@@ -6,9 +6,9 @@
 t_setup
 r=$(t_repo proj); cd "$r"
 ME=$(id -u)
-M="$T_TMP/mach/hivemind/slot"
+M="$T_TMP/mach/base/slot"
 mkslot() {  # a valid fixture: slot/ and slot/queue/ mode 2775, the parents 755
-  rm -rf "$T_TMP/mach"; mkdir -p "$M/queue"; chmod 755 "$T_TMP/mach" "$T_TMP/mach/hivemind"; chmod 2775 "$M" "$M/queue"
+  rm -rf "$T_TMP/mach"; mkdir -p "$M/queue"; chmod 755 "$T_TMP/mach" "$T_TMP/mach/base"; chmod 2775 "$M" "$M/queue"
 }
 SB=$(t_slot_bin "$M"); SBX=$(t_slot_bin "$M" 0)
 used() {  # used <bin dir>: which slot a run under that copy of bin/ takes: machine, or the user's own
@@ -48,7 +48,7 @@ assert_contains "...the reason names the owner" "$(env -u HM_SLOT_LOCAL "$SBX/hm
 mkslot; chmod 755 "$M"; assert_eq "mode 755 (no setgid, no group write): own slot" "$(used "$SB")" "own"; assert_contains "...the reason is the mode" "$(why)" "has mode 0755, not 2775"
 mkslot; chmod 775 "$M"; assert_eq "mode 775 without setgid: own slot" "$(used "$SB")" "own"; assert_contains "...the reason is the mode" "$(why)" "has mode 0775, not 2775"
 mkslot; chmod 2777 "$M/queue"; assert_eq "queue/ mode 2777: own slot" "$(used "$SB")" "own"; assert_contains "...the reason is the mode" "$(why)" "queue has mode 2777, not 2775"
-mkslot; chmod 775 "$T_TMP/mach/hivemind"; assert_eq "a parent the user can write: own slot" "$(used "$SB")" "own"
+mkslot; chmod 775 "$T_TMP/mach/base"; assert_eq "a parent the user can write: own slot" "$(used "$SB")" "own"
 assert_contains "...the reason is the parent" "$(why)" "writable by group or others"
 mkslot; rm -rf "$M"; assert_eq "no folder: own slot" "$(used "$SB")" "own"; assert_contains "...and status points to setup" "$(why)" "hm-slot setup"
 # --- a gone holder in the machine folder is taken over
@@ -66,7 +66,7 @@ out=$("$SB/hm-slot" setup); assert_status "setup succeeds" $? 0
 assert_contains "mkdir for both folders" "$out" "sudo mkdir -p -- '$M/queue'"
 assert_contains "chmod 2775 for both" "$out" "sudo chmod 2775 -- '$M' '$M/queue'"
 assert_contains "chown to root and staff on macOS" "$out" "sudo chown root:staff -- '$M' '$M/queue'"
-assert_contains "the parent is root's and 0755" "$out" "sudo chmod 0755 -- '$T_TMP/mach/hivemind'"
+assert_contains "the parent is root's and 0755" "$out" "sudo chmod 0755 -- '$T_TMP/mach/base'"
 assert_contains "a group can be named" "$("$SB/hm-slot" setup users)" "sudo chown root:users -- '$M' '$M/queue'"
 "$SB/hm-slot" setup 'a b' 2>/dev/null; assert_status "a bad group name is a usage error" $? 64
 cd /; t_done

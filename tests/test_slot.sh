@@ -105,5 +105,5 @@ mkdir "$T_TMP/norepo"; cd "$T_TMP/norepo"
 assert_eq "status works outside a repo" "$(hm-slot status)" "free"
 out=$(hm-slot run outside -- hm-slot status); assert_contains "run works outside a repo" "$out" '"label":"outside"'
 assert_contains "no project is recorded outside a repo" "$out" '"project":""'
-[ ! -e "$T_TMP/norepo/.hivemind" ] && [ ! -e /.hivemind ] && ok "no project state written outside a repo" || bad "no project state written outside a repo"
+[ ! -e "$T_TMP/norepo/$T_STATE" ] && [ ! -e /$T_STATE ] && ok "no project state written outside a repo" || bad "no project state written outside a repo"
 cd /; t_teardown; t_done

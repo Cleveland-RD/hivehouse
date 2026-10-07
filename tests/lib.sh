@@ -3,6 +3,19 @@
 set -u
 HM_REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 export PATH="$HM_REPO_ROOT/tests/bin:$HM_REPO_ROOT/bin:$PATH"   # the fake claude first, so no test can start a real one
+# The names, stated here for every test and spelled in no other test (tests/test_names.sh holds it to that). They are written out,
+# not read from bin/, so that a name changed there alone fails the tests. The plugin's name is read from plugin.json, the one
+# place it lives.
+T_STATE='.hivemind'                       # a project's state folder
+T_HUB='.hivemind-hub'                     # the hub's folder
+T_HOMEDIR='.hivemind'                     # the per-user home, under $HOME
+T_MAC_BASE='/Library/Application Support/hivemind'   # the delegate files' folder, and the machine slot's, on macOS
+T_LINUX_BASE='/etc/hivemind'              # the delegate files' folder on Linux
+T_LINUX_SLOT='/var/lib/hivemind/slot'     # the machine slot on Linux
+T_DELEGATE_LINE1='hivemind-delegate 1'    # the delegate file's first line
+T_PREFIX='hivemind'                       # what a message begins with: "<prefix>: ..."
+T_PANE='hivemind-hub'                     # the hub screen's pane
+T_PLUGIN=$(jq -r .name "$HM_REPO_ROOT/.claude-plugin/plugin.json")
 FAILS=0
 T_TMP=""
 # A run's ledger: what it started, so that whatever ends it (an assertion, a signal, a kill) the next teardown can

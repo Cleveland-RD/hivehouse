@@ -8,7 +8,7 @@ H="$T_TMP/work"; mkdir -p "$H"; H=$(cd "$H" && pwd -P)
 mk() { local d="$H/$1"; mkdir -p "$d"; git -C "$d" init -q -b main; git -C "$d" config user.email t@t; git -C "$d" config user.name t
        echo x > "$d/README"; git -C "$d" add README; git -C "$d" commit -qm init; }
 hub() { (cd "$H" && hm-hub "$@"); }
-P="$H/.hivemind-hub"
+P="$H/$T_HUB"
 repos() { jq -c ".projects[] | select(.name == \"$1\") | .repos" "$P/projects.json"; }
 hub init >/dev/null
 mk back; mk front; mk extra; mk solo; mkdir -p "$H/notes"

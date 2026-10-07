@@ -63,8 +63,8 @@ hm-manifest add dir path="$T_TMP/no/such/parent" 2>/dev/null; assert_status "ref
 
 # A18: inside the project root or a recorded worktree
 mkdir "$r/src"; hm-manifest add file path="$r/src/x" 2>/dev/null; assert_status "refuses a file inside the project" $? 4
-mkdir -p "$r/.hivemind/tmp"; hm-manifest add file path="$r/.hivemind/tmp/a" >/dev/null; assert_status "allows .hivemind/tmp" $? 0
-hm-manifest add file path="$r/.hivemind/other" 2>/dev/null; assert_status "refuses the rest of .hivemind" $? 4
+mkdir -p "$r/$T_STATE/tmp"; hm-manifest add file path="$r/$T_STATE/tmp/a" >/dev/null; assert_status "allows $T_STATE/tmp" $? 0
+hm-manifest add file path="$r/$T_STATE/other" 2>/dev/null; assert_status "refuses the rest of $T_STATE" $? 4
 hm-manifest add worktree path="$T_TMP/wt1" base=main >/dev/null; assert_status "add worktree" $? 0
 mkdir "$T_TMP/wt1"; hm-manifest add dir path="$T_TMP/wt1/sub" 2>/dev/null; assert_status "refuses a dir inside a recorded worktree" $? 4
 hm-manifest add dir path="$T_TMP/wt1" 2>/dev/null; assert_status "refuses the worktree path itself as a dir" $? 4
@@ -78,7 +78,7 @@ assert_eq "ids are distinct" "$(hm-manifest list | jq -r .id | sort -u | wc -l |
 hm-manifest list | jq -e . >/dev/null; assert_status "every line is valid json" $? 0
 
 # lock: stale holders are taken over, live ones are respected
-L="$r/.hivemind/manifest.lock"
+L="$r/$T_STATE/manifest.lock"
 sleep 300 & live=$!; ls=$(LC_ALL=C ps -o lstart= -p $live | sed 's/^ *//;s/ *$//')
 mkdir "$L"; jq -nc --argjson pid "$live" --arg l "$ls" '{pid:$pid,lstart:$l,created:0}' > "$L/holder.json"
 HM_LOCK_WAIT_S=1 hm-manifest add dir path="$T_TMP/l1" 2>/dev/null; assert_status "a live holder blocks" $? 75
@@ -96,5 +96,5 @@ touch -t 202001010000 "$L"; hm-manifest add dir path="$T_TMP/l4" >/dev/null; ass
 # A1: outside any repo and with no HM_PROJECT: exit 2, nothing written
 mkdir "$T_TMP/norepo"; cd "$T_TMP/norepo"
 for c in "add dir path=$T_TMP/z" "list" "drop x"; do hm-manifest $c 2>/dev/null; assert_status "outside a repo: $c" $? 2; done
-[ ! -e "$T_TMP/norepo/.hivemind" ] && [ ! -e /.hivemind ] && [ -z "$(find "$HIVEMIND_HOME" -type f)" ] && ok "nothing written outside a repo" || bad "nothing written outside a repo"
+[ ! -e "$T_TMP/norepo/$T_STATE" ] && [ ! -e /$T_STATE ] && [ -z "$(find "$HIVEMIND_HOME" -type f)" ] && ok "nothing written outside a repo" || bad "nothing written outside a repo"
 cd /; t_teardown; t_done

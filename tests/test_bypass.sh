@@ -13,13 +13,13 @@ ep=$(t_env_probe HM_PROBE=1) || ep=""
 if [ -n "$ep" ]; then t_track "$ep"; sleep 0.5; hm_env_has "$ep" HM_PROBE=1 && READABLE=1; kill "$ep" 2>/dev/null; fi
 if [ "$READABLE" != 1 ]; then echo "  SKIP only Apple platform binaries were found (no node): a Claude's launch environment cannot be read here, and bypass is refused without that"; t_done; exit 0; fi
 env -u HIVEMIND_HOME tmux -S "$HM_TMUX_SOCKET" new-session -d -x 200 -y 56 -s keep 'sleep 600'
-H="$T_TMP/work"; mkdir -p "$H"; H=$(cd "$H" && pwd -P); P="$H/.hivemind-hub"
+H="$T_TMP/work"; mkdir -p "$H"; H=$(cd "$H" && pwd -P); P="$H/$T_HUB"
 mk() { local d="$H/$1"; mkdir -p "$d"; git -C "$d" init -q -b main; git -C "$d" config user.email t@t; git -C "$d" config user.name t
        echo x > "$d/README"; git -C "$d" add README; git -C "$d" commit -qm init; }
 DD="$T_TMP/dg/area"; DF="$DD/delegate"
 mkdel() {  # mkdel [until] [mcp list]: the owner's delegate file naming this hub, as root would have made it
   mkdir -p "$DD"; chmod 755 "$DD" "$T_TMP/dg"
-  printf 'hivemind-delegate 1\nhub=%s\nuntil=%s\nmcp=%s\n' "$H" "${1:-$((NOW + 3600))}" "${2-docs}" > "$DF"; chmod 644 "$DF"
+  printf "$T_DELEGATE_LINE1"'\nhub=%s\nuntil=%s\nmcp=%s\n' "$H" "${1:-$((NOW + 3600))}" "${2-docs}" > "$DF"; chmod 644 "$DF"
 }
 mkdel
 if ! hm_delegate_read "$DF" "$ME" "$NOW" >/dev/null 2>&1; then hm_delegate_read "$DF" "$ME" "$NOW" >/dev/null 2>&1; echo "  SKIP the fixture folder is not eligible here: $HM_DELEGATE_WHY"; t_done; exit 0; fi
@@ -40,24 +40,24 @@ assert_eq "...a marked caller whose launch environment shows no variables at all
 assert_contains "......says so" "$(cat "$T_TMP/st.err")" "cannot be read"
 assert_eq "...an owner mode that is not auto is never raised" "$(st "$NCP" app acceptEdits "${M[@]}")" "acceptEdits"
 assert_eq "...a project that is not one of the hub's" "$(st "$NCO" other auto "${M[@]}")" "auto"
-mkdir -p "$H/app/.hivemind"; echo '{"permission_mode":"default"}' > "$H/app/.hivemind/settings.json"
+mkdir -p "$H/app/$T_STATE"; echo '{"permission_mode":"default"}' > "$H/app/$T_STATE/settings.json"
 assert_eq "...a project's own stricter mode keeps its team out of bypass" "$(st "$NCP" app auto "${M[@]}")" "default"
-echo '{"permission_mode":"auto"}' > "$H/app/.hivemind/settings.json"
+echo '{"permission_mode":"auto"}' > "$H/app/$T_STATE/settings.json"
 assert_eq "...a project value equal to the owner's does not" "$(st "$NCP" app auto "${M[@]}")" "bypassPermissions"
-echo '{"permission_mode":"bypassPermissions"}' > "$H/app/.hivemind/settings.json"
+echo '{"permission_mode":"bypassPermissions"}' > "$H/app/$T_STATE/settings.json"
 assert_eq "...a project that names bypass itself gets the owner's rule, not its own word" "$(st "$NCP" app auto env)" "auto"
-rm -f "$H/app/.hivemind/settings.json"
+rm -f "$H/app/$T_STATE/settings.json"
 # a team in a worktree of the project's home: bypass on the same terms, and the settings are the home's, never the worktree's own
-git -C "$H/app" worktree add -q "$H/app-wt" -b wt-team; mkdir -p "$H/app-wt/.hivemind"; echo '{"agents":[]}' > "$H/app-wt/.hivemind/team.json"
+git -C "$H/app" worktree add -q "$H/app-wt" -b wt-team; mkdir -p "$H/app-wt/$T_STATE"; echo '{"agents":[]}' > "$H/app-wt/$T_STATE/team.json"
 assert_eq "a worktree team root of the project: bypassPermissions" "$(st "$NCP" app-wt auto "${M[@]}")" "bypassPermissions"
-echo '{"permission_mode":"default"}' > "$H/app-wt/.hivemind/settings.json"
+echo '{"permission_mode":"default"}' > "$H/app-wt/$T_STATE/settings.json"
 assert_eq "...the worktree's own stricter file changes nothing" "$(st "$NCP" app-wt auto "${M[@]}")" "bypassPermissions"
-rm -f "$H/app-wt/.hivemind/settings.json"
-echo '{"permission_mode":"default"}' > "$H/app/.hivemind/settings.json"
+rm -f "$H/app-wt/$T_STATE/settings.json"
+echo '{"permission_mode":"default"}' > "$H/app/$T_STATE/settings.json"
 assert_eq "...the home's stricter mode holds for the worktree" "$(st "$NCP" app-wt auto "${M[@]}")" "default"
-rm -f "$H/app/.hivemind/settings.json"
+rm -f "$H/app/$T_STATE/settings.json"
 chmod 775 "$H/app-wt"; assert_eq "...a group-writable worktree root gets no bypass" "$(st "$NCP" app-wt auto "${M[@]}")" "auto"; chmod 755 "$H/app-wt"
-git -C "$H/other" worktree add -q "$H/other-wt" -b wt-other; mkdir -p "$H/other-wt/.hivemind"; echo '{"agents":[]}' > "$H/other-wt/.hivemind/team.json"
+git -C "$H/other" worktree add -q "$H/other-wt" -b wt-other; mkdir -p "$H/other-wt/$T_STATE"; echo '{"agents":[]}' > "$H/other-wt/$T_STATE/team.json"
 assert_eq "...a worktree of an unlisted repository gets none" "$(st "$NCO" other-wt auto "${M[@]}")" "auto"
 mkdel "$((NOW - 10))"; assert_eq "...an expired delegate file: no bypass" "$(st "$NCP" app auto "${M[@]}")" "auto"
 mkdel; chmod 666 "$DF"; assert_eq "...a delegate file anyone could write: no bypass" "$(st "$NCP" app auto "${M[@]}")" "auto"; mkdel
@@ -74,12 +74,12 @@ p=$(sp "$NCP" b1 bypassPermissions); assert_status "hm-spawn in bypass, for a ma
 sc=$(screen "$p")
 assert_contains "...the agent runs in bypass" "$sc" "ARGV: bypassPermissions"
 assert_contains "...with only the MCP file the owner's list allows" "$sc" "ARGV: --strict-mcp-config"
-assert_contains "......its file" "$sc" "ARGV: $H/app/.hivemind/team/b1/away-mcp.json"
+assert_contains "......its file" "$sc" "ARGV: $H/app/$T_STATE/team/b1/away-mcp.json"
 assert_contains "...and no Chrome" "$sc" "ARGV: --no-chrome"
 assert_contains "...the marker and the hook's variables, in its launch environment" "$sc" "ENV2: HM_AWAY_BYPASS=1 HM_AWAY_HUB=$H HM_AWAY_MCP_ALLOW=docs"
 assert_contains "...its project" "$sc" "HM_PROJECT=$H/app"
-assert_eq "...the MCP file holds the allowed server and not the other" "$(jq -c '.mcpServers | keys' "$H/app/.hivemind/team/b1/away-mcp.json")" '["docs"]'
-assert_eq "...at mode 0600" "$(stat -f '%Lp' "$H/app/.hivemind/team/b1/away-mcp.json" 2>/dev/null || stat -c '%a' "$H/app/.hivemind/team/b1/away-mcp.json")" "600"
+assert_eq "...the MCP file holds the allowed server and not the other" "$(jq -c '.mcpServers | keys' "$H/app/$T_STATE/team/b1/away-mcp.json")" '["docs"]'
+assert_eq "...at mode 0600" "$(stat -f '%Lp' "$H/app/$T_STATE/team/b1/away-mcp.json" 2>/dev/null || stat -c '%a' "$H/app/$T_STATE/team/b1/away-mcp.json")" "600"
 sp "$NCP" b2 bypassPermissions >/dev/null 2>&1; true
 sp0 "$NCP" b3 bypassPermissions >/dev/null; assert_status "...an unmarked Claude is refused" $? 4
 assert_contains "......says why" "$(cat "$T_TMP/sp.err")" "away marker"
@@ -107,13 +107,13 @@ hm_tmux set-environment -g HM_AWAY_BYPASS 1; hm_tmux set-environment -g HM_AWAY_
 p=$(sp0 "$NCP" g1 auto); assert_contains "a server that already holds the away variables: an agent opened on it still has none" "$(screen "$p")" "ENV2: HM_AWAY_BYPASS= HM_AWAY_HUB= HM_AWAY_MCP_ALLOW="
 assert_eq "...and the server's global environment is cleaned" "$(hm_tmux show-environment -g 2>/dev/null | grep -c '^HM_AWAY_')" "0"
 case "$sc" in *--strict-mcp-config*|*--no-chrome*) bad "a session not in bypass got the away MCP flags" ;; *) ok "...and no away MCP flags" ;; esac
-[ ! -e "$H/app/.hivemind/team/a1/away-mcp.json" ] && ok "...and no MCP file" || bad "a session not in bypass has an MCP file"
+[ ! -e "$H/app/$T_STATE/team/a1/away-mcp.json" ] && ok "...and no MCP file" || bad "a session not in bypass has an MCP file"
 # a respawn: out of bypass when the owner is back, the same bypass while away
-hm_tmux kill-pane -t "$(jq -r '.agents[] | select(.name=="b1") | .pane' "$H/app/.hivemind/team.json")"; sleep 0.5
+hm_tmux kill-pane -t "$(jq -r '.agents[] | select(.name=="b1") | .pane' "$H/app/$T_STATE/team.json")"; sleep 0.5
 mkdel "$((NOW - 10))"
 HM_PROJECT="$H/app" "${M[@]}" node "$NCP" "$DB/hm-spawn" --respawn b1 --still 2 --max-wait 15 >/dev/null 2>"$T_TMP/sp.err"; assert_status "respawning a bypass agent after away has ended is refused" $? 4
 rp=$(HM_PROJECT="$H/app" "${M[@]}" node "$NCP" "$DB/hm-spawn" --respawn b1 --mode auto --still 2 --max-wait 15 2>/dev/null); assert_status "...unless it comes back in a stricter mode" $? 0
-[ ! -e "$H/app/.hivemind/team/b1/away-mcp.json" ] && ok "......and the away MCP file of its bypass days is gone" || bad "a stale away MCP file stays for an agent no longer in bypass"
+[ ! -e "$H/app/$T_STATE/team/b1/away-mcp.json" ] && ok "......and the away MCP file of its bypass days is gone" || bad "a stale away MCP file stays for an agent no longer in bypass"
 sc=$(screen "$rp"); assert_contains "......in that mode" "$sc" "ARGV: auto"
 assert_contains "......with no marker" "$sc" "ENV2: HM_AWAY_BYPASS= HM_AWAY_HUB= HM_AWAY_MCP_ALLOW="
 mkdel
@@ -124,7 +124,7 @@ assert_contains "...carries the marker again" "$(screen "$rp")" "ENV2: HM_AWAY_B
 mkdir -p "$P/panes"; printf '{"mcpServers":{"docs":{}}}\n' > "$P/panes/app-mcp.json"; chmod 600 "$P/panes/app-mcp.json"
 kp=$(hm_tmux list-panes -t keep -F '#{pane_id}' | head -1)
 TMUX_PANE="$kp" HM_PROJECT="$H/app" "${M[@]}" node "$NCP" "$DB/hm-spawn" --self --agent orchestrator >/dev/null 2>"$T_TMP/sp.err"; assert_status "an orchestrator registering with --self" $? 0
-[ -f "$H/app/.hivemind/team/orchestrator/away-mcp.json" ] && [ ! -e "$P/panes/app-mcp.json" ] && ok "...takes the MCP file the hub gave it into its team folder" || bad "the hub-launched orchestrator's MCP file did not move"
+[ -f "$H/app/$T_STATE/team/orchestrator/away-mcp.json" ] && [ ! -e "$P/panes/app-mcp.json" ] && ok "...takes the MCP file the hub gave it into its team folder" || bad "the hub-launched orchestrator's MCP file did not move"
 # the delegate file expired before it registered: the hub's copy (it may hold server secrets) is removed, not left behind
 printf '{"mcpServers":{"docs":{}}}\n' > "$P/panes/app-mcp.json"; chmod 600 "$P/panes/app-mcp.json"; mkdel "$((NOW - 10))"
 TMUX_PANE="$kp" HM_PROJECT="$H/app" HM_AWAY_HUB="$H" "${M[@]}" node "$NCP" "$DB/hm-spawn" --self --agent orchestrator >/dev/null 2>"$T_TMP/sp.err"; assert_status "registering with --self after the delegate file expired" $? 0
@@ -132,12 +132,12 @@ TMUX_PANE="$kp" HM_PROJECT="$H/app" HM_AWAY_HUB="$H" "${M[@]}" node "$NCP" "$DB/
 mkdel
 
 # ---- hm-hub: only the hub the owner's file names, in its own marked Claude, and never through --mode ----
-rm -f "$H/app/.hivemind/team.json"; rm -rf "$H/app/.hivemind/team"
+rm -f "$H/app/$T_STATE/team.json"; rm -rf "$H/app/$T_STATE/team"
 hh() { local who=$1; shift; (cd "$H" && "${M[@]}" node "$who" "$DB/hm-hub" "$@" 2>"$T_TMP/hh.err"); }
 # a delegate file that names ANOTHER hub, which also lists this project: the hub that runs this hm-hub is not the one the owner meant
-H2="$T_TMP/work2"; mkdir -p "$H2/.hivemind-hub"; H2=$(cd "$H2" && pwd -P)
-jq -nc --arg h "$H/app" '{projects:[{name:"app", home:$h, repos:[$h]}]}' > "$H2/.hivemind-hub/projects.json"
-printf '{"name":"hub2"}\n' > "$H2/.hivemind-hub/hub.json"   # a complete hub of this user's: only the name it is given differs
+H2="$T_TMP/work2"; mkdir -p "$H2/$T_HUB"; H2=$(cd "$H2" && pwd -P)
+jq -nc --arg h "$H/app" '{projects:[{name:"app", home:$h, repos:[$h]}]}' > "$H2/$T_HUB/projects.json"
+printf '{"name":"hub2"}\n' > "$H2/$T_HUB/hub.json"   # a complete hub of this user's: only the name it is given differs
 hh0() { (cd "$H" && env node "$NCH" "$DB/hm-hub" "$@" 2>"$T_TMP/hh.err"); }
 t1=$(hh "$NCH" task app --text "First"); t1=${t1%%$'\t'*}
 hh "$NCH" start app "$t1" --mode bypassPermissions --still 2 --max-wait 15 >/dev/null; assert_status "hm-hub start --mode bypassPermissions is refused, whoever asks" $? 4
@@ -147,7 +147,7 @@ up=$(hh0 start app "$t1" --mode auto --still 2 --max-wait 15); assert_status "a 
 sc=$(screen "$up"); assert_contains "...auto" "$sc" "ARGV: auto"
 assert_contains "...with no marker" "$sc" "ENV2: HM_AWAY_BYPASS= HM_AWAY_HUB= HM_AWAY_MCP_ALLOW="
 hm_tmux kill-pane -t "$up"; sleep 0.5
-printf 'hivemind-delegate 1\nhub=%s\nuntil=%s\nmcp=docs\n' "$H2" "$((NOW + 3600))" > "$DF"
+printf "$T_DELEGATE_LINE1"'\nhub=%s\nuntil=%s\nmcp=docs\n' "$H2" "$((NOW + 3600))" > "$DF"
 hh "$NCH" start app "$t1" --mode auto --still 2 --max-wait 15 >/dev/null; assert_status "a delegate file that names another hub gives this hub no bypass" $? 4
 assert_contains "...says so" "$(cat "$T_TMP/hh.err")" "does not name this hub"
 mkdel
@@ -177,7 +177,7 @@ assert_contains "...with no marker" "$sc" "ENV2: HM_AWAY_BYPASS= HM_AWAY_HUB= HM
 assert_contains "...and still its project" "$sc" "HM_PROJECT=$H/app"
 hm_tmux kill-pane -t "$hp"; sleep 0.5; mkdel
 # a stopped orchestrator woken while the owner is away: resumed in its own conversation, in bypass, marked
-S="$H/app/.hivemind"; mkdir -p "$S/team/orchestrator"
+S="$H/app/$T_STATE"; mkdir -p "$S/team/orchestrator"
 kp=$(hm_tmux list-panes -t keep -F '#{pane_id}' | head -1); ki=$(hm_pane_identity "$HM_TMUX_SOCKET" "$kp")
 jq -nc --arg k "$HM_TMUX_SOCKET" --arg kp "$kp" --arg p "${ki%%$'\t'*}" --arg s "${ki#*$'\t'}" '{agents:[{name:"orchestrator", pane:$kp, socket:$k, pane_pid:$p, pane_started:$s, claude_pid:"99999", claude_started:"Mon Jan  1 00:00:00 2001", name_full:"app-orchestrator"}]}' > "$S/team.json"
 jq -nc --arg t "$HM_REPO_ROOT/tests/fixtures/transcript.jsonl" '{session_id:"sess-x", transcript_path:$t}' > "$S/team/orchestrator/session.json"

@@ -17,28 +17,28 @@ hm-cleanup 2>/dev/null; assert_status "a mode is required" $? 64
 hm-cleanup --disk --finish 2>/dev/null; assert_status "one mode only" $? 64
 hm-cleanup --finish --bogus 2>/dev/null; assert_status "an unknown flag is a usage error" $? 64
 mkdir "$T_TMP/norepo"; (cd "$T_TMP/norepo" && hm-cleanup --finish 2>/dev/null); assert_status "outside a repo: exit 2" $? 2
-[ ! -e "$T_TMP/norepo/.hivemind" ] && [ -z "$(find "$HIVEMIND_HOME" -type f)" ] && ok "outside a repo: nothing written" || bad "outside a repo: something was written"
+[ ! -e "$T_TMP/norepo/$T_STATE" ] && [ -z "$(find "$HIVEMIND_HOME" -type f)" ] && ok "outside a repo: nothing written" || bad "outside a repo: something was written"
 
 # ---- files and directories -----------------------------------------------------------------------------------------
 r=$(t_repo files); cd "$r"
-mkdir -p "$TMPDIR/scratch/deep" "$r/.hivemind/tmp"; echo x > "$TMPDIR/scratch/deep/f"; echo x > "$r/.hivemind/tmp/t"
+mkdir -p "$TMPDIR/scratch/deep" "$r/$T_STATE/tmp"; echo x > "$TMPDIR/scratch/deep/f"; echo x > "$r/$T_STATE/tmp/t"
 realtmp=$(t_outside_tmp)
 mkdir "$T_TMP/out/keep"; echo x > "$T_TMP/out/keep/f"
 mkdir "$T_TMP/out/unlisted"; echo x > "$T_TMP/out/unlisted/f"
 hm-manifest add dir path="$TMPDIR/scratch" >/dev/null
-hm-manifest add file path="$r/.hivemind/tmp/t" >/dev/null
+hm-manifest add file path="$r/$T_STATE/tmp/t" >/dev/null
 hm-manifest add dir path="$realtmp" >/dev/null
 hm-manifest add dir path="$T_TMP/out/keep" >/dev/null
 hm-manifest add dir path="$T_TMP/out/gone" >/dev/null   # never created
-before=$(cat .hivemind/manifest.jsonl)
+before=$(cat $T_STATE/manifest.jsonl)
 out=$(hm-cleanup --disk --dry-run); assert_status "dry run" $? 0
-[ -d "$TMPDIR/scratch" ] && [ -d "$realtmp" ] && [ -f "$r/.hivemind/tmp/t" ] && ok "dry run deletes nothing" || bad "dry run deleted something"
-assert_eq "dry run leaves the manifest as it was" "$(cat .hivemind/manifest.jsonl)" "$before"
+[ -d "$TMPDIR/scratch" ] && [ -d "$realtmp" ] && [ -f "$r/$T_STATE/tmp/t" ] && ok "dry run deletes nothing" || bad "dry run deleted something"
+assert_eq "dry run leaves the manifest as it was" "$(cat $T_STATE/manifest.jsonl)" "$before"
 assert_contains "dry run says so" "$out" "dry run"
 out=$(hm-cleanup --disk); assert_status "--disk" $? 0
 [ ! -e "$TMPDIR/scratch" ] && ok "--disk deletes a dir under TMPDIR" || bad "--disk left a dir under TMPDIR"
 [ ! -e "$realtmp" ] && ok "--disk deletes a dir under /tmp" || bad "--disk left a dir under /tmp"
-[ ! -e "$r/.hivemind/tmp/t" ] && ok "--disk deletes a file under .hivemind/tmp" || bad "--disk left .hivemind/tmp"
+[ ! -e "$r/$T_STATE/tmp/t" ] && ok "--disk deletes a file under $T_STATE/tmp" || bad "--disk left $T_STATE/tmp"
 [ -f "$T_TMP/out/keep/f" ] && ok "--disk keeps a dir that is not temporary" || bad "--disk touched a dir that is not temporary"
 [ -f "$T_TMP/out/unlisted/f" ] && ok "--disk leaves a dir not on the manifest" || bad "--disk touched a dir not on the manifest"
 assert_contains "the line for a deleted dir" "$out" "removed dir $TMPDIR/scratch by=owner (temporary)"
@@ -49,8 +49,8 @@ assert_contains "free disk after" "$out" "free disk after:"
 assert_eq "removed entries are dropped, the kept one stays" "$(hm-manifest list | jq -r .path)" "$T_TMP/out/keep"
 out=$(hm-cleanup --finish); assert_status "--finish" $? 0
 [ ! -e "$T_TMP/out/keep" ] && ok "--finish moves a dir that is not temporary away" || bad "--finish left it in place"
-trashed=$(find "$r/.hivemind/trash" -name f -path '*keep*' | head -1)
-[ -n "$trashed" ] && [ "$(cat "$trashed")" = x ] && ok "...into the trash, contents intact" || bad "the trashed dir is not in .hivemind/trash"
+trashed=$(find "$r/$T_STATE/trash" -name f -path '*keep*' | head -1)
+[ -n "$trashed" ] && [ "$(cat "$trashed")" = x ] && ok "...into the trash, contents intact" || bad "the trashed dir is not in $T_STATE/trash"
 assert_contains "the trashed line" "$out" "trashed dir $T_TMP/out/keep by=owner"
 assert_contains "the trash size is reported" "$out" "trash:"
 [ -f "$T_TMP/out/unlisted/f" ] && ok "--finish leaves a dir not on the manifest" || bad "--finish touched a dir not on the manifest"
@@ -63,7 +63,7 @@ rm -rf "$T_TMP/out/sw"; ln -s "$T_TMP/victim" "$T_TMP/out/sw"
 mkdir -p "$T_TMP/out/p" "$T_TMP/victim2"; echo v > "$T_TMP/out/p/f"; echo v > "$T_TMP/victim2/f"
 hm-manifest add file path="$T_TMP/out/p/f" >/dev/null
 rm -rf "$T_TMP/out/p"; ln -s "$T_TMP/victim2" "$T_TMP/out/p"
-printf '%s\n' '{"id":"m-etc","kind":"file","path":"/private/etc/hosts","at":"x","by":"test"}' >> .hivemind/manifest.jsonl
+printf '%s\n' '{"id":"m-etc","kind":"file","path":"/private/etc/hosts","at":"x","by":"test"}' >> $T_STATE/manifest.jsonl
 mkdir -p "$T_TMP/out/later/sub"; echo v > "$T_TMP/out/later/sub/f"
 hm-manifest add dir path="$T_TMP/out/later/sub" >/dev/null
 hm-manifest add worktree path="$T_TMP/out/later" base=main >/dev/null
@@ -107,7 +107,7 @@ set -m
   t_track $gchild $gcchild $gcclaude $ownchild
   for p in $g $gc $stubborn $edited $cl $locp $own $dead $$; do hm-manifest add process pid=$p >/dev/null; done
   kill $dead; wait $dead 2>/dev/null
-  f=.hivemind/manifest.jsonl; jq -c --arg p "$edited" 'if .pid == $p then .started = "Mon Jan  1 00:00:00 2001" else . end' $f > $f.t && mv $f.t $f
+  f=$T_STATE/manifest.jsonl; jq -c --arg p "$edited" 'if .pid == $p then .started = "Mon Jan  1 00:00:00 2001" else . end' $f > $f.t && mv $f.t $f
   jq -c --arg p "$locp" --arg s "$(ps -o lstart= -p "$locp" | sed 's/^ *//;s/ *$//')" 'if .pid == $p then .started = $s else . end' $f > $f.t && mv $f.t $f
   out=$(hm-cleanup --disk); assert_status "--disk with processes" $? 0
   alive $g && alive $edited && ok "--disk stops no process" || bad "--disk stopped a process"
@@ -191,11 +191,11 @@ assert_eq "kept: dirty, ahead and the remote" "$(count)" "3"
 
 # ---- one cleanup at a time -----------------------------------------------------------------------------------------
 sleep 300 & holder=$!; t_track $holder
-mkdir .hivemind/cleanup.lock; hm_holder_json $holder > .hivemind/cleanup.lock/holder.json
+mkdir $T_STATE/cleanup.lock; hm_holder_json $holder > $T_STATE/cleanup.lock/holder.json
 hm-cleanup --finish >/dev/null 2>&1; assert_status "a second cleanup is refused" $? 75
 [ -d "$T_TMP/wt-dirty" ] && assert_eq "...and does nothing" "$(count)" "3"
 kill $holder; wait $holder 2>/dev/null
 hm-cleanup --finish >/dev/null; assert_status "a dead holder's lock is taken over" $? 0
-[ ! -e .hivemind/cleanup.lock ] && ok "the lock is released afterwards" || bad "the cleanup lock was left"
+[ ! -e $T_STATE/cleanup.lock ] && ok "the lock is released afterwards" || bad "the cleanup lock was left"
 cd /
 t_done

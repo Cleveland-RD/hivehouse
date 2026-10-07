@@ -3,6 +3,8 @@
 import { expect, mock, test } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
+import { HUB_DIR, PANE_ID, PLUGIN, PREFIX } from './names'
+
 const ROOT = '/work'
 const NOW = Date.parse('2026-10-05T12:00:00Z')
 const STATUS = {
@@ -110,13 +112,13 @@ const AWAY = { on: false, ended: false, refused: '', since: '2026-10-05T10:00:00
 const ANSWER = { code: 0, stdout: '{"answered":true,"session":"rev","choice":"1","option":"Yes","dialog_gone":true}', stderr: '' }
 const TOASTS: string[] = []
 const PANE = {
-  plugin: 'hivemind',
+  plugin: PLUGIN,
   component: 'Pane',
-  requestId: 'hivemind-hub',
+  requestId: PANE_ID,
   props: { title: 'Hub', isFocused: true, bodyColumns: 60, placement: 'dock', scroll: { offset: 0, bodyRows: 80 }, view: {} },
 } as const
 
-// The plugin's skills, whose names Claude Code refuses to a command the plugin registers (it refused /hub for /hivemind:hub)
+// The plugin's skills, whose names Claude Code refuses to a command the plugin registers (it refused /hub for /<plugin>:hub)
 const SKILLS = ['bubble-review', 'cleanup', 'doc-updater', 'gate', 'handoff', 'hub', 'overnight', 'review-plan', 'start']
 const ran = (exitCode: number, stdout: string, stderr = '') => ({ value: { exitCode, stdout, stderr, isStdoutTruncated: false, isStderrTruncated: false } })
 
@@ -136,12 +138,12 @@ function world(on: On, runs: string[][], opened: string[] = [], commands: string
   })
   on('session.cwd', async () => ({ value: ROOT }))
   on('fs.stat', async (_$, e) => {
-    if (e.path === `${ROOT}/.hivemind-hub`) return { value: { kind: 'dir', size: 0, mtimeMs: 0, isLink: false, realPath: e.path } }
-    if (e.path === `${ROOT}/.hivemind-hub/memory/link.md`) return { value: { kind: 'file', size: 0, mtimeMs: 0, isLink: true, realPath: `${ROOT}/back/src/a.ts` } }
+    if (e.path === `${ROOT}/${HUB_DIR}`) return { value: { kind: 'dir', size: 0, mtimeMs: 0, isLink: false, realPath: e.path } }
+    if (e.path === `${ROOT}/${HUB_DIR}/memory/link.md`) return { value: { kind: 'file', size: 0, mtimeMs: 0, isLink: true, realPath: `${ROOT}/back/src/a.ts` } }
     if (e.path.endsWith('/new.md')) return { deny: 'ENOENT: no such file or directory' }
     return { value: { kind: 'file', size: 0, mtimeMs: 0, isLink: false, realPath: e.path } }
   })
-  on('fs.read', async (_$, e) => (e.path === `${ROOT}/.hivemind-hub/projects.json` ? { value: JSON.stringify(PROJECTS) } : { deny: 'ENOENT' }))
+  on('fs.read', async (_$, e) => (e.path === `${ROOT}/${HUB_DIR}/projects.json` ? { value: JSON.stringify(PROJECTS) } : { deny: 'ENOENT' }))
   on('process.run', async (_$, e) => {
     runs.push([...e.argv])
     const sub = e.argv[1]
@@ -155,18 +157,18 @@ function world(on: On, runs: string[][], opened: string[] = [], commands: string
     if (sub === 'wake' || sub === 'continue') return ran(0, '%7\n')
     if (sub === 'dialog') {
       const d = DIALOGS[e.argv.slice(2).join(' ')]
-      return d ? ran(0, JSON.stringify(d)) : ran(4, '', 'hivemind: no dialog is on that screen')
+      return d ? ran(0, JSON.stringify(d)) : ran(4, '', `${PREFIX}: no dialog is on that screen`)
     }
     if (sub === 'answer') return ran(ANSWER.code, ANSWER.stdout, ANSWER.stderr)
     if (sub === 'name' && session.hubName) return ran(0, `${session.hubName}\n`)
     if (sub === 'naming' && session.namingFails) return ran(4, '', session.namingFails)
     if (sub === 'naming' && session.naming) return ran(0, JSON.stringify(session.naming))
-    return ran(64, '', 'hivemind: usage')
+    return ran(64, '', `${PREFIX}: usage`)
   })
   on('tool.call', async () => ({ result: 'ran' }) as never)
   on('session.start', async (_$, e) => ({ cwd: e.cwd }))
   on('command.register', async (_$, e) => {
-    if (refuseAll || SKILLS.includes(e.name)) return { deny: `"/${e.name}" refused: it is the plugin's /hivemind:${e.name}` }
+    if (refuseAll || SKILLS.includes(e.name)) return { deny: `"/${e.name}" refused: it is the plugin's /${PLUGIN}:${e.name}` }
     commands.push(e.name)
     return { value: { command: e.name } }
   })
@@ -174,7 +176,7 @@ function world(on: On, runs: string[][], opened: string[] = [], commands: string
     opened.push(e.id)
     return { value: { isPlaced: true } }
   })
-  on('ui.panes', async () => ({ value: shown.now ? [{ id: 'hivemind-hub', title: 'Hub', isShown: true, isFocused: false, isPlaced: true }] : [] }))
+  on('ui.panes', async () => ({ value: shown.now ? [{ id: PANE_ID, title: 'Hub', isShown: true, isFocused: false, isPlaced: true }] : [] }))
   on('ui.toast', async (_$, e) => {
     TOASTS.push(e.text)
     return { value: undefined }
@@ -186,10 +188,10 @@ test('the hub keeps off the projects, and off nothing else', async ($, on) => {
   world(on, runs)
   const edit = (file_path: string) => $.tool.call({ tool: 'Edit', tool_use_id: 't', file_path, old_string: 'a', new_string: 'b' } as never)
   expect((await edit(`${ROOT}/back/src/a.ts`)).deny).toContain('the hub never changes a project')
-  expect((await edit(`${ROOT}/.hivemind-hub/memory/app.md`)).deny).toBeUndefined()
-  expect((await edit(`${ROOT}/.hivemind-hub/memory/link.md`)).deny).toContain('the hub never changes a project')
+  expect((await edit(`${ROOT}/${HUB_DIR}/memory/app.md`)).deny).toBeUndefined()
+  expect((await edit(`${ROOT}/${HUB_DIR}/memory/link.md`)).deny).toContain('the hub never changes a project')
   const write = (file_path: string) => $.tool.call({ tool: 'Write', tool_use_id: 't', file_path, content: 'x' } as never)
-  expect((await write(`${ROOT}/.hivemind-hub/memory/new.md`)).deny).toBeUndefined()
+  expect((await write(`${ROOT}/${HUB_DIR}/memory/new.md`)).deny).toBeUndefined()
   expect((await write(`${ROOT}/back/new.md`)).deny).toContain('the hub never changes a project')
   // anything else in the work folder, and a project's folder outside it
   expect((await write(`${ROOT}/notes.txt`)).deny).toContain('the hub never changes a project')
@@ -217,11 +219,11 @@ test('the hub keeps off the projects, and off nothing else', async ($, on) => {
   }
   // quoted text follows the shell's own quoting: the '\'' idiom for an apostrophe inside single quotes, $'..' with an escaped quote, an escaped
   // quote inside double quotes. A sed -i on the hub's own memory file whose note holds a git command passes.
-  expect((await bash("sed -i '' '1a\\ do'\\''nt run `git worktree add` here' .hivemind-hub/memory/app.md")).deny).toBeUndefined()
+  expect((await bash("sed -i '' '1a\\ do'\\''nt run `git worktree add` here' " + HUB_DIR + '/memory/app.md')).deny).toBeUndefined()
   expect((await bash("hm-hub log app-1 note --note $'it\\'s fine: git commit -m x'")).deny).toBeUndefined()
   expect((await bash('hm-hub log app-1 note --note "say \\"hi\\" then git push"')).deny).toBeUndefined()
   expect((await bash('hm-hub log app-1 note --note "the user\'s note: git worktree add x"')).deny).toBeUndefined()
-  expect((await bash("sed -i '' '1a\\ it'\\''s done' .hivemind-hub/memory/app.md; git commit -m x")).deny).toContain('changes a repository')
+  expect((await bash(`sed -i '' '1a\\ it'\\''s done' ${HUB_DIR}/memory/app.md; git commit -m x`)).deny).toContain('changes a repository')
   // a real command after a quote, in $( ), in backticks, or after an escaped separator still counts
   expect((await bash("echo 'a'; git commit -m x")).deny).toContain('changes a repository')
   // inside double quotes and an unquoted heredoc the shell still runs $( ) and backtick spans; single quotes and a quoted heredoc never
@@ -310,7 +312,7 @@ test('the screen: what needs the owner first, then each project, and Resume wake
   await clock.settle()
   expect(runs.map(r => r[1])).toEqual(expect.arrayContaining(['status', 'tasks']))
   expect(commands).toEqual(['hub-screen'])
-  expect(opened).toEqual(['hivemind-hub'])
+  expect(opened).toEqual([PANE_ID])
 
   const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
   expect(await ui.find({ type: 'Text', text: 'NEEDS YOU' })).toBeDefined()
@@ -377,7 +379,7 @@ test('the screen: what needs the owner first, then each project, and Resume wake
   // a refusal (the screen changed under the owner) is told, and the screen reads hm-hub again
   ANSWER.code = 4
   ANSWER.stdout = ''
-  ANSWER.stderr = 'hivemind: the dialog changed; look again: nothing was sent'
+  ANSWER.stderr = `${PREFIX}: the dialog changed; look again: nothing was sent`
   const reads = runs.filter(r => r[1] === 'status').length
   await ui.press({ key: 'answer-app/rev-2' })
   expect(TOASTS.some(t => t.includes('the dialog changed; look again'))).toBe(true)
@@ -441,7 +443,7 @@ test('the screen says when away was refused, with the reason', async ($, on) => 
   const quiet = await $.ui.mount({ ...PANE, surface: 'terminal' })
   expect(await quiet.find({ type: 'Text', text: /away refused/ })).toBeUndefined()
   await quiet.unmount()
-  AWAY.refused = '/work/.hivemind-hub/projects.json is writable by group or others (mode 664)'
+  AWAY.refused = `/work/${HUB_DIR}/projects.json is writable by group or others (mode 664)`
   try {
     await clock.advance(20_000)
     const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
@@ -510,7 +512,7 @@ test('a command Claude Code refuses does not keep the screen shut', async ($, on
   await $.session.start({ cwd: ROOT, surface: 'terminal', isInteractive: true })
   await clock.settle()
   expect(runs.map(r => r[1])).toEqual(expect.arrayContaining(['status', 'tasks']))
-  expect(opened).toEqual(['hivemind-hub'])
+  expect(opened).toEqual([PANE_ID])
 })
 
 const UNNAMED = { found: true, name: 'Read the docs', source: 'auto', free: 'hub' }
@@ -521,7 +523,7 @@ test('a plain claude in the hub folder names itself and opens the hub', async ($
   world(on, [], [], [], false, { now: true }, { turns: 0, naming: UNNAMED }, ran)
   await $.session.start({ cwd: ROOT, surface: 'terminal', isInteractive: true })
   await clock.settle()
-  expect(ran).toEqual([['rename', 'hub'], ['hivemind:hub', '']])
+  expect(ran).toEqual([['rename', 'hub'], [`${PLUGIN}:hub`, '']])
 })
 
 // each test's world is its own: hooks a test registers stay for the rest of that test
@@ -542,7 +544,7 @@ leftAlone('nobody is at the prompt of (claude -p, the SDK)', { turns: 0, naming:
 test('a name the hub cannot take is said on the toast, not dropped', async ($, on) => {
   const ran: string[][] = []
   const clock = mock.clock(on, { now: NOW })
-  world(on, [], [], [], false, { now: true }, { turns: 0, namingFails: 'hivemind: /work/.hivemind-hub/name holds no usable name' }, ran)
+  world(on, [], [], [], false, { now: true }, { turns: 0, namingFails: `${PREFIX}: /work/${HUB_DIR}/name holds no usable name` }, ran)
   await $.session.start({ cwd: ROOT, surface: 'terminal', isInteractive: true })
   await clock.settle()
   expect(ran).toEqual([])
@@ -551,7 +553,7 @@ test('a name the hub cannot take is said on the toast, not dropped', async ($, o
 
 test('the toast names the hub by the name its folder chose', async ($, on) => {
   const clock = mock.clock(on, { now: NOW })
-  world(on, [], [], [], false, { now: true }, { turns: 0, hubName: 'lead', namingFails: 'hivemind: no name' }, [])
+  world(on, [], [], [], false, { now: true }, { turns: 0, hubName: 'lead', namingFails: `${PREFIX}: no name` }, [])
   await $.session.start({ cwd: ROOT, surface: 'terminal', isInteractive: true })
   await clock.settle()
   expect(TOASTS.some(t => t.includes('no name chosen') && t.includes('type /rename lead'))).toBe(true)

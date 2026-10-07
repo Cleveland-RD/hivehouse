@@ -7,7 +7,7 @@ t_setup
 echo role > "$T_TMP/role.md"; echo rules > "$T_TMP/RULES.md"
 out="$T_TMP/norepo"; mkdir "$out"; cd "$out"
 before_home=$(find "$HIVEMIND_HOME" | sort)
-home_before=$(ls -A "$HOME" | grep -c '^\.hivemind$')
+home_before=$(ls -A "$HOME" | grep -c '^\'"$T_STATE"'$')
 check() {  # check <label> <expected status> <command...>
   local label="$1" want="$2"; shift 2
   "$@" </dev/null >/dev/null 2>&1; assert_status "$label outside a repo" $? "$want"
@@ -33,8 +33,8 @@ check "hm-settings with a missing HM_PROJECT" 2 hm-settings resolve files_per_co
 check "hm-spawn with a missing HM_PROJECT" 2 hm-spawn --agent impl --role "$T_TMP/role.md" --rules "$T_TMP/RULES.md" --model m --effort e --mode auto
 unset HM_PROJECT
 # nothing was written anywhere
-[ ! -e "$out/.hivemind" ] && [ ! -e /.hivemind ] && ok "no .hivemind in the cwd or at /" || bad "a .hivemind appeared outside a repo"
-assert_eq "no .hivemind appeared in HOME" "$(ls -A "$HOME" | grep -c '^\.hivemind$')" "$home_before"
+[ ! -e "$out/$T_STATE" ] && [ ! -e /$T_STATE ] && ok "no $T_STATE in the cwd or at /" || bad "a $T_STATE appeared outside a repo"
+assert_eq "no $T_STATE appeared in HOME" "$(ls -A "$HOME" | grep -c "^\\$T_STATE\$")" "$home_before"
 assert_eq "nothing appeared in the machine home" "$(find "$HIVEMIND_HOME" | sort)" "$before_home"
 assert_eq "nothing appeared in the cwd" "$(ls -A "$out")" ""
 [ ! -e "$T_TMP/nope" ] && ok "a missing HM_PROJECT was not created" || bad "a missing HM_PROJECT was created"

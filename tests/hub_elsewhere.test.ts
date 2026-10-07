@@ -2,11 +2,13 @@
 // Run with `claude plugin test <plugin folder>` (each file runs in its own process, so the module starts fresh here).
 import { expect, test } from 'claude-code/testing'
 
+import { HUB_DIR } from './names'
+
 test('a session outside the hub is left alone', async ($, on) => {
   const runs: string[][] = []
   on('session.cwd', async () => ({ value: '/work/back' }))
   on('fs.stat', async (_$, e) => {
-    if (e.path.endsWith('/.hivemind-hub')) return { deny: 'ENOENT: no such file or directory' }
+    if (e.path.endsWith(`/${HUB_DIR}`)) return { deny: 'ENOENT: no such file or directory' }
     return { value: { kind: 'file', size: 0, mtimeMs: 0, isLink: false, realPath: e.path } }
   })
   on('process.run', async (_$, e) => {

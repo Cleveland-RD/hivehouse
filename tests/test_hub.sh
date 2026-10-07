@@ -11,7 +11,7 @@ mk() { local d="$H/$1"; mkdir -p "$d"; git -C "$d" init -q -b main; git -C "$d" 
        echo x > "$d/README"; git -C "$d" add README; git -C "$d" commit -qm init; }
 hub() { (cd "$H" && hm-hub "$@"); }
 idof() { printf '%s' "${1%%$'\t'*}"; }   # hm-hub task prints "<id><TAB><task file>"
-P="$H/.hivemind-hub"
+P="$H/$T_HUB"
 
 # ---- no hub yet ----
 hub status >/dev/null 2>&1; assert_status "status with no hub" $? 2
@@ -28,7 +28,7 @@ d=$(hub discover)
 assert_eq "a repository" "$(printf '%s\n' "$d" | awk '$1=="back"{print $2}')" "repo"
 assert_eq "a worktree names its repository" "$(printf '%s\n' "$d" | awk '$1=="back-wt"{print $2, $3, $4}')" "worktree of back"
 assert_eq "a plain folder" "$(printf '%s\n' "$d" | awk '$1=="notes"{print $2}')" "folder"
-case "$d" in *".hivemind-hub"*) bad "discover lists the hub itself" ;; *) ok "the hub is not listed" ;; esac
+case "$d" in *"$T_HUB"*) bad "discover lists the hub itself" ;; *) ok "the hub is not listed" ;; esac
 
 # ---- add: a project is a home repository and the folders it spans ----
 hub add app --home back --repo front --repo notes >/dev/null; assert_status "add a project over three folders" $? 0
@@ -55,7 +55,7 @@ bash "$T_TMP/cl/claude" --name 'hub;rm' >/dev/null 2>&1; assert_status "a name h
 bash "$T_TMP/cl/claude" --name 'my hub' >/dev/null 2>&1; assert_status "a hub name is one word: orchestrators are told to type it" $? 4
 assert_eq "...the record stays" "$(jq -r .name "$P/hub.json")" "hub"
 hub name lead >/dev/null; out=$(bash "$T_TMP/cl/claude" 2>&1); assert_status "a session with no name is refused" $? 4
-assert_contains "...the hint names the hub's chosen name to start with" "$out" "claude --name lead /hivemind:hub"
+assert_contains "...the hint names the hub's chosen name to start with" "$out" "claude --name lead /$T_PLUGIN:hub"
 assert_contains "...and to /rename to" "$out" "/rename lead"
 rm -f "$P/name"
 
@@ -92,7 +92,7 @@ assert_eq "...one open task" "$(printf '%s' "$s" | jq -r '.projects[] | select(.
 assert_eq "...the hub's name" "$(printf '%s' "$s" | jq -r .hub.name)" "hub"
 echo role > "$T_TMP/impl.md"; echo rules > "$T_TMP/RULES.md"
 (cd "$H/back" && hm-spawn --agent impl --role "$T_TMP/impl.md" --rules "$T_TMP/RULES.md" --model sonnet --effort medium --mode auto --still 2 --max-wait 15 >/dev/null)
-S="$H/back/.hivemind"
+S="$H/back/$T_STATE"
 # the orchestrator's pane is the owner's own (the keep session's), its Claude long gone
 kp=$(hm_tmux list-panes -t keep -F '#{pane_id}' | head -1); ki=$(hm_pane_identity "$HM_TMUX_SOCKET" "$kp")
 jq --arg k "$HM_TMUX_SOCKET" --arg kp "$kp" --arg p "${ki%%$'\t'*}" --arg s "${ki#*$'\t'}" '.agents += [{name:"orchestrator", pane:$kp, socket:$k, pane_pid:$p, pane_started:$s, claude_pid:"99999", claude_started:"Mon Jan  1 00:00:00 2001", name_full:"app-orchestrator"}]' \
@@ -147,7 +147,7 @@ hub start two two-9 >/dev/null 2>&1; assert_status "a task nobody asked" $? 2
 sp=$(hub start two two-1 --still 2 --max-wait 15 2>"$T_TMP/start.err"); assert_status "start" $? 0
 screen=$(hm_tmux capture-pane -p -J -S - -t "$sp")
 assert_contains "...a new orchestrator by name" "$screen" "ARGV: two-orchestrator"
-assert_contains "...started on the task's file" "$screen" "GOT: /hivemind:start Task two-1: read $P/tasks/two-1.md"
+assert_contains "...started on the task's file" "$screen" "GOT: /$T_PLUGIN:start Task two-1: read $P/tasks/two-1.md"
 assert_eq "...in its home" "$(hm_tmux display-message -p -t "$sp" '#{pane_current_path}')" "$H/solo"
 assert_eq "the task is marked handed" "$(hub tasks --json | jq -r '.[] | select(.id=="two-1") | .state')" "handed"
 hub start two two-1 --still 2 --max-wait 15 >/dev/null 2>&1; assert_status "never started twice while the first is coming up" $? 4
@@ -186,7 +186,7 @@ assert_eq "...gone once it ends" "$(hub status tri --json | jq -r '.projects[0].
 
 # ---- a start stopped at a question: shown, kept, and continued once the owner answers ----
 # the project's own settings make the owner's mode stricter, never looser (hm-settings): the orchestrator gets the result
-mkdir -p "$H/tri/.hivemind"; echo '{"permission_mode":"plan"}' > "$H/tri/.hivemind/settings.json"
+mkdir -p "$H/tri/$T_STATE"; echo '{"permission_mode":"plan"}' > "$H/tri/$T_STATE/settings.json"
 hm_tmux set-environment -g HM_FAKE_CLAUDE dialoganswer
 qp=$(hub start tri "$t3" --mode auto --still 2 --max-wait 30 2>"$T_TMP/q.err"); assert_status "a question stops the start" $? 5
 assert_contains "...and says how to go on" "$(cat "$T_TMP/q.err")" "hm-hub continue tri"
@@ -201,7 +201,7 @@ hub continue tri --still 2 --max-wait 15 >/dev/null 2>&1; assert_status "continu
 hm_tmux send-keys -t "$qp" 1 Enter; sleep 0.5   # the owner answers it
 cp2=$(hub continue tri --still 2 --max-wait 15 2>"$T_TMP/c.err"); assert_status "continue" $? 0
 assert_eq "...in the same pane" "$cp2" "$qp"
-assert_contains "...the start's line is typed" "$(hm_tmux capture-pane -p -J -S - -t "$qp")" "GOT: /hivemind:start Task $t3: read $P/tasks/$t3.md"
+assert_contains "...the start's line is typed" "$(hm_tmux capture-pane -p -J -S - -t "$qp")" "GOT: /$T_PLUGIN:start Task $t3: read $P/tasks/$t3.md"
 assert_eq "...the task is handed" "$(hub tasks --json | jq -r --arg i "$t3" '.[] | select(.id==$i) | .state')" "handed"
 hub continue tri --still 2 --max-wait 15 >/dev/null 2>&1; assert_status "nothing left to continue" $? 4
 hub continue app >/dev/null 2>&1; assert_status "continue where this hub started nothing" $? 2
@@ -221,11 +221,11 @@ hub continue five --still 1 --max-wait 5 >/dev/null 2>"$T_TMP/c5.err"; assert_st
 wait "$fs"
 assert_contains "the start itself finished" "$(cat "$T_TMP/five.out")" "rc=0"
 fp=$(head -1 "$T_TMP/five.out")
-assert_eq "...its line typed once" "$(hm_tmux capture-pane -p -J -S - -t "$fp" | grep -c "GOT: /hivemind:start Task $t5")" "1"
+assert_eq "...its line typed once" "$(hm_tmux capture-pane -p -J -S - -t "$fp" | grep -c "GOT: /$T_PLUGIN:start Task $t5")" "1"
 assert_eq "...and handed once" "$(jq -r --arg i "$t5" 'select(.id == $i and .event == "handed") | .id' "$P/tasks.jsonl" | grep -c .)" "1"
 
 # ---- run: the two owner-only skills, typed into a running orchestrator's own pane (on the server it is recorded on) ----
-mk ru; hub add ru --home ru >/dev/null; RU="$H/ru/.hivemind"; mkdir -p "$RU"
+mk ru; hub add ru --home ru >/dev/null; RU="$H/ru/$T_STATE"; mkdir -p "$RU"
 SB="$T_TMP/b.sock"   # a second tmux server: a registered orchestrator's pane is not always on hivemind's own
 ru_pane() {  # ru_pane <fake claude mode> [capture to draw]: a fresh pane on that server, recorded as ru's orchestrator (a stand-in process for its Claude)
   tmux -S "$SB" kill-server 2>/dev/null; sleep 0.3
@@ -267,17 +267,17 @@ jq -nc --arg p "$RUPANE" --arg s "$SB" --arg i "${ri%%$'\t'*}" --arg t "${ri#*$'
   '{pane:$p, socket:$s, pane_pid:$i, pane_started:$t, kind:"start", line:"x", typed:true, at:"2026-10-06T00:00:00Z"}' > "$P/panes/ru.json"
 rp=$(hub run ru overnight "$r1" --still 2 --max-wait 15 2>"$T_TMP/r.err"); assert_status "run overnight" $? 0
 assert_eq "...into the orchestrator's pane, on its own server" "$rp" "$RUPANE"
-assert_contains "...the fixed line" "$(rscreen)" "GOT: /hivemind:overnight Task $r1: read $P/tasks/$r1.md. It came from the owner through hub."
-assert_eq "...typed once" "$(rscreen | grep -c 'GOT: /hivemind:overnight')" "1"
+assert_contains "...the fixed line" "$(rscreen)" "GOT: /$T_PLUGIN:overnight Task $r1: read $P/tasks/$r1.md. It came from the owner through hub."
+assert_eq "...typed once" "$(rscreen | grep -c "GOT: /$T_PLUGIN:overnight")" "1"
 assert_eq "...the task is in an overnight run, not waiting on the owner" "$(hub tasks --json | jq -r --arg i "$r1" '.[] | select(.id==$i) | [.state, .needs_owner] | map(tostring) | join(" ")')" "overnight false"
 assert_eq "...and still open" "$(hub tasks --open | grep -c "^$r1")" "1"
 hub run ru overnight "$r1" --still 2 --max-wait 10 >/dev/null 2>&1; assert_status "a task already in an overnight run is not run again" $? 4
-assert_eq "...nothing more was typed" "$(rscreen | grep -c 'GOT: /hivemind:overnight')" "1"
+assert_eq "...nothing more was typed" "$(rscreen | grep -c "GOT: /$T_PLUGIN:overnight")" "1"
 hub run ru cleanup "$r1" --still 2 --max-wait 15 >/dev/null 2>&1; assert_status "run cleanup" $? 0
-assert_eq "...its fixed line" "$(rscreen | grep -c 'GOT: /hivemind:cleanup$')" "1"
+assert_eq "...its fixed line" "$(rscreen | grep -c "GOT: /$T_PLUGIN:cleanup\$")" "1"
 assert_eq "...the task's state" "$(hub tasks --json | jq -r --arg i "$r1" '.[] | select(.id==$i) | .state')" "cleanup"
 hub run ru cleanup "$r1" --disk --still 2 --max-wait 15 >/dev/null 2>&1; assert_status "run cleanup --disk" $? 0
-assert_eq "...its fixed line" "$(rscreen | grep -c 'GOT: /hivemind:cleanup --disk$')" "1"
+assert_eq "...its fixed line" "$(rscreen | grep -c "GOT: /$T_PLUGIN:cleanup --disk\$")" "1"
 # a dialog on the screen: nothing typed, and continue goes on once the owner has answered it
 r2=$(idof "$(hub task ru --text "Second")"); ru_pane dialoganswer
 hub run ru overnight "$r2" --still 2 --max-wait 30 >/dev/null 2>"$T_TMP/r.err"; assert_status "a dialog on the orchestrator's screen" $? 5
@@ -286,7 +286,7 @@ assert_eq "...nothing was typed" "$(rscreen | grep -c 'GOT:')" "0"
 assert_eq "...nothing was logged" "$(hub tasks --json | jq -r --arg i "$r2" '.[] | select(.id==$i) | .state')" "asked"
 tmux -S "$SB" send-keys -t "$RUPANE" 1 Enter; sleep 0.5   # the owner answers it
 hub continue ru --still 2 --max-wait 15 >/dev/null 2>"$T_TMP/r.err"; assert_status "continue" $? 0
-assert_eq "...the line is typed once" "$(rscreen | grep -c "GOT: /hivemind:overnight Task $r2")" "1"
+assert_eq "...the line is typed once" "$(rscreen | grep -c "GOT: /$T_PLUGIN:overnight Task $r2")" "1"
 assert_eq "...and logged" "$(hub tasks --json | jq -r --arg i "$r2" '.[] | select(.id==$i) | .state')" "overnight"
 hub continue ru >/dev/null 2>&1; assert_status "...nothing left to continue" $? 2
 # two runs at once: the second is refused while the first is still sending, so the line is typed once
@@ -296,7 +296,7 @@ fs=$!; t_track "$fs"; sleep 3
 hub run ru overnight "$r3" --still 1 --max-wait 5 >/dev/null 2>"$T_TMP/r.err"; assert_status "a second run while the first is sending" $? 4
 wait "$fs"
 assert_contains "...the first finished" "$(cat "$T_TMP/run3.out")" "rc=0"
-assert_eq "...its line typed once" "$(rscreen | grep -c "GOT: /hivemind:overnight Task $r3")" "1"
+assert_eq "...its line typed once" "$(rscreen | grep -c "GOT: /$T_PLUGIN:overnight Task $r3")" "1"
 r4=$(idof "$(hub task ru --text "Fourth")"); hub log "$r4" done >/dev/null
 hub run ru overnight "$r4" --still 2 --max-wait 10 >/dev/null 2>&1; assert_status "a closed task" $? 4
 tmux -S "$SB" kill-server 2>/dev/null
@@ -304,8 +304,8 @@ tmux -S "$SB" kill-server 2>/dev/null
 # ---- start --overnight: a project with no orchestrator starts on the overnight line ----
 mk ov; hub add ov --home ov >/dev/null; to=$(idof "$(hub task ov --text "Run the night")")
 op=$(hub start ov "$to" --overnight --still 2 --max-wait 15 2>/dev/null); assert_status "start --overnight" $? 0
-assert_contains "...its first line is the overnight line" "$(hm_tmux capture-pane -p -J -S - -t "$op")" "GOT: /hivemind:overnight Task $to: read $P/tasks/$to.md. It came from the owner through hub."
-case "$(hm_tmux capture-pane -p -J -S - -t "$op")" in *"/hivemind:start"*) bad "an overnight start also typed the start line" ;; *) ok "...not the start line" ;; esac
+assert_contains "...its first line is the overnight line" "$(hm_tmux capture-pane -p -J -S - -t "$op")" "GOT: /$T_PLUGIN:overnight Task $to: read $P/tasks/$to.md. It came from the owner through hub."
+case "$(hm_tmux capture-pane -p -J -S - -t "$op")" in *"/$T_PLUGIN:start"*) bad "an overnight start also typed the start line" ;; *) ok "...not the start line" ;; esac
 assert_eq "...the task is handed" "$(hub tasks --json | jq -r --arg i "$to" '.[] | select(.id==$i) | .state')" "handed"
 
 # ---- dialog and answer: a dialog on a session's screen is read, and answered with the one key the owner chose ----
@@ -455,8 +455,8 @@ done
 # ---- the session hook: the hub's folder makes the session the hub, and only that folder ----
 hk() { printf '{"cwd":"%s","session_id":"x","source":"%s"}' "$1" "${2:-startup}" | hm-session-hook; }
 out=$(hk "$H"); assert_status "hook in the hub's folder" $? 0
-assert_contains "...says the session is the hub" "$out" "hivemind:hub"
-out=$(hk "$H" clear); assert_contains "...again after a clear" "$out" "hivemind:hub"
+assert_contains "...says the session is the hub" "$out" "$T_PLUGIN:hub"
+out=$(hk "$H" clear); assert_contains "...again after a clear" "$out" "$T_PLUGIN:hub"
 out=$(hk "$H/back"); assert_eq "nothing in a project below it" "$out" ""
 out=$(hk "$T_TMP"); assert_eq "nothing elsewhere" "$out" ""
 

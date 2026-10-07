@@ -8,7 +8,7 @@ t_setup
 REAL=""; for c in /usr/bin/jq /usr/local/bin/jq /opt/homebrew/bin/jq; do hm_path_trusted "$c" file 0 loose && REAL=$c && break; done
 [ -n "$REAL" ] || { echo "  SKIP no root-owned jq on this machine: the resolver has nothing to find"; t_done; exit 0; }
 NB=$(t_jq_bin nb "/nonexistent/a /nonexistent/b /nonexistent/c")
-proj=$(t_repo proj); hub="$T_TMP/hub"; mkdir -p "$hub/.hivemind-hub" "$proj/.hivemind"
+proj=$(t_repo proj); hub="$T_TMP/hub"; mkdir -p "$hub/$T_HUB" "$proj/$T_STATE"
 hook() {  # hook <hook script> <json> [env]...: the hook as a marked session; sets RC and ERR
   local h=$1 j=$2; shift 2
   ERR=$(printf '%s' "$j" | env "$@" HM_AWAY_BYPASS=1 HM_PROJECT="$proj" HM_AWAY_HUB="$hub" HM_AWAY_MCP_ALLOW= "$h" 2>&1 >/dev/null); RC=$?
@@ -52,9 +52,9 @@ r=$(. "$NB/hm-lib.sh"; hm_write_away_mcp "$T_TMP/mcp.json" docs "$proj" 2>&1); r
 [ ! -e "$T_TMP/mcp.json" ] && ok "...and no file is left" || bad "an MCP file was written without a root-owned jq"
 r=$(. "$HM_REPO_ROOT/bin/hm-lib.sh"; hm_write_away_mcp "$T_TMP/mcp.json" "" "$proj" 2>&1); assert_status "...while with one it is" $? 0
 # a complete fixture hub and a valid file, read as this user (the seam t_delegate_bin gives the executables): only the jq differs
-DG="$T_TMP/dg/area"; mkdir -p "$DG" "$T_TMP/fh/.hivemind-hub"; chmod 755 "$T_TMP/dg" "$DG" "$T_TMP/fh" "$T_TMP/fh/.hivemind-hub"
-printf '{"projects":[]}\n' > "$T_TMP/fh/.hivemind-hub/projects.json"; printf '{"name":"hub"}\n' > "$T_TMP/fh/.hivemind-hub/hub.json"; chmod 644 "$T_TMP/fh/.hivemind-hub/"*.json
-printf 'hivemind-delegate 1\nhub=%s\nuntil=%s\nmcp=\n' "$(cd "$T_TMP/fh" && pwd -P)" "$(( $(date +%s) + 3600 ))" > "$DG/delegate"; chmod 644 "$DG/delegate"
+DG="$T_TMP/dg/area"; mkdir -p "$DG" "$T_TMP/fh/$T_HUB"; chmod 755 "$T_TMP/dg" "$DG" "$T_TMP/fh" "$T_TMP/fh/$T_HUB"
+printf '{"projects":[]}\n' > "$T_TMP/fh/$T_HUB/projects.json"; printf '{"name":"hub"}\n' > "$T_TMP/fh/$T_HUB/hub.json"; chmod 644 "$T_TMP/fh/$T_HUB/"*.json
+printf "$T_DELEGATE_LINE1"'\nhub=%s\nuntil=%s\nmcp=\n' "$(cd "$T_TMP/fh" && pwd -P)" "$(( $(date +%s) + 3600 ))" > "$DG/delegate"; chmod 644 "$DG/delegate"
 mine_with() {  # mine_with <hm-lib.sh>: hm_delegate_mine on the fixture, in a shell of its own: "<status> <reason>"
   ( . "$1"; hm_delegate_now() { hm_delegate_read "$DG/delegate" "$(id -u)"; }; hm_delegate_mine; echo "$? $HM_DELEGATE_WHY" )
 }
