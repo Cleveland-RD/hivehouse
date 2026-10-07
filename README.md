@@ -107,6 +107,22 @@ One Claude session in the owner's work folder, the folder above every project, i
   covers (`hm-hub add <project> --home <folder> --repo <folder>...`). The hub proposes the groups from `hm-hub discover`
   and adds only what the owner confirms. `hm-hub add <project> --repo <folder>...` adds folders to a project that exists,
   and `hm-hub drop <project> <folder>` takes one out (never the home); tasks and memory stay.
+- **Teams in worktrees.** A project's team roots are its home, then each worktree of the home's repository that has a
+  `.hivemind/team.json`. `hm-hub status`, `wake`, `dialog`, `run` and `recover` look in every one (an orchestrator
+  registered in two counts once; each agent is listed with its worktree), the away hook lets the marked hub message a
+  worktree's orchestrator, and bypass is granted in a worktree team root exactly as in the home: the root and the home
+  must both be the caller's, not links, and not writable by group or others. Every team root takes its settings from the
+  home (a worktree's own `.hivemind/settings.json` is not read). The worktrees are found without running git: from
+  `<home>/.git/worktrees/<name>/gitdir` and the worktree's own `.git` file, which must point at each other (relative
+  paths, as git 2.48 can write them, are resolved against the file they are in). git comes from `PATH`, which an away
+  session's own Bash command sets, so it is never run on the grant path.
+- **An orchestrator that ended unregistered** is found too. A live session named exactly like the project, running in its
+  home, counts as its orchestrator. When nothing is recorded of its conversation, `hm-hub wake` looks in Claude Code's
+  transcripts under the folder key of each team root (`<config dir>/projects/<key>/*.jsonl`, the 20 newest per root) for
+  the newest one whose last `custom-title` is `<project>-orchestrator` and whose records' `cwd` is that root exactly (the
+  key alone is not trusted: `/ . _ & space` all become `-`). It resumes that session by id, never by name, and
+  `hm-hub status` shows it as `stopped, not registered (resumable)`. The transcript format is Claude Code's and
+  undocumented: reading it is one function, `hm_resume_candidate` in `bin/hm-lib.sh`.
 - **Handing work over.** The owner's words go to the ledger and a task file (`hm-hub task`), then to the project's
   orchestrator: a message when it runs; `hm-hub wake` when a restart stopped it, which resumes its own conversation (its
   own model) and tells it to register with the hub and bring its agents back; `hm-hub start` when there is none. An
