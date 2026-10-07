@@ -32,6 +32,12 @@ jq -nc --arg k "$HM_TMUX_SOCKET" --arg kp "$kp" --arg p "${ki%%$'\t'*}" --arg s 
 assert_eq "an orchestrator registered in a worktree of the home runs" "$(proj '.projects[0].orchestrator.state')" "running"
 assert_eq "...its agents are listed, each with its worktree" "$(proj '.projects[0].agents | map([.name, .worktree] | join("@")) | join(",")')" "impl@$WT"
 assert_contains "...the plain status names it" "$(hub status app)" "running"
+# status reads each team root's levels once per project (the home and the worktree: two), not once for the orchestrator and again for the agents
+CB="$T_TMP/ctxbin"; rm -rf "$CB"; mkdir -p "$CB"; cp -R "$HM_REPO_ROOT/bin/." "$CB/"; mv "$CB/hm-context" "$CB/hm-context.real"
+printf '#!/bin/bash\necho "$HM_PROJECT" >> "%s/ctx.calls"\nexec "%s/hm-context.real" "$@"\n' "$T_TMP" "$CB" > "$CB/hm-context"; chmod +x "$CB/hm-context"
+: > "$T_TMP/ctx.calls"; (cd "$H" && "$CB/hm-hub" status app --json >/dev/null)
+assert_eq "hm-context ran once for each team root in one status call" "$(sort "$T_TMP/ctx.calls" | uniq -c | awk '{print $1}' | tr '\n' ' ')" "1 1 "
+assert_eq "...for the home and the worktree" "$(wc -l < "$T_TMP/ctx.calls" | tr -d ' ')" "2"
 # an orchestrator whose tokens exceed the window that is only assumed shows as unknown, never as a percent over 100
 jq -nc '{type:"assistant", isSidechain:false, message:{model:"claude-sonnet-5-5", usage:{input_tokens:300000, cache_read_input_tokens:0, cache_creation_input_tokens:0, output_tokens:0}}}' > "$T_TMP/big.jsonl"
 jq -nc --arg t "$T_TMP/big.jsonl" '{session_id:"sess-big", transcript_path:$t}' > "$WT/.hivemind/team/orchestrator/session.json"
@@ -114,6 +120,18 @@ mv "$CLAUDE_CONFIG_DIR/projects/$(key "$HOME_RES")" "$CLAUDE_CONFIG_DIR/projects
 assert_eq "a root whose key folder is not found: no guess" "$(rs '.projects[0].orchestrator.state')" "none"
 mv "$CLAUDE_CONFIG_DIR/projects/$(key "$HOME_RES")-short" "$CLAUDE_CONFIG_DIR/projects/$(key "$HOME_RES")"
 rm -f "$CLAUDE_CONFIG_DIR/projects/$(key "$HOME_RES")/dddd4444-0000-0000-0000-000000000004.jsonl" "$CLAUDE_CONFIG_DIR/projects/$(key "$HOME_RES")/cccc3333-0000-0000-0000-000000000003.jsonl"
+# status polls: a project's transcripts are read again only when the newest 20 of a root have changed (name, time or size)
+CJ="$T_TMP/countjq"; mkdir -p "$CJ"
+printf '#!/bin/sh\ncase "$*" in *customTitle*|*".cwd // empty"*) echo x >> "%s/jq.calls" ;; esac\nexec /usr/bin/jq "$@"\n' "$T_TMP" > "$CJ/jq"; chmod +x "$CJ/jq"
+reads() { : > "$T_TMP/jq.calls"; (cd "$H" && PATH="$CJ:$PATH" hm-hub status res --json >/dev/null); wc -l < "$T_TMP/jq.calls" | tr -d ' '; }
+assert_eq "the first status reads the transcripts" "$([ "$(reads)" -gt 0 ] && echo yes || echo no)" "yes"
+assert_eq "the second reads none: nothing changed" "$(reads)" "0"
+assert_eq "...and still says resumable, from what it kept" "$(rs '.projects[0].orchestrator.session_id')" "bbbb2222-0000-0000-0000-000000000002"
+{ jq -nc '{type:"custom-title", customTitle:"res-builder", sessionId:"bbbb2222-0000-0000-0000-000000000002"}'; } >> "$CLAUDE_CONFIG_DIR/projects/$(key "$HOME_RES")/bbbb2222-0000-0000-0000-000000000002.jsonl"
+assert_eq "a transcript that grew is read again" "$([ "$(reads)" -gt 0 ] && echo yes || echo no)" "yes"
+assert_eq "...and its new last title counts: it is no orchestrator's now, so the next older match is taken" "$(rs '.projects[0].orchestrator.session_id')" "aaaa1111-0000-0000-0000-000000000001"
+{ jq -nc '{type:"custom-title", customTitle:"res-orchestrator", sessionId:"bbbb2222-0000-0000-0000-000000000002"}'; } >> "$CLAUDE_CONFIG_DIR/projects/$(key "$HOME_RES")/bbbb2222-0000-0000-0000-000000000002.jsonl"
+assert_eq "...and a later rename back counts again" "$(rs '.projects[0].orchestrator.session_id')" "bbbb2222-0000-0000-0000-000000000002"
 # wake
 wp=$(hub wake res --mode auto --still 2 --max-wait 15 2>"$T_TMP/w.err"); assert_status "wake resumes it" $? 0
 screen=$(hm_tmux capture-pane -p -J -S - -t "$wp")

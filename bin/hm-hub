@@ -224,12 +224,14 @@ unreg_pane_ok() {
 # unregistered: a live session outside hivemind, with O_PID and O_PANE), and O_QUESTION (true when a dialog waits on the
 # screen of a running orchestrator's pane).
 orch_state() {
-  local entry="" l r rl
+  local entry="" l r
   O_AGENT=""; O_NAME=""; O_SID=""; O_STATE=none; O_PID=""; O_PANE=""; O_TMUX=""; O_QUESTION=false; O_ROOT=$3
+  # the team roots, read once per call and kept for the caller (status uses them for the agents and their levels)
+  O_ROOTS=(); while IFS= read -r r; do O_ROOTS+=("$r"); done < <(hm_team_roots "$3")
   # the first team root (the home, then each worktree with a team) that holds the --self orchestrator's entry; one registered in two counts once
-  while IFS= read -r r; do
+  for r in "${O_ROOTS[@]}"; do
     entry=$(hm_self_entry "$r"); [ -z "$entry" ] || { O_ROOT=$r; break; }
-  done < <(hm_team_roots "$3")
+  done
   if [ -n "$entry" ]; then
     O_AGENT=$(printf '%s' "$entry" | jq -r '.name // empty')
     if hm_is_agent_name "$O_AGENT"; then
@@ -250,8 +252,7 @@ orch_state() {
     fi ;;
   esac
   # nothing recorded of its conversation: a transcript of this project's orchestrator under a team root's folder key (hm_resume_candidate)
-  rl=(); while IFS= read -r r; do rl+=("$r"); done < <(hm_team_roots "$3")
-  if [ -z "$O_SID" ] && { [ "$O_STATE" = none ] || [ "$O_STATE" = stopped ]; } && hm_resume_candidate "$2-orchestrator" "${rl[@]}"; then
+  if [ -z "$O_SID" ] && { [ "$O_STATE" = none ] || [ "$O_STATE" = stopped ]; } && hm_resume_candidate "$2-orchestrator" "${O_ROOTS[@]}"; then
     O_SID=$HM_RESUME_SID; O_ROOT=$HM_RESUME_ROOT
     [ -n "$O_AGENT" ] || O_AGENT=orchestrator
     [ -n "$O_NAME" ] || O_NAME="$2-orchestrator"
@@ -637,9 +638,16 @@ status)
     done < <(printf '%s' "$p" | jq -r '.repos[]')
     orch_state "$root" "$n" "$home"
     # each session's context level as hm-context reads it, per team root: "<agent> <level>[ (window assumed N)][ (not running)]"
+    # each team root's levels, read once: lv[i] is the root O_ROOTS[i]'s
+    lv=(); ri=0; oi=0
+    for tr in "${O_ROOTS[@]}"; do
+      lv[$ri]=$(HM_PROJECT="$tr" "$HM_BIN/hm-context" --all 2>/dev/null) || lv[$ri]=""
+      [ "$tr" != "$O_ROOT" ] || oi=$ri
+      ri=$((ri + 1))
+    done
     olv='{}'
     if [ -n "$O_AGENT" ] && [ "$O_STATE" != unregistered ] && [ "$O_STATE" != resumable ]; then
-      levels=$(HM_PROJECT="$O_ROOT" "$HM_BIN/hm-context" --all 2>/dev/null) || levels=""
+      levels=${lv[$oi]-}
       olv=$(level "$O_AGENT")
     fi
     starting='null'
@@ -649,8 +657,9 @@ status)
       starting=$(jq -c --argjson q "$q" --argjson sg "$sg" '{pane, kind, at, typed: (.typed // false), sending: $sg, question: $q} + (if .task then {task} else {} end)' "$root/.hivemind-hub/panes/$n.json")
     fi
     agents='[]'
-    while IFS= read -r tr <&3; do   # the agents of every team root, each with its worktree
-      levels=$(HM_PROJECT="$tr" "$HM_BIN/hm-context" --all 2>/dev/null) || levels=""
+    ri=0
+    for tr in "${O_ROOTS[@]}"; do   # the agents of every team root, each with its worktree
+      levels=${lv[$ri]-}; ri=$((ri + 1))
       for a in $(jq -r '.agents[]?.name' "$tr/.hivemind/team.json" 2>/dev/null); do
         hm_is_agent_name "$a" && [ "$a" != "$O_AGENT" ] || continue
         hm_team_agent_is "$tr" "$a"; case $? in 0) st=running ;; 1) st=stopped ;; 2) st=unknown ;; *) st=unrecorded ;; esac
@@ -659,7 +668,7 @@ status)
           "$(jq -r --arg a "$a" '[.agents[] | select(.name == $a)][0].pane // empty' "$tr/.hivemind/team.json")" || q=true
         agents=$(printf '%s' "$agents" | jq -c --arg a "$a" --arg s "$st" --arg w "$tr" --argjson q "$q" --argjson l "$(level "$a")" '. + [{name:$a, state:$s, worktree:$w, question:$q} + $l]')
       done
-    done 3< <(hm_team_roots "$home")
+    done
     open=$(printf '%s' "$opens" | jq -r --arg p "$n" '.[$p] // 0')
     held=false; [ ! -f "$root/.hivemind-hub/holds/$n" ] || held=true
     out=$(printf '%s' "$out" | jq -c --arg n "$n" --arg h "$home" --argjson r "$repos" --argjson ag "$agents" --argjson st "$starting" \

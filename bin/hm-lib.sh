@@ -480,26 +480,45 @@ HM_RESUME_SID=""; HM_RESUME_ROOT=""
 hm_mtime() {  # hm_mtime <path>: modification time, epoch seconds
   if /usr/bin/stat --version >/dev/null 2>&1; then /usr/bin/stat -c %Y -- "$1"; else /usr/bin/stat -f %m "$1"; fi
 }
+hm_dir_fingerprint() {  # hm_dir_fingerprint <file>...: a hash of each file's name, time and size
+  if /usr/bin/stat --version >/dev/null 2>&1; then /usr/bin/stat -c '%n %Y %s' -- "$@" 2>/dev/null; else /usr/bin/stat -f '%N %m %z' "$@" 2>/dev/null; fi | /usr/bin/shasum | cut -d' ' -f1
+}
+# What a root's newest transcripts said is kept in <home>/cache/resume-<hash of the root and the title> with a fingerprint of those 20 files
+# (name, time, size): the screen asks every 20 seconds, and reading a real folder of transcripts takes most of a second per project. The
+# kept answer is used only while the fingerprint is the same; a file that grew, a new file or a removed one reads again.
+hm_resume_root() {  # hm_resume_root <title> <root>: prints "<session id><TAB><mtime>" of the best match under that root, or nothing
+  local title="$1" r="$2" key dir f id t last cwds n=0 files=() fp ck kept
+  key=$(printf '%s' "$r" | tr '/._& ' '-----')
+  dir="$(hm_claude_dir)/projects/$key"
+  [ -d "$dir" ] || return 0
+  while IFS= read -r f; do files+=("$f"); done < <(ls -t "$dir"/*.jsonl 2>/dev/null | head -20)
+  [ ${#files[@]} -gt 0 ] || return 0
+  fp=$(hm_dir_fingerprint "${files[@]}")
+  ck="$(hm_home)/cache/resume-$(printf '%s|%s' "$r" "$title" | /usr/bin/shasum | cut -c1-24)"
+  if IFS= read -r kept < "$ck" 2>/dev/null && [ "${kept%%$'\t'*}" = "$fp" ]; then
+    kept=${kept#*$'\t'}; [ "$kept" = - ] || printf '%s\n' "$kept"; return 0
+  fi
+  kept=-
+  for f in "${files[@]}"; do
+    id=${f##*/}; id=${id%.jsonl}
+    case "$id" in ''|*[!${HM_LOWER}${HM_UPPER}${HM_DIGITS}-]*) continue ;; esac
+    last=$(grep -a '"type":"custom-title"' "$f" 2>/dev/null | tail -1 | jq -r '.customTitle // empty' 2>/dev/null)
+    [ "$last" = "$title" ] || continue
+    cwds=$(jq -r '.cwd // empty' "$f" 2>/dev/null | sort -u)
+    [ "$cwds" = "$r" ] || continue
+    t=$(hm_mtime "$f") || continue
+    kept="$id"$'\t'"$t"; break   # the newest match of this root
+  done
+  { mkdir -p "$(hm_home)/cache" && printf '%s\t%s\n' "$fp" "$kept" > "$ck.tmp$$" && mv "$ck.tmp$$" "$ck"; } 2>/dev/null || rm -f "$ck.tmp$$" 2>/dev/null
+  [ "$kept" = - ] || printf '%s\n' "$kept"
+}
 hm_resume_candidate() {  # hm_resume_candidate <title> <team root>...
-  local title="$1" r key dir f id t last cwds best=0 n
+  local title="$1" r got id t best=0
   HM_RESUME_SID=""; HM_RESUME_ROOT=""; shift
   for r in "$@"; do
-    key=$(printf '%s' "$r" | tr '/._& ' '-----')
-    dir="$(hm_claude_dir)/projects/$key"
-    [ -d "$dir" ] || continue
-    n=0
-    for f in $(ls -t "$dir"/*.jsonl 2>/dev/null); do
-      n=$((n + 1)); [ "$n" -le 20 ] || break
-      id=${f##*/}; id=${id%.jsonl}
-      case "$id" in ''|*[!${HM_LOWER}${HM_UPPER}${HM_DIGITS}-]*) continue ;; esac
-      last=$(grep -a '"type":"custom-title"' "$f" 2>/dev/null | tail -1 | jq -r '.customTitle // empty' 2>/dev/null)
-      [ "$last" = "$title" ] || continue
-      cwds=$(jq -r '.cwd // empty' "$f" 2>/dev/null | sort -u)
-      [ "$cwds" = "$r" ] || continue
-      t=$(hm_mtime "$f") || continue
-      if [ "$t" -gt "$best" ]; then best=$t; HM_RESUME_SID=$id; HM_RESUME_ROOT=$r; fi
-      break   # the newest match of this root; a later root may still beat it
-    done
+    got=$(hm_resume_root "$title" "$r"); [ -n "$got" ] || continue
+    id=${got%%$'\t'*}; t=${got#*$'\t'}
+    if [ "$t" -gt "$best" ]; then best=$t; HM_RESUME_SID=$id; HM_RESUME_ROOT=$r; fi
   done
   [ -n "$HM_RESUME_SID" ]
 }
