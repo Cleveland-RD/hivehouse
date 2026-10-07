@@ -7,6 +7,7 @@
 t_setup
 REAL=""; for c in /usr/bin/jq /usr/local/bin/jq /opt/homebrew/bin/jq; do hm_path_trusted "$c" file 0 loose && REAL=$c && break; done
 [ -n "$REAL" ] || { echo "  SKIP no root-owned jq on this machine: the resolver has nothing to find"; t_done; exit 0; }
+NB=$(t_jq_bin nb "/nonexistent/a /nonexistent/b /nonexistent/c")
 proj=$(t_repo proj); hub="$T_TMP/hub"; mkdir -p "$hub/.hivemind-hub" "$proj/.hivemind"
 hook() {  # hook <hook script> <json> [env]...: the hook as a marked session; sets RC and ERR
   local h=$1 j=$2; shift 2
@@ -32,6 +33,17 @@ if [ -n "$gf" ] && ! hm_path_trusted "${gf%/*}" dir 0 loose; then
   GB=$(t_jq_bin gb "$gf"); r=$(. "$GB/hm-lib.sh"; echo "[$HM_JQ]"); assert_eq "a root-owned file under a folder the group can write is refused" "$r" "[]"
 else echo "  SKIP no root-owned file under a group-writable folder to use as a candidate here"; fi
 
+# ---- the grant functions never call a bare jq, and hm_delegate_for_project's read of projects.json is pinned to the root-owned one ----
+body() {  # body <function>: its code in hm-lib.sh, comments dropped
+  awk -v f="$1" '$0 ~ "^"f"\\(\\) \\{" {p=1} p {print} p && /^}/ {p=0}' "$HM_REPO_ROOT/bin/hm-lib.sh" | sed 's/#.*//; s/"[^"]*"//g'   # comments and quoted text (messages) are no call
+}
+for f in hm_delegate_mine hm_delegate_for_project hm_hub_records_trusted hm_write_away_mcp hm_check_mode hm_bypass_launch hm_team_roots hm_repo_home; do
+  [ -n "$(body $f)" ] || { bad "$f was not found in hm-lib.sh"; continue; }
+  assert_eq "no bare jq in $f" "$(body $f | grep -cE '(^|[^A-Za-z_$"-])jq[[:space:]]')" "0"
+done
+# a jq first on PATH that lists a stranger's folder as a project of the hub: the listing is read with the root-owned jq, so it changes nothing
+FP="$T_TMP/fakeproj"; mkdir -p "$FP"
+printf '#!/bin/sh\ncase "$*" in *projects*) printf "fake\\t%%s\\n" "$FAKE_HOME" ;; esac\n' > "$FP/jq"; chmod +x "$FP/jq"
 # ---- no root-owned jq: the hook denies and bypass is refused ----
 r=$(. "$NB/hm-lib.sh"; hm_write_away_mcp "$T_TMP/mcp.json" docs "$proj" 2>&1); rc=$?; assert_status "the MCP file a bypass session gets is not written with no root-owned jq" $rc 1
 [ ! -e "$T_TMP/mcp.json" ] && ok "...and no file is left" || bad "an MCP file was written without a root-owned jq"
@@ -46,8 +58,12 @@ mine_with() {  # mine_with <hm-lib.sh>: hm_delegate_mine on the fixture, in a sh
 if hm_path_trusted "$DG/delegate" file "$(id -u)" strict; then
   assert_eq "the fixture is a valid file of a complete hub" "$(mine_with "$HM_REPO_ROOT/bin/hm-lib.sh")" "0 "
   r=$(mine_with "$(t_jq_bin nb0 "/nonexistent/a")/hm-lib.sh"); assert_contains "...and with no root-owned jq it is refused" "$r" "1 no root-owned jq"
+  fp_with() {  # fp_with <hm-lib.sh> <root> [PATH]: hm_delegate_for_project on the fixture hub (which lists no project): its status
+    ( . "$1"; hm_delegate_now() { hm_delegate_read "$DG/delegate" "$(id -u)"; }; PATH="${3:-$PATH}"; FAKE_HOME="$2" hm_delegate_for_project "$2"; echo $? )
+  }
+  assert_eq "a home the fixture hub does not list is refused" "$(fp_with "$HM_REPO_ROOT/bin/hm-lib.sh" "$proj")" "1"
+  assert_eq "...and still is with a jq on PATH that says it is listed" "$(fp_with "$HM_REPO_ROOT/bin/hm-lib.sh" "$proj" "$FP:$PATH")" "1"
 else echo "  SKIP the fixture folder is not eligible here"; fi
-NB=$(t_jq_bin nb "/nonexistent/a /nonexistent/b /nonexistent/c")
 hook "$HM_REPO_ROOT/bin/hm-away-hook" "$(tc 'ls')"; assert_status "the hook allows a harmless command with a root-owned jq" $RC 0
 hook "$NB/hm-away-hook" "$(tc 'ls')"; assert_status "the hook denies with no root-owned jq" $RC 2
 assert_contains "...and says why" "$ERR" "jq"
