@@ -12,7 +12,8 @@
 # the steps in their own groups (`set -m`), a SIGKILL to the gate's group no longer reaches them: the same trade as a
 # `kill -9` of `hm-slot run`.
 # Not pre-approved for agents (A16): it runs commands, so the whole command line goes through permission.
-# Exit: 0 every step 0, 1 any step failed, 64 usage, 75 the slot is busy (the holder on stderr), 129/130/143 interrupted.
+# A busy slot is waited for (`hm-slot acquire --wait`, in the queue, nothing runs and no log is written meanwhile).
+# Exit: 0 every step 0, 1 any step failed, 64 usage, 129/130/143 interrupted.
 set -u
 . "$(dirname "$0")/hm-lib.sh"
 USAGE="usage: hm-gate --log <file> -- <name> <command> [<name> <command> ...]"
@@ -49,7 +50,7 @@ fi
 
 # Allowed (a builder may gate work in progress for itself), but such a log is never one to report: say so before it runs.
 [ "$dirty" = 1 ] && echo "hivemind: the tree has uncommitted changes, so this log will vouch for no commit; commit first, then run the gate on the tip" >&2
-"$(dirname "$0")/hm-slot" acquire gate --pid $$ || exit $?
+"$(dirname "$0")/hm-slot" acquire gate --pid $$ --wait || exit $?
 trap '"$(dirname "$0")/hm-slot" release --pid $$ --label gate' EXIT
 # A step runs in the background, in its own process group (job control), and is waited for, so a signal is handled now
 # rather than when the step ends, and stops everything the step started, not its shell alone.

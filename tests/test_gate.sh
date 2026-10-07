@@ -65,11 +65,15 @@ rm -f "$T_TMP/loc.log"
 hm-gate -- x true 2>/dev/null; assert_status "no --log is a usage error" $? 64
 rm -f "$T_TMP/touched"; hm-gate --log "$T_TMP/no/such/dir/g.log" -- first "$T" 2>/dev/null; assert_status "a log that cannot be written is refused before the slot" $? 64
 [ ! -e "$T_TMP/touched" ] && [ ! -d "$LOCK" ] && ok "and nothing ran" || bad "and nothing ran"
-# a busy slot: nothing runs and no log is written
+# a busy slot: the gate waits its turn (hm-slot --wait), runs nothing and writes no log meanwhile, then runs once it is free
 sleep 30 & holder=$!; hm-slot acquire other --pid $holder
-rm -f "$LOG"; hm-gate --log "$LOG" -- t "touch '$T_TMP/busy-ran'" 2>/dev/null; assert_status "a busy slot is exit 75" $? 75
+rm -f "$LOG"; hm-gate --log "$LOG" -- t "touch '$T_TMP/busy-ran'" 2>/dev/null & gp=$!; sleep 1.5
+kill -0 $gp 2>/dev/null && ok "a busy slot: the gate is still waiting" || bad "a busy slot: the gate is still waiting"
 [ ! -e "$T_TMP/busy-ran" ] && [ ! -e "$LOG" ] && ok "a busy slot runs nothing and writes no log" || bad "a busy slot runs nothing and writes no log"
+assert_eq "the waiting gate has filed a ticket" "$(hm-slot status 2>/dev/null | sed -n 2p | jq -r .label)" "gate"
 hm-slot release --pid $holder; kill $holder; wait $holder 2>/dev/null
+wait $gp; assert_status "once the slot is free the gate runs" $? 0
+[ -e "$T_TMP/busy-ran" ] && ok "...and its step ran" || bad "...and its step ran"
 # an interrupted gate stops now, with the step's own children, writes no line for that step, and frees the slot
 # The step's sleep has a length no other process has, matched as a whole command line, so nothing else is mistaken for it.
 NAP="31.$$"
