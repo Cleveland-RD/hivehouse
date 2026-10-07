@@ -495,8 +495,13 @@ hm_resume_root() {  # hm_resume_root <title> <root>: prints "<session id><TAB><m
   [ ${#files[@]} -gt 0 ] || return 0
   fp=$(hm_dir_fingerprint "${files[@]}")
   ck="$(hm_home)/cache/resume-$(printf '%s|%s' "$r" "$title" | /usr/bin/shasum | cut -c1-24)"
-  if IFS= read -r kept < "$ck" 2>/dev/null && [ "${kept%%$'\t'*}" = "$fp" ]; then
-    kept=${kept#*$'\t'}; [ "$kept" = - ] || printf '%s\n' "$kept"; return 0
+  # a kept answer is trusted no further than a fresh one: the same id rule, and a numeric time ("-", no match, stays valid)
+  if { IFS= read -r kept; } 2>/dev/null < "$ck" && [ "${kept%%$'\t'*}" = "$fp" ]; then
+    kept=${kept#*$'\t'}; id=${kept%%$'\t'*}; t=${kept#*$'\t'}
+    if [ "$kept" = - ]; then return 0; fi
+    case "$id" in ''|*[!${HM_LOWER}${HM_UPPER}${HM_DIGITS}-]*) ;; *)
+      case "$t" in ''|*[!0-9]*) ;; *) printf '%s\n' "$kept"; return 0 ;; esac ;;
+    esac
   fi
   kept=-
   for f in "${files[@]}"; do

@@ -132,6 +132,17 @@ assert_eq "a transcript that grew is read again" "$([ "$(reads)" -gt 0 ] && echo
 assert_eq "...and its new last title counts: it is no orchestrator's now, so the next older match is taken" "$(rs '.projects[0].orchestrator.session_id')" "aaaa1111-0000-0000-0000-000000000001"
 { jq -nc '{type:"custom-title", customTitle:"res-orchestrator", sessionId:"bbbb2222-0000-0000-0000-000000000002"}'; } >> "$CLAUDE_CONFIG_DIR/projects/$(key "$HOME_RES")/bbbb2222-0000-0000-0000-000000000002.jsonl"
 assert_eq "...and a later rename back counts again" "$(rs '.projects[0].orchestrator.session_id')" "bbbb2222-0000-0000-0000-000000000002"
+# a kept answer is checked like a fresh one: a bad id or a non-numeric time is a miss, read again; and a miss prints nothing on stderr
+RCK=$(grep -l 'bbbb2222-0000-0000-0000-000000000002' "$HIVEMIND_HOME"/cache/resume-* | head -1)
+assert_status "(the kept answer is on disk)" $([ -n "$RCK" ] && echo 0 || echo 1) 0
+RFP=$(cut -f1 "$RCK")
+printf '%s\t%s\t%s\n' "$RFP" 'not an id; $(x)' 123 > "$RCK"
+assert_eq "a kept line with a bad id is not printed: the transcripts are read again" "$(rs '.projects[0].orchestrator.session_id')" "bbbb2222-0000-0000-0000-000000000002"
+printf '%s\t%s\t%s\n' "$RFP" bbbb2222-0000-0000-0000-000000000002 'not a time' > "$RCK"
+assert_eq "a kept line with a non-numeric time is not printed either" "$(rs '.projects[0].orchestrator.session_id')" "bbbb2222-0000-0000-0000-000000000002"
+assert_eq "...and the kept line is whole again" "$(cut -f3 "$RCK" | grep -Ec '^[0-9]+$')" "1"
+rm -f "$RCK"; (cd "$H" && hm-hub status res --json 2>"$T_TMP/miss.err" >/dev/null)
+assert_eq "a cache miss leaves stderr empty" "$(wc -c < "$T_TMP/miss.err" | tr -d ' ')" "0"
 # wake
 wp=$(hub wake res --mode auto --still 2 --max-wait 15 2>"$T_TMP/w.err"); assert_status "wake resumes it" $? 0
 screen=$(hm_tmux capture-pane -p -J -S - -t "$wp")
