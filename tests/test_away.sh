@@ -352,6 +352,13 @@ assert_eq "...logged against the session, for the cap" "$(jq -s '[.[] | select(.
 assert_eq "...its hung state is dropped" "$(jq -r '.["beta/hung"] // "none"' "$HS")" "none"
 assert_contains "...and a hung agent is told as a restart, in plain words" "$(printf '%s' "$r" | jq -r '.actions[] | select(.action == "restart") | .why')" "hung"
 r=$(rec --json); assert_eq "...once: the next beat does not restart or respawn it again" "$(restarts "$r")$(act "$r" | tr ',' '\n' | grep -c respawn)" "0"
+# a hung agent of a team that sits in a worktree is found through that root's own team.json, and stopped
+hpane "$WF"; WH_PID=$HPID; WH_START=$HSTART
+jq --arg k "$HM_TMUX_SOCKET" --arg p "$HPANE" --arg pp "$HPID" --arg ps "$HSTART" '.agents += [{name:"whung", pane:$p, socket:$k, pane_pid:$pp, pane_started:$ps}]' \
+  "$EW/.hivemind/team.json" > "$T_TMP/tj" && mv "$T_TMP/tj" "$EW/.hivemind/team.json"
+r=$(rec --json); ago eps/whung 1000; r=$(rec --json)
+assert_eq "a frozen agent of a worktree team: named for a restart" "$(restarts "$r")" "whung"
+live "$WH_PID" "$WH_START" && bad "the hung worktree agent is still running" || ok "...and its Claude was stopped"
 # a timer that moved is not hung (A27): the state says 5s was seen 16 minutes ago, the screen now says 6s
 hagent beta moving "$WF"; MV_PID=$HPID; MV_START=$HSTART
 rec --json >/dev/null; ago beta/moving 960; jq '.["beta/moving"].secs = 5' "$HS" > "$T_TMP/hs" && mv "$T_TMP/hs" "$HS"
