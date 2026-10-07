@@ -100,6 +100,9 @@ kill "$mine" 2>/dev/null
 S="$HM_REPO_ROOT/skills/hub/SKILL.md"
 grep -q 'hm-hub drop' "$S" && grep -q 'hm-hub add <project> --repo <folder>`' "$S" && ok "the hub skill names add --repo and drop" || bad "the hub skill does not name add --repo and drop"
 grep -q 'run `ListAgents`' "$S" && grep -q 'hm-hub name <name>' "$S" && ok "the hub skill names the ListAgents name check and hm-hub name" || bad "the hub skill does not name the name check"
+for w in 'hub.away_refused' 'chmod go-w' 'the reasons and the chmod lines'; do
+  grep -q -- "$w" "$HM_REPO_ROOT/skills/hub/SKILL.md" && ok "the hub skill's away section names: $w" || bad "the hub skill does not name: $w"
+done
 for f in skills/hub/SKILL.md README.md; do
   tr '\n' ' ' < "$HM_REPO_ROOT/$f" | tr -s ' ' | grep -q 'other machines only while Remote Control is connected' && ok "$f: other machines show only with Remote Control" || bad "$f does not say it sees other machines only while Remote Control is connected"
 done

@@ -165,7 +165,13 @@ from a file or an environment variable.
   may run it for them, on their word, and show its lines word for word). It prints the `sudo` lines that make the delegate
   file, which the owner pastes: hivemind never runs sudo, and neither do you. It also prints the start line for this hub:
   marked (`HM_AWAY_BYPASS=1`), in bypass, with only its allowed MCP servers. Tell the owner to exit this session and start
-  the hub with it. Away is at most 7 days, ends at a reboot until the hub is started again, needs
+  the hub with it. A refusal is not an error to work round. `hm-hub away` checks the hub's records, each project home and
+  each worktree team root first, and when one would be refused it prints no `sudo` line: it prints the reasons and, for
+  a path the owner owns that the group or others can write, a `chmod go-w -- <path>` line (no sudo).
+  Pass the reasons and the chmod lines to the owner word for word, and run `hm-hub away` again only when the owner says
+  they ran them. A delegate file that exists but is refused (not root's, expired, a hub record the group can write) shows in
+  `hm-hub status --json` as `hub.away_refused`, with its first reason, and on the screen as "away refused": the hub is
+  not away, so keep to relay mode and tell the owner the reason once. Away is at most 7 days, ends at a reboot until the hub is started again, needs
   `permission_mode_local` set to `auto`, and while it lasts no remote host is used and a message from any other session
   to you is information only.
 - **Only the marked hub acts.** Run `printenv HM_AWAY_BYPASS` on its own: it prints `1` in a hub started with the line

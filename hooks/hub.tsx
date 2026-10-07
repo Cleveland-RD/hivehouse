@@ -15,7 +15,7 @@ const EVERY_MS = 20_000
 const WAKE_TIMEOUT_MS = 150_000 // hm-hub waits up to 90 s for a started session to be idle
 const ANSWER_TIMEOUT_MS = 30_000 // hm-hub answer sends its keys and then watches a few seconds
 
-const EMPTY: HubView = { root: '', hubName: '', projects: [], tasks: [], dialogs: {}, away: null, lastAway: null, updatedAt: 0, error: '' }
+const EMPTY: HubView = { root: '', hubName: '', projects: [], tasks: [], dialogs: {}, away: null, awayRefused: null, lastAway: null, updatedAt: 0, error: '' }
 const view = atom({ plugin: 'hivemind', key: 'hubView' } as const, EMPTY)
 // the project a press is acting on, one at a time
 const acting = atom({ plugin: 'hivemind', key: 'hubResuming' } as const, '')
@@ -48,7 +48,7 @@ async function refresh($: EngineInterface): Promise<void> {
       $.process.run([hmHub($), 'tasks', '--json'], { cwd: root, timeoutMs: 30_000 }),
     ])
     if (status.exitCode !== 0) throw new Error(lastLine(status.stderr) || `hm-hub status exited ${status.exitCode}`)
-    const s = JSON.parse(status.stdout) as { hub?: { root?: string; name?: string; away?: { until: number; since?: string }; last_away?: { since: string; until: number } }; projects?: HubProject[] }
+    const s = JSON.parse(status.stdout) as { hub?: { root?: string; name?: string; away?: { until: number; since?: string }; away_refused?: string; last_away?: { since: string; until: number } }; projects?: HubProject[] }
     const t = tasks.exitCode === 0 ? (JSON.parse(tasks.stdout) as HubTask[]) : []
     const projects = s.projects ?? []
     const next: HubView = {
@@ -58,6 +58,7 @@ async function refresh($: EngineInterface): Promise<void> {
       tasks: t,
       dialogs: await readDialogs($, root, projects),
       away: s.hub?.away ?? null,
+      awayRefused: s.hub?.away_refused ?? null,
       lastAway: s.hub?.last_away ?? null,
       updatedAt: await $.clock.now(),
       // the projects still draw when only the ledger could not be read, and the screen says so
@@ -702,7 +703,9 @@ export const register: Register = (on, options) => {
             </Text>
           </Box>
           <Box flexShrink={0} paddingLeft={2}>
-            <Text color={v.away ? 'magenta' : 'gray'}>{v.away ? `away until ${untilLabel(v.away.until * 1000, now)}  ` : v.updatedAt ? 'relay  ' : ''}</Text>
+            <Text color={v.away ? 'magenta' : v.awayRefused ? 'red' : 'gray'}>
+              {v.away ? `away until ${untilLabel(v.away.until * 1000, now)}  ` : v.awayRefused ? `away refused: ${v.awayRefused}  ` : v.updatedAt ? 'relay  ' : ''}
+            </Text>
             <Text color="gray">{v.updatedAt ? clock(v.updatedAt) : 'reading…'}</Text>
           </Box>
         </Box>

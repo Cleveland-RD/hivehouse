@@ -104,7 +104,7 @@ const DIALOGS: Record<string, unknown> = {
     ],
   },
 }
-const AWAY = { on: false, ended: false, since: '2026-10-05T10:00:00Z' }
+const AWAY = { on: false, ended: false, refused: '', since: '2026-10-05T10:00:00Z' }
 const ANSWER = { code: 0, stdout: '{"answered":true,"session":"rev","choice":"1","option":"Yes","dialog_gone":true}', stderr: '' }
 const TOASTS: string[] = []
 const PANE = {
@@ -144,7 +144,8 @@ function world(on: On, runs: string[][], opened: string[] = [], commands: string
     runs.push([...e.argv])
     const sub = e.argv[1]
     if (sub === 'status') {
-      const hub = AWAY.on ? { ...STATUS.hub, away: { until: NOW / 1000 + 5 * 3600, since: AWAY.since } } : AWAY.ended ? { ...STATUS.hub, last_away: { since: AWAY.since, until: NOW / 1000 - 3600 } } : STATUS.hub
+      const base = AWAY.on ? { ...STATUS.hub, away: { until: NOW / 1000 + 5 * 3600, since: AWAY.since } } : AWAY.ended ? { ...STATUS.hub, last_away: { since: AWAY.since, until: NOW / 1000 - 3600 } } : STATUS.hub
+      const hub = AWAY.refused ? { ...base, away_refused: AWAY.refused } : base
       return ran(0, JSON.stringify({ ...STATUS, hub }))
     }
     if (sub === 'tasks') return ran(0, JSON.stringify(TASKS))
@@ -424,6 +425,28 @@ test('the screen says relay or away in its header, and lists what the hub decide
   } finally {
     AWAY.ended = false
     AWAY.since = '2026-10-05T10:00:00Z'
+  }
+})
+
+test('the screen says when away was refused, with the reason', async ($, on) => {
+  const runs: string[][] = []
+  const clock = mock.clock(on, { now: NOW })
+  mock.env(on, { HOME: '/home' })
+  world(on, runs)
+  await $.session.start({ cwd: ROOT, surface: 'terminal', isInteractive: true })
+  await clock.settle()
+  const quiet = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  expect(await quiet.find({ type: 'Text', text: /away refused/ })).toBeUndefined()
+  await quiet.unmount()
+  AWAY.refused = '/work/.hivemind-hub/projects.json is writable by group or others (mode 664)'
+  try {
+    await clock.advance(20_000)
+    const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+    expect(await ui.find({ type: 'Text', text: /away refused: .*projects\.json is writable by group or others/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /away until/ })).toBeUndefined()
+    await ui.unmount()
+  } finally {
+    AWAY.refused = ''
   }
 })
 

@@ -67,6 +67,8 @@ export type HubView = {
   dialogs: Record<string, HubDialog>
   // delegate mode: the owner is away until this epoch (seconds), since this time; null in relay mode
   away: { until: number; since?: string } | null
+  // a delegate file exists at this user's path but is refused: the first reason (hm-hub status --json: hub.away_refused); null when none
+  awayRefused: string | null
   // the last away period, which stays in status after it ends: what the hub decided in it is shown until the owner has seen it
   lastAway: { since: string; until: number } | null
   updatedAt: number
