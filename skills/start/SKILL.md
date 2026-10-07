@@ -3,15 +3,17 @@ name: start
 description: Run a feature or task with a team of Claude sessions in tmux, from planning through review, gates and cleanup. Use when the owner types /hivehouse:start followed by a task.
 argument-hint: <task description>
 disable-model-invocation: true
-allowed-tools: Bash(hh-spawn *) Bash(hh-rotate *) Bash(hh-self-rotate *) Bash(hh-slot status) Bash(hh-slot release *) Bash(hh-context *) Bash(hh-gate-verify *) Bash(hh-settings resolve *) Bash(hh-manifest *) Bash(hh-disk *) Bash(hh-adhd) Read Edit(./.hivehouse/**) Edit(./CLAUDE.md) Edit(./CLAUDE.local.md) AskUserQuestion SendMessage ListAgents
+allowed-tools: Bash(hh-resolve *) Bash(hh-spawn *) Bash(hh-rotate *) Bash(hh-self-rotate *) Bash(hh-slot status) Bash(hh-slot release *) Bash(hh-context *) Bash(hh-gate-verify *) Bash(hh-settings resolve *) Bash(hh-manifest *) Bash(hh-disk *) Bash(hh-adhd) Read Edit(./.hivehouse/**) Edit(./CLAUDE.md) Edit(./CLAUDE.local.md) AskUserQuestion SendMessage ListAgents
 ---
 
 # hivehouse: start
 
 You are the orchestrator of a team of Claude sessions running in tmux. The task: $ARGUMENTS
 
-First read `${CLAUDE_PLUGIN_ROOT}/rules/RULES.md` and follow it. Briefs you send follow
-`${CLAUDE_PLUGIN_ROOT}/rules/brief-template.md`. Roles are in `${CLAUDE_PLUGIN_ROOT}/roles/`.
+First run `hh-resolve rules` and read the file it prints, and follow it: it is the project's or the user's own `custom/rules/RULES.md`
+when there is one, else the plugin's. Briefs you send follow the file `hh-resolve brief` prints. A role's file is the one
+`hh-resolve role <role>` prints (`implementer`, `fixer`, `reviewer`, `architect`, `product`, or a role of the user's own).
+If it prints a note that it ignored a custom file, tell the owner why.
 
 Call every `hh-*` executable on its own, never inside a compound command (`&&`, `;`, pipes, `$(...)`): the pre-approval
 matches a single plain command. Executables that are not pre-approved (`hh-push`, `hh-cleanup`, `hh-gate`,
@@ -109,7 +111,7 @@ Then for each agent, in its own call. A spawned agent's context level uses Claud
 role (`${user_config.window_builder}`, `${user_config.window_reviewer}`) is the fallback, never inferred from a model
 name:
 
-`hh-spawn --agent <name> --role ${CLAUDE_PLUGIN_ROOT}/roles/<role>.md --rules ${CLAUDE_PLUGIN_ROOT}/rules/RULES.md --model <model> --effort <effort> --mode <resolved permission mode> --window <window> [--worktree <absolute path> --branch <branch> --base <branch>]`
+`hh-spawn --agent <name> --role <the path `hh-resolve role <role>` printed> --rules <the path `hh-resolve rules` printed> --model <model> --effort <effort> --mode <resolved permission mode> --window <window> [--worktree <absolute path> --branch <branch> --base <branch>]`
 
 Agents that build get their own worktree beside the project (never inside it). `hh-spawn` refuses
 `bypassPermissions` except while the owner is away (delegate mode, from the hub), when the resolved mode itself is

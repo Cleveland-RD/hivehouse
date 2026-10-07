@@ -2,11 +2,13 @@
 name: handoff
 description: Write a handoff so a fresh session with no memory can resume the work: constraints first, then state and next steps. Use when ending a session, when an agent reaches the rotation threshold, or when transferring work to another agent.
 when_to_use: Also when an orchestrator asks an agent to update its START HERE block before a clear, or when told "hand off", "rotate" or "write the handoff".
+allowed-tools: Bash(hh-resolve *)
 ---
 
 # Session handoff
 
-Read `${CLAUDE_PLUGIN_ROOT}/rules/RULES.md` first if you are inside a hivehouse team.
+Run `hh-resolve rules` and read the file it prints first if you are inside a hivehouse team (the project's or the user's own
+`custom/rules/RULES.md` when there is one, else the plugin's).
 
 Produce a handoff that lets a fresh agent with zero prior context resume work immediately.
 

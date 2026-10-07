@@ -2,12 +2,13 @@
 name: bubble-review
 description: Review a change at a stated depth (glance, delta, standard, full bubble) from a scratch copy, and give a PASS or FAIL verdict with REQUIRED, SHOULD and NOTE findings across nine bubble categories. Use when asked to review a diff, branch or tip.
 when_to_use: When asked to review, "find bubbles", "any bubbles?", or to judge a builder's tip before landing.
-allowed-tools: Bash(hh-gate-verify *) Bash(hh-slot status) Bash(hh-slot release *) Bash(hh-settings resolve *) Read Grep Glob
+allowed-tools: Bash(hh-resolve *) Bash(hh-gate-verify *) Bash(hh-slot status) Bash(hh-slot release *) Bash(hh-settings resolve *) Read Grep Glob
 ---
 
 # hivehouse: bubble-review
 
-Read `${CLAUDE_PLUGIN_ROOT}/rules/RULES.md` and `${CLAUDE_PLUGIN_ROOT}/roles/reviewer.md` first. A bubble is anything
+Run `hh-resolve rules` and `hh-resolve role reviewer` and read the files they print first (the project's or the user's own
+`custom/` file when there is one, else the plugin's). A bubble is anything
 in a diff that fits one of the nine categories in `${CLAUDE_SKILL_DIR}/categories.md`; read that file before a standard
 or full review. You are read-only: you change no code in any worktree.
 

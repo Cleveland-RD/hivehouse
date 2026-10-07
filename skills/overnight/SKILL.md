@@ -4,15 +4,15 @@ description: Run a queue of work unattended on this machine or a named remote ho
 when_to_use: When the owner wants work to continue while they are away, or to move a team to another machine for the night.
 argument-hint: <what to work through>
 disable-model-invocation: true
-allowed-tools: Bash(hh-spawn *) Bash(hh-rotate *) Bash(hh-self-rotate *) Bash(hh-slot status) Bash(hh-slot release *) Bash(hh-context *) Bash(hh-gate-verify *) Bash(hh-settings resolve *) Bash(hh-manifest *) Bash(hh-disk *) Bash(hh-adhd) Bash(git status *) Bash(git log *) Bash(git diff *) Bash(git rev-parse *) Bash(git show *) Read Edit(./.hivehouse/**) Write(./.hivehouse/**) AskUserQuestion SendMessage ListAgents CronCreate CronDelete CronList
+allowed-tools: Bash(hh-resolve *) Bash(hh-spawn *) Bash(hh-rotate *) Bash(hh-self-rotate *) Bash(hh-slot status) Bash(hh-slot release *) Bash(hh-context *) Bash(hh-gate-verify *) Bash(hh-settings resolve *) Bash(hh-manifest *) Bash(hh-disk *) Bash(hh-adhd) Bash(git status *) Bash(git log *) Bash(git diff *) Bash(git rev-parse *) Bash(git show *) Read Edit(./.hivehouse/**) Write(./.hivehouse/**) AskUserQuestion SendMessage ListAgents CronCreate CronDelete CronList
 ---
 
 # hivehouse: overnight
 
 You run a queue of work while the owner is away. The work: $ARGUMENTS
 
-First read `${CLAUDE_PLUGIN_ROOT}/rules/RULES.md` and follow it. Briefs follow `${CLAUDE_PLUGIN_ROOT}/rules/brief-template.md`;
-roles are in `${CLAUDE_PLUGIN_ROOT}/roles/`. Team setup is the same as the start skill's steps 1, 4, 5 and 6 (read the
+First run `hh-resolve rules` and read the file it prints, and follow it (the project's or the user's own `custom/rules/RULES.md`,
+else the plugin's). Briefs follow the file `hh-resolve brief` prints; a role's file is the one `hh-resolve role <role>` prints. If it prints a note that it ignored a custom file, tell the owner why. Team setup is the same as the start skill's steps 1, 4, 5 and 6 (read the
 project and resume the team, name yourself, plan with the owner's OK, spawn); this skill adds what an unattended night
 needs.
 
