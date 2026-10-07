@@ -19,6 +19,13 @@ assert_contains "the log names the agent and the percents (unknown here)" "$(log
 jq -nc --arg t "$HM_REPO_ROOT/tests/fixtures/transcript.jsonl" '{session_id:"s",transcript_path:$t}' > .hivemind/team/impl/session.json
 hm-rotate impl --still 2 --settle 1 >/dev/null
 assert_contains "the log carries the level, and says the window was a guess" "$(log | tail -1)" "rotated impl 50% (window assumed 200000) -> 50% (window assumed 200000)"
+# a reading over the assumed window is tokens, not a percent: the log must not print "300000%"
+jq -nc '{type:"assistant", isSidechain:false, message:{model:"claude-sonnet-5-5", usage:{input_tokens:300000, cache_read_input_tokens:0, cache_creation_input_tokens:0, output_tokens:0}}}' > "$T_TMP/big.jsonl"
+cp .hivemind/team/impl/session.json "$T_TMP/impl-session.json"
+jq -nc --arg t "$T_TMP/big.jsonl" '{session_id:"s",transcript_path:$t}' > .hivemind/team/impl/session.json
+hm-rotate impl --still 2 --settle 1 >/dev/null
+assert_contains "a level over the assumed window is logged as tokens, not a percent" "$(log | tail -1)" "rotated impl 300000 tokens (window unknown) -> 300000 tokens (window unknown)"
+cp "$T_TMP/impl-session.json" .hivemind/team/impl/session.json
 hm-rotate nobody 2>/dev/null; assert_status "an unknown agent" $? 2
 hm-rotate 2>/dev/null; assert_status "usage" $? 64
 
