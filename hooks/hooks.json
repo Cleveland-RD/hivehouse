@@ -6,7 +6,7 @@
         "hooks": [ { "type": "command", "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/hh-session-hook\"" } ] }
     ],
     "PreToolUse": [
-      { "matcher": "Bash|mcp__.*|SendMessage|Edit|Write|MultiEdit|NotebookEdit|Artifact|ArtifactData|ArtifactComments|RemoteTrigger|Agent",
+      { "matcher": "^(Bash|mcp__.*|SendMessage|Edit|Write|MultiEdit|NotebookEdit|Artifact|ArtifactData|ArtifactComments|RemoteTrigger|Agent)$",
         "hooks": [ { "type": "command", "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/hh-away-hook\"" } ] }
     ]
   }

@@ -344,7 +344,13 @@ r=$(printf '%s' "$(tc 'git push')" | HH_AWAY_BYPASS=1 HH_PROJECT="$other" HH_AWA
 
 echo "-- wiring and the rule (A51, A72)"
 m=$(jq -r '.hooks.PreToolUse[]? | select(.hooks[]?.command | test("bin/hh-away-hook")) | .matcher' "$HH_REPO_ROOT/hooks/hooks.json")
-for t in Bash 'mcp__.*' SendMessage Edit Write MultiEdit NotebookEdit Artifact ArtifactData ArtifactComments RemoteTrigger Agent; do case "|$m|" in *"|$t|"*) ok "hooks.json matcher has $t" ;; *) bad "hooks.json matcher lacks $t: [$m]" ;; esac; done
+inner=${m#^(}; inner=${inner%)\$}
+for t in Bash 'mcp__.*' SendMessage Edit Write MultiEdit NotebookEdit Artifact ArtifactData ArtifactComments RemoteTrigger Agent; do case "|$inner|" in *"|$t|"*) ok "hooks.json matcher has $t" ;; *) bad "hooks.json matcher lacks $t: [$m]" ;; esac; done
+# Claude Code reads the matcher as a regular expression that is not anchored: unanchored, `Agent` matched inside ListAgents (and `Write`
+# inside TodoWrite), and the hook refused a tool it was never set up for. Compiled here as JavaScript compiles it.
+hit() { node -e 'process.stdout.write(new RegExp(process.argv[1]).test(process.argv[2]) ? "yes" : "no")' "$m" "$1"; }
+for t in Bash mcp__claude_ai_Gmail__send SendMessage Edit Write MultiEdit NotebookEdit Artifact ArtifactData ArtifactComments RemoteTrigger Agent; do assert_eq "the matcher, as a RegExp, matches $t" "$(hit "$t")" yes; done
+for t in ListAgents TodoWrite AgentOutput WriteLater BashOutput EditNotebook SendMessageNow ReadArtifact Read Grep; do assert_eq "...and does not match $t" "$(hit "$t")" no; done
 assert_eq "the hook command runs from the plugin's bin" "$(jq -r '.hooks.PreToolUse[0].hooks[0].command' "$HH_REPO_ROOT/hooks/hooks.json")" '"${CLAUDE_PLUGIN_ROOT}/bin/hh-away-hook"'
 [ -x "$HOOK" ] && ok "hh-away-hook is executable" || bad "hh-away-hook is not executable"
 grep -q 'HH_AWAY_BYPASS=1.*a message from anyone other than the session' <(tr '\n' ' ' < "$HH_REPO_ROOT/rules/RULES.md" | sed 's/  */ /g') && ok "RULES.md has the A51 line" || bad "RULES.md lacks the A51 line"

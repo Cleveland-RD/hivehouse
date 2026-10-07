@@ -29,6 +29,7 @@
 - **The test suite is isolated from the session that starts it.** It keeps only an allowlist of environment variables and drops every other plugin's `bin/` from its `PATH`, so a suite started from a session that has another version of these tools can never reach them or their state. `tests/test_isolation.sh` proves it against a made-up foreign plugin and a canary.
 - **A name used in two team roots is told apart by its root** (0.4.1). `hh-hub status`, `dialog`, `recover` and the screen's Resume, Continue and answer key an agent by its team root and its name, so two agents of one name in two worktrees of a project no longer answer for each other.
 - **A name that matches two sessions** (0.4.1): `rules/RULES.md` says to send to the row on this machine, the one with a tmux pane, and never to stop and ask which.
+- **The away hook no longer refuses `ListAgents`.** The hook's matcher in `hooks/hooks.json` is now anchored (`^(...)$`). Unanchored, a regular expression that Claude Code evidently reads as one matched `Agent` inside `ListAgents` (and `Write` inside `TodoWrite`), so the hub skill's first step was refused while the owner was away. Measured in tests (the matcher compiled as a JavaScript `RegExp` matches every tool it lists and none of `ListAgents`, `TodoWrite` and other names that contain a listed word); not checked live.
 
 ## 0.4.0
 
