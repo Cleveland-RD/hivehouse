@@ -498,7 +498,8 @@ self)
   root=$(hub_root) || exit $?
   pid=$(hm_claude_ancestor) || hm_die 2 "hm-hub self must run inside the Claude session that is the hub"
   [ -n "$name" ] || name=$(hm_session_record "$pid" .name)
-  [ -n "$name" ] || hm_die 4 "this session has no name: start the hub with claude --name hub /hivemind:hub (or type /rename hub), or pass --name"
+  hubn=$(hub_chosen_name "$root" 2>/dev/null) || hubn=hub
+  [ -n "$name" ] || hm_die 4 "this session has no name: start the hub with claude --name $hubn /hivemind:hub (or type /rename $hubn), or pass --name"
   hm_is_session_name "$name" || hm_die 4 "a session name hivemind will type is one line of letters, digits, space, - _ . ( ), at most 64: $name"
   # orchestrators are told to type it (hm-spawn --self --hub <name>), so it is one word
   case "$name" in *[' ()']*) hm_die 4 "the hub's name is one word (letters, digits, - _ .): $name; rename the session" ;; esac
@@ -975,6 +976,7 @@ away)
   done
   [ -n "$until" ] || hm_die 64 "$USAGE"
   root=$(hub_root_cwd) || exit $?
+  hubn=$(hub_chosen_name "$root" 2>/dev/null) || hubn=hub
   hm_is_typed_path "$root" || hm_die 4 "the hub's folder is not a path hivemind will print into a command: $root"
   case "$allow" in *[!${HM_LOWER}${HM_UPPER}${HM_DIGITS}_,.:-]*) hm_die 4 "--mcp-allow is a comma-separated list of server or tool names" ;; esac
   now=$(/bin/date +%s)
@@ -1038,7 +1040,7 @@ away)
   if [ -n "$sid" ]; then
     printf 'HM_AWAY_BYPASS=1 HM_PROJECT=%q HM_AWAY_HUB=%q HM_AWAY_MCP_ALLOW=%q claude --permission-mode bypassPermissions --no-chrome --strict-mcp-config --mcp-config %q --resume %q\n' "$root" "$root" "$allow" "$mcp" "$sid"
   else
-    printf 'HM_AWAY_BYPASS=1 HM_PROJECT=%q HM_AWAY_HUB=%q HM_AWAY_MCP_ALLOW=%q claude --name hub --permission-mode bypassPermissions --no-chrome --strict-mcp-config --mcp-config %q /hivemind:hub\n' "$root" "$root" "$allow" "$mcp"
+    printf 'HM_AWAY_BYPASS=1 HM_PROJECT=%q HM_AWAY_HUB=%q HM_AWAY_MCP_ALLOW=%q claude --name %q --permission-mode bypassPermissions --no-chrome --strict-mcp-config --mcp-config %q /hivemind:hub\n' "$root" "$root" "$allow" "$hubn" "$mcp"
   fi
   # what Claude Code asks once, by hand, before the owner leaves: nobody is there to answer it later
   if [ "$(jq -r '.skipDangerousModePermissionPrompt // false' "$cdir/settings.json" 2>/dev/null)" != true ]; then
@@ -1077,7 +1079,7 @@ back)
   old_shared "${file%/*/*}"
   echo "# Then exit the hub and start it again without bypass, so each action it takes asks you again:"
   printf 'cd %q\n' "$root"
-  if [ -n "$sid" ]; then printf 'claude --resume %q\n' "$sid"; else echo 'claude --name hub /hivemind:hub'; fi ;;
+  if [ -n "$sid" ]; then printf 'claude --resume %q\n' "$sid"; else printf 'claude --name %q /hivemind:hub\n' "$(hub_chosen_name "$root" 2>/dev/null || echo hub)"; fi ;;
 
 decide)
   # A decision the hub made for the owner, recorded word for word. Only while the owner's delegate file is valid for this

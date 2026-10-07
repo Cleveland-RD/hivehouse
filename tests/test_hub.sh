@@ -54,6 +54,10 @@ assert_eq "...its name" "$(jq -r .name "$P/hub.json")" "hub"
 bash "$T_TMP/cl/claude" --name 'hub;rm' >/dev/null 2>&1; assert_status "a name hivemind will not type" $? 4
 bash "$T_TMP/cl/claude" --name 'my hub' >/dev/null 2>&1; assert_status "a hub name is one word: orchestrators are told to type it" $? 4
 assert_eq "...the record stays" "$(jq -r .name "$P/hub.json")" "hub"
+hub name lead >/dev/null; out=$(bash "$T_TMP/cl/claude" 2>&1); assert_status "a session with no name is refused" $? 4
+assert_contains "...the hint names the hub's chosen name to start with" "$out" "claude --name lead /hivemind:hub"
+assert_contains "...and to /rename to" "$out" "/rename lead"
+rm -f "$P/name"
 
 # ---- tasks: a ledger of what the owner asked ----
 out=$(hub task app --text "Add the export button"); assert_status "task" $? 0

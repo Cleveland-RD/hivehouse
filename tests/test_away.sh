@@ -97,6 +97,10 @@ assert_contains "...that the MCP allowlist stops browser checks and computer-use
 assert_contains "...and that SendMessage is held to the hub and its teams, so peers on other machines are cut off" "$out" "SendMessage is held to the hub and its teams"
 assert_contains "...and that no remote host is used" "$out" "No remote host"
 assert_eq "...the time away began is kept for the screen" "$(jq -r '.since | length' "$P/away.json")" "20"
+printf 'lead\n' > "$P/name"; out3=$(hub away --until +1h); out4=$(hub back)
+assert_contains "the start line names the hub as its folder chose" "$out3" "claude --name lead --permission-mode bypassPermissions"
+assert_contains "...and so does back's" "$out4" "claude --name lead /hivemind:hub"
+rm -f "$P/name"
 jq '.session_id = "sess-hub-1"' "$P/hub.json" > "$P/hub.json.t" && mv "$P/hub.json.t" "$P/hub.json"
 out=$(hub away --until +1d); assert_contains "with a session recorded, the hub is resumed" "$out" "claude --permission-mode bypassPermissions --no-chrome --strict-mcp-config --mcp-config $P/away-mcp.json --resume sess-hub-1"
 printf '{"mcpServers":{"docs":{"command":"docs-mcp","args":["--x"]}}}\n' > "$CLAUDE_CONFIG_DIR/.claude.json"
