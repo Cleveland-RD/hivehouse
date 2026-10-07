@@ -387,6 +387,77 @@ denied "an unquoted heredoc body is still scanned for backticks" "cat <<EOF${nl}
 denied "a heredoc fed to a command that is not a known reader (tee to a protected file)" "tee $CLAUDE_CONFIG_DIR/settings.json <<'EOF'${nl}{}${nl}EOF"
 denied "a heredoc without a terminator keeps nothing hidden from a runner" "bash <<'EOF'${nl}git push"
 
+echo "-- ssh to a host the owner listed (hosts= in the delegate file): reads only, shape read from the raw command"
+NOW=$(date +%s); DGD="$T_TMP/dg/area"; DGF="$DGD/delegate"; mkdir -p "$DGD"; chmod 755 "$DGD" "$T_TMP/dg"
+mkdg() {  # mkdg <hosts>: a valid version 2 delegate file naming this hub
+  printf "$T_DELEGATE_LINE2"'\nhub=%s\nuntil=%s\nmcp=\nhosts=%s\nallow=\n' "$(cd "$hub" && pwd -P)" "$((NOW + 3600))" "$1" > "$DGF"; chmod 644 "$DGF"
+}
+mkdg night.example.org,ops@10.0.0.7
+if hh_delegate_read "$DGF" "$(id -u)" "$NOW" >/dev/null 2>&1; then
+  SAVE_HOOK="$HOOK"; HOOK="$(t_delegate_bin "$DGF")/hh-away-hook"
+  S="ssh -F none night.example.org"
+  for c in "tmux list-panes -a" "tmux list-sessions" "tmux list-windows -t night" "tmux capture-pane -p -t %3" "tmux display-message -p -t %3" \
+           "ls -la /work/proj" "cat /work/proj/notes.md" "head -n 20 /work/proj/log" "tail -n 50 /work/proj/log" "grep -rn todo /work/proj" "sed -n 5,20p /work/proj/log" \
+           "wc -l /work/proj/log" "df -h" "ps -ef" "git log --no-ext-diff --no-textconv -5" "git show --no-ext-diff --no-textconv HEAD" "git rev-parse HEAD" \
+           "hh-context" "hh-slot status" "hh-hub status --json" "hh-hub tasks --open"; do
+    allowed "ssh to a listed host: $c" "$S $c"
+  done
+  allowed "...with -T and the two allowed -o options" "ssh -F none -T -o ConnectTimeout=5 -o BatchMode=yes night.example.org ls /work"
+  allowed "...user@host when that exact entry is listed" "ssh -F none ops@10.0.0.7 ls /work"
+  denied "a host that is not listed" "ssh -F none other.example.org ls"
+  denied "user@host when only the bare host is listed" "ssh -F none root@night.example.org ls"
+  denied "a listed name without -F none (the config's Include could redefine it)" "ssh night.example.org ls"
+  denied "-F with another file" "ssh -F /tmp/x night.example.org ls"
+  denied "-F none given after the host" "ssh night.example.org -F none ls"
+  for o in "-L 8080:localhost:80" "-R 9090:localhost:22" "-D 1080" "-W h:22" "-J jump" "-i key" "-p 2222" "-t" "-A" "-X" "-N" "-f" "-o ProxyCommand=x" "-o LocalCommand=x" "-o PermitLocalCommand=yes" "-o ConnectTimeout=5s" "-o BatchMode=no" "-oBatchMode=yes"; do
+    denied "ssh option refused: $o" "ssh -F none $o night.example.org ls"
+  done
+  denied "no remote command (an interactive login)" "ssh -F none night.example.org"
+  denied "a host through a variable" "ssh -F none \$H ls"
+  denied "ssh with no host at all" "ssh -F none -T"
+  for c in "tmux list-panes; touch x" "ls | sh" "ls && rm x" "ls > f" "ls < f" "ls \$(id)" "ls \`id\`" "ls ~" "ls *" "ls ?" "ls [a]" "ls {a,b}" "ls #c" "ls !x"; do
+    denied "remote part not plain words: $c" "$S $c"
+  done
+  denied "a quoted remote command with a semicolon (the named case)" "ssh -F none night.example.org \"tmux list-panes; touch x\""
+  denied "single-quoted remote command" "ssh -F none night.example.org 'ls'"
+  denied "a backslash in the remote part" "$S ls a\\ b"
+  denied "a newline in the remote part" "$S ls /work${nl}touch x"
+  denied "a second command after ssh" "$S ls; echo hi"
+  denied "ssh after another command" "cd /work && $S ls"
+  denied "ssh piped into something" "$S ls | head"
+  for c in "rm -rf /work/proj" "touch x" "git push" "git status" "git diff" "git log -5" "git log --no-ext-diff -5" "git log --no-textconv -5" "git show HEAD" "git log --no-ext-diff --no-textconv --ext-diff" \
+           "git log --no-ext-diff --no-textconv --textconv" "git log --no-ext-diff --no-textconv --output=x" "git -c core.pager=x log" "git config -l" "git fetch" \
+           "claude" "tmux new-session" "tmux send-keys x" "tmux kill-server" "tmux capture-pane" "tmux display-message" "tmux -S /x list-panes" "tmux run-shell x" \
+           "sed -i s/a/b/ f" "sed -i 1p f" "sed -s 1p f" "sed -n 1wfile f" "sed -n p f" "sed s/a/b/ f" "tail -f log" "tail -F log" "tail -nf log" "bash" "sh" "env ls" "xargs ls" "nohup ls" "PATH=/x cat f" "ls=1 cat f" \
+           "ssh -F none other.example.org ls" "ssh night.example.org ls" "scp a b" "hh-hub back" "hh-hub away" "hh-slot run" "hh-slot acquire" "hh-push" "hh-spawn x" "hh-gate" "vim" "python3" "find /" "dd if=/dev/zero of=x" "tee x" "cp a b" "mv a b" "ln a b" "chmod 777 x" "cat f -- x;"; do
+    denied "remote command refused: $c" "$S $c"
+  done
+  mkdg ""; denied "no hosts listed: ssh is refused as before" "$S ls"
+  mkdg night.example.org
+  ROLE=hub; allowed "the hub's own session passes the same way" "$S ls"; ROLE=proj
+  printf "$T_DELEGATE_LINE2"'\nhub=%s\nuntil=%s\nmcp=\nhosts=night.example.org\nallow=\n' "$T_TMP" "$((NOW + 3600))" > "$DGF"
+  denied "a delegate file naming another hub grants nothing" "$S ls"
+  mkdg night.example.org; chmod 666 "$DGF"; denied "a delegate file anyone can write grants nothing" "$S ls"
+  chmod 644 "$DGF"; mkdg night.example.org; mv "$DGF" "$DGF.off"; denied "no delegate file grants nothing" "$S ls"; mv "$DGF.off" "$DGF"
+  printf "$T_DELEGATE_LINE1"'\nhub=%s\nuntil=%s\nmcp=\n' "$(cd "$hub" && pwd -P)" "$((NOW + 3600))" > "$DGF"; chmod 644 "$DGF"; denied "a version 1 file lists no hosts" "$S ls"
+  mkdg night.example.org
+  echo "-- ~/.ssh is protected (known_hosts and keys; the config is no longer read)"
+  tool_denied "Write to ~/.ssh/config" "$(fileop Write "$HOME/.ssh/config")"
+  tool_denied "Edit to ~/.ssh/known_hosts" "$(fileop Edit "$HOME/.ssh/known_hosts")"
+  tool_denied "Write to a file under ~/.ssh/" "$(fileop Write "$HOME/.ssh/conf.d/x")"
+  tool_denied "Write to ~/.ssh itself" "$(fileop Write "$HOME/.ssh")"
+  denied "a redirect into ~/.ssh/config" "echo Host x >> ~/.ssh/config"
+  denied "a redirect into \$HOME/.ssh/config" "echo Host x > \$HOME/.ssh/config"
+  denied "tee into ~/.ssh/config" "echo x | tee ~/.ssh/config"
+  denied "cp into ~/.ssh" "cp /work/x ~/.ssh/config"
+  tool_allowed "a file named .ssh elsewhere is no business of the rule" "$(fileop Write "$proj/.ssh-notes")"
+  HOOK="$SAVE_HOOK"
+else
+  hh_delegate_read "$DGF" "$(id -u)" "$NOW" >/dev/null 2>&1; echo "  SKIP the fixture folder is not eligible here: $HH_DELEGATE_WHY"
+fi
+denied "no fixture, no listed host: ssh stays refused" "ssh -F none night.example.org ls"
+denied "ssh as before in the plain shape" "ssh night.example.org ls"
+
 echo "-- the env the Bash tool sees does not matter"
 r=$(printf '%s' "$(tc 'git push')" | HH_AWAY_BYPASS=1 HH_PROJECT="$other" HH_AWAY_HUB="$hub" HH_AWAY_MCP_ALLOW= "$HOOK" 2>&1 >/dev/null); assert_status "any project in the env: still refused" $? 2
 

@@ -53,6 +53,8 @@ protected_one() {  # protected_one <canonical path>: 0 when Claude Code's settin
     case "$p" in "$HUB/$HH_HUB_DIR"|"$HUB/$HH_HUB_DIR/"*)
       P_WHY="the hub's records ($HH_HUB_DIR) can be changed only by the hub's own session, never by an agent's or an orchestrator's"; return 0 ;; esac
   fi
+  # ssh's folder: known_hosts and keys decide whom a session trusts and as whom it signs in (the config is not read for a listed host: -F none)
+  case "$p" in "$h/.ssh"|"$h/.ssh/"*) P_WHY="ssh's folder (~/.ssh: keys, known hosts, config) cannot be changed from an away session"; return 0 ;; esac
   # a team.json names every agent's process: hivehouse's own scripts write it from their code, never a session's tools (the hub's too)
   case "$p" in */"$HH_STATE_DIR"/team.json) P_WHY="a team's team.json is written by hivehouse's own scripts, never through a session's tools"; return 0 ;; esac
   return 1
@@ -243,9 +245,81 @@ heredoc_strip() {
     }'
 }
 
+# --- ssh to a host the owner listed (hosts= in the root-owned delegate file): a read, nothing else
+# bash_check rewrites the command (quotes and backslashes go, ; & | ( ) ` $ become line breaks) before it reads anything, so the shape of an ssh
+# command cannot be read from its result: `ssh h "tmux list-panes; touch x"` would come out as a read and a LOCAL touch while the remote runs both.
+# So ssh_gate reads the RAW command, and only a command that is one ssh of plain words, start to end, can pass; anything else goes on to the general
+# rules, which refuse ssh. The remote words are held to an allowlist (command word and subcommand), never to bash_check: its path rules resolve on
+# THIS machine. -F none is required: ssh reads ~/.ssh/config and every file it Includes, and a session that wrote `Host <alias>` there could
+# redefine a listed name; with no config, hosts= names real host names (or user@host), never aliases.
+SSH_PLAIN='A-Za-z0-9_.:,=+/@%\ -'   # the only characters of such a command: letters, digits, _ . : , = + / @ % - and the space
+rc_deny() { deny "a remote command may only read while the owner is away ($1)"; }
+remote_check() {  # remote_check <word> [<word>...]: the words ssh sends to the remote shell; denies unless they are on the read-only list
+  local c="${1:-}" sub="${2:-}" a p="" ext="" txt=""
+  case "$c" in
+    tmux) case "$sub" in
+            list-panes|list-sessions|list-windows) ;;
+            capture-pane|display-message) for a in "$@"; do [ "$a" = -p ] && p=1; done; [ -n "$p" ] || rc_deny "tmux $sub prints only with -p" ;;
+            *) rc_deny "tmux $sub" ;;
+          esac ;;
+    ls|cat|head|grep|wc|df|ps|hh-context) ;;
+    tail) shift; for a in "$@"; do case "$a" in -*f*|-*F*|--follow*|--retry*) rc_deny "tail does not follow" ;; esac; done ;;
+    sed) [ "$sub" = -n ] || rc_deny "sed only as sed -n <lines>p"
+         [[ "${3:-}" =~ ^[0-9]+(,[0-9]+)?p$ ]] || rc_deny "sed only as sed -n <lines>p"
+         shift 3; for a in "$@"; do case "$a" in -*) rc_deny "sed takes no option after its script" ;; esac; done ;;
+    git) case "$sub" in
+           log|show) shift 2
+                     for a in "$@"; do case "$a" in
+                       --no-ext-diff) ext=1 ;; --no-textconv) txt=1 ;;
+                       --ext-diff|--textconv|--output|--output=*|-c|--exec-path*|--open-files-in-pager*|-O*) rc_deny "git $sub option $a runs or writes" ;;
+                     esac; done
+                     [ -n "$ext$txt" ] && [ -n "$ext" ] && [ -n "$txt" ] || rc_deny "git $sub needs --no-ext-diff --no-textconv, since the remote repository's config names programs for both" ;;
+           rev-parse) ;;
+           *) rc_deny "git $sub" ;;
+         esac ;;
+    hh-slot) [ "$sub" = status ] || rc_deny "hh-slot $sub" ;;
+    hh-hub) case "$sub" in status|tasks) ;; *) rc_deny "hh-hub $sub" ;; esac ;;
+    *) rc_deny "$c is not on the list of reads" ;;
+  esac
+}
+ssh_gate() {  # ssh_gate <raw command>: 1 = not an allowed ssh (the general rules decide, and refuse ssh); 0 = allowed; denies a listed-host ssh that breaks the shape
+  local c="$1" w i o host e hosts
+  c=${c#"${c%%[![:space:]]*}"}
+  case "$c" in "ssh "*) ;; *) return 1 ;; esac
+  case "$c" in *[!${SSH_PLAIN}]*) return 1 ;; esac
+  hh_delegate_mine || return 1
+  [ "$HH_DG_HUB" = "$HUB" ] || return 1
+  hosts=$HH_DG_HOSTS   # empty: no host matches below, and the refusal says the owner listed none
+  set -f; w=($c); set +f
+  { [ "${w[1]:-}" = -F ] && [ "${w[2]:-}" = none ]; } || deny "ssh to a listed host needs -F none right after ssh: no ssh config is read while the owner is away, so hosts= names real host names"
+  i=3
+  while :; do
+    case "${w[$i]:-}" in
+      -T) i=$((i + 1)) ;;
+      -o) o=${w[$((i + 1))]:-}
+          case "$o" in
+            BatchMode=yes) ;;
+            ConnectTimeout=?*) case "${o#ConnectTimeout=}" in *[!0-9]*) deny "ssh -o ConnectTimeout takes digits only while the owner is away" ;; esac ;;
+            *) deny "ssh -o $o is not allowed while the owner is away (only ConnectTimeout=<digits> and BatchMode=yes)" ;;
+          esac
+          i=$((i + 2)) ;;
+      -*) deny "ssh option ${w[$i]} is not allowed while the owner is away (only -F none, -T, -o ConnectTimeout=<digits>, -o BatchMode=yes)" ;;
+      *) break ;;
+    esac
+  done
+  host=${w[$i]:-}; [ -n "$host" ] || deny "ssh needs a host"
+  o=""; IFS=, read -ra e <<< "$hosts"
+  for o in ${e[@]+"${e[@]}"}; do [ "$o" = "$host" ] && break; o=""; done
+  [ -n "$o" ] || deny "ssh to $host is not allowed: the owner's delegate file lists other hosts (or none)"
+  [ -n "${w[$((i + 1))]:-}" ] || deny "ssh needs a remote command while the owner is away (an interactive login is not allowed)"
+  remote_check "${w[@]:$((i + 1))}"
+  return 0
+}
+
 bash_check() {
   local cmd s seg tok toks ws i first second prev have_git="" have_push="" have_pub="" have_dock="" pkgm="" wr rt
   cmd=$(printf '%s' "$input" | "$HH_JQ" -er '.tool_input.command | strings' 2>/dev/null) || deny "its command cannot be read"
+  ssh_gate "$cmd" && return 0   # one ssh of plain words to a listed host, a read: the rest of this function is for everything else
   cmd=$(printf '%s\n' "$cmd" | heredoc_strip)
   s=${cmd//\'/}; s=${s//\"/}; s=${s//\\/}
   # redirect targets are looked at before the punctuation goes
