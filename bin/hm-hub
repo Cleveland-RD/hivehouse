@@ -54,13 +54,13 @@ USAGE="usage: hm-hub init
        hm-hub run <project> overnight <task id> [--still <s>] [--max-wait <s>]
        hm-hub run <project> cleanup <task id> [--disk] [--still <s>] [--max-wait <s>]
        hm-hub continue <project> [--still <s>] [--max-wait <s>]
-       hm-hub dialog <project> [<agent>]
+       hm-hub dialog <project> [<agent>[@<team root>]]
        hm-hub away --until <time> [--mcp-allow <list>]
        hm-hub back
        hm-hub decide <task id> --reason <one line>      (stdin: the question, a line === ANSWER ===, the answer)
        hm-hub hold <project> [--off]
        hm-hub recover [--json] [--max-starts <n>]
-       hm-hub answer <project> [<agent>] --choice <1-9|esc> --seen <fingerprint>
+       hm-hub answer <project> [<agent>[@<team root>]] --choice <1-9|esc> --seen <fingerprint>
        hm-hub naming --session <session id>"
 
 cmd="${1:-}"; [ -n "$cmd" ] || hm_die 64 "$USAGE"; shift
@@ -443,7 +443,7 @@ hung_try() {
 # registered from (a start's first dialog), else the pane of one running outside hivemind. An agent must be on the team
 # (exit 2) and running (exit 4). Needs HOME_DIR, so call it after need_project.
 dialog_target() {
-  local root="$1" name="$2" want="$3" entry tr r
+  local root="$1" name="$2" want="$3" entry tr r e wroot roots nroots
   T_SOCKET=""; T_PANE=""; T_SESSION=""
   orch_state "$root" "$name" "$HOME_DIR"
   if [ -z "$want" ] || [ "$want" = "$O_AGENT" ]; then
@@ -458,13 +458,19 @@ dialog_target() {
     fi
     [ -n "$T_PANE" ] || hm_die 4 "$name has no orchestrator screen to read ($O_STATE)"
   else
+    # <name> or <name>@<team root>: a name used in two team roots of the project is ambiguous without its root
+    wroot=""; case "$want" in *@*) wroot=${want#*@}; want=${want%%@*} ;; esac
     hm_is_agent_name "$want" || hm_die 4 "an agent name is lower-case letters, digits, '_' and '-': $want"
-    entry=""; tr=""
+    entry=""; tr=""; roots=""; nroots=0
     while IFS= read -r r <&3; do   # the agent may sit in a worktree's team
-      entry=$(jq -c --arg a "$want" '[.agents[]? | select(.name == $a)][0] // empty' "$r/.hivemind/team.json" 2>/dev/null)
-      [ -z "$entry" ] || { tr=$r; break; }
+      e=$(jq -c --arg a "$want" '[.agents[]? | select(.name == $a)][0] // empty' "$r/.hivemind/team.json" 2>/dev/null)
+      [ -n "$e" ] || continue
+      if [ -n "$wroot" ] && [ "$r" != "$wroot" ]; then continue; fi
+      [ -n "$entry" ] || { entry=$e; tr=$r; }
+      roots="$roots $want@$r"; nroots=$((nroots + 1))
     done 3< <(hm_team_roots "$HOME_DIR")
-    [ -n "$entry" ] || hm_die 2 "no agent named $want on $name's team"
+    [ -n "$entry" ] || hm_die 2 "no agent named $want${wroot:+ in $wroot} on $name's team"
+    [ "$nroots" -le 1 ] || hm_die 4 "$want is on several team roots of $name:$roots: name one of them"
     hm_team_agent_is "$tr" "$want"; [ $? -eq 0 ] || hm_die 4 "$want is not running: there is no screen to read"
     T_SOCKET=$(printf '%s' "$entry" | jq -r '.socket // empty'); T_PANE=$(printf '%s' "$entry" | jq -r '.pane // empty'); T_SESSION="$want"
     [ -n "$T_PANE" ] || hm_die 4 "$want has no pane recorded"
@@ -691,6 +697,8 @@ status)
         agents=$(printf '%s' "$agents" | jq -c --arg a "$a" --arg s "$st" --arg w "$tr" --argjson q "$q" --argjson l "$(level "$a")" '. + [{name:$a, state:$s, worktree:$w, question:$q} + $l]')
       done
     done
+    # a name used in two team roots is told apart by its root: ref is "<name>@<team root>" then, the bare name otherwise
+    agents=$(printf '%s' "$agents" | jq -c '. as $all | map(. as $a | . + {ref: (if ([$all[] | select(.name == $a.name)] | length) > 1 then "\($a.name)@\($a.worktree)" else $a.name end)})')
     open=$(printf '%s' "$opens" | jq -r --arg p "$n" '.[$p] // 0')
     held=false; [ ! -f "$root/.hivemind-hub/holds/$n" ] || held=true
     out=$(printf '%s' "$out" | jq -c --arg n "$n" --arg h "$home" --argjson r "$repos" --argjson ag "$agents" --argjson st "$starting" \
@@ -713,7 +721,7 @@ status)
         "",
         "\(.name)\(if .held then "  (held: the hub starts and wakes nothing here)" else "" end)",
         "  orchestrator  \(if .orchestrator.state == "unregistered" then "running, not registered with hivemind" elif .orchestrator.state == "resumable" then "stopped, not registered (resumable)" else .orchestrator.state end)\(if .orchestrator.name then "  \(.orchestrator.name)" else "" end)\(if .orchestrator.pane then " in pane \(.orchestrator.pane)" else "" end)\(if .orchestrator.question then "  (a question on its screen)" else "" end)\(if .orchestrator.starting then (if .orchestrator.starting.typed or .orchestrator.starting.sending then "  (coming up in pane \(.orchestrator.starting.pane))" else "  (waiting in pane \(.orchestrator.starting.pane)\(if .orchestrator.starting.question then " on a question" else "" end): hm-hub continue \(.name))" end) else "" end)",
-        "  agents        \(if (.agents | length) == 0 then "none" else "\([.agents[] | select(.state == "running")] | length) of \(.agents | length) running\([.agents[] | select(.state != "running" or .question) | "\(.name) \(if .question then "has a question on its screen" else .state end)"] | if length > 0 then "  (\(join(", ")))" else "" end)" end)",
+        "  agents        \(if (.agents | length) == 0 then "none" else "\([.agents[] | select(.state == "running")] | length) of \(.agents | length) running\([.agents[] | select(.state != "running" or .question) | "\(.ref) \(if .question then "has a question on its screen" else .state end)"] | if length > 0 then "  (\(join(", ")))" else "" end)" end)",
         "  tasks         \(.open_tasks) open",
         (.repos | to_entries[] | "\(if .key == 0 then "  folders       " else "                " end)\(.value.folder + (" " * ($fw - (.value.folder | length))))  \(.value.kind)\(if .value.branch then "  \(.value.branch)  \(if .value.changed == 0 then "clean" else "\(.value.changed) changed" end)" else "" end)"))'
   fi ;;

@@ -182,6 +182,29 @@ assert_contains "...saying so" "$(cat "$T_TMP/w2.err")" "running"
 assert_eq "...and no pane was started for it" "$(ls "$P/panes" 2>/dev/null | grep -c '^two\.json$')" "0"
 kill "$TP" 2>/dev/null
 
+# ---- an agent name used in two team roots of one project: told apart by the root ----
+mk dup; hub add dup --home dup >/dev/null
+DW="$H/dup-wt"; git -C "$H/dup" worktree add -q "$DW" -b dup-team; DW=$(cd "$DW" && pwd -P); mkdir -p "$DW/.hivemind" "$H/dup/.hivemind"
+pb=$(hm_tmux new-window -d -P -F '#{pane_id}' -t keep: -n twin 'sleep 600'); pbi=$(hm_pane_identity "$HM_TMUX_SOCKET" "$pb")
+for pair in "$H/dup:$kp:${ki%%$'\t'*}:${ki#*$'\t'}" "$DW:$pb:${pbi%%$'\t'*}:${pbi#*$'\t'}"; do
+  IFS=: read -r droot dpane dpp dps <<< "$pair"
+  jq -nc --arg k "$HM_TMUX_SOCKET" --arg p "$dpane" --arg pp "$dpp" --arg ps "$dps" '{agents:[{name:"impl", pane:$p, socket:$k, pane_pid:$pp, pane_started:$ps}]}' > "$droot/.hivemind/team.json"
+done
+ds() { hub status dup --json | jq -r "$1"; }
+assert_eq "the name is listed once per root, each with its root" "$(ds '.projects[0].agents | map(.worktree) | sort | join(",")')" "$(printf '%s\n%s' "$H/dup" "$DW" | sort | tr '\n' ',' | sed 's/,$//')"
+assert_eq "...and a ref that tells them apart" "$(ds '.projects[0].agents | map(.ref) | sort | join(",")')" "$(printf '%s\n%s' "impl@$H/dup" "impl@$DW" | sort | tr '\n' ',' | sed 's/,$//')"
+assert_eq "a name used once keeps its bare name as the ref" "$(hub status app --json | jq -r '.projects[0].agents[0].ref')" "$(hub status app --json | jq -r '.projects[0].agents[0].name')"
+hub dialog dup impl >/dev/null 2>"$T_TMP/amb.err"; assert_status "a dialog for the ambiguous name is refused" $? 4
+assert_contains "...naming each root" "$(cat "$T_TMP/amb.err")" "impl@$DW"
+assert_contains "...both of them" "$(cat "$T_TMP/amb.err")" "impl@$H/dup"
+hub dialog dup "impl@$DW" >/dev/null 2>"$T_TMP/d1.err"
+assert_contains "a dialog for name@root reads that root's pane" "$(cat "$T_TMP/d1.err")" "pane $pb"
+hub dialog dup "impl@$H/dup" >/dev/null 2>"$T_TMP/d2.err"
+assert_contains "...and the other root's pane for the other" "$(cat "$T_TMP/d2.err")" "pane $kp"
+hub dialog dup "impl@$H/nowhere" >/dev/null 2>"$T_TMP/d3.err"; assert_status "a root the name is not in is not found" $? 2
+hm_tmux kill-pane -t "$pb" 2>/dev/null; sleep 0.5
+assert_contains "the plain status names the root of a stopped one of two same-named agents" "$(hub status dup)" "impl@$DW stopped"
+
 # ---- hm-hub run reaches an orchestrator registered only in a worktree: its pane is read from that root's team.json ----
 mk wr; hub add wr --home wr >/dev/null
 WR="$H/wr-wt"; git -C "$H/wr" worktree add -q "$WR" -b wr-team; WR=$(cd "$WR" && pwd -P); mkdir -p "$WR/.hivemind/team/orchestrator"
