@@ -186,6 +186,26 @@ test('the hub keeps off the projects, and off nothing else', async ($, on) => {
   expect((await bash('hm-hub log app-1 done --note "landed, git push done"')).deny).toBeUndefined()
   expect((await bash("hm-hub log app-1 note --note 'run git commit -m x first'")).deny).toBeUndefined()
   expect((await bash("hm-hub task app <<'EOF'\nx\nEOF\ngit push origin main")).deny).toContain('changes a repository')
+  // git worktree changes a repository only with add, remove, move, prune, repair, lock or unlock
+  expect((await bash('git -C back worktree list')).deny).toBeUndefined()
+  expect((await bash('git worktree list --porcelain')).deny).toBeUndefined()
+  for (const sub of ['add ../wt -b x', 'remove ../wt', 'move a b', 'prune', 'repair', 'lock ../wt', 'unlock ../wt']) {
+    expect((await bash(`git -C back worktree ${sub}`)).deny, `worktree ${sub}`).toContain('changes a repository')
+  }
+  // quoted text follows the shell's own quoting: the '\'' idiom for an apostrophe inside single quotes, $'..' with an escaped quote, an escaped
+  // quote inside double quotes. A sed -i on the hub's own memory file whose note holds a git command passes.
+  expect((await bash("sed -i '' '1a\\ do'\\''nt run `git worktree add` here' .hivemind-hub/memory/app.md")).deny).toBeUndefined()
+  expect((await bash("hm-hub log app-1 note --note $'it\\'s fine: git commit -m x'")).deny).toBeUndefined()
+  expect((await bash('hm-hub log app-1 note --note "say \\"hi\\" then git push"')).deny).toBeUndefined()
+  expect((await bash('hm-hub log app-1 note --note "the user\'s note: `git worktree add x`"')).deny).toBeUndefined()
+  expect((await bash("sed -i '' '1a\\ it'\\''s done' .hivemind-hub/memory/app.md; git commit -m x")).deny).toContain('changes a repository')
+  // a real command after a quote, in $( ), in backticks, or after an escaped separator still counts
+  expect((await bash("echo 'a'; git commit -m x")).deny).toContain('changes a repository')
+  expect((await bash('echo "$(git commit -m x)"')).deny).toBeUndefined() // inside double quotes: the owner's text, as before
+  expect((await bash('echo $(git commit -m x)')).deny).toContain('changes a repository')
+  expect((await bash('echo `git push`')).deny).toContain('changes a repository')
+  expect((await bash("echo it\\'s; git commit -m x")).deny).toContain('changes a repository')
+  expect((await bash("echo 'unterminated; git commit -m x")).deny).toBeUndefined()
 })
 
 test('the screen: what needs the owner first, then each project, and Resume wakes a stopped orchestrator', async ($, on) => {

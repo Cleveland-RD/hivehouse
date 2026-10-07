@@ -217,10 +217,12 @@ async function editRefusal($: EngineInterface, path: string): Promise<string | n
 // git commands that change a repository; read-only ones (status, log, diff, show) pass. Best effort: a shell can always
 // spell a command another way, which is why the skill says so too.
 const GIT_WRITES =
-  /(^|[;&|(`]|\s)git(\s+-C\s+\S+)?\s+(commit|push|merge|rebase|reset|checkout|switch|restore|stash|cherry-pick|revert|tag|am|apply|clean|rm|mv|add|worktree|pull|branch\s+-[dDmMf])\b/
+  /(^|[;&|(`]|\s)git(\s+-C\s+\S+)?\s+(commit|push|merge|rebase|reset|checkout|switch|restore|stash|cherry-pick|revert|tag|am|apply|clean|rm|mv|add|worktree\s+(?:add|remove|move|prune|repair|lock|unlock)|pull|branch\s+-[dDmMf])\b/
 
 // A command with the words it only carries taken out: a heredoc's body and quoted strings are the owner's text, passed
-// word for word (a task, a note), never a command the shell runs.
+// word for word (a task, a note), never a command the shell runs. Quoting follows the shell's own: '...' has no escapes (an
+// apostrophe inside it is written '\'' : close, escaped apostrophe, open), "..." and $'...' take a backslash escape, and a
+// backslash outside quotes escapes the next character, so an escaped quote opens nothing. A quote that never closes holds the rest.
 function commandsOnly(command: string): string {
   const kept: string[] = []
   let until = ''
@@ -233,7 +235,22 @@ function commandsOnly(command: string): string {
     if (opens) until = opens[2] ?? ''
     kept.push(line)
   }
-  return kept.join('\n').replace(/'[^']*'/g, "''").replace(/"(?:[^"\\]|\\.)*"/g, '""')
+  const text = kept.join('\n')
+  let out = ''
+  for (let i = 0; i < text.length; i++) {
+    const c = text.charAt(i)
+    if (c === '\\') {
+      out += text.charAt(i + 1)
+      i++
+    } else if (c === "'" || c === '"' || (c === '$' && text.charAt(i + 1) === "'")) {
+      const ansi = c === '$'
+      const quote = ansi ? "'" : c
+      i += ansi ? 2 : 1
+      while (i < text.length && text.charAt(i) !== quote) i += text.charAt(i) === '\\' && (ansi || quote === '"') ? 2 : 1
+      out += ansi ? "$''" : quote + quote
+    } else out += c
+  }
+  return out
 }
 
 export const register: Register = (on, options) => {
