@@ -34,7 +34,9 @@ hm_ensure_state() {  # creates .hivemind/, excludes it through info/exclude, ref
   excl="$common/info/exclude"; touch "$excl"
   grep -qx '/.hivemind/' "$excl" || echo '/.hivemind/' >> "$excl"
 }
-hm_json_get() { jq -r "$2 // empty" "$1" 2>/dev/null; }   # hm_json_get <file> <jq path>
+hm_json_get() {  # hm_json_get <file> <jq path>: the root-owned jq (HM_JQ, set below) when there is one, else jq from PATH for scripts that decide nothing
+  if [ -n "${HM_JQ:-}" ]; then "$HM_JQ" -r "$2 // empty" "$1" 2>/dev/null; else jq -r "$2 // empty" "$1" 2>/dev/null; fi
+}
 hm_registry_dir() { printf '%s/registry/panes\n' "$(hm_home)"; }
 hm_pane_key() {  # hm_pane_key <socket> <pane id> -> filename-safe key
   printf '%s' "$1|$2" | shasum | cut -c1-16
@@ -664,6 +666,29 @@ hm_machine_slot_ok() {
   done
   return 0
 }
+# The jq every check that grants away powers uses. A bare `jq` comes from PATH, which a session's own Bash command sets, so a fake one could
+# answer for a hub it is not or a project that is not listed. This is the first of three fixed paths that is root's along its whole path (the
+# file and every folder above it owned by root, not links, not writable by group or others): a Homebrew jq belongs to the user, so it never
+# passes, and the user's own account is exactly the away session being guarded. macOS has /usr/bin/jq since 15.
+hm_jq_candidates() { echo '/usr/bin/jq /usr/local/bin/jq /opt/homebrew/bin/jq'; }
+hm_jq_fixed() {  # prints the path of the first root-owned jq, or fails
+  local c p i ok
+  for c in $(hm_jq_candidates); do
+    hm_path_trusted "$c" file 0 loose || continue
+    p=${c%/*}; i=0; ok=1
+    while :; do
+      [ -n "$p" ] || p=/
+      hm_path_trusted "$p" dir 0 loose || { ok=0; break; }
+      [ "$p" = / ] && break
+      p=${p%/*}; i=$((i + 1)); [ "$i" -lt 64 ] || { ok=0; break; }
+    done
+    [ "$ok" = 1 ] || continue
+    printf '%s\n' "$c"; return 0
+  done
+  return 1
+}
+# Set here, when the library loads, whatever the environment held (bash -p still imports variables): the resolver's answer, or empty.
+HM_JQ=""; HM_JQ=$(hm_jq_fixed) || HM_JQ=""
 hm_delegate_read() {  # hm_delegate_read <path> <uid> [<now>]: prints "<hub><TAB><until><TAB><mcp>" when the file is valid; 1 when it is not
   local f="$1" want="$2" now="${3:-}" d p hub until mcp i l1="" l2="" l3="" l4="" l5=""
   HM_DELEGATE_WHY=""; HM_DR_HUB=""; HM_DR_UNTIL=""; HM_DR_MCP=""; HM_DR_ABSENT=""
@@ -722,6 +747,7 @@ HM_DG_UID=""
 hm_delegate_mine() {
   HM_DG_HUB=""; HM_DG_UNTIL=""; HM_DG_MCP=""; HM_DG_UID=$(hm_real_uid) || HM_DG_UID=""
   case "$HM_DG_UID" in ''|*[!0-9]*) HM_DG_UID=""; HM_DELEGATE_WHY="this user's id cannot be read"; return 1 ;; esac
+  [ -n "$HM_JQ" ] || { HM_DELEGATE_WHY="no root-owned jq was found (/usr/bin/jq, /usr/local/bin/jq or /opt/homebrew/bin/jq), so the hub's records cannot be read safely"; return 1; }
   hm_delegate_now >/dev/null || return 1
   HM_DG_HUB=$(cd "$HM_DR_HUB" 2>/dev/null && pwd -P) || { HM_DG_HUB=""; HM_DELEGATE_WHY="the hub folder $HM_DR_HUB cannot be entered"; return 1; }
   hm_hub_records_trusted "$HM_DG_HUB" "$HM_DG_UID" || { HM_DG_HUB=""; return 1; }
@@ -793,7 +819,7 @@ hm_delegate_for_project() {  # hm_delegate_for_project <project root>: 0 when de
       hm_path_trusted "$abs" dir "$HM_DG_UID" strict || break
       HM_DG_PROJECT=$name; return 0
     fi
-  done < <(jq -r '.projects[]? | [.name, .home] | @tsv' "$hub/.hivemind-hub/projects.json" 2>/dev/null)
+  done < <("$HM_JQ" -r '.projects[]? | [.name, .home] | @tsv' "$hub/.hivemind-hub/projects.json" 2>/dev/null)
   HM_DG_HUB=""; HM_DG_UNTIL=""; HM_DG_MCP=""
   return 1
 }
@@ -822,17 +848,17 @@ hm_check_mode() {  # hm_check_mode <mode> <who> [<project root>]: exits 4 unless
 # What a session started in bypass gets (A31, A40, A48, A62, A71): the marker and the hook's three variables, and only the MCP servers the
 # owner allowed (a file written from the user's .claude.json and the project's .mcp.json, mode 0600), with no Chrome. Never for any other mode.
 HM_BP_ENVS=(); HM_BP_ARGS=(); HM_AWAY_MCP_MISSING=""
-hm_write_away_mcp() {  # hm_write_away_mcp <file> <allow list> <project root>: the servers of the list, found; HM_AWAY_MCP_MISSING names the others
+hm_write_away_mcp() {  # hm_write_away_mcp <file> <allow list> <project root>: the servers of the list, found; HM_AWAY_MCP_MISSING names the others. Only "$HM_JQ" writes it (with none, nothing runs and it returns 1)
   local f="$1" allow="$2" root="$3" cj e srv def
   cj=$(hm_claude_json); HM_AWAY_MCP_MISSING=""
-  ( umask 077; jq -n '{mcpServers:{}}' > "$f.tmp$$" ) && mv "$f.tmp$$" "$f" && chmod 600 "$f" || return 1
+  ( umask 077; "$HM_JQ" -n '{mcpServers:{}}' > "$f.tmp$$" ) && mv "$f.tmp$$" "$f" && chmod 600 "$f" || return 1
   [ -n "$allow" ] || return 0
   for e in $(printf '%s' "$allow" | tr ',' ' '); do
     srv=$e; case "$e" in mcp__*__*) srv=${e#mcp__}; srv=${srv%%__*} ;; esac
-    def=$(jq -c --arg s "$srv" --arg r "$root" '(.mcpServers[$s] // .projects[$r].mcpServers[$s]) // empty' "$cj" 2>/dev/null | head -1)
-    [ -n "$def" ] || def=$(jq -c --arg s "$srv" '.mcpServers[$s] // empty' "$root/.mcp.json" 2>/dev/null | head -1)
+    def=$("$HM_JQ" -c --arg s "$srv" --arg r "$root" '(.mcpServers[$s] // .projects[$r].mcpServers[$s]) // empty' "$cj" 2>/dev/null | head -1)
+    [ -n "$def" ] || def=$("$HM_JQ" -c --arg s "$srv" '.mcpServers[$s] // empty' "$root/.mcp.json" 2>/dev/null | head -1)
     if [ -n "$def" ]; then
-      ( umask 077; jq --arg s "$srv" --argjson d "$def" '.mcpServers[$s] = $d' "$f" > "$f.tmp$$" ) && mv "$f.tmp$$" "$f" && chmod 600 "$f" || return 1
+      ( umask 077; "$HM_JQ" --arg s "$srv" --argjson d "$def" '.mcpServers[$s] = $d' "$f" > "$f.tmp$$" ) && mv "$f.tmp$$" "$f" && chmod 600 "$f" || return 1
     else HM_AWAY_MCP_MISSING="$HM_AWAY_MCP_MISSING $srv"; fi
   done
 }

@@ -65,7 +65,10 @@ r=$(printf '%s' "$(tc ls)" | HM_AWAY_BYPASS=1 HM_PROJECT="$proj" HM_AWAY_MCP_ALL
 r=$(printf '%s' "$(tc ls)" | HM_AWAY_BYPASS=1 HM_PROJECT="$proj" HM_AWAY_HUB="$other" HM_AWAY_MCP_ALLOW= "$HOOK" 2>&1); assert_status "hub folder with no .hivemind-hub" $? 2
 r=$(printf '%s' "$(tc ls)" | HM_AWAY_BYPASS=1 HM_PROJECT="$proj" HM_AWAY_HUB="$T_TMP/none" HM_AWAY_MCP_ALLOW= "$HOOK" 2>&1); assert_status "hub folder that does not exist" $? 2
 mkdir -p "$T_TMP/nojq"; for b in bash cat dirname basename ps sed tr grep sleep; do ln -sf "$(command -v $b)" "$T_TMP/nojq/$b"; done
-r=$(printf '%s' "$(tc ls)" | PATH="$T_TMP/nojq" HM_AWAY_BYPASS=1 HM_PROJECT="$proj" HM_AWAY_HUB="$hub" HM_AWAY_MCP_ALLOW= "$(command -v bash)" "$HOOK" 2>&1); assert_status "jq missing" $? 2
+# a PATH without jq changes nothing (the hook fixes its own); what denies is no root-owned jq at the three fixed paths (tests/test_jq_fixed.sh has the rest)
+r=$(printf '%s' "$(tc ls)" | PATH="$T_TMP/nojq" HM_AWAY_BYPASS=1 HM_PROJECT="$proj" HM_AWAY_HUB="$hub" HM_AWAY_MCP_ALLOW= "$(command -v bash)" "$HOOK" 2>&1); assert_status "a PATH with no jq on it: the hook still finds the root-owned one" $? 0
+NJ=$(t_jq_bin nojqbin "/nonexistent/jq")
+r=$(printf '%s' "$(tc ls)" | HM_AWAY_BYPASS=1 HM_PROJECT="$proj" HM_AWAY_HUB="$hub" HM_AWAY_MCP_ALLOW= "$NJ/hm-away-hook" 2>&1); assert_status "jq missing" $? 2
 assert_contains "jq missing says so" "$r" "jq"
 r=$(printf '%s' "$(fileop Write "$proj/a.ts")" | env -u HOME HM_AWAY_BYPASS=1 HM_PROJECT="$proj" HM_AWAY_HUB="$hub" HM_AWAY_MCP_ALLOW= "$HOOK" 2>&1 >/dev/null); rc=$?
 assert_status "an internal failure (no HOME) is a denial, not exit 1" $rc 2

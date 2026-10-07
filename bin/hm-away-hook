@@ -8,6 +8,7 @@
 # away_mcp_allow, comma-separated, may be empty). Without the marker it exits 0 at once, before anything is read. With it,
 # anything it cannot read or parse is a denial.
 # Matching is by tokens and is not complete (a script the session wrote, `$'\x67'it push` and `g${e}it push` get through).
+PATH=/usr/bin:/bin:/usr/sbin:/sbin   # first of all: every program the hook and hm-lib.sh run by name comes from here, never from a PATH the session's Bash command set
 [ "${HM_AWAY_BYPASS:-}" = 1 ] || { cat >/dev/null; exit 0; }
 set -u
 # Any exit that is not 0 or an explicit denial (a bash error, an unset variable, a missing library) is a denial too: Claude Code
@@ -71,10 +72,10 @@ protected() {  # protected <path> <cwd>: the path itself, and where its links le
 }
 
 # --- inputs
-command -v jq >/dev/null 2>&1 || deny "jq is missing, so the tool call cannot be checked"
+[ -n "$HM_JQ" ] || deny "no root-owned jq was found (/usr/bin/jq, /usr/local/bin/jq or /opt/homebrew/bin/jq), so the tool call cannot be checked"
 input=$(cat) || deny "its input could not be read"
-tool=$(printf '%s' "$input" | jq -er '.tool_name | strings' 2>/dev/null) || deny "its input is not a tool call"
-cwd=$(printf '%s' "$input" | jq -r '.cwd // empty | strings' 2>/dev/null) || deny "its input could not be parsed"
+tool=$(printf '%s' "$input" | "$HM_JQ" -er '.tool_name | strings' 2>/dev/null) || deny "its input is not a tool call"
+cwd=$(printf '%s' "$input" | "$HM_JQ" -r '.cwd // empty | strings' 2>/dev/null) || deny "its input could not be parsed"
 [ -n "$cwd" ] || cwd=$PWD
 [ -n "${HM_PROJECT:-}" ] || deny "the project (HM_PROJECT) is missing from the session's launch env"
 [ -n "${HM_AWAY_HUB:-}" ] && [ -d "$HM_AWAY_HUB/.hivemind-hub" ] || deny "the hub's folder (HM_AWAY_HUB) is missing or unreadable"
@@ -104,8 +105,8 @@ add_id() {  # add_id <name> <pid> <started>
 add_orchestrator() {  # add_orchestrator <project home>
   local o pid st full live=""
   o=$(hm_self_entry "$1"); [ -n "$o" ] || return 0
-  pid=$(printf '%s' "$o" | jq -r '.claude_pid // empty'); st=$(printf '%s' "$o" | jq -r '.claude_started // empty')
-  full=$(printf '%s' "$o" | jq -r '.name_full // empty')
+  pid=$(printf '%s' "$o" | "$HM_JQ" -r '.claude_pid // empty'); st=$(printf '%s' "$o" | "$HM_JQ" -r '.claude_started // empty')
+  full=$(printf '%s' "$o" | "$HM_JQ" -r '.name_full // empty')
   [ -n "$pid" ] || return 0
   live=$(hm_session_record "$pid" .name)
   [ -z "$live" ] || add_id "$live" "$pid" "$st"
@@ -117,11 +118,11 @@ add_team() {  # add_team <project home>: its orchestrator and its agents, <proje
   while IFS=$'\x1f' read -r a pp ps; do
     [ -n "$a" ] || continue
     add_id "$(basename "$home")-$a" "$pp" "$ps"
-  done < <(jq -r '.agents[]? | [.name, .pane_pid, .pane_started] | map(. // "" | tostring) | join("\u001f")' "$home/.hivemind/team.json" 2>/dev/null)
+  done < <("$HM_JQ" -r '.agents[]? | [.name, .pane_pid, .pane_started] | map(. // "" | tostring) | join("\u001f")' "$home/.hivemind/team.json" 2>/dev/null)
 }
 msg_check() {
   local to ref pid i n live role proj p h
-  to=$(printf '%s' "$input" | jq -er '.tool_input.to' 2>/dev/null) || deny "its SendMessage target cannot be read"
+  to=$(printf '%s' "$input" | "$HM_JQ" -er '.tool_input.to' 2>/dev/null) || deny "its SendMessage target cannot be read"
   case "$to" in main) return 0 ;; esac
   # who the session is, and whom it may message
   hubpid=$(hm_json_get "$HUB/.hivemind-hub/hub.json" .claude_pid); hubst=$(hm_json_get "$HUB/.hivemind-hub/hub.json" .claude_started)
@@ -134,7 +135,7 @@ msg_check() {
       case "$h" in /*) ;; *) h="$HUB/$h" ;; esac
       p=$(cd -P "$h" 2>/dev/null && pwd -P) || continue
       add_orchestrator "$p"
-    done < <(jq -r '.projects[]?.home // empty' "$HUB/.hivemind-hub/projects.json" 2>/dev/null)
+    done < <("$HM_JQ" -r '.projects[]?.home // empty' "$HUB/.hivemind-hub/projects.json" 2>/dev/null)
   else
     add_team "$proj"
   fi
@@ -152,7 +153,7 @@ msg_check() {
   live=""
   for f in "$CONF"/sessions/*.json; do
     [ -f "$f" ] || continue
-    pid=$(jq -r --arg n "$n" 'select(.name == $n) | .pid // empty' "$f" 2>/dev/null) || continue
+    pid=$("$HM_JQ" -r --arg n "$n" 'select(.name == $n) | .pid // empty' "$f" 2>/dev/null) || continue
     [ -n "$pid" ] && hm_alive "$pid" && hm_is_claude "$pid" || continue
     live="$live $pid "
   done
@@ -169,7 +170,7 @@ msg_check() {
 # --- files
 file_check() {
   local f
-  f=$(printf '%s' "$input" | jq -er '.tool_input | (.file_path // .notebook_path) | strings' 2>/dev/null) || deny "its file path cannot be read"
+  f=$(printf '%s' "$input" | "$HM_JQ" -er '.tool_input | (.file_path // .notebook_path) | strings' 2>/dev/null) || deny "its file path cannot be read"
   protected "$f" "$cwd" && deny "$P_WHY"
   return 0
 }
@@ -178,7 +179,7 @@ file_check() {
 bn() { local t=${1##*/}; printf '%s' "$t"; }
 bash_check() {
   local cmd s seg tok toks ws i first second prev have_git="" have_push="" have_pub="" have_dock="" pkgm="" wr rt
-  cmd=$(printf '%s' "$input" | jq -er '.tool_input.command | strings' 2>/dev/null) || deny "its command cannot be read"
+  cmd=$(printf '%s' "$input" | "$HM_JQ" -er '.tool_input.command | strings' 2>/dev/null) || deny "its command cannot be read"
   s=${cmd//\'/}; s=${s//\"/}; s=${s//\\/}
   # redirect targets are looked at before the punctuation goes
   while IFS= read -r rt; do
@@ -276,7 +277,7 @@ EOF
 
 agent_check() {  # an Agent call passes unless it starts a cloud agent, which carries no marker
   local iso
-  iso=$(printf '%s' "$input" | jq -er '.tool_input.isolation // "" | strings' 2>/dev/null) || deny "the Agent call's isolation cannot be read"
+  iso=$(printf '%s' "$input" | "$HM_JQ" -er '.tool_input.isolation // "" | strings' 2>/dev/null) || deny "the Agent call's isolation cannot be read"
   [ "$iso" != remote ] || deny "a remote (cloud) agent starts with no marker and is not allowed while the owner is away"
   return 0
 }
