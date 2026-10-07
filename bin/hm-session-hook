@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# SessionStart hook. Silent and harmless anywhere hivemind did not spawn this pane: it never fails the session, so every
+# SessionStart hook. Silent and harmless anywhere hivehouse did not spawn this pane: it never fails the session, so every
 # path exits 0. The project and agent come from the registry hm-spawn wrote, never from the cwd; only the owner's hub is
 # known by its folder.
 set -u
@@ -10,7 +10,7 @@ input=$(cat)
 cwd=$(printf '%s' "$input" | jq -r '.cwd // empty' 2>/dev/null)
 if [ -n "$cwd" ] && [ -d "$cwd/$HM_HUB_DIR" ] && [ ! -L "$cwd/$HM_HUB_DIR" ]; then
   plugin=$(hm_plugin_name) || exit 0
-  printf 'This session is the owner'"'"'s hivemind hub (%s/%s). Before anything else, invoke the %s:hub skill with the Skill tool and follow it.\n' "$cwd" "$HM_HUB_DIR" "$plugin"
+  printf 'This session is the owner'"'"'s hivehouse hub (%s/%s). Before anything else, invoke the %s:hub skill with the Skill tool and follow it.\n' "$cwd" "$HM_HUB_DIR" "$plugin"
   exit 0
 fi
 [ -n "${TMUX:-}" ] && [ -n "${TMUX_PANE:-}" ] || exit 0

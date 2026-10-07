@@ -3,8 +3,8 @@
 . "$HM_REPO_ROOT/bin/hm-lib.sh"
 t_setup
 r=$(t_repo proj)
-assert_eq "home is HIVEMIND_HOME" "$(hm_home)" "$HIVEMIND_HOME"
-( unset HIVEMIND_HOME; assert_eq "home defaults" "$(hm_home)" "$HOME/$T_STATE" )
+assert_eq "home is HIVEHOUSE_HOME" "$(hm_home)" "$HIVEHOUSE_HOME"
+( unset HIVEHOUSE_HOME; assert_eq "home defaults" "$(hm_home)" "$HOME/$T_STATE" )
 assert_eq "root from repo" "$(cd "$r" && hm_project_root)" "$r"
 git -C "$r" worktree add -q "$T_TMP/proj-wt" -b wt
 assert_eq "root from a worktree is the main repo" "$(cd "$T_TMP/proj-wt" && hm_project_root)" "$r"

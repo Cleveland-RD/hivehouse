@@ -7,7 +7,7 @@
 . "$HM_REPO_ROOT/bin/hm-lib.sh"
 t_setup
 export HM_SUDO_LOG="$T_TMP/sudo.log"; : > "$HM_SUDO_LOG"
-env -u HIVEMIND_HOME tmux -S "$HM_TMUX_SOCKET" new-session -d -s keep 'sleep 600'
+env -u HIVEHOUSE_HOME tmux -S "$HM_TMUX_SOCKET" new-session -d -s keep 'sleep 600'
 H="$T_TMP/work"; mkdir -p "$H"; H=$(cd "$H" && pwd -P); P="$H/$T_HUB"
 mk() { local d="$H/$1"; mkdir -p "$d"; git -C "$d" init -q -b main; git -C "$d" config user.email t@t; git -C "$d" config user.name t
        echo x > "$d/README"; git -C "$d" add README; git -C "$d" commit -qm init; }
@@ -33,7 +33,7 @@ mkcl() {  # mkcl <bin dir> [noself]: a stand-in for the hub's Claude: it records
 }
 mkcl_node() {  # mkcl_node <bin dir>: the same stand-in as a node script named claude, which ps -E can show the environment of
   local d; d=$(mktemp -d "$T_TMP/cln.XXXXXX")
-  local e; e=$(jq -nc --arg PATH "$PATH" --arg HOME "$HOME" --arg HIVEMIND_HOME "$HIVEMIND_HOME" --arg HM_TMUX_SOCKET "$HM_TMUX_SOCKET" --arg CLAUDE_CONFIG_DIR "$CLAUDE_CONFIG_DIR" --arg HM_MANAGED_SETTINGS "$HM_MANAGED_SETTINGS" '$ARGS.named')
+  local e; e=$(jq -nc --arg PATH "$PATH" --arg HOME "$HOME" --arg HIVEHOUSE_HOME "$HIVEHOUSE_HOME" --arg HM_TMUX_SOCKET "$HM_TMUX_SOCKET" --arg CLAUDE_CONFIG_DIR "$CLAUDE_CONFIG_DIR" --arg HM_MANAGED_SETTINGS "$HM_MANAGED_SETTINGS" '$ARGS.named')
   printf 'const { spawnSync } = require("child_process")\nconst env = Object.assign({}, %s, process.env)\nspawnSync(%s, ["self", "--name", "hub"], { cwd: %s, stdio: "ignore", env })\nconst r = spawnSync(%s, process.argv.slice(2), { cwd: %s, stdio: "inherit", env })\nprocess.exit(r.status === null ? 1 : r.status)\n' "$e" "\"$1/hm-hub\"" "\"$H\"" "\"$1/hm-hub\"" "\"$H\"" > "$d/claude"; printf '%s\n' "$d/claude"
 }
 CLP=$(mkcl "$HM_REPO_ROOT/bin"); CLD=$(mkcl "$DB")
@@ -281,7 +281,7 @@ assert_status "a log while recover is still reading state" "$lrc" 0
 [ $((t1 - t0)) -le 2 ] && ok "...is not held up by it" || bad "the log waited $((t1 - t0)) s for the lock"
 wait "$sr"; assert_eq "...and recover still finishes" "$(jq -r .away "$T_TMP/slowrec.out")" "true"
 # a start waiting on a dialog is the owner's
-dp=$(hm_open_window delta orchestrator "$H/delta" "exec claude" -e "HM_FAKE_CLAUDE=dialog" -e "HIVEMIND_HOME=$HIVEMIND_HOME" -e "HM_TMUX_SOCKET=$HM_TMUX_SOCKET"); sleep 1
+dp=$(hm_open_window delta orchestrator "$H/delta" "exec claude" -e "HM_FAKE_CLAUDE=dialog" -e "HIVEHOUSE_HOME=$HIVEHOUSE_HOME" -e "HM_TMUX_SOCKET=$HM_TMUX_SOCKET"); sleep 1
 di=$(hm_pane_identity "$HM_TMUX_SOCKET" "$dp"); mkdir -p "$P/panes"
 jq -nc --arg p "$dp" --arg s "$HM_TMUX_SOCKET" --arg i "${di%%$'\t'*}" --arg t "${di#*$'\t'}" '{pane:$p, socket:$s, pane_pid:$i, pane_started:$t, kind:"wake", line:"x", typed:false, sender_pid:"1", sender_started:"x", at:"2026-10-06T00:00:00Z"}' > "$P/panes/delta.json"
 r=$(rec --json)

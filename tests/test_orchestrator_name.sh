@@ -4,7 +4,7 @@
 . "$HM_REPO_ROOT/bin/hm-lib.sh"
 t_setup
 r=$(t_repo proj); cd "$r"; mkdir -p $T_STATE; echo role > "$T_TMP/impl.md"; echo rules > "$T_TMP/RULES.md"
-env -u HIVEMIND_HOME tmux -S "$HM_TMUX_SOCKET" new-session -d -s keep 'sleep 600'
+env -u HIVEHOUSE_HOME tmux -S "$HM_TMUX_SOCKET" new-session -d -s keep 'sleep 600'
 # a Claude stand-in (an interpreter running a script named claude) that stays alive
 mkdir -p "$T_TMP/cl" "$CLAUDE_CONFIG_DIR/sessions"; printf '#!/usr/bin/env bash\nexec -a "$0" sleep 600\n' > "$T_TMP/cl/claude"
 bash "$T_TMP/cl/claude" & cpid=$!; t_track "$cpid"; sleep 0.3
@@ -21,7 +21,7 @@ assert_eq "a later /rename is followed" "$(hm_orchestrator_name "$r")" "renamed 
 team "at-self"
 record 'has"quote'
 assert_eq "a name with a quote is not typed: the recorded one" "$(hm_orchestrator_name "$r" 2>"$T_TMP/err")" "at-self"
-assert_contains "...and says so" "$(cat "$T_TMP/err")" "not one hivemind will type"
+assert_contains "...and says so" "$(cat "$T_TMP/err")" "not one hivehouse will type"
 record "$(printf 'two\nlines')"
 assert_eq "a name with a newline is not typed" "$(hm_orchestrator_name "$r" 2>/dev/null)" "at-self"
 record "$(printf 'x%.0s' $(seq 1 65))"
@@ -77,7 +77,7 @@ assert_contains "...and the orchestrator gets its own short line" "$(hm_tmux cap
 # a Claude stand-in that writes its own session record, as Claude Code does, then runs hm-spawn --self below itself
 rm -f $T_STATE/team.json; mkdir -p "$T_TMP/cl2"
 printf '#!/usr/bin/env bash\njq -nc --argjson p $$ --arg n "$SELF_NAME" '"'"'{pid:$p,name:$n}'"'"' > "$CLAUDE_CONFIG_DIR/sessions/$$.json"\nhm-spawn "$@"; echo rc=$? >>"$SELF_OUT"; sleep 30\n' > "$T_TMP/cl2/claude"
-selfrun() { local o="$1"; shift; hm_tmux new-session -d -c "$r" -e "HIVEMIND_HOME=$HIVEMIND_HOME" -e "SELF_OUT=$o" -e "SELF_NAME=$SELF_NAME" "bash $T_TMP/cl2/claude $(printf '%q ' "$@") >>$o 2>&1"; sleep 2; }
+selfrun() { local o="$1"; shift; hm_tmux new-session -d -c "$r" -e "HIVEHOUSE_HOME=$HIVEHOUSE_HOME" -e "SELF_OUT=$o" -e "SELF_NAME=$SELF_NAME" "bash $T_TMP/cl2/claude $(printf '%q ' "$@") >>$o 2>&1"; sleep 2; }
 SELF_NAME="owner-orch" selfrun "$T_TMP/s1.out" --self --agent orchestrator
 assert_contains "--self ran" "$(cat "$T_TMP/s1.out")" "rc=0"
 assert_eq "--self records the session's own name" "$(jq -r '.agents[]|select(.name=="orchestrator").name_full' $T_STATE/team.json)" "owner-orch"

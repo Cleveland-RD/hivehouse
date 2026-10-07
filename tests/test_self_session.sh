@@ -18,7 +18,7 @@ printf '%s' "$HOOK_IN" | hm-session-hook; echo hooked >> "$OUT"
 exec sleep 30
 EOF
 selfrun() {  # selfrun <out> <session id> [hook input]
-  hm_tmux new-session -d -c "$r" -e "HIVEMIND_HOME=$HIVEMIND_HOME" -e "OUT=$1" -e "SID=$2" -e "HOOK_IN=${3:-}" \
+  hm_tmux new-session -d -c "$r" -e "HIVEHOUSE_HOME=$HIVEHOUSE_HOME" -e "OUT=$1" -e "SID=$2" -e "HOOK_IN=${3:-}" \
     "bash $T_TMP/cl/claude --self --agent orchestrator >/dev/null"
   sleep 2
 }

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Context level from the session transcript (not the pane's status line, which is the owner's own setup).
-# hm-context <agent> [--window <tokens>] | --all.  Exit: 2 no project / no session or usable transcript, 3 .hivemind
+# hm-context <agent> [--window <tokens>] | --all.  Exit: 2 no project / no session or usable transcript, 3 .hivehouse
 # tracked, 4 bad window, 64 usage. The window is Claude Code's own (context.json, which hm-statusline keeps for a spawned
 # agent), when it was read for the agent's current session; else --window; else the agent's `window` in team.json (written
 # at spawn), default 200000. It is never inferred from a model name. A window that was not measured or given is a guess,
@@ -12,7 +12,7 @@ set -u
 ROOT=$(hm_project_root) || exit $?
 STATE="$ROOT/$HM_STATE_DIR"
 if [ -n "$(git -C "$ROOT" ls-files -- "$HM_STATE_DIR")" ]; then
-  hm_die 3 "files under $HM_STATE_DIR/ are tracked by git; untrack them before using hivemind here"
+  hm_die 3 "files under $HM_STATE_DIR/ are tracked by git; untrack them before using hivehouse here"
 fi
 pct() {  # pct <agent> [window]
   local a="$1" win="${2:-}" s t used c sid m

@@ -115,14 +115,14 @@ case "${1:-}" in
     if [ "$MACHINE" = 1 ]; then echo "hm-slot: the machine slot, $SLOT_DIR" >&2
     else echo "hm-slot: this user's own slot, $SLOT_DIR ($SLOT_WHY)" >&2; fi ;;
   setup)
-    # Prints the lines; hivemind never runs sudo. macOS: every local user is in staff. Linux: the group is named in the line.
+    # Prints the lines; hivehouse never runs sudo. macOS: every local user is in staff. Linux: the group is named in the line.
     [ $# -le 2 ] || hm_die 64 "usage: hm-slot setup [<group>]"
     grp="${2:-}"; wheel=root
     if [ -d /System/Library ]; then [ -n "$grp" ] || grp=staff; wheel=wheel
     else [ -n "$grp" ] || hm_die 64 "usage: hm-slot setup <group>   (the group whose users share the slot; every one of them must be in it)"; fi
     case "$grp" in *[!${HM_LOWER}${HM_UPPER}${HM_DIGITS}_-]*) hm_die 64 "a group name is letters, digits, _ and -" ;; esac
     slot=$(hm_machine_slot_dir); par=${slot%/*}
-    echo "# Run once, as an administrator. It makes the one heavy-job slot for every user of this machine (hivemind never runs sudo)."
+    echo "# Run once, as an administrator. It makes the one heavy-job slot for every user of this machine (hivehouse never runs sudo)."
     echo "# Until it is made, each user has a slot of their own. The slot is coordination, not a security boundary."
     echo "sudo mkdir -p -- '$slot/queue'"
     echo "sudo chown root:$wheel -- '$par'"

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# hm_stop_hung (bin/hm-lib.sh): the one place hivemind stops a process it did not just start, for a session whose working line
+# hm_stop_hung (bin/hm-lib.sh): the one place hivehouse stops a process it did not just start, for a session whose working line
 # has not moved (Phase 4.3, A10). It stops the recorded pid only while that pid still has its recorded start time, is still
 # Claude, and its pane still shows the same working line; TERM, up to 10 s, then KILL only the same process. The frozen screen is
 # a REAL capture (tests/fixtures/working/06-working-7s.ansi, "6s") drawn in a tmux pane; the "frozen for 15 minutes" is the hung
@@ -8,7 +8,7 @@
 . "$HM_REPO_ROOT/bin/hm-lib.sh"
 t_setup
 W="$HM_REPO_ROOT/tests/fixtures/working"; D="$HM_REPO_ROOT/tests/fixtures/dialogs"
-env -u HIVEMIND_HOME tmux -S "$HM_TMUX_SOCKET" new-session -d -s keep 'sleep 600'
+env -u HIVEHOUSE_HOME tmux -S "$HM_TMUX_SOCKET" new-session -d -s keep 'sleep 600'
 # frozen <fixture> [trap]: a pane that draws the capture, then is a process named claude (TERM ignored when trap is given); sets PANE, PID, STARTED
 frozen() {
   local pre=""; [ "${2:-}" = trap ] && pre="trap '' TERM; "

@@ -29,7 +29,7 @@ no "$T/missing" "a folder that does not exist is not trusted"
 echo '{not json' > "$CJ"; no "$T/plain" "an unreadable config trusts nothing"
 
 # hm-spawn: the warning before a launch into a worktree
-env -u HIVEMIND_HOME tmux -S "$HM_TMUX_SOCKET" new-session -d -s keep 'sleep 600'
+env -u HIVEHOUSE_HOME tmux -S "$HM_TMUX_SOCKET" new-session -d -s keep 'sleep 600'
 r=$(t_repo proj); cd "$r"; echo role > "$T_TMP/impl.md"; echo rules > "$T_TMP/RULES.md"
 spawn() { hm-spawn --agent "$1" --role "$T_TMP/impl.md" --rules "$T_TMP/RULES.md" --model sonnet --effort medium --mode auto --still 2 --max-wait 15 "${@:2}"; }
 rm -f "$CJ"

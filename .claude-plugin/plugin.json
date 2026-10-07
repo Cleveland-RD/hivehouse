@@ -1,10 +1,10 @@
 {
-  "name": "hivemind",
+  "name": "hivehouse",
   "version": "0.4.0",
   "description": "Run a feature with a team of Claude sessions in tmux: plan, build, review, gate, rotate, overnight, clean up.",
   "author": { "name": "Cleveland R&D" },
   "license": "MIT",
-  "repository": "https://github.com/Cleveland-RD/hivemind",
+  "repository": "https://github.com/Cleveland-RD/hivehouse",
   "types": "./types/index.d.ts",
   "keywords": ["orchestration", "tmux", "agents", "review", "workflow"],
   "userConfig": {
@@ -20,12 +20,12 @@
     "window_builder": { "type": "number", "title": "Builder context window (tokens)", "description": "Used only when Claude Code's own reading of the window is missing; never inferred from a model name", "default": 200000, "min": 1000 },
     "window_reviewer": { "type": "number", "title": "Reviewer context window (tokens)", "description": "Used only when Claude Code's own reading of the window is missing; never inferred from a model name", "default": 200000, "min": 1000 },
     "permission_mode_local": { "type": "string", "title": "Agents' permission mode on this machine", "description": "Bypass permissions is never used locally, except while the hub is in delegate mode (the owner is away): that needs this set to auto", "options": ["plan", "dontAsk", "default", "acceptEdits", "auto"], "default": "auto" },
-    "remote_hosts": { "type": "string", "title": "Known remote hosts (comma-separated ssh names)", "description": "ssh host names hivemind may run overnight work on", "default": "" },
+    "remote_hosts": { "type": "string", "title": "Known remote hosts (comma-separated ssh names)", "description": "ssh host names hivehouse may run overnight work on", "default": "" },
     "dedicated_hosts": { "type": "string", "title": "Remote hosts dedicated to agents (bypass allowed)", "description": "Comma-separated ssh names where bypass permissions may be used, asked again each time", "default": "" },
     "rotate_at_percent": { "type": "number", "title": "Context level that triggers a handoff", "description": "Percent of the context window at which an agent hands off and is cleared", "default": 50, "min": 10, "max": 95 },
     "overnight_ceiling_usd": { "type": "number", "title": "Spending ceiling per overnight run (USD)", "description": "A project may only lower this", "default": 50, "min": 0 },
     "heartbeat_minutes": { "type": "number", "title": "Overnight heartbeat interval (minutes)", "description": "How often the orchestrator checks context, disk, queue and spend", "default": 30, "min": 1 },
-    "hub_auto_start": { "type": "boolean", "title": "Hub names itself and greets", "description": "A plain claude started in the hub's folder names itself hub (or hub-2...) and opens the hub, which takes one model turn; when off, start it with claude --name hub /hivemind:hub", "default": true },
+    "hub_auto_start": { "type": "boolean", "title": "Hub names itself and greets", "description": "A plain claude started in the hub's folder names itself hub (or hub-2...) and opens the hub, which takes one model turn; when off, start it with claude --name hub /hivehouse:hub", "default": true },
     "hub_max_starts_per_day": { "type": "number", "title": "Hub: sessions started or woken per day while away", "description": "Delegate mode: the most sessions the hub starts or wakes in 24 hours before it keeps the rest for you. A guideline the hub passes to hm-hub recover, not a guard", "default": 10, "min": 1 },
     "away_mcp_allow": { "type": "string", "title": "Away: MCP servers an away hub may use", "description": "Comma-separated MCP server names, or mcp__<server>__<tool>, loaded for the hub started by hm-hub away (none by default). Allowing a server allows its write tools too", "default": "" },
     "min_free_gb": { "type": "number", "title": "Free disk (GB) below which cleanup runs", "description": "Below this, sessions get a low-disk warning and cleanup runs", "default": 20, "min": 0 }

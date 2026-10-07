@@ -11,7 +11,7 @@ locale -a 2>/dev/null | grep -qix "$LOC" || { echo "  SKIP the $LOC locale is no
 t_setup
 export LC_ALL=$LOC
 trim() { sed 's/^ *//;s/ *$//'; }
-env -u HIVEMIND_HOME tmux -S "$HM_TMUX_SOCKET" new-session -d -s keep 'sleep 600'
+env -u HIVEHOUSE_HOME tmux -S "$HM_TMUX_SOCKET" new-session -d -s keep 'sleep 600'
 sleep 300 >/dev/null 2>&1 & pold=$!; t_track "$pold"; sleep 2   # started at another second than p
 sleep 300 >/dev/null 2>&1 & p=$!; t_track "$p"
 C=$(LC_ALL=C /bin/ps -o lstart= -p "$p" | trim); L=$(/bin/ps -o lstart= -p "$p" | trim)

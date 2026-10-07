@@ -6,7 +6,7 @@
 t_setup
 cd "$HM_REPO_ROOT"
 # ---- the grep: what is left once the allowed places and the comments are taken away ----
-NAMES='\.hivemind|hivemind-(hub|delegate)|/hivemind($|[^a-z-])|["'"'"'`]hivemind: |hivemind:[a-z]|hivemind@'
+NAMES='\.hivehouse|hivehouse-(hub|delegate)|/hivehouse($|[^a-z-])|["'"'"'`]hivehouse: |hivehouse:[a-z]|hivehouse@'
 stray() {  # stray <file>...: the lines of those files that spell a name outside a comment; a constants line is allowed
   local f
   for f in "$@"; do

@@ -22,7 +22,7 @@ CONSTRAINTS
 - Files: <what may be touched, what may not>
 - Commits: <--max-files N (hm-settings files_per_commit), --style <S> (userConfig commit_style), --attribution <allow|deny> (hm-settings allow_attribution); no push>
 - Heavy jobs: through hm-slot; paid steps only on the owner's word (state any price)
-- Rules: .hivemind/team/<agent>/RULES.md and your role file beside it
+- Rules: .hivehouse/team/<agent>/RULES.md and your role file beside it
 
 REPORT BACK
 Verdict first (DONE / BLOCKED / FAIL), then evidence (commands, log path, tip hash), then what was not run and why.

@@ -7,7 +7,7 @@
 . "$HM_REPO_ROOT/bin/hm-lib.sh"
 t_setup
 eval "$(sed -n '/^hung_try() {/,/^}/p' "$HM_REPO_ROOT/bin/hm-hub")"
-env -u HIVEMIND_HOME tmux -S "$HM_TMUX_SOCKET" new-session -d -s keep 'sleep 600'
+env -u HIVEHOUSE_HOME tmux -S "$HM_TMUX_SOCKET" new-session -d -s keep 'sleep 600'
 PANE=$(hm_tmux new-window -d -P -F '#{pane_id}' -t keep: -n w "exec bash -c \"cat '$HM_REPO_ROOT/tests/fixtures/working/06-working-7s.ansi'; exec -a claude sleep 600\""); sleep 1
 ident=$(hm_pane_identity "$HM_TMUX_SOCKET" "$PANE"); PID=${ident%%$'\t'*}; STARTED=${ident#*$'\t'}; t_track "$PID"
 RJ="$T_TMP/recovery.jsonl"; : > "$RJ"

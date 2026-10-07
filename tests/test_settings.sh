@@ -55,7 +55,7 @@ set_project '{"allow_attributon":false}'; hm-settings resolve allow_attribution 
 set_project '{not json'; hm-settings resolve files_per_commit 5 >/dev/null 2>&1; assert_status "bad json refused" $? 4
 hm-settings resolve >/dev/null 2>&1; assert_status "usage" $? 64
 
-# a tracked .hivemind is refused, with no value printed
+# a tracked .hivehouse is refused, with no value printed
 set_project '{"files_per_commit":1}'; git add -f $T_STATE/settings.json; git -c user.email=t@t -c user.name=t commit -qm track
 out=$(hm-settings resolve files_per_commit 5 2>/dev/null); assert_status "tracked refused" $? 3
 assert_eq "tracked prints nothing" "$out" ""

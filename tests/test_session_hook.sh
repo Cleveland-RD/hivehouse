@@ -63,7 +63,7 @@ for loc in C en_US.UTF-8; do
   (export LC_ALL=$loc; inpane "$r" $P); assert_status "a capital agent name exits 0 under $loc" $? 0
   [ -e "$r/$T_STATE/team/Upper" ] && bad "a capital agent name wrote under $loc" || ok "a capital agent name wrote nothing under $loc"
 done
-# a tracked .hivemind is never written to
+# a tracked .hivehouse is never written to
 reg "$r" implementer
 echo '{}' > "$r/$T_STATE/team/implementer/other.json"; git -C "$r" add -f $T_STATE/team/implementer/other.json
 rm -f "$r/$T_STATE/team/implementer/session.json"; inpane "$r" $P; assert_status "tracked $T_STATE exits 0" $? 0

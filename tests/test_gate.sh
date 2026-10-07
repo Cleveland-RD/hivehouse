@@ -4,7 +4,7 @@ t_setup
 r=$(t_repo proj); cd "$r"
 LOG="$T_TMP/gate.log"
 
-LOCK="$HIVEMIND_HOME/slot.lock"
+LOCK="$HIVEHOUSE_HOME/slot.lock"
 steps() { grep -v '^#' "$1"; }   # the step lines of a gate log, without its header
 head_now=$(git rev-parse HEAD)
 

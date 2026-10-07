@@ -4,7 +4,7 @@
 . "$(dirname "$0")/lib.sh"
 . "$HM_REPO_ROOT/bin/hm-lib.sh"
 t_setup
-env -u HIVEMIND_HOME tmux -S "$HM_TMUX_SOCKET" new-session -d -s keep 'sleep 600'
+env -u HIVEHOUSE_HOME tmux -S "$HM_TMUX_SOCKET" new-session -d -s keep 'sleep 600'
 H="$T_TMP/work"; mkdir -p "$H"; H=$(cd "$H" && pwd -P); P="$H/$T_HUB"
 hub() { (cd "$H" && hm-hub "$@"); }
 mk() { local d="$H/$1"; mkdir -p "$d"; git -C "$d" init -q -b main; git -C "$d" config user.email t@t; git -C "$d" config user.name t
@@ -133,7 +133,7 @@ assert_eq "...and its new last title counts: it is no orchestrator's now, so the
 { jq -nc '{type:"custom-title", customTitle:"res-orchestrator", sessionId:"bbbb2222-0000-0000-0000-000000000002"}'; } >> "$CLAUDE_CONFIG_DIR/projects/$(key "$HOME_RES")/bbbb2222-0000-0000-0000-000000000002.jsonl"
 assert_eq "...and a later rename back counts again" "$(rs '.projects[0].orchestrator.session_id')" "bbbb2222-0000-0000-0000-000000000002"
 # a kept answer is checked like a fresh one: a bad id or a non-numeric time is a miss, read again; and a miss prints nothing on stderr
-RCK=$(grep -l 'bbbb2222-0000-0000-0000-000000000002' "$HIVEMIND_HOME"/cache/resume-* | head -1)
+RCK=$(grep -l 'bbbb2222-0000-0000-0000-000000000002' "$HIVEHOUSE_HOME"/cache/resume-* | head -1)
 assert_status "(the kept answer is on disk)" $([ -n "$RCK" ] && echo 0 || echo 1) 0
 RFP=$(cut -f1 "$RCK")
 printf '%s\t%s\t%s\n' "$RFP" 'not an id; $(x)' 123 > "$RCK"
@@ -209,7 +209,7 @@ assert_contains "the plain status names the root of a stopped one of two same-na
 mk wr; hub add wr --home wr >/dev/null
 WR="$H/wr-wt"; git -C "$H/wr" worktree add -q "$WR" -b wr-team; WR=$(cd "$WR" && pwd -P); mkdir -p "$WR/$T_STATE/team/orchestrator"
 SB="$T_TMP/b.sock"
-WRPANE=$(env -u HIVEMIND_HOME tmux -S "$SB" new-session -d -x 200 -y 56 -P -F '#{pane_id}' -s wrb -c "$WR" -e "HM_FAKE_CLAUDE=idle" 'exec claude --name wr-orchestrator') || WRPANE=""
+WRPANE=$(env -u HIVEHOUSE_HOME tmux -S "$SB" new-session -d -x 200 -y 56 -P -F '#{pane_id}' -s wrb -c "$WR" -e "HM_FAKE_CLAUDE=idle" 'exec claude --name wr-orchestrator') || WRPANE=""
 t_track "$(tmux -S "$SB" display -p '#{pid}')"
 ( exec -a claude sleep 300 ) >/dev/null 2>&1 & WRC=$!; disown "$WRC"; t_track "$WRC"; sleep 0.3
 wi=$(hm_pane_identity "$SB" "$WRPANE")

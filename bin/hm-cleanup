@@ -2,11 +2,11 @@
 # Remove only what the manifest recorded. Never runs a command from it: what to do is derived from the entry's kind,
 # and every entry is judged again when it is acted on (A5, A18), since a line is only as safe as the check made when
 # it is read. Newest entries first; an entry acted on is dropped, one kept or skipped stays.
-#   --disk    deletes temporary files and dirs (under $TMPDIR, /tmp, /private/tmp or <root>/.hivemind/tmp) only
-#   --finish  also moves other files and dirs to .hivemind/trash/<date>/, stops processes, kills panes and removes
+#   --disk    deletes temporary files and dirs (under $TMPDIR, /tmp, /private/tmp or <root>/.hivehouse/tmp) only
+#   --finish  also moves other files and dirs to .hivehouse/trash/<date>/, stops processes, kills panes and removes
 #             merged, clean worktrees
 #   --dry-run prints the same lines and changes nothing
-# Exit: 2 no project, 3 .hivemind tracked, 64 usage, 75 another cleanup is running here.
+# Exit: 2 no project, 3 .hivehouse tracked, 64 usage, 75 another cleanup is running here.
 set -u
 HM_BIN=${0%/*}; [ "$HM_BIN" != "$0" ] || HM_BIN=.   # parameter expansion, never dirname: under -p a function is ignored, an executable on PATH is not
 . "$HM_BIN/hm-lib.sh"

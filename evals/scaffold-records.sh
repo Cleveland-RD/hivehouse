@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# A small project whose every fact first-run.md looks for is recorded and checks out, so /hivemind:start has nothing to
+# A small project whose every fact first-run.md looks for is recorded and checks out, so /hivehouse:start has nothing to
 # ask about the project and goes on to its plan. Files and git state only: the eval loads no configuration it writes.
 # Every case's scaffold.sh is the same two lines sourcing this file (tests/test_evals.sh keeps them so).
 set -eu

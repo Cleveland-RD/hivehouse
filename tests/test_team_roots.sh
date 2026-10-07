@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Where a project's team is: its home, then each worktree of the home's repository that has .hivemind/team.json. Read without git (git comes
+# Where a project's team is: its home, then each worktree of the home's repository that has .hivehouse/team.json. Read without git (git comes
 # from PATH, which an away session's own Bash command sets), from the two pointers git keeps: <home>/.git/worktrees/<name>/gitdir and the
 # worktree's own .git file; a worktree counts only when both agree. hm_repo_home maps a team root to its repository's home.
 . "$(dirname "$0")/lib.sh"

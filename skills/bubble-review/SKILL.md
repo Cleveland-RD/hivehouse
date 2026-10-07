@@ -5,7 +5,7 @@ when_to_use: When asked to review, "find bubbles", "any bubbles?", or to judge a
 allowed-tools: Bash(hm-gate-verify *) Bash(hm-slot status) Bash(hm-slot release *) Bash(hm-settings resolve *) Read Grep Glob
 ---
 
-# hivemind: bubble-review
+# hivehouse: bubble-review
 
 Read `${CLAUDE_PLUGIN_ROOT}/rules/RULES.md` and `${CLAUDE_PLUGIN_ROOT}/roles/reviewer.md` first. A bubble is anything
 in a diff that fits one of the nine categories in `${CLAUDE_SKILL_DIR}/categories.md`; read that file before a standard

@@ -1,3 +1,3 @@
 #!/usr/bin/env bash
-# Stand-in for `sudo` in tests: hivemind never runs it, so any call is recorded (HM_SUDO_LOG) and fails.
+# Stand-in for `sudo` in tests: hivehouse never runs it, so any call is recorded (HM_SUDO_LOG) and fails.
 echo "sudo $*" >> "${HM_SUDO_LOG:-/dev/null}"; exit 1

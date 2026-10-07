@@ -4,7 +4,7 @@ Look before asking. Order: what the project records, then what the code shows, t
 
 ## 1. What the project records
 
-`CLAUDE.md`, `CLAUDE.local.md`, the memory index, `README`, `docs/`, `.hivemind/` (an earlier run may have recorded
+`CLAUDE.md`, `CLAUDE.local.md`, the memory index, `README`, `docs/`, `.hivehouse/` (an earlier run may have recorded
 these already). Take a fact from here as recorded, but still run its check below.
 
 ## 2. What the code shows
@@ -34,7 +34,7 @@ these already). Take a fact from here as recorded, but still run its check below
 
 What remains unknown, ambiguous (two start commands, which is the dev one), or failed its check. Show the finding next to
 each question, multiple choice where possible, and ask where each answer is recorded: for everyone on the project in
-`CLAUDE.md`; about this machine (ports, hosts, local URLs, the remote's name) in `CLAUDE.local.md` or `.hivemind/`, so a
+`CLAUDE.md`; about this machine (ports, hosts, local URLs, the remote's name) in `CLAUDE.local.md` or `.hivehouse/`, so a
 committed file never publishes them. Write nothing until the owner says OK.
 
 ## Markers

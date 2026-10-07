@@ -6,15 +6,15 @@ export PATH="$HM_REPO_ROOT/tests/bin:$HM_REPO_ROOT/bin:$PATH"   # the fake claud
 # The names, stated here for every test and spelled in no other test (tests/test_names.sh holds it to that). They are written out,
 # not read from bin/, so that a name changed there alone fails the tests. The plugin's name is read from plugin.json, the one
 # place it lives.
-T_STATE='.hivemind'                       # a project's state folder
-T_HUB='.hivemind-hub'                     # the hub's folder
-T_HOMEDIR='.hivemind'                     # the per-user home, under $HOME
-T_MAC_BASE='/Library/Application Support/hivemind'   # the delegate files' folder, and the machine slot's, on macOS
-T_LINUX_BASE='/etc/hivemind'              # the delegate files' folder on Linux
-T_LINUX_SLOT='/var/lib/hivemind/slot'     # the machine slot on Linux
-T_DELEGATE_LINE1='hivemind-delegate 1'    # the delegate file's first line
-T_PREFIX='hivemind'                       # what a message begins with: "<prefix>: ..."
-T_PANE='hivemind-hub'                     # the hub screen's pane
+T_STATE='.hivehouse'                       # a project's state folder
+T_HUB='.hivehouse-hub'                     # the hub's folder
+T_HOMEDIR='.hivehouse'                     # the per-user home, under $HOME
+T_MAC_BASE='/Library/Application Support/hivehouse'   # the delegate files' folder, and the machine slot's, on macOS
+T_LINUX_BASE='/etc/hivehouse'              # the delegate files' folder on Linux
+T_LINUX_SLOT='/var/lib/hivehouse/slot'     # the machine slot on Linux
+T_DELEGATE_LINE1='hivehouse-delegate 1'    # the delegate file's first line
+T_PREFIX='hivehouse'                       # what a message begins with: "<prefix>: ..."
+T_PANE='hivehouse-hub'                     # the hub screen's pane
 T_PLUGIN=$(jq -r .name "$HM_REPO_ROOT/.claude-plugin/plugin.json")
 FAILS=0
 T_TMP=""
@@ -92,7 +92,7 @@ t_setup() {
   t_sweep_stale
   T_TMP="$(mktemp -d "${TMPDIR:-/tmp}/hmtest.XXXXXX")"; T_TMP="$(cd "$T_TMP" && pwd -P)"
   printf '%s\t%s\n' "$$" "$(t_lstart $$)" > "$T_TMP/run.owner"
-  export HIVEMIND_HOME="$T_TMP/home"; mkdir -p "$HIVEMIND_HOME"
+  export HIVEHOUSE_HOME="$T_TMP/home"; mkdir -p "$HIVEHOUSE_HOME"
   export HM_TMUX_SOCKET="$T_TMP/tmux.sock"
   # Claude Code's settings are the run's own, never the machine's: the user's, through CLAUDE_CONFIG_DIR, and managed
   export CLAUDE_CONFIG_DIR="$T_TMP/claude-config" HM_MANAGED_SETTINGS="$T_TMP/managed-settings.json"; mkdir -p "$CLAUDE_CONFIG_DIR"
@@ -174,7 +174,7 @@ t_env_probe() {  # t_env_probe <NAME=value> [argument]...: the arguments become 
 # it. Launched as `[VAR=x] node <script> <command>...`, it is a Claude whose launch environment ps -E can show. Prints its path.
 t_node_claude() {
   local d e; d=$(mktemp -d "$T_TMP/ncl.XXXXXX")
-  e=$(jq -nc --arg PATH "$PATH" --arg HOME "$HOME" --arg HIVEMIND_HOME "${HIVEMIND_HOME:-}" --arg HM_TMUX_SOCKET "${HM_TMUX_SOCKET:-}" --arg CLAUDE_CONFIG_DIR "${CLAUDE_CONFIG_DIR:-}" --arg HM_MANAGED_SETTINGS "${HM_MANAGED_SETTINGS:-}" '$ARGS.named')
+  e=$(jq -nc --arg PATH "$PATH" --arg HOME "$HOME" --arg HIVEHOUSE_HOME "${HIVEHOUSE_HOME:-}" --arg HM_TMUX_SOCKET "${HM_TMUX_SOCKET:-}" --arg CLAUDE_CONFIG_DIR "${CLAUDE_CONFIG_DIR:-}" --arg HM_MANAGED_SETTINGS "${HM_MANAGED_SETTINGS:-}" '$ARGS.named')
   if [ -n "${2:-}" ]; then
     printf 'const { spawnSync } = require("child_process")\nconst env = Object.assign({}, %s, process.env)\nspawnSync(%s, ["self", "--name", "hub"], { cwd: %s, stdio: "ignore", env })\nconst r = spawnSync(process.argv[2], process.argv.slice(3), { cwd: %s, stdio: "inherit", env })\nprocess.exit(r.status === null ? 1 : r.status)\n' "$e" "\"$2\"" "\"$1\"" "\"$1\"" > "$d/claude"
   else

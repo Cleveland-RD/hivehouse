@@ -3,7 +3,7 @@
 . "$HM_REPO_ROOT/bin/hm-lib.sh"
 t_setup
 r=$(t_repo proj); cd "$r"; echo role > "$T_TMP/impl.md"; echo rules > "$T_TMP/RULES.md"
-env -u HIVEMIND_HOME tmux -S "$HM_TMUX_SOCKET" new-session -d -s keep 'sleep 600'
+env -u HIVEHOUSE_HOME tmux -S "$HM_TMUX_SOCKET" new-session -d -s keep 'sleep 600'
 spawn() { hm-spawn --agent "$1" --role "$T_TMP/impl.md" --rules "$T_TMP/RULES.md" --model sonnet --effort medium --mode auto --still 2 --max-wait 6 >/dev/null 2>&1; }
 paneof() { jq -r --arg a "$1" '.agents[]|select(.name==$a).pane' $T_STATE/team.json; }
 screen() { hm_tmux capture-pane -p -J -S - -t "$(paneof "$1")"; }
@@ -103,7 +103,7 @@ setteam mid3 '.pane_pid = "1"'; wait "$job"
 assert_eq "an identity that changed before the retried /clear exits 6" "$(cat "$T_TMP/mid3.rc")" "6"
 assert_eq "...and no second /clear was typed" "$(hm_tmux capture-pane -p -J -S - -t "$m3" | grep -c CLEARED)" "0"
 
-# a tracked .hivemind is refused
+# a tracked .hivehouse is refused
 echo x > $T_STATE/leak; git add -f $T_STATE/leak
 hm-rotate impl --still 2 --settle 1 >/dev/null 2>&1; assert_status "tracked $T_STATE refused" $? 3
 hm-self-rotate impl --still 2 --settle 1 >/dev/null 2>&1; assert_status "self-rotate refuses a tracked $T_STATE before forking" $? 3
@@ -119,7 +119,7 @@ for i in $(seq 1 25); do case "$(log)" in *"rotated selfy"*) break ;; esac; slee
 assert_contains "the detached rotation cleared the pane" "$(screen selfy)" "CLEARED"
 assert_eq "...and sent the pickup line a second time" "$(screen selfy | grep -c "GOT: You are proj-selfy")" "2"
 assert_contains "...and logged it" "$(log)" "rotated selfy"
-# a fresh repo: self-rotate sets .hivemind up through hm_ensure_state, so it is excluded and a `git add -A` cannot track it
+# a fresh repo: self-rotate sets .hivehouse up through hm_ensure_state, so it is excluded and a `git add -A` cannot track it
 fresh=$(t_repo fresh); (cd "$fresh" && hm-self-rotate nobody --still 1 --settle 1 >/dev/null 2>&1)
 grep -qx '/'"$T_STATE"'/' "$fresh/.git/info/exclude" && ok "self-rotate excludes $T_STATE in a fresh repo" || bad "self-rotate left $T_STATE unexcluded in a fresh repo"
 [ -z "$(git -C "$fresh" status --porcelain)" ] && ok "...so the repo stays clean" || bad "the fresh repo shows untracked files: $(git -C "$fresh" status --porcelain)"

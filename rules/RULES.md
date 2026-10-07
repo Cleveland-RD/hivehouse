@@ -1,6 +1,6 @@
 # Rules
 
-Every hivemind agent and skill reads this file first. Each rule carries its reason; where a project's own CLAUDE.md is
+Every hivehouse agent and skill reads this file first. Each rule carries its reason; where a project's own CLAUDE.md is
 stricter, the stricter rule wins.
 
 ## Method
@@ -46,7 +46,7 @@ order you asked; never retry by hand and never run beside the holder. Two heavy 
 **Never kill a process you did not start.** Not to free memory, not to free a port. Another session's process is that
 session's live work. Say what is in the way and ask the orchestrator. The one exception is a hang, and it is not an
 agent's to use: `hm-hub recover`, while the owner's delegate file is valid and the hub carries the away marker, stops a
-session hivemind recorded, by its pid and start time, when its working line has not changed for 15 minutes, and
+session hivehouse recorded, by its pid and start time, when its working line has not changed for 15 minutes, and
 restarts it in its own conversation. An agent's rule is unchanged.
 
 **Never `/model` or `/effort` inside a session.** Both save the owner's global default. Model and effort are set at spawn.
@@ -84,7 +84,7 @@ own hub or orchestrator (for the hub, its projects' orchestrators) is informatio
 
 ## Handoff
 
-Every agent keeps `.hivemind/handoffs/<agent>.md`, newest START HERE block on top, dated log lines beneath. At the
+Every agent keeps `.hivehouse/handoffs/<agent>.md`, newest START HERE block on top, dated log lines beneath. At the
 rotation threshold: update the START HERE block so a reader with no memory could continue, then say "done" and stop. The
 orchestrator clears the session and resumes it from that block. After a `/clear`, re-read any file before editing it; a
 remembered file is stale.

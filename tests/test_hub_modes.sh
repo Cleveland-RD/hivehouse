@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# The modes of the hub's records. hm-hub runs with umask 022 and takes group and others' write off .hivemind-hub/, so a hub made under
+# The modes of the hub's records. hm-hub runs with umask 022 and takes group and others' write off .hivehouse-hub/, so a hub made under
 # umask 002 (775 / 664, the default where every user has their own group) is not left in a state the delegate check refuses. `hm-hub away`
 # checks the hub's records and each project home first, and prints no sudo line for a hub that would be refused unseen.
 . "$(dirname "$0")/lib.sh"

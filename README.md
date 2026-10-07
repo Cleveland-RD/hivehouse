@@ -1,4 +1,4 @@
-# hivemind
+# hivehouse
 
 A Claude Code plugin that runs a software feature or task with a team of Claude sessions in tmux: one orchestrator,
 the agents the task needs, reviews and gates before anything lands, context rotation, unattended overnight runs on this
@@ -29,8 +29,8 @@ by its install path (`claude plugin list --json` shows it), for example `<instal
 ## Install
 
 ```
-claude plugin marketplace add Cleveland-RD/hivemind
-claude plugin install hivemind@hivemind
+claude plugin marketplace add Cleveland-RD/hivehouse
+claude plugin install hivehouse@hivehouse
 ```
 
 ## For an agent installing this
@@ -43,7 +43,7 @@ Where a step says **ask**, ask the person and wait: never decide it for them.
    If one is missing or too old, tell the person which, and how they would add it (on macOS: `brew install tmux jq`).
    **Ask** before installing anything yourself.
 2. **Install the plugin** with the two commands under Install. Check it is there and enabled:
-   `claude plugin list --json | jq '.[] | select(.id == "hivemind@hivemind") | {version, enabled}'`.
+   `claude plugin list --json | jq '.[] | select(.id == "hivehouse@hivehouse") | {version, enabled}'`.
    It must print the version in `.claude-plugin/plugin.json` and `"enabled": true`.
 3. **Settings.** The plugin's settings are its `userConfig` in `.claude-plugin/plugin.json` (models, efforts, permission
    mode, files per commit, rotation level, overnight ceiling, `hub_auto_start`); each has a default, so nothing must be
@@ -51,20 +51,20 @@ Where a step says **ask**, ask the person and wait: never decide it for them.
 4. **The hub (optional).** **Ask** whether they want one, and which folder is their work folder: the one that holds
    their projects, never a project itself. On their yes, set it up there:
    `cd <folder> && <installPath>/bin/hm-hub init`, with the `installPath` that `claude plugin list --json` shows for
-   `hivemind@hivemind` (it refuses inside a repository). Then tell them to start `claude` in that folder: it names
+   `hivehouse@hivehouse` (it refuses inside a repository). Then tell them to start `claude` in that folder: it names
    itself `hub`, opens the hub, and offers to group their folders into projects. You cannot start that session for
    them: it is theirs.
-5. **Tell the person what they got:** `/hivemind:start <task>` runs a team on a task inside a project; `claude` in the
+5. **Tell the person what they got:** `/hivehouse:start <task>` runs a team on a task inside a project; `claude` in the
    work folder is the hub. Nothing runs until they ask.
 
-Never: start agents or sessions the person did not ask for, start a session in `bypassPermissions` (hivemind does it only while the owner is away, through the owner's delegate file), install the
+Never: start agents or sessions the person did not ask for, start a session in `bypassPermissions` (hivehouse does it only while the owner is away, through the owner's delegate file), install the
 optional i-have-adhd plugin unasked, or push anything.
 
 ## Optional: i-have-adhd
 
 [i-have-adhd](https://github.com/ayghri/i-have-adhd) shapes output for an ADHD reader. It is not a dependency: when it
 is installed and enabled, the orchestrator reads its rules at the start and after every rotation and follows them in
-every message to the owner; when it is not, nothing changes. hivemind never installs, enables or switches it on.
+every message to the owner; when it is not, nothing changes. hivehouse never installs, enables or switches it on.
 
 ```
 claude plugin marketplace add ayghri/i-have-adhd
@@ -72,35 +72,35 @@ claude plugin install i-have-adhd@i-have-adhd
 ```
 
 In any other session, `/i-have-adhd` turns it on. Its INSTALL.md also describes an always-on mode; with that on, the
-plugin applies itself everywhere and hivemind does not load it a second time.
+plugin applies itself everywhere and hivehouse does not load it a second time.
 
 ## Skills
 
 | Skill | Who runs it | What it does |
 |---|---|---|
-| `/hivemind:hub` | owner | the hub: hand tasks to each project's orchestrator, wake them, report back (starts by itself in the hub's folder) |
-| `/hivemind:start` | owner | plan, approve and run a team on a task |
-| `/hivemind:overnight` | owner | queue and run unattended, here or on a remote host |
-| `/hivemind:gate` | orchestrator, builders | run the gate into a log and verify every step |
-| `/hivemind:bubble-review` | reviewer | review a diff by depth, nine bubble categories |
-| `/hivemind:handoff` | any agent | write the handoff and START HERE block |
-| `/hivemind:cleanup` | owner | remove what the manifest recorded |
-| `/hivemind:review-plan`, `/hivemind:doc-updater` | any | moved-in skills |
-| `/hivemind:docs-health-check` | owner | documentation sweep of the current project, report mode by default (a workflow, not a skill) |
+| `/hivehouse:hub` | owner | the hub: hand tasks to each project's orchestrator, wake them, report back (starts by itself in the hub's folder) |
+| `/hivehouse:start` | owner | plan, approve and run a team on a task |
+| `/hivehouse:overnight` | owner | queue and run unattended, here or on a remote host |
+| `/hivehouse:gate` | orchestrator, builders | run the gate into a log and verify every step |
+| `/hivehouse:bubble-review` | reviewer | review a diff by depth, nine bubble categories |
+| `/hivehouse:handoff` | any agent | write the handoff and START HERE block |
+| `/hivehouse:cleanup` | owner | remove what the manifest recorded |
+| `/hivehouse:review-plan`, `/hivehouse:doc-updater` | any | moved-in skills |
+| `/hivehouse:docs-health-check` | owner | documentation sweep of the current project, report mode by default (a workflow, not a skill) |
 
-`docs-health-check` is a Claude Code workflow: `workflows/docs-health-check.workflow.js`, with no `SKILL.md`. Claude Code's plugin docs say a `workflows/` directory at the plugin root is loaded without a manifest entry and that a plugin workflow runs as `/<plugin>:<meta.name>`. **Unverified here:** it has not been run through a live Claude Code session, only through a stand-in for the workflow runtime (`tests/test_docs_health.sh`). The report is written to `.hivemind/reports/` (git-ignored), so report mode leaves the working tree as it was; when `.hivemind/` is tracked or cannot be written, it goes to `$TMPDIR` outside every repository and the returned path says so; `apply` mode edits the working tree and never commits.
+`docs-health-check` is a Claude Code workflow: `workflows/docs-health-check.workflow.js`, with no `SKILL.md`. Claude Code's plugin docs say a `workflows/` directory at the plugin root is loaded without a manifest entry and that a plugin workflow runs as `/<plugin>:<meta.name>`. **Unverified here:** it has not been run through a live Claude Code session, only through a stand-in for the workflow runtime (`tests/test_docs_health.sh`). The report is written to `.hivehouse/reports/` (git-ignored), so report mode leaves the working tree as it was; when `.hivehouse/` is tracked or cannot be written, it goes to `$TMPDIR` outside every repository and the returned path says so; `apply` mode edits the working tree and never commits.
 
 ## The hub
 
 One Claude session in the owner's work folder, the folder above every project, is the owner's entry point:
 
-- **Set up once.** Run `hm-hub init` in the work folder (it refuses inside a repository). An agent installing hivemind
-  does this for you; `/hivemind:hub` in a session there offers it too, then asks you to start `claude` again, since a
+- **Set up once.** Run `hm-hub init` in the work folder (it refuses inside a repository). An agent installing hivehouse
+  does this for you; `/hivehouse:hub` in a session there offers it too, then asks you to start `claude` again, since a
   session started before the folder was the hub has no screen and no guard. From then on every session started in
   that folder, and only there, is the hub: a new, unnamed one names itself `hub` (`hub-2` beside another, since
   orchestrators reply to the hub by name) and opens the hub by itself, which takes one model turn. The `hub_auto_start`
-  setting turns that off; then start it with `claude --name hub /hivemind:hub`.
-  The name belongs to the hub's folder: `hm-hub name <name>` keeps it in `.hivemind-hub/name`, and the hub starts from it
+  setting turns that off; then start it with `claude --name hub /hivehouse:hub`.
+  The name belongs to the hub's folder: `hm-hub name <name>` keeps it in `.hivehouse-hub/name`, and the hub starts from it
   (`<name>-2` beside another). `ListAgents` shows sessions on other machines only while Remote Control is connected, and without it
   the check finds nothing; a hub that finds its name taken there says so once and never renames itself.
 - **Projects span folders.** A project is its home, the repository its team works from, and any other folders it
@@ -108,11 +108,11 @@ One Claude session in the owner's work folder, the folder above every project, i
   and adds only what the owner confirms. `hm-hub add <project> --repo <folder>...` adds folders to a project that exists,
   and `hm-hub drop <project> <folder>` takes one out (never the home); tasks and memory stay.
 - **Teams in worktrees.** A project's team roots are its home, then each worktree of the home's repository that has a
-  `.hivemind/team.json`. `hm-hub status`, `wake`, `dialog`, `run` and `recover` look in every one (an orchestrator
+  `.hivehouse/team.json`. `hm-hub status`, `wake`, `dialog`, `run` and `recover` look in every one (an orchestrator
   registered in two counts once; each agent is listed with its worktree), the away hook lets the marked hub message a
   worktree's orchestrator, and bypass is granted in a worktree team root exactly as in the home: the root and the home
   must both be the caller's, not links, and not writable by group or others. Every team root takes its settings from the
-  home (a worktree's own `.hivemind/settings.json` is not read). The worktrees are found without running git: from
+  home (a worktree's own `.hivehouse/settings.json` is not read). The worktrees are found without running git: from
   `<home>/.git/worktrees/<name>/gitdir` and the worktree's own `.git` file, which must point at each other (relative
   paths, as git 2.48 can write them, are resolved against the file they are in). git comes from `PATH`, which an away
   session's own Bash command sets, so it is never run on the grant path.
@@ -126,9 +126,9 @@ One Claude session in the owner's work folder, the folder above every project, i
 - **Handing work over.** The owner's words go to the ledger and a task file (`hm-hub task`), then to the project's
   orchestrator: a message when it runs; `hm-hub wake` when a restart stopped it, which resumes its own conversation (its
   own model) and tells it to register with the hub and bring its agents back; `hm-hub start` when there is none. An
-  orchestrator already running outside hivemind is found in Claude Code's own session records and never doubled. Each
-  start asks the owner first, and runs in the owner's local permission mode (`permission_mode_local`, the one hivemind's
-  agents run in), made stricter where the project's own `.hivemind/settings.json` says so. Start the hub in that mode
+  orchestrator already running outside hivehouse is found in Claude Code's own session records and never doubled. Each
+  start asks the owner first, and runs in the owner's local permission mode (`permission_mode_local`, the one hivehouse's
+  agents run in), made stricter where the project's own `.hivehouse/settings.json` says so. Start the hub in that mode
   too: sessions in different modes hold each other's messages for an approval nobody sees.
 - **Through the hub.** The orchestrator registers with `hm-spawn --self --hub <hub>`, so every pickup line, after each
   rotation too, says the owner talks through the hub. It sends its questions, plan, blockers and results there; the hub
@@ -137,31 +137,31 @@ One Claude session in the owner's work folder, the folder above every project, i
 - **Nothing stuck, nothing unseen.** A start that stops at a question on its screen is kept: once the owner answers it,
   `hm-hub continue` (or the screen's Continue) sends the line, and never while the start's own line is still on its way.
   A dialog waiting on any orchestrator's or agent's screen is shown to the owner.
-- **Claude Code's session records.** Naming itself and finding orchestrators outside hivemind read
+- **Claude Code's session records.** Naming itself and finding orchestrators outside hivehouse read
   `~/.claude/sessions/<pid>.json`, which Claude Code keeps and does not document. Without them the hub names nothing
-  (the person types `/rename hub`) and finds only orchestrators hivemind registered; nothing else changes.
+  (the person types `/rename hub`) and finds only orchestrators hivehouse registered; nothing else changes.
 - **The screen.** `/hub-screen` (or a wide terminal, at start) opens a pane: what waits on the owner, then each
   project's orchestrator, agents, tasks and folders, with Resume and Continue buttons, and a button for each option of a dialog waiting on a session (a click carries the dialog's `Seen` fingerprint, so an answer to a screen that has changed is refused). It reads `hm-hub` only while shown.
 - **Hands off the code.** The hub never reviews, builds, tests, commits or pushes. In the hub's session the module
-  refuses an edit inside the work folder (apart from `.hivemind-hub/`) or inside a project's folder, and a git command
+  refuses an edit inside the work folder (apart from `.hivehouse-hub/`) or inside a project's folder, and a git command
   that changes a repository; quoted text and heredocs are the owner's words, never a command (best effort for shell).
 
 ### Overnight and cleanup through the hub
 
-`/hivemind:overnight` and `/hivemind:cleanup` can only be started by a person typing them. The hub types them for the owner: `hm-hub run <project> overnight <task id>` and `hm-hub run <project> cleanup <task id> [--disk]`. Only these two skills, only a line `hm-hub` builds, only into the project's running, registered orchestrator, and only after the owner's yes for that one run. It refuses a task that waits on the owner, a task already in an overnight run, and a second run while one is being typed. The task then shows as `overnight` or `cleanup`, open and not waiting on the owner.
+`/hivehouse:overnight` and `/hivehouse:cleanup` can only be started by a person typing them. The hub types them for the owner: `hm-hub run <project> overnight <task id>` and `hm-hub run <project> cleanup <task id> [--disk]`. Only these two skills, only a line `hm-hub` builds, only into the project's running, registered orchestrator, and only after the owner's yes for that one run. It refuses a task that waits on the owner, a task already in an overnight run, and a second run while one is being typed. The task then shows as `overnight` or `cleanup`, open and not waiting on the owner.
 
 ### Dialogs through the hub
 
-A permission prompt or another dialog on an orchestrator's or agent's screen is shown to the owner with its options (`hm-hub dialog <project> [<agent>]`). The owner can answer it from the hub: `hm-hub answer <project> [<agent>] --choice <1-9|esc> --seen <fingerprint>`, which presses the one key (or, for a menu with no numbers, moves the cursor and presses Enter as the last key of that choice) after checking that the dialog is still the one the owner saw. The hub never offers the options that need the owner's own words, "Type something" and "Chat about this": those are answered in the pane. An option that saves a permission rule ("always allow…") is marked as such when it is shown. Every answer is logged to `.hivemind-hub/answers.jsonl`, not to the task ledger, because a dialog belongs to no task. Limits: two identical dialogs in a row share a fingerprint, and the screen's one-press-at-a-time lock is what stops a repeat; multi-select and multi-question dialogs are untested.
+A permission prompt or another dialog on an orchestrator's or agent's screen is shown to the owner with its options (`hm-hub dialog <project> [<agent>]`). The owner can answer it from the hub: `hm-hub answer <project> [<agent>] --choice <1-9|esc> --seen <fingerprint>`, which presses the one key (or, for a menu with no numbers, moves the cursor and presses Enter as the last key of that choice) after checking that the dialog is still the one the owner saw. The hub never offers the options that need the owner's own words, "Type something" and "Chat about this": those are answered in the pane. An option that saves a permission rule ("always allow…") is marked as such when it is shown. Every answer is logged to `.hivehouse-hub/answers.jsonl`, not to the task ledger, because a dialog belongs to no task. Limits: two identical dialogs in a row share a fingerprint, and the screen's one-press-at-a-time lock is what stops a repeat; multi-select and multi-question dialogs are untested.
 
 ### Delegate mode (away)
 
 Relay mode, where every start, wake and answer waits for the owner, is the default and is unchanged. Before leaving, the owner can switch delegate mode on. The hub then decides internal work itself, keeps the teams running, and keeps for the owner only what must be theirs.
 
-**Switching it on and off.** `hm-hub away --until <time> [--mcp-allow <list>]` prints lines for the owner to paste; `hm-hub back` prints the line that ends it. hivemind never runs `sudo` and never asks for a password: the lines create one file as root, so a changed script cannot capture the password and the owner sees exactly what runs as root.
+**Switching it on and off.** `hm-hub away --until <time> [--mcp-allow <list>]` prints lines for the owner to paste; `hm-hub back` prints the line that ends it. hivehouse never runs `sudo` and never asks for a password: the lines create one file as root, so a changed script cannot capture the password and the owner sees exactly what runs as root.
 
-- **The file.** One file for each user: `/Library/Application Support/hivemind/delegate.d/<uid>` on macOS, `/etc/hivemind/delegate.d/<uid>` on Linux, where `<uid>` is the user's real user id as `/usr/bin/id -u` prints it (never `$UID`, `$USER`, an argument or a setting). Several people can share a machine, each with their own hub, and each can be away on their own: one user's file says nothing about another's. Line 1 is `hivemind-delegate 1`, then `hub=<the hub's folder>`, `until=<epoch seconds>` and `mcp=<list>`, the MCP servers the owner allowed (letters, digits and `_ , . : -`), which the `sudo` lines `hm-hub away --mcp-allow` prints write. The hub's allowed servers come from this file, never from `away.json` or the environment. Delegate mode is on exactly while this file is valid. Valid means: the file, its folder and every folder above it are not links and not writable by group or others; the file and its folder are owned by root; the content is exactly those four lines; and `until` is in the future. No environment variable or setting changes the path, the owner or the content, and every executable that asks starts with `#!/bin/bash -p` and calls outside commands by absolute path, so a fake `date`, a function or a `BASH_ENV` cannot revive an expired file.
-- **The file must belong to the user who reads it.** The hub it names, its `.hivemind-hub/`, `projects.json` (which homes get bypass) and `hub.json` (which Claude is the hub) must be owned by that user, not links, and not writable by group or others. So must each project's home that is granted bypass: a session working in a folder another user controls would load that user's `CLAUDE.md`, hooks and `.mcp.json`. The files inside a home are not checked one by one, and neither are `tasks.jsonl`, `holds/`, `decisions/` and `away.json` in the hub's folder; `hm-hub` runs with `umask 022` and takes group and others' write off `.hivemind-hub/` (at `init`, `add`, `remove`, `self` and `away`), which puts those right. A hub or a project home cloned or made under `umask 002` (775) is refused while away until its owner runs `chmod go-w` on it; `hm-hub away` checks all of it first, prints no `sudo` line for an away that would be refused, and prints the reason and the `chmod go-w` line instead. `hm-hub status` shows `away_refused` and its reason when a file exists at the user's path but is refused.
+- **The file.** One file for each user: `/Library/Application Support/hivehouse/delegate.d/<uid>` on macOS, `/etc/hivehouse/delegate.d/<uid>` on Linux, where `<uid>` is the user's real user id as `/usr/bin/id -u` prints it (never `$UID`, `$USER`, an argument or a setting). Several people can share a machine, each with their own hub, and each can be away on their own: one user's file says nothing about another's. Line 1 is `hivehouse-delegate 1`, then `hub=<the hub's folder>`, `until=<epoch seconds>` and `mcp=<list>`, the MCP servers the owner allowed (letters, digits and `_ , . : -`), which the `sudo` lines `hm-hub away --mcp-allow` prints write. The hub's allowed servers come from this file, never from `away.json` or the environment. Delegate mode is on exactly while this file is valid. Valid means: the file, its folder and every folder above it are not links and not writable by group or others; the file and its folder are owned by root; the content is exactly those four lines; and `until` is in the future. No environment variable or setting changes the path, the owner or the content, and every executable that asks starts with `#!/bin/bash -p` and calls outside commands by absolute path, so a fake `date`, a function or a `BASH_ENV` cannot revive an expired file.
+- **The file must belong to the user who reads it.** The hub it names, its `.hivehouse-hub/`, `projects.json` (which homes get bypass) and `hub.json` (which Claude is the hub) must be owned by that user, not links, and not writable by group or others. So must each project's home that is granted bypass: a session working in a folder another user controls would load that user's `CLAUDE.md`, hooks and `.mcp.json`. The files inside a home are not checked one by one, and neither are `tasks.jsonl`, `holds/`, `decisions/` and `away.json` in the hub's folder; `hm-hub` runs with `umask 022` and takes group and others' write off `.hivehouse-hub/` (at `init`, `add`, `remove`, `self` and `away`), which puts those right. A hub or a project home cloned or made under `umask 002` (775) is refused while away until its owner runs `chmod go-w` on it; `hm-hub away` checks all of it first, prints no `sudo` line for an away that would be refused, and prints the reason and the `chmod go-w` line instead. `hm-hub status` shows `away_refused` and its reason when a file exists at the user's path but is refused.
 - **Away mode needs a root-owned `jq`.** The away hook and every check that grants away powers read their JSON with the first of `/usr/bin/jq`, `/usr/local/bin/jq` and `/opt/homebrew/bin/jq` whose file and every folder above it are root's, not links and not writable by group or others (`hm_jq_fixed` in `bin/hm-lib.sh`; the hook also fixes its own `PATH` to `/usr/bin:/bin:/usr/sbin:/sbin` first of all). A Homebrew `jq` belongs to the user, so it never passes: the user's own account is exactly the away session being guarded, and a `jq` it could replace could name any hub or project. macOS 15 and later have `/usr/bin/jq`; elsewhere, install one root-owned. With none, the hook denies every call and bypass is refused (fail closed); scripts that decide nothing work as before.
 - **Who can read it.** The file is mode 0644, so other users on the machine can read whether you are away and where your hub is. On macOS every user shares the group `staff`, so a group-only mode would protect nothing.
 - **The 0.3.0 shared file** (`<folder>/delegate`) is no longer read. `hm-hub away` and `hm-hub back` say so and print the line that removes it.
@@ -173,18 +173,18 @@ Relay mode, where every start, wake and answer waits for the owner, is the defau
 
 **What the hub decides, and what it keeps for the owner.** It decides plans and questions about work inside the project's own repositories and branches, its tests, its agents and their number, worktrees, overnight runs of tasks the owner gave, and wake, start, continue and run for those tasks. It keeps for the owner: a push, a merge, a deploy or migration, anything that sends or publishes outside the machine, a paid step, deleting data that is not the team's own scratch, a change to settings or permissions, a new task, and every screen dialog. A kept item is logged as a question, its task waits, and other tasks go on. `hm-hub hold <project>` keeps the hub away from a project altogether.
 
-While the owner is away the hub never answers a screen dialog (`hm-hub answer` refuses; `hm-hub dialog` still reads it). Its answers go out as `HUB on TASK <id>: <decision>`, never `OWNER on TASK`, so an orchestrator always knows whose words it has. Each decision is recorded, with the question and the answer word for word, in `.hivemind-hub/decisions/<task id>.md` and a `decided` event (`hm-hub decide`). When the owner is back, the hub opens with what it decided since they left, and the screen keeps "decided while you were away" until the owner presses Seen (`hm-hub status --json` shows `hub.last_away` after away ends).
+While the owner is away the hub never answers a screen dialog (`hm-hub answer` refuses; `hm-hub dialog` still reads it). Its answers go out as `HUB on TASK <id>: <decision>`, never `OWNER on TASK`, so an orchestrator always knows whose words it has. Each decision is recorded, with the question and the answer word for word, in `.hivehouse-hub/decisions/<task id>.md` and a `decided` event (`hm-hub decide`). When the owner is back, the hub opens with what it decided since they left, and the screen keeps "decided while you were away" until the owner presses Seen (`hm-hub status --json` shows `hub.last_away` after away ends).
 
 **Keeping the teams running.** On each beat the hub runs `hm-hub recover --json --max-starts <hub_max_starts_per_day>` and carries out what it prints: wake a stopped orchestrator, or one that ended unregistered but left a transcript (resumable), that has an open task, send an orchestrator `RESPAWN:` for agents that stopped, restart a hung session (below), and list a dialog for the owner. The same action on the same item is tried at most 3 times in 24 hours, then the task is blocked for the owner; and at most `hub_max_starts_per_day` sessions are started or woken in 24 hours, each wake counted as it is decided, so two stopped orchestrators and room for one wake one. That daily cap is a guideline the hub passes, not a guard: the hub runs in bypass and could ignore it. Spend is not tracked here: overnight runs stop at their own ceiling.
-**Hung sessions.** A hung session is restarted, never typed into. It counts as hung only on positive evidence: Claude Code's working line (`✳ Effecting… (3s · thinking)`) is recognised, and its elapsed time is the same on every beat for 15 minutes, for the same process. A screen hivemind does not recognise is "unknown" and is never restarted; a session that is slow but still counting is not hung. The hub then stops that Claude process by its recorded process id and start time, never by name or pattern: it checks again that the process is the recorded one, is Claude, is not the hub's own, runs under the pane whose screen it read, and that the screen still shows the same line; it sends TERM, waits up to 10 seconds, and sends KILL only if it is still the same process. This is the one place hivemind stops a process it did not start; `rules/RULES.md` names it, and it applies to the hub's recover only, in delegate mode, not to agents. The session is then resumed in its own conversation: an orchestrator by `hm-hub wake`, an agent by `hm-spawn --respawn <agent> --resume`, typed one short line ("You were restarted by hivemind after your session stopped responding…") instead of the full pickup line. A session is restarted at most 3 times in 24 hours, then its task is blocked for the owner; a hung orchestrator is stopped only while the daily cap leaves room to wake it; a stop that does not take is reported once and not tried again for 24 hours.
+**Hung sessions.** A hung session is restarted, never typed into. It counts as hung only on positive evidence: Claude Code's working line (`✳ Effecting… (3s · thinking)`) is recognised, and its elapsed time is the same on every beat for 15 minutes, for the same process. A screen hivehouse does not recognise is "unknown" and is never restarted; a session that is slow but still counting is not hung. The hub then stops that Claude process by its recorded process id and start time, never by name or pattern: it checks again that the process is the recorded one, is Claude, is not the hub's own, runs under the pane whose screen it read, and that the screen still shows the same line; it sends TERM, waits up to 10 seconds, and sends KILL only if it is still the same process. This is the one place hivehouse stops a process it did not start; `rules/RULES.md` names it, and it applies to the hub's recover only, in delegate mode, not to agents. The session is then resumed in its own conversation: an orchestrator by `hm-hub wake`, an agent by `hm-spawn --respawn <agent> --resume`, typed one short line ("You were restarted by hivehouse after your session stopped responding…") instead of the full pickup line. A session is restarted at most 3 times in 24 hours, then its task is blocked for the owner; a hung orchestrator is stopped only while the daily cap leaves room to wake it; a stop that does not take is reported once and not tried again for 24 hours.
 
-**One limit.** A team counts only when it sits in the project's home or in a worktree of the home's own repository that has a `.hivemind/team.json`. A team in a separate clone of the repository is not seen.
+**One limit.** A team counts only when it sits in the project's home or in a worktree of the home's own repository that has a `.hivehouse/team.json`. A team in a separate clone of the repository is not seen.
 
 ### What away mode guards, and what it does not
 
 **Away mode is not a sandbox.** In bypass, any session can run any command as the owner's user, with the owner's files and credentials. The refusals below stop the actions delegate keeps for the owner; they are not a security boundary, and switching away on means trusting the teams the hub runs.
 
-**Who is guarded: the marker.** A session hivemind launches in bypass while away carries `HM_AWAY_BYPASS=1` in its launch environment. Every guard keys on it. On macOS, `ps -E` shows no environment for Apple's own programs (bash, sleep) and shows it for others, such as Claude: the marker is read from the Claude process, and a session whose environment cannot be read is refused, never trusted. `ps -E` joins the variables with spaces, so on macOS a marker spelled inside another variable's value (`FOO="x HM_AWAY_BYPASS=1 y"`) counts as set; Linux reads `/proc/<pid>/environ` exactly. A Bash command can unset it for itself, so the hook, not the scripts, is the guard. When a session carries no marker (the owner's own bypass sessions, `dedicated_hosts` runs) nothing here applies. If delegate mode ever has to run in `auto` instead of bypass, there is no marker and no refusals: outward steps are left to the auto classifier and to prompts nobody answers, as in overnight today.
+**Who is guarded: the marker.** A session hivehouse launches in bypass while away carries `HM_AWAY_BYPASS=1` in its launch environment. Every guard keys on it. On macOS, `ps -E` shows no environment for Apple's own programs (bash, sleep) and shows it for others, such as Claude: the marker is read from the Claude process, and a session whose environment cannot be read is refused, never trusted. `ps -E` joins the variables with spaces, so on macOS a marker spelled inside another variable's value (`FOO="x HM_AWAY_BYPASS=1 y"`) counts as set; Linux reads `/proc/<pid>/environ` exactly. A Bash command can unset it for itself, so the hook, not the scripts, is the guard. When a session carries no marker (the owner's own bypass sessions, `dedicated_hosts` runs) nothing here applies. If delegate mode ever has to run in `auto` instead of bypass, there is no marker and no refusals: outward steps are left to the auto classifier and to prompts nobody answers, as in overnight today.
 
 **The hook.** `bin/hm-away-hook` is a `PreToolUse` command hook, wired in `hooks/hooks.json` for Bash, MCP tools, SendMessage, Edit, Write, MultiEdit, NotebookEdit, Artifact, ArtifactData, ArtifactComments, RemoteTrigger and Agent. Without the marker it exits at once. With it, it refuses (exit 2, with a reason the session can read):
 
@@ -192,11 +192,11 @@ While the owner is away the hub never answers a screen dialog (`hm-hub answer` r
 - in Bash: `git` with `push`, `gh` outside its read-only forms, `ssh`, `scp`, `rsync` to a remote, `curl` and `wget` that upload or use a method other than GET, `npm`, `pnpm` and `yarn` `publish`, `vercel`, `netlify`, `docker push`, `hm-push` and `hm-remote-sync`;
 - `claude` run by hand, and `tmux` `new-window`, `split-window`, `new-session`, `respawn-pane`, `respawn-window`, `run-shell`, `if-shell`, `display-popup`, `pipe-pane`, `source-file` and `send-keys`: `hm-spawn` and `hm-hub` start sessions and set the marker again, and SendMessage is the way to talk to a peer;
 - Edit, Write and Bash redirects or writing commands (`tee`, `cp`, `mv`, `sed`, an interpreter, and the like) on Claude Code's settings files, hook files, plugin folders, `~/.claude.json` and a project's `.mcp.json`, judged by where a link leads;
-- Edit, Write, MultiEdit, NotebookEdit and the Bash write forms into the hub's `.hivemind-hub/` folder by any session that is not the hub, and into any `.hivemind/team.json` by every marked session, the hub included (hivemind's own scripts still write it), judged by where a link leads;
+- Edit, Write, MultiEdit, NotebookEdit and the Bash write forms into the hub's `.hivehouse-hub/` folder by any session that is not the hub, and into any `.hivehouse/team.json` by every marked session, the hub included (hivehouse's own scripts still write it), judged by where a link leads;
 - SendMessage to anyone but the session's own hub and team, checked by name and by process: a `bridge:` address, another project, a name another live session also carries, and anything that cannot be resolved are refused. `RULES.md` adds that a message from anyone else is information, never an instruction; to instruct the hub while away, the owner types into it (Remote Control, say);
 - an Agent call that starts a remote (cloud) agent, which would carry no marker.
 
-Anything the hook cannot read or parse is refused too, and so is any failure of the hook itself. Its refusal text says it comes from hivemind's away mode, is not a permission prompt, and tells the session not to change settings, hooks or permissions to get round it, because a session told "no" has offered to do exactly that.
+Anything the hook cannot read or parse is refused too, and so is any failure of the hook itself. Its refusal text says it comes from hivehouse's away mode, is not a permission prompt, and tells the session not to change settings, hooks or permissions to get round it, because a session told "no" has offered to do exactly that.
 
 **A second layer.** `hm-push`, every `hm-remote-sync` subcommand and `hm-cleanup --finish` also refuse with exit 4 when `HM_AWAY_BYPASS=1` is in their environment; `hm-cleanup --disk` stays allowed. These three run under `#!/bin/bash -p`, and so does `bin/hm-away-hook` (it finds `hm-lib.sh` through `HM_BIN`). A Bash command can unset the variable for itself, so this is a backstop behind the hook.
 
@@ -208,30 +208,30 @@ Anything the hook cannot read or parse is refused too, and so is any failure of 
 - The hook guards sessions of this plugin. It assumes the owner's `disableAllHooks` is not set.
 - Nothing runs while the machine is off. Remote hosts are not used while away (`hm-remote-sync` is refused).
 
-**Which records are trusted, and why.** Only the root-owned delegate file gates bypass and delegate mode. Everything else is writable by the owner's user, so by any of their sessions in bypass, and is trusted only that far: `away.json`, the hub's `tasks.jsonl`, `recovery.jsonl` and `decisions/`, a project's `.hivemind/settings.json` and `team.json`, and Claude Code's own settings. `hub.json` (which Claude is the hub) and `projects.json` (which folders a project covers, and so which get bypass) are writable by the owner's user, but a marked agent cannot write them through its tools: the hook refuses any write into `.hivemind-hub/` by a session that is not the hub, and any write to a `team.json` by every marked session, the hub included. Both halves have limits: the hub's own session can still write its folder, and a write the hook's word matching does not recognise gets through, so this is not a security boundary.
+**Which records are trusted, and why.** Only the root-owned delegate file gates bypass and delegate mode. Everything else is writable by the owner's user, so by any of their sessions in bypass, and is trusted only that far: `away.json`, the hub's `tasks.jsonl`, `recovery.jsonl` and `decisions/`, a project's `.hivehouse/settings.json` and `team.json`, and Claude Code's own settings. `hub.json` (which Claude is the hub) and `projects.json` (which folders a project covers, and so which get bypass) are writable by the owner's user, but a marked agent cannot write them through its tools: the hook refuses any write into `.hivehouse-hub/` by a session that is not the hub, and any write to a `team.json` by every marked session, the hub included. Both halves have limits: the hub's own session can still write its folder, and a write the hook's word matching does not recognise gets through, so this is not a security boundary.
 
 ## State
 
-- `<project>/.hivemind/` — handoffs, team, manifest, settings, trash; excluded through the repo's `info/exclude`, never tracked.
-- `${HIVEMIND_HOME:-~/.hivemind}` — per user: the registry of running teams, and the heavy-job slot unless the machine has one (below).
+- `<project>/.hivehouse/` — handoffs, team, manifest, settings, trash; excluded through the repo's `info/exclude`, never tracked.
+- `${HIVEHOUSE_HOME:-~/.hivehouse}` — per user: the registry of running teams, and the heavy-job slot unless the machine has one (below).
 - The machine's heavy-job slot — one for every user, so two people's jobs queue instead of starving each other. An
   administrator makes it once, from lines `hm-slot setup` prints (`hm-slot setup <group>` on Linux): `slot/` and
-  `slot/queue/` under `/Library/Application Support/hivemind` on macOS or `/var/lib/hivemind` on Linux, owned by root,
-  mode exactly 2775, under folders only root can write. hivemind never runs sudo. Until that folder passes every check,
+  `slot/queue/` under `/Library/Application Support/hivehouse` on macOS or `/var/lib/hivehouse` on Linux, owned by root,
+  mode exactly 2775, under folders only root can write. hivehouse never runs sudo. Until that folder passes every check,
   each user has a slot of their own, and `hm-slot status` says why. `hm-slot run --wait [<seconds>] <label> -- <command>`
   and `hm-slot acquire <label> --pid <pid> --wait [<seconds>]` queue in the order they asked; without `--wait` the
   answer is 75 at once, also while others wait. `HM_SLOT_LOCAL=1` opts out of the machine slot for one process and
   can never name another folder. The slot is coordination, not a security boundary: a user can file fake tickets and
   delay the others.
-- `<work folder>/.hivemind-hub/` — the hub's projects, task ledger and task files, its notes per project; outside every
+- `<work folder>/.hivehouse-hub/` — the hub's projects, task ledger and task files, its notes per project; outside every
   repository. Delegate mode adds `hub.json` (which Claude is the hub), `away.json`, `decisions/<task id>.md`,
   `answers.jsonl` (dialogs answered through the hub), `recovery.jsonl` and `recovery-state.json`, `hung-state.json` and
   `holds/<project>`.
-- `/Library/Application Support/hivemind/delegate.d/<uid>` (macOS) or `/etc/hivemind/delegate.d/<uid>` (Linux) — the
-  user's own root-owned delegate file, one for each user and the only record that gates bypass; hivemind never writes it.
+- `/Library/Application Support/hivehouse/delegate.d/<uid>` (macOS) or `/etc/hivehouse/delegate.d/<uid>` (Linux) — the
+  user's own root-owned delegate file, one for each user and the only record that gates bypass; hivehouse never writes it.
 - Files that may hold MCP server secrets, each mode 0600 and removed or replaced by the next start:
-  `.hivemind/team/<agent>/away-mcp.json` (an agent started in bypass), `.hivemind-hub/away-mcp.json` (the hub's) and
-  `.hivemind-hub/panes/<project>-mcp.json` (an orchestrator the hub started, until it registers).
+  `.hivehouse/team/<agent>/away-mcp.json` (an agent started in bypass), `.hivehouse-hub/away-mcp.json` (the hub's) and
+  `.hivehouse-hub/panes/<project>-mcp.json` (an orchestrator the hub started, until it registers).
 
 ## After a restart
 
@@ -239,7 +239,7 @@ A restart of the machine or of tmux takes the team's panes with it. `hm-context 
 "(not running)", keeping its last level. The orchestrator registers itself again with `hm-spawn --self --agent
 orchestrator`, then runs `hm-spawn --respawn <agent>` for each agent so marked: the agent starts again from its own
 record (model, effort, permission mode, worktree and branch from `team.json`, role and rules from
-`.hivemind/team/<agent>/`) and is sent back to its handoff. A running agent, one whose state cannot be told, and the
+`.hivehouse/team/<agent>/`) and is sent back to its handoff. A running agent, one whose state cannot be told, and the
 orchestrator itself are never respawned. An agent recorded in bypass is refused (exit 4) once away has ended: add
 `--mode <a stricter mode>` (the owner's `permission_mode_local`). `--resume` brings the agent back in its own recorded
 conversation instead of from its handoff, when no live Claude already holds that conversation.

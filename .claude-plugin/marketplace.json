@@ -1,11 +1,11 @@
 {
-  "name": "hivemind",
+  "name": "hivehouse",
   "owner": {
     "name": "Cleveland R&D"
   },
   "plugins": [
     {
-      "name": "hivemind",
+      "name": "hivehouse",
       "source": "./",
       "description": "Run a feature with a team of Claude sessions in tmux.",
       "version": "0.4.0"

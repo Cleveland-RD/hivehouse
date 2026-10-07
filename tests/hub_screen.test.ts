@@ -122,7 +122,7 @@ const PANE = {
 const SKILLS = ['bubble-review', 'cleanup', 'doc-updater', 'gate', 'handoff', 'hub', 'overnight', 'review-plan', 'start']
 const ran = (exitCode: number, stdout: string, stderr = '') => ({ value: { exitCode, stdout, stderr, isStdoutTruncated: false, isStderrTruncated: false } })
 
-// The hub's folder holds .hivemind-hub/; every other path is itself, except one record that is a link into a project.
+// The hub's folder holds .hivehouse-hub/; every other path is itself, except one record that is a link into a project.
 // opened: the panes asked for; commands: the names registered, refused as Claude Code refuses them (all of them when
 // refuseAll is set).
 // shown: whether Claude Code lists the screen as open and shown (its own record of the plugin's panes). session: what

@@ -5,7 +5,7 @@
 . "$HM_REPO_ROOT/bin/hm-lib.sh"
 t_setup
 r=$(t_repo proj); cd "$r"; echo role > "$T_TMP/impl.md"; echo rules > "$T_TMP/RULES.md"
-env -u HIVEMIND_HOME tmux -S "$HM_TMUX_SOCKET" new-session -d -s keep 'sleep 600'
+env -u HIVEHOUSE_HOME tmux -S "$HM_TMUX_SOCKET" new-session -d -s keep 'sleep 600'
 # the repository is trusted in this run's own Claude config, so hm-spawn's folder-trust warning (a worktree stops at the dialog until its main repository is trusted) is not on stderr here
 jq -nc --arg p "$(cd "$r" && pwd -P)" '{projects:{($p):{hasTrustDialogAccepted:true}}}' > "$CLAUDE_CONFIG_DIR/.claude.json"
 spawn() { hm-spawn --agent "$1" --role "$T_TMP/impl.md" --rules "$T_TMP/RULES.md" --model sonnet --effort medium --mode auto --still 2 --max-wait 15 "${@:2}"; }
@@ -70,5 +70,5 @@ case "$(hm-context impl)" in *"not running"*) bad "still marked after the respaw
 hm-spawn --respawn impl --still 2 --max-wait 15 >/dev/null 2>&1; assert_status "a running agent is not respawned" $? 4
 np2=$(hm-spawn --respawn rev --still 2 --max-wait 15 2>/dev/null); assert_status "an agent without a worktree is respawned" $? 0
 assert_eq "...in the project" "$(hm_tmux display-message -p -t "$np2" '#{pane_current_path}')" "$(cd "$r" && pwd -P)"
-assert_eq "the worktree is still the one hivemind made" "$(hm-manifest list --kind worktree | jq -r .path)" "$T_TMP/proj-impl"
+assert_eq "the worktree is still the one hivehouse made" "$(hm-manifest list --kind worktree | jq -r .path)" "$T_TMP/proj-impl"
 cd /; t_teardown; t_done

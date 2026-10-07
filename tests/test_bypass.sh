@@ -12,7 +12,7 @@ NODEBIN=$(command -v node || true); READABLE=0
 ep=$(t_env_probe HM_PROBE=1) || ep=""
 if [ -n "$ep" ]; then t_track "$ep"; sleep 0.5; hm_env_has "$ep" HM_PROBE=1 && READABLE=1; kill "$ep" 2>/dev/null; fi
 if [ "$READABLE" != 1 ]; then echo "  SKIP only Apple platform binaries were found (no node): a Claude's launch environment cannot be read here, and bypass is refused without that"; t_done; exit 0; fi
-env -u HIVEMIND_HOME tmux -S "$HM_TMUX_SOCKET" new-session -d -x 200 -y 56 -s keep 'sleep 600'
+env -u HIVEHOUSE_HOME tmux -S "$HM_TMUX_SOCKET" new-session -d -x 200 -y 56 -s keep 'sleep 600'
 H="$T_TMP/work"; mkdir -p "$H"; H=$(cd "$H" && pwd -P); P="$H/$T_HUB"
 mk() { local d="$H/$1"; mkdir -p "$d"; git -C "$d" init -q -b main; git -C "$d" config user.email t@t; git -C "$d" config user.name t
        echo x > "$d/README"; git -C "$d" add README; git -C "$d" commit -qm init; }

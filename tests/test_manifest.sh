@@ -96,5 +96,5 @@ touch -t 202001010000 "$L"; hm-manifest add dir path="$T_TMP/l4" >/dev/null; ass
 # A1: outside any repo and with no HM_PROJECT: exit 2, nothing written
 mkdir "$T_TMP/norepo"; cd "$T_TMP/norepo"
 for c in "add dir path=$T_TMP/z" "list" "drop x"; do hm-manifest $c 2>/dev/null; assert_status "outside a repo: $c" $? 2; done
-[ ! -e "$T_TMP/norepo/$T_STATE" ] && [ ! -e /$T_STATE ] && [ -z "$(find "$HIVEMIND_HOME" -type f)" ] && ok "nothing written outside a repo" || bad "nothing written outside a repo"
+[ ! -e "$T_TMP/norepo/$T_STATE" ] && [ ! -e /$T_STATE ] && [ -z "$(find "$HIVEHOUSE_HOME" -type f)" ] && ok "nothing written outside a repo" || bad "nothing written outside a repo"
 cd /; t_teardown; t_done

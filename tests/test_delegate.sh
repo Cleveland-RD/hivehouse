@@ -55,7 +55,7 @@ mkf; printf 'hub=/work\n'"$T_DELEGATE_LINE1"'\nuntil=%s\n' "$((NOW + 60))" > "$F
 mkf; printf "$T_DELEGATE_LINE1"'\nhub=/work\nuntil=%s\nmore\n' "$((NOW + 60))" > "$F"; ok_ && bad "an extra line is valid" || ok "an extra line is refused"
 mkf; printf "$T_DELEGATE_LINE1"'\nhub=/work\n' > "$F"; ok_ && bad "a missing until is valid" || ok "a missing line is refused"
 mkf "" "hub=work"; ok_ && bad "a relative hub is valid" || ok "a relative hub is refused"
-mkf "" "hub=/work;x"; ok_ && bad "a hub path hivemind would not type is valid" || ok "a hub path hivemind would not type is refused"
+mkf "" "hub=/work;x"; ok_ && bad "a hub path hivehouse would not type is valid" || ok "a hub path hivehouse would not type is refused"
 mkf "soon"; ok_ && bad "a non-numeric until is valid" || ok "a non-numeric until is refused"
 mkf "$((NOW - 1))"; ok_ && bad "an expired file is valid" || ok "an expired file counts as off"
 mkf "$((NOW + 7 * 86400 + 1))"; ok_ && bad "more than 7 days ahead is valid" || ok "more than 7 days ahead is refused"

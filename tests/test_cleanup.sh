@@ -17,7 +17,7 @@ hm-cleanup 2>/dev/null; assert_status "a mode is required" $? 64
 hm-cleanup --disk --finish 2>/dev/null; assert_status "one mode only" $? 64
 hm-cleanup --finish --bogus 2>/dev/null; assert_status "an unknown flag is a usage error" $? 64
 mkdir "$T_TMP/norepo"; (cd "$T_TMP/norepo" && hm-cleanup --finish 2>/dev/null); assert_status "outside a repo: exit 2" $? 2
-[ ! -e "$T_TMP/norepo/$T_STATE" ] && [ -z "$(find "$HIVEMIND_HOME" -type f)" ] && ok "outside a repo: nothing written" || bad "outside a repo: something was written"
+[ ! -e "$T_TMP/norepo/$T_STATE" ] && [ -z "$(find "$HIVEHOUSE_HOME" -type f)" ] && ok "outside a repo: nothing written" || bad "outside a repo: something was written"
 
 # ---- files and directories -----------------------------------------------------------------------------------------
 r=$(t_repo files); cd "$r"

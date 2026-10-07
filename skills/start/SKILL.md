@@ -1,12 +1,12 @@
 ---
 name: start
-description: Run a feature or task with a team of Claude sessions in tmux, from planning through review, gates and cleanup. Use when the owner types /hivemind:start followed by a task.
+description: Run a feature or task with a team of Claude sessions in tmux, from planning through review, gates and cleanup. Use when the owner types /hivehouse:start followed by a task.
 argument-hint: <task description>
 disable-model-invocation: true
-allowed-tools: Bash(hm-spawn *) Bash(hm-rotate *) Bash(hm-self-rotate *) Bash(hm-slot status) Bash(hm-slot release *) Bash(hm-context *) Bash(hm-gate-verify *) Bash(hm-settings resolve *) Bash(hm-manifest *) Bash(hm-disk *) Bash(hm-adhd) Read Edit(./.hivemind/**) Edit(./CLAUDE.md) Edit(./CLAUDE.local.md) AskUserQuestion SendMessage ListAgents
+allowed-tools: Bash(hm-spawn *) Bash(hm-rotate *) Bash(hm-self-rotate *) Bash(hm-slot status) Bash(hm-slot release *) Bash(hm-context *) Bash(hm-gate-verify *) Bash(hm-settings resolve *) Bash(hm-manifest *) Bash(hm-disk *) Bash(hm-adhd) Read Edit(./.hivehouse/**) Edit(./CLAUDE.md) Edit(./CLAUDE.local.md) AskUserQuestion SendMessage ListAgents
 ---
 
-# hivemind: start
+# hivehouse: start
 
 You are the orchestrator of a team of Claude sessions running in tmux. The task: $ARGUMENTS
 
@@ -45,8 +45,8 @@ owner then talks to you only through the hub:
 
 ## 1. Read before doing anything
 
-Read the task, `CLAUDE.md`, `CLAUDE.local.md`, the memory index, `git status` and `.hivemind/` (handoffs, `team.json`,
-`manifest.jsonl`). If `.hivemind/team.json` has a team, resume it (`ListAgents`, `hm-context --all`) instead of
+Read the task, `CLAUDE.md`, `CLAUDE.local.md`, the memory index, `git status` and `.hivehouse/` (handoffs, `team.json`,
+`manifest.jsonl`). If `.hivehouse/team.json` has a team, resume it (`ListAgents`, `hm-context --all`) instead of
 starting again. After a restart (the machine's or tmux's) the team's panes are gone: `hm-context --all` marks each such
 session "(not running)", yours included. Register yourself again first, `hm-spawn --self --agent orchestrator` (step
 6's form; a hub you were registered with is kept, `--no-hub` drops it), then `hm-spawn --respawn <agent>` for each agent marked "(not running)": it starts the agent again from its
@@ -62,7 +62,7 @@ Follow `${CLAUDE_SKILL_DIR}/first-run.md` (the disk check there is `hm-disk --mi
 checked mechanically, and ask only about what is still unknown, ambiguous or failed its check. A project whose facts
 are recorded and check out gets no questions here. Show what you found beside any question so the owner can correct
 it, ask where each fact is recorded (facts true for everyone on the project go in `CLAUDE.md`; facts about this machine
-go in `CLAUDE.local.md` or `.hivemind/`), and write it only with the owner's OK. Before you ask a question, write a
+go in `CLAUDE.local.md` or `.hivehouse/`), and write it only with the owner's OK. Before you ask a question, write a
 line beginning `HM-CLARIFY:` so the question is recognisable.
 
 ## 3. Clarify the task
@@ -99,10 +99,10 @@ again before adding an agent later. This approval is a plan confirmation, separa
 ## 6. Spawn
 
 First register this pane as the orchestrator, once: `hm-spawn --self --agent orchestrator`, adding `--window <tokens>` when you
-know this session's context window (never a guess from the model name: without it hivemind records the window Claude Code reported
+know this session's context window (never a guess from the model name: without it hivehouse records the window Claude Code reported
 for the session, or none, and `hm-context` then reads "(window assumed 200000)" until the tokens pass 200000, and "(window unknown)" after). An agent name is bare (the
 project is added where a name is shown), so never put the project in it. Step 8's `hm-context --all` and
-`hm-self-rotate` find you through it. It exits 4 when that name already belongs to a pane hivemind spawned; tell the
+`hm-self-rotate` find you through it. It exits 4 when that name already belongs to a pane hivehouse spawned; tell the
 owner rather than choosing another name.
 
 Then for each agent, in its own call. A spawned agent's context level uses Claude Code's own window; the window per
@@ -113,7 +113,7 @@ name:
 
 Agents that build get their own worktree beside the project (never inside it). `hm-spawn` refuses
 `bypassPermissions` except while the owner is away (delegate mode, from the hub), when the resolved mode itself is
-`bypassPermissions` and `hm-spawn` checks it again; never try to get around that, and never pass it by hand. It copies the role and rules into `.hivemind/team/<agent>/`, creates
+`bypassPermissions` and `hm-spawn` checks it again; never try to get around that, and never pass it by hand. It copies the role and rules into `.hivehouse/team/<agent>/`, creates
 the handoff, records the pane and manifest entries, and waits for the pane to be idle before sending the pickup line.
 If it stops because a dialog (for example a workspace-trust prompt) is showing, tell the owner; never answer a dialog on
 an agent's behalf. Never `/model` or `/effort` inside a pane: they save the owner's global default.

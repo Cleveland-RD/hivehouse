@@ -52,7 +52,7 @@ assert_eq "--all lists every team member, ? when unknown" "$(hm-context --all | 
 printf '%s\n' '{"type":"assistant","isSidechain":false,"message":{"model":"<synthetic>","usage":{"input_tokens":0,"output_tokens":0}}}' > "$T_TMP/only-synthetic.jsonl"
 jq -nc --arg t "$T_TMP/only-synthetic.jsonl" '{session_id:"s",transcript_path:$t}' > $T_STATE/team/rev/session.json
 hm-context rev 2>/dev/null; assert_status "a transcript with no real usage line is unknown" $? 2
-# a tracked .hivemind is refused; outside a repo nothing is written
+# a tracked .hivehouse is refused; outside a repo nothing is written
 echo x > $T_STATE/leak; git add -f $T_STATE/leak
 hm-context impl >/dev/null 2>&1; assert_status "tracked $T_STATE refused" $? 3
 git rm -qf --cached $T_STATE/leak

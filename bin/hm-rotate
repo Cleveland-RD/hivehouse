@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Clear an agent's context and send it back to its handoff: /clear, then the pickup line, each only when the pane is idle.
 # hm-rotate <agent> [--still 15] [--max 900] [--settle 8]
-# Exit: 0 rotated, 1 the pane never went idle (nothing sent), 2 no such agent or project, 3 .hivemind tracked,
-# 5 a dialog needs a person (nothing typed), 6 the pane is no longer the agent that was recorded (nothing typed), 64 usage. Every outcome that sent nothing is logged to .hivemind/rotate.log.
+# Exit: 0 rotated, 1 the pane never went idle (nothing sent), 2 no such agent or project, 3 .hivehouse tracked,
+# 5 a dialog needs a person (nothing typed), 6 the pane is no longer the agent that was recorded (nothing typed), 64 usage. Every outcome that sent nothing is logged to .hivehouse/rotate.log.
 set -u
 . "$(dirname "$0")/hm-lib.sh"
 agent=""; still=15; max=900; settle=8
@@ -18,7 +18,7 @@ for n in "$still" "$max" "$settle"; do case "$n" in ''|*[!0-9]*) hm_die 64 "--st
 ROOT=$(hm_project_root) || exit $?
 STATE="$ROOT/$HM_STATE_DIR"
 if [ -n "$(git -C "$ROOT" ls-files -- "$HM_STATE_DIR")" ]; then
-  hm_die 3 "files under $HM_STATE_DIR/ are tracked by git; untrack them before using hivemind here"
+  hm_die 3 "files under $HM_STATE_DIR/ are tracked by git; untrack them before using hivehouse here"
 fi
 pane=$(jq -r --arg a "$agent" '[.agents[]? | select(.name == $a) | .pane][0] // empty' "$STATE/team.json" 2>/dev/null)
 [ -n "$pane" ] || hm_die 2 "no agent named $agent in this project's team"

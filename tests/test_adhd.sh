@@ -55,5 +55,5 @@ list "$(jq -nc --arg p "$Q" '[{id:"i-have-adhd@i-have-adhd",enabled:true,install
 out=$(hm_pickup_line proj "$r" orchestrator 2>"$T_TMP/err")
 assert_eq "a path with a quote is not typed: the short line" "$out" \
   "You are orch. Read $r/$T_STATE/handoffs/orchestrator.md from the top: its START HERE block is your prompt."
-assert_eq "...and one line on stderr" "$(grep -c 'not one hivemind will type' "$T_TMP/err")" "1"
+assert_eq "...and one line on stderr" "$(grep -c 'not one hivehouse will type' "$T_TMP/err")" "1"
 cd /; t_teardown; t_done

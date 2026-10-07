@@ -4,14 +4,14 @@
 # A command substitution does not stop its caller: write x=$(hm_project_root) || exit $?, never a bare x=$(...).
 # ---- the names: each is spelled here and nowhere else in bin/ (tests/test_names.sh holds it to that); hooks/names.ts is the
 # twin for the hub screen ------------------------------------------------------------------------------------------------
-HM_PREFIX='hivemind'                     # what a message to the user begins with: "<prefix>: ..."
-HM_STATE_DIR='.hivemind'                 # a project's state folder, under its root
-HM_HUB_DIR='.hivemind-hub'               # the hub's folder, under its work folder
-HM_HOME_DIR='.hivemind'                  # the per-user home (slot, registry, queue), under $HOME
-HM_MAC_BASE='/Library/Application Support/hivemind'   # the delegate files' folder, and the machine slot's, on macOS
-HM_LINUX_BASE='/etc/hivemind'            # the delegate files' folder on Linux
-HM_LINUX_SLOT='/var/lib/hivemind/slot'   # the machine slot on Linux
-HM_DELEGATE_LINE1='hivemind-delegate 1'  # the delegate file's first line
+HM_PREFIX='hivehouse'                     # what a message to the user begins with: "<prefix>: ..."
+HM_STATE_DIR='.hivehouse'                 # a project's state folder, under its root
+HM_HUB_DIR='.hivehouse-hub'               # the hub's folder, under its work folder
+HM_HOME_DIR='.hivehouse'                  # the per-user home (slot, registry, queue), under $HOME
+HM_MAC_BASE='/Library/Application Support/hivehouse'   # the delegate files' folder, and the machine slot's, on macOS
+HM_LINUX_BASE='/etc/hivehouse'            # the delegate files' folder on Linux
+HM_LINUX_SLOT='/var/lib/hivehouse/slot'   # the machine slot on Linux
+HM_DELEGATE_LINE1='hivehouse-delegate 1'  # the delegate file's first line
 hm_plugin_name() {  # use as x=$(hm_plugin_name) || exit $?. The plugin's name, read with built-ins from .claude-plugin/plugin.json (its top-level "name" line)
   local f l n="" pre='  "name": "'; f="$(dirname "${BASH_SOURCE[0]}")/../.claude-plugin/plugin.json"
   while IFS= read -r l; do
@@ -21,12 +21,12 @@ hm_plugin_name() {  # use as x=$(hm_plugin_name) || exit $?. The plugin's name, 
   printf '%s\n' "$n"
 }
 hm_die()  { echo "$HM_PREFIX: $2" >&2; exit "$1"; }
-# A session hivemind launched in bypass while the owner is away carries HM_AWAY_BYPASS=1 (A31). Whatever leaves the machine or ends the
+# A session hivehouse launched in bypass while the owner is away carries HM_AWAY_BYPASS=1 (A31). Whatever leaves the machine or ends the
 # run for good is refused to it. This is a second layer: a Bash command can unset the variable for itself, so hm-away-hook is the guard.
 hm_refuse_away() {  # hm_refuse_away <what>: exit 4 when this process is in a marked session
-  [ "${HM_AWAY_BYPASS:-}" != 1 ] || hm_die 4 "hivemind's away mode refuses $1 while the owner is away (HM_AWAY_BYPASS is set); tell the owner what you needed"
+  [ "${HM_AWAY_BYPASS:-}" != 1 ] || hm_die 4 "hivehouse's away mode refuses $1 while the owner is away (HM_AWAY_BYPASS is set); tell the owner what you needed"
 }
-hm_home() { printf '%s\n' "${HIVEMIND_HOME:-$HOME/$HM_HOME_DIR}"; }
+hm_home() { printf '%s\n' "${HIVEHOUSE_HOME:-$HOME/$HM_HOME_DIR}"; }
 hm_now()  { /bin/date -u +%Y-%m-%dT%H:%M:%SZ; }
 hm_project_root() {
   if [ -n "${HM_PROJECT:-}" ]; then
@@ -92,7 +92,7 @@ hm_ensure_state() {  # creates $HM_STATE_DIR/, excludes it through info/exclude,
   root=$(hm_project_root) || exit $?
   common=$(git -C "$root" rev-parse --path-format=absolute --git-common-dir) || exit $?
   if [ -n "$(git -C "$root" ls-files -- "$HM_STATE_DIR")" ]; then
-    hm_die 3 "files under $HM_STATE_DIR/ are tracked by git; untrack them before using hivemind here"
+    hm_die 3 "files under $HM_STATE_DIR/ are tracked by git; untrack them before using hivehouse here"
   fi
   mkdir -p "$root/$HM_STATE_DIR" "$common/info"
   excl="$common/info/exclude"; touch "$excl"
@@ -108,8 +108,8 @@ hm_pane_key() {  # hm_pane_key <socket> <pane id> -> filename-safe key
 hm_tmux() { if [ -n "${HM_TMUX_SOCKET:-}" ]; then tmux -S "$HM_TMUX_SOCKET" "$@"; else tmux "$@"; fi; }
 HM_AWAY_VARS="HM_AWAY_BYPASS HM_AWAY_HUB HM_AWAY_MCP_ALLOW"
 hm_tmux_unmarked() { if [ -n "${HM_TMUX_SOCKET:-}" ]; then /usr/bin/env -u HM_AWAY_BYPASS -u HM_AWAY_HUB -u HM_AWAY_MCP_ALLOW tmux -S "$HM_TMUX_SOCKET" "$@"; else /usr/bin/env -u HM_AWAY_BYPASS -u HM_AWAY_HUB -u HM_AWAY_MCP_ALLOW tmux "$@"; fi; }   # a tmux call whose client environment (copied into a new server) lacks the away variables
-# hm_tmux_on <socket, or empty for hivemind's own server> <tmux args>...: the one way to reach a session's pane on the server
-# it was recorded on (team.json .socket), which is not always hivemind's own
+# hm_tmux_on <socket, or empty for hivehouse's own server> <tmux args>...: the one way to reach a session's pane on the server
+# it was recorded on (team.json .socket), which is not always hivehouse's own
 hm_tmux_on() { local s="$1"; shift; if [ -n "$s" ]; then tmux -S "$s" "$@"; else hm_tmux "$@"; fi; }
 # A pane is identified by its process and that process's start time: a pane id alone is handed out again by a restarted
 # tmux server. These three are the only place that is read and compared (the registry's writer and hook, the manifest
@@ -134,7 +134,7 @@ hm_claude_ancestor() {  # hm_claude_ancestor [pid]: the nearest Claude process a
 hm_claude_is() {  # hm_claude_is <pid> <started>: that very process (not a reused pid), still Claude
   [ -n "$1" ] && [ -n "$2" ] && hm_alive "$1" && hm_lstart_is "$1" "$2" && hm_is_claude "$1"
 }
-# The one place hivemind stops a process it did not just start: a Claude whose working line has not moved for 15 minutes (A10), by
+# The one place hivehouse stops a process it did not just start: a Claude whose working line has not moved for 15 minutes (A10), by
 # `hm-hub recover`, while the owner's delegate file is valid and the hub carries the away marker. It is never a pattern or a name:
 # only the recorded pid, while that pid still has its recorded start time and is still Claude, and never a Claude above the caller
 # (the hub's own), and only a Claude that has the pane's own process at or above it: the screen read is the pane's, so a record that ties
@@ -229,7 +229,7 @@ hm_lstart_fp() {
   done
   [ "$nt" = 1 ] && [ "$ny" = 1 ] && [ "$nd" = 1 ] && printf '%s %s %s\n' "$t" "$y" "$d"
 }
-hm_is_claude() {  # hm_is_claude <pid>: 0 when the process is Claude Code's, which hivemind stops only in hm_stop_hung (below)
+hm_is_claude() {  # hm_is_claude <pid>: 0 when the process is Claude Code's, which hivehouse stops only in hm_stop_hung (below)
   local args first second   # by argv: macOS ps reports comm from argv0 as well, so it would be the same reading
   args=$(/bin/ps -o args= -p "$1" 2>/dev/null) || return 1
   first=${args%% *}; second=${args#* }; second=${second%% *}
@@ -413,9 +413,9 @@ hm_owner_statusline() {  # hm_owner_statusline <session cwd>
   return 0
 }
 
-# An agent's session record, .hivemind/team/<agent>/session.json {session_id, transcript_path, source, at}: hm-context reads
+# An agent's session record, .hivehouse/team/<agent>/session.json {session_id, transcript_path, source, at}: hm-context reads
 # it. The one writer, for the SessionStart hook and for hm-spawn --self. Never writes for a bad agent name or into a tracked
-# .hivemind; the write is atomic. Returns 1 when nothing was written.
+# .hivehouse; the write is atomic. Returns 1 when nothing was written.
 hm_write_session() {  # hm_write_session <project root> <agent> <session id> <transcript path> <source>
   local dir="$1/$HM_STATE_DIR/team/$2"
   hm_is_agent_name "$2" && [ -n "$3" ] || return 1
@@ -438,7 +438,7 @@ hm_pickup_line() {  # hm_pickup_line <project name> <project root> <agent>
     # the owner's output style, when installed, is read again after every clear (a /clear wipes it with the rest)
     local style; style=$(hm_adhd_skill 2>/dev/null) || return 0
     if hm_is_typed_path "$style"; then printf ' Read %s and follow it for every message to the owner.' "$style"
-    else echo "$HM_PREFIX: the i-have-adhd path is not one hivemind will type, so the pickup line leaves it out: $style" >&2; fi
+    else echo "$HM_PREFIX: the i-have-adhd path is not one hivehouse will type, so the pickup line leaves it out: $style" >&2; fi
     return
   fi
   printf 'You are %s-%s. Read %s/%s/handoffs/%s.md from the top: its START HERE block is your prompt, and %s/%s/team/%s/ holds your role and the rules. Report to %s. Wait for its first message before any work.' \
@@ -447,7 +447,7 @@ hm_pickup_line() {  # hm_pickup_line <project name> <project root> <agent>
 # What an agent resumed with its own session (hm-spawn --respawn --resume) is typed instead of the pickup line: its session
 # already holds the work, so it is told only why it was restarted and where its handoff is.
 hm_resume_line() {  # hm_resume_line <project root> <agent>
-  printf 'You were restarted by hivemind after your session stopped responding. Carry on where you were; your handoff is %s/%s/handoffs/%s.md.' "$1" "$HM_STATE_DIR" "$2"
+  printf 'You were restarted by hivehouse after your session stopped responding. Carry on where you were; your handoff is %s/%s/handoffs/%s.md.' "$1" "$HM_STATE_DIR" "$2"
 }
 
 # The ASCII letters and digits, listed and never written as a range: under bash 3.2 a bracket range follows the locale's
@@ -457,7 +457,7 @@ HM_LOWER='abcdefghijklmnopqrstuvwxyz'
 HM_UPPER='ABCDEFGHIJKLMNOPQRSTUVWXYZ'
 HM_DIGITS='0123456789'
 
-# A session name hivemind will type into a pane (it goes through send-keys): one line of letters, digits, space, '-', '_',
+# A session name hivehouse will type into a pane (it goes through send-keys): one line of letters, digits, space, '-', '_',
 # '.', '(' and ')', at most 64 characters.
 HM_SESSION_NAME_CHARS="${HM_LOWER}${HM_UPPER}${HM_DIGITS} ._()-"
 hm_is_session_name() {  # hm_is_session_name <name>: 0 when it is one
@@ -559,7 +559,7 @@ $(claude plugin list --json 2>/dev/null | jq -r '.[]? | select(((.id // "") | st
 EOF2
   return 1
 }
-# A path hivemind will type into a pane: one line of letters, digits, '/', '.', '_', '-' and space, at most 256 characters.
+# A path hivehouse will type into a pane: one line of letters, digits, '/', '.', '_', '-' and space, at most 256 characters.
 hm_is_typed_path() {  # hm_is_typed_path <path>: 0 when it is one
   local chars="${HM_LOWER}${HM_UPPER}${HM_DIGITS}/._ -"
   case "$1" in ''|*[!$chars]*) return 1 ;; esac
@@ -581,7 +581,7 @@ hm_orchestrator_name() {  # hm_orchestrator_name <project root>
   for n in "$live" "$full"; do
     [ -n "$n" ] || continue
     hm_is_session_name "$n" && { printf '%s\n' "$n"; return 0; }
-    echo "$HM_PREFIX: the orchestrator's session name is not one hivemind will type; using another" >&2
+    echo "$HM_PREFIX: the orchestrator's session name is not one hivehouse will type; using another" >&2
   done
   printf '%s-orchestrator\n' "$(basename "$1")"
 }
@@ -610,14 +610,14 @@ hm_mode_rank() {  # hm_mode_rank <mode>
   case "$1" in plan|dontAsk) echo 0 ;; default) echo 1 ;; acceptEdits) echo 2 ;; auto) echo 3 ;; bypassPermissions) echo 4 ;; *) return 1 ;; esac
 }
 
-# A git branch as hivemind takes one (hm-spawn's --branch and --base, the manifest's base): letters, digits, '.', '_',
+# A git branch as hivehouse takes one (hm-spawn's --branch and --base, the manifest's base): letters, digits, '.', '_',
 # '/' and '-', not starting with '-', which git would read as an option.
 hm_is_branch_name() {  # hm_is_branch_name <name>: 0 when it is one
   case "$1" in ''|-*|*[!${HM_LOWER}${HM_UPPER}${HM_DIGITS}._/-]*) return 1 ;; esac
   return 0
 }
 
-# A remote host as hivemind takes one (hm-remote-sync's host, the manifest's host): letters, digits, '.', '_', '@' and
+# A remote host as hivehouse takes one (hm-remote-sync's host, the manifest's host): letters, digits, '.', '_', '@' and
 # '-', not starting with '-', which ssh would read as an option.
 hm_is_host_name() {  # hm_is_host_name <name>: 0 when it is one
   case "$1" in ''|-*|*[!${HM_LOWER}${HM_UPPER}${HM_DIGITS}._@-]*) return 1 ;; esac
@@ -703,7 +703,7 @@ hm_dialog_parse() {  # a pane captured with -e on stdin: JSON {kind, text, optio
   fp=$(printf '%s' "$json" | jq -r '.text' | shasum | cut -d' ' -f1)
   printf '%s' "$json" | jq -c --arg f "$fp" '. + {fingerprint:$f}'
 }
-hm_pane_dialog() {  # hm_pane_dialog <socket, or empty for hivemind's own server> <pane>: hm_dialog_parse of that pane; 1 when it cannot be read
+hm_pane_dialog() {  # hm_pane_dialog <socket, or empty for hivehouse's own server> <pane>: hm_dialog_parse of that pane; 1 when it cannot be read
   local t
   t=$(hm_tmux_on "$1" capture-pane -p -e -J -t "$2" 2>/dev/null) || return 1
   printf '%s\n' "$t" | hm_dialog_parse
@@ -712,12 +712,12 @@ hm_pane_dialog() {  # hm_pane_dialog <socket, or empty for hivemind's own server
 # ---- the away switch: a file only root can have written ----------------------------------------------------------------
 # Delegate mode (the hub decides for the owner while they are away) is on exactly while this file is valid. It sits where
 # a session running as the owner's user cannot have written it, and the owner makes it with sudo from lines `hm-hub away`
-# prints (hivemind never runs sudo). The predicate takes the path and the owner it requires; production passes only the
+# prints (hivehouse never runs sudo). The predicate takes the path and the owner it requires; production passes only the
 # fixed path and root (hm_delegate_now), and nothing in the environment or a setting changes the path, the owner or the
 # content: a way to change them would be a way round the check. Valid means: the file, its folder and every folder above it
 # are not links (lstat) and not writable by group or others; the file and its folder are owned by the required user, the
 # folders above by the required user or root (with root required, root alone); the content is exactly
-#   hivemind-delegate 1 / hub=<absolute path> / until=<epoch seconds> / mcp=<comma-separated servers or tools, may be empty>
+#   hivehouse-delegate 1 / hub=<absolute path> / until=<epoch seconds> / mcp=<comma-separated servers or tools, may be empty>
 # with `until` in the future and at most 7 days ahead (a CronCreate heartbeat does not outlive that). HM_DELEGATE_WHY is set
 # to the first check that failed.
 # the process's real uid, read by /usr/bin/id: bash 3.2 takes UID and EUID from the environment, even under -p. One exact line, which a test rewrites.
@@ -833,7 +833,7 @@ hm_delegate_read() {  # hm_delegate_read <path> <uid> [<now>]: prints "<hub><TAB
   [ "$l1" = "$HM_DELEGATE_LINE1" ] || { HM_DELEGATE_WHY="the first line is not '$HM_DELEGATE_LINE1'"; return 1; }
   hub=$l2; until=$l3
   case "$hub" in hub=/*) hub=${hub#hub=} ;; *) HM_DELEGATE_WHY="line 2 is not hub=<absolute path>"; return 1 ;; esac
-  hm_is_typed_path "$hub" || { HM_DELEGATE_WHY="the hub path is not one hivemind will type"; return 1; }
+  hm_is_typed_path "$hub" || { HM_DELEGATE_WHY="the hub path is not one hivehouse will type"; return 1; }
   case "$until" in until=*) until=${until#until=} ;; *) HM_DELEGATE_WHY="line 3 is not until=<epoch>"; return 1 ;; esac
   hm_is_number "$until" || { HM_DELEGATE_WHY="until is not a number"; return 1; }
   case "$l4" in mcp=*) mcp=${l4#mcp=} ;; *) HM_DELEGATE_WHY="line 4 is not mcp=<list>"; return 1 ;; esac
@@ -847,9 +847,9 @@ hm_delegate_now() { hm_delegate_read "$(hm_delegate_path)" 0; }
 # hm_delegate_mine: 0 when this user's delegate file is valid and the hub it names is this user's; sets HM_DG_HUB (resolved), HM_DG_UNTIL,
 # HM_DG_MCP and HM_DG_UID, else HM_DELEGATE_WHY says which check failed. It runs in the caller's shell, never inside $(...): the output of
 # hm_delegate_now is dropped and its HM_DR_* variables are read instead. It is the only caller of hm_delegate_now. The hub, its
-# .hivemind-hub/, projects.json (which decides the homes that get bypass) and hub.json (the identity away_hub_caller checks) must belong to
+# .hivehouse-hub/, projects.json (which decides the homes that get bypass) and hub.json (the identity away_hub_caller checks) must belong to
 # the caller and not be a link or writable by group or others: a user who could write them could name their own project, or the hub.
-# hm_hub_records_trusted <hub root> <uid>: 0 when the hub folder, .hivemind-hub/, projects.json and hub.json all belong to that user (hm_path_trusted
+# hm_hub_records_trusted <hub root> <uid>: 0 when the hub folder, .hivehouse-hub/, projects.json and hub.json all belong to that user (hm_path_trusted
 # strict); else 1, with HM_DELEGATE_WHY the first reason and HM_BAD_LIST every failing path as "<path><TAB><reason>" lines. The one list of what
 # decides a hub, shared by hm_delegate_mine and the check `hm-hub away` runs before it prints anything.
 HM_BAD_LIST=""
@@ -922,7 +922,7 @@ hm_claude_trusts() {
 }
 
 # ---- bypass: granted only while the owner is away -----------------------------------------------------------------------
-# bypassPermissions is started by hivemind only when ALL of these hold: the owner's root-owned delegate file is valid, the project's
+# bypassPermissions is started by hivehouse only when ALL of these hold: the owner's root-owned delegate file is valid, the project's
 # home is listed in the hub that file names (A6), and the caller's own Claude carries the away marker in its launch environment
 # (hm_away_caller). The owner's own unmarked sessions and a plain shell never get it. Nothing here is read from an argument or a
 # setting the caller can write.
@@ -951,10 +951,10 @@ hm_away_caller() {  # 0 the caller's Claude carries the away marker; 1 it does n
   local pid; pid=$(hm_claude_ancestor) || return 1
   hm_env_has "$pid" HM_AWAY_BYPASS=1
 }
-# A permission mode hivemind starts a session in (hm-spawn's and hm-hub's --mode). bypassPermissions only as above, and so only with the
+# A permission mode hivehouse starts a session in (hm-spawn's and hm-hub's --mode). bypassPermissions only as above, and so only with the
 # project's root.
 HM_PERMISSION_MODES="plan dontAsk default acceptEdits auto"
-hm_check_mode() {  # hm_check_mode <mode> <who> [<project root>]: exits 4 unless hivemind may start a session in that mode
+hm_check_mode() {  # hm_check_mode <mode> <who> [<project root>]: exits 4 unless hivehouse may start a session in that mode
   local mode="$1" who="$2" root="${3:-}"
   if [ "$mode" = bypassPermissions ]; then
     [ -n "$root" ] || hm_die 4 "bypassPermissions is never started by $who without a project to check it for"
@@ -994,7 +994,7 @@ hm_bypass_launch() {  # hm_bypass_launch <project root> <mcp file>: HM_BP_ENVS (
   HM_BP_ARGS=(--strict-mcp-config --mcp-config "$2" --no-chrome)
 }
 hm_is_number() { case "$1" in ''|*[!0-9]*) return 1 ;; esac; }   # hm_is_number <value>: digits only
-# A model or an effort as hivemind passes one to claude: letters, digits, '.', '_', '[', ']' and '-', not starting with '-'.
+# A model or an effort as hivehouse passes one to claude: letters, digits, '.', '_', '[', ']' and '-', not starting with '-'.
 hm_is_model_name() {  # hm_is_model_name <value>: 0 when it is one
   case "$1" in ''|-*|*[!${HM_LOWER}${HM_UPPER}${HM_DIGITS}._\[\]-]*) return 1 ;; esac
   return 0
@@ -1017,7 +1017,7 @@ hm_open_window() {
     printf '%s\n' "$pane"
   fi
 }
-hm_pane_question() {  # hm_pane_question <socket, or empty for hivemind's own server> <pane>: 0 when a dialog waits on its screen
+hm_pane_question() {  # hm_pane_question <socket, or empty for hivehouse's own server> <pane>: 0 when a dialog waits on its screen
   local t
   [ -n "$2" ] || return 1
   t=$(hm_tmux_on "$1" capture-pane -p -e -J -t "$2" 2>/dev/null) || return 1

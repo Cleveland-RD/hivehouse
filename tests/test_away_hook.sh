@@ -180,7 +180,7 @@ tool_allowed "Write to memory" "$(fileop Write "$CD/projects/p/memory/n.md")"
 tool_allowed "Write to settings.json inside an unrelated folder" "$(fileop Write "$proj/docs/settings.json")"
 tool_denied "Write with no path" '{"tool_name":"Write","cwd":"/","tool_input":{}}'
 
-echo "-- the hub's records and a team's team.json are written by hivemind's scripts, never by a session's tools (final review S1)"
+echo "-- the hub's records and a team's team.json are written by hivehouse's scripts, never by a session's tools (final review S1)"
 # hub.json is the identity away_hub_caller checks and the "own hub" a SendMessage resolves by pid; projects.json lists what the hub may
 # bypass; team.json names every agent's process. A marked agent that could write them could pass as the hub.
 HR="$hub/$T_HUB"; echo '{}' > "$HR/tasks.jsonl"; mkdir -p "$HR/memory"

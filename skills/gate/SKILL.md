@@ -5,7 +5,7 @@ when_to_use: When asked to "run the gate", "gate this", "verify the gate log", o
 allowed-tools: Bash(hm-gate-verify *) Bash(hm-slot status) Bash(hm-slot release *) Bash(hm-settings resolve *) Read
 ---
 
-# hivemind: gate
+# hivehouse: gate
 
 Read `${CLAUDE_PLUGIN_ROOT}/rules/RULES.md` first. Call every `hm-*` executable and every `git` command on its own, never
 inside a compound command. No git rule is pre-approved, so each `git` call asks; `hm-gate` and `hm-slot run` are not
@@ -16,7 +16,7 @@ gate can skip a step and still exit 0.
 
 ## 1. Find the gate
 
-Use the project's recorded gate command (`CLAUDE.md`, `CLAUDE.local.md`, `.hivemind/`). If none is recorded, ask the
+Use the project's recorded gate command (`CLAUDE.md`, `CLAUDE.local.md`, `.hivehouse/`). If none is recorded, ask the
 orchestrator or owner; do not invent one. Commit first: the gate runs on the committed tip. Note the base branch and
 the tip hash being gated (`git rev-parse HEAD`), and that the tree is clean (`git status`): a log vouches only for a
 clean, committed tree.
@@ -28,7 +28,7 @@ not retry by hand; never run beside the holder, and never release a slot you did
 
 ## 3. Run it into a log
 
-Choose the log path (outside the tracked tree, for example `.hivemind/tmp/<name>-gate.log`).
+Choose the log path (outside the tracked tree, for example `.hivehouse/tmp/<name>-gate.log`).
 
 - A gate made of separate commands: `hm-gate --log <file> -- <name> <command> [<name> <command> ...]`. It takes the
   slot itself (never wrap it in `hm-slot run`), runs every step even after a failure, and writes `<name> exit <n>`

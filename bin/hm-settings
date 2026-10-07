@@ -1,9 +1,9 @@
 #!/bin/bash -p
 # Tighten-only project settings. `hm-settings resolve <key> <owner value>` prints the effective value: the project's
-# .hivemind/settings.json may make a safety value stricter than the owner's, never looser. permission_mode alone can come back as
+# .hivehouse/settings.json may make a safety value stricter than the owner's, never looser. permission_mode alone can come back as
 # bypassPermissions, and only for a marked caller (hm_away_caller) while the owner's delegate file is valid for this project and the
 # owner's own value is auto and the project did not tighten it. Takes no command to run.
-# Exit: 2 no project, 3 .hivemind tracked by git, 4 refused value or key, 64 usage.
+# Exit: 2 no project, 3 .hivehouse tracked by git, 4 refused value or key, 64 usage.
 set -u
 # Privileged mode: no BASH_ENV, no functions from the environment, and a fixed bash (the away check below decides bypass).
 HM_BIN=${0%/*}; [ "$HM_BIN" != "$0" ] || HM_BIN=.
@@ -41,7 +41,7 @@ root=$(hm_project_root) || exit $?
 # every team root of a project (its home, and each worktree with a team) takes its settings from the home: a worktree's own file is never read
 home=$(hm_project_home "$root") || exit $?
 if [ -n "$(git -C "$home" ls-files -- "$HM_STATE_DIR")" ]; then
-  hm_die 3 "files under $HM_STATE_DIR/ are tracked by git; untrack them before using hivemind here"
+  hm_die 3 "files under $HM_STATE_DIR/ are tracked by git; untrack them before using hivehouse here"
 fi
 file="$home/$HM_STATE_DIR/settings.json"
 emit() {  # emit <value>: print it; permission_mode left at the owner's auto becomes bypassPermissions for a marked caller while the owner is away

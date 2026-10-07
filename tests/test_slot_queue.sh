@@ -5,7 +5,7 @@
 . "$HM_REPO_ROOT/bin/hm-lib.sh"
 t_setup
 r=$(t_repo proj); cd "$r"
-LOCK="$HIVEMIND_HOME/slot.lock"; Q="$HIVEMIND_HOME/queue"
+LOCK="$HIVEHOUSE_HOME/slot.lock"; Q="$HIVEHOUSE_HOME/queue"
 # --- ordering, by name alone: epoch first, then the pid as a number
 mkdir -p "$T_TMP/ord"; : > "$T_TMP/ord/0000000100-100.json"; : > "$T_TMP/ord/0000000100-99.json"
 : > "$T_TMP/ord/0000000099-5000.json"; : > "$T_TMP/ord/junk.json"; : > "$T_TMP/ord/0000000100-7.txt"

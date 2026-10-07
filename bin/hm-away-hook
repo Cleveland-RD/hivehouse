@@ -1,5 +1,5 @@
 #!/bin/bash -p
-# PreToolUse hook for a session hivemind launched in bypass while the owner is away (the launch marker). It denies (exit 2,
+# PreToolUse hook for a session hivehouse launched in bypass while the owner is away (the launch marker). It denies (exit 2,
 # reason on stderr) what leaves the machine or lets the session out of the marker: MCP tools outside the owner's allowlist,
 # Bash that pushes, publishes or uploads, starts Claude or a tmux window, or writes Claude Code's settings and hook files,
 # SendMessage to anyone outside the session's own team, and Edit/Write to those same files.
@@ -13,12 +13,12 @@ PATH=/usr/bin:/bin:/usr/sbin:/sbin   # first of all: every program the hook and 
 set -u
 # Any exit that is not 0 or an explicit denial (a bash error, an unset variable, a missing library) is a denial too: Claude Code
 # treats exit 1 as "no decision" and would let the tool run.
-trap 'rc=$?; [ "$rc" -eq 0 ] || { [ -n "${DENIED:-}" ] || echo "Refused by hivemind away mode: the check itself failed, which counts as a denial. Tell the owner." >&2; exit 2; }' EXIT
+trap 'rc=$?; [ "$rc" -eq 0 ] || { [ -n "${DENIED:-}" ] || echo "Refused by hivehouse away mode: the check itself failed, which counts as a denial. Tell the owner." >&2; exit 2; }' EXIT
 : "${HOME:?HOME is not set}"
 HM_BIN=${0%/*}; [ "$HM_BIN" != "$0" ] || HM_BIN=.   # parameter expansion, never dirname: an executable on PATH by that name would be run instead
 . "$HM_BIN/hm-lib.sh" || exit 2
 
-deny() { DENIED=1; printf 'Refused by hivemind away mode (the owner is away; this is not a permission prompt): %s. Do not try to change settings, hooks or permissions to get round it; tell the owner what you needed.\n' "$1" >&2; exit 2; }
+deny() { DENIED=1; printf 'Refused by hivehouse away mode (the owner is away; this is not a permission prompt): %s. Do not try to change settings, hooks or permissions to get round it; tell the owner what you needed.\n' "$1" >&2; exit 2; }
 CONF="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
 WRAPPERS=" command exec nohup env sudo doas time nice ionice timeout stdbuf builtin eval xargs sh bash zsh dash ksh setsid if then else elif do while until ! { "
 
@@ -53,8 +53,8 @@ protected_one() {  # protected_one <canonical path>: 0 when Claude Code's settin
     case "$p" in "$HUB/$HM_HUB_DIR"|"$HUB/$HM_HUB_DIR/"*)
       P_WHY="the hub's records ($HM_HUB_DIR) can be changed only by the hub's own session, never by an agent's or an orchestrator's"; return 0 ;; esac
   fi
-  # a team.json names every agent's process: hivemind's own scripts write it from their code, never a session's tools (the hub's too)
-  case "$p" in */"$HM_STATE_DIR"/team.json) P_WHY="a team's team.json is written by hivemind's own scripts, never through a session's tools"; return 0 ;; esac
+  # a team.json names every agent's process: hivehouse's own scripts write it from their code, never a session's tools (the hub's too)
+  case "$p" in */"$HM_STATE_DIR"/team.json) P_WHY="a team's team.json is written by hivehouse's own scripts, never through a session's tools"; return 0 ;; esac
   return 1
 }
 protected() {  # protected <path> <cwd>: the path itself, and where its links lead (a write goes to the target); a link loop counts

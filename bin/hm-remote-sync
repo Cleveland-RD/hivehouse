@@ -4,12 +4,12 @@
 #   branches <host> <remote root> [<branch> ...]
 #   files    <host> <remote root> <list file>
 #   memory   <host> <local memory dir> <remote memory dir>
-#   secret   <host> <remote root> <relative path under .hivemind/tmp>
+#   secret   <host> <remote root> <relative path under .hivehouse/tmp>
 #   start-agent <host> <remote root> <agent> --model m --effort e --mode m [--worktree abs --branch b --base b]
 # Remote paths, list entries and secret paths use only ASCII letters, digits and ._/@+_- (rsync's remote shell splits on a space or ;); anything else is refused (exit 4).
 # Every ssh, scp and rsync goes through hm_ssh, hm_scp, hm_rsync below, which call the tool by name: tests put shims first
-# on PATH, so no test uses a network. After `check`, remote hivemind executables are called by the absolute install path
-# it recorded, so no PATH lookup can run another program there. Exit: 0 ok, 1 findings (mismatch, conflict, version, space), 2 no project, 3 .hivemind tracked,
+# on PATH, so no test uses a network. After `check`, remote hivehouse executables are called by the absolute install path
+# it recorded, so no PATH lookup can run another program there. Exit: 0 ok, 1 findings (mismatch, conflict, version, space), 2 no project, 3 .hivehouse tracked,
 # 4 refused, 5 host unreachable, 64 usage.
 set -u
 HM_BIN=${0%/*}; [ "$HM_BIN" != "$0" ] || HM_BIN=.   # parameter expansion, never dirname: under -p a function is ignored, an executable on PATH is not
@@ -93,7 +93,7 @@ check)
   plug=$(rrun claude plugin list --json 2>/dev/null | jq -c --arg p "$pname@" '[.[] | select((.id // "") | startswith($p))][0] // empty' 2>/dev/null)
   ver=$(printf '%s' "$plug" | jq -r '.version // empty' 2>/dev/null | clean); ip=$(printf '%s' "$plug" | jq -r '.installPath // empty' 2>/dev/null)
   say "plugin: ${ver:-not installed}"
-  [ -n "$ver" ] || flag "the hivemind plugin is not installed on $host"
+  [ -n "$ver" ] || flag "the hivehouse plugin is not installed on $host"
   [ -z "$ver" ] || [ "$ver" = "$want" ] || flag "the plugin there is $ver, here it is $want: update it there"
   for t in jq tmux git; do rrun sh -c 'command -v "$1" >/dev/null' sh "$t" || flag "$t is missing on $host"; done
   if abs_ok "$ip"; then

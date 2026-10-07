@@ -5,7 +5,7 @@
 . "$(dirname "$0")/lib.sh"
 . "$HM_REPO_ROOT/bin/hm-lib.sh"
 t_setup
-env -u HIVEMIND_HOME tmux -S "$HM_TMUX_SOCKET" new-session -d -s keep 'sleep 600'
+env -u HIVEHOUSE_HOME tmux -S "$HM_TMUX_SOCKET" new-session -d -s keep 'sleep 600'
 H="$T_TMP/work"; mkdir -p "$H"; H=$(cd "$H" && pwd -P)
 mk() { local d="$H/$1"; mkdir -p "$d"; git -C "$d" init -q -b main; git -C "$d" config user.email t@t; git -C "$d" config user.name t
        echo x > "$d/README"; git -C "$d" add README; git -C "$d" commit -qm init; }
@@ -51,7 +51,7 @@ mkdir -p "$T_TMP/cl"; printf '#!/usr/bin/env bash\ncd "%s" && hm-hub self "$@"\n
 bash "$T_TMP/cl/claude" --name hub >/dev/null; assert_status "self" $? 0
 assert_eq "...its name" "$(jq -r .name "$P/hub.json")" "hub"
 [ -n "$(jq -r '.claude_pid // empty' "$P/hub.json")" ] && ok "...and the Claude process" || bad "no claude pid"
-bash "$T_TMP/cl/claude" --name 'hub;rm' >/dev/null 2>&1; assert_status "a name hivemind will not type" $? 4
+bash "$T_TMP/cl/claude" --name 'hub;rm' >/dev/null 2>&1; assert_status "a name hivehouse will not type" $? 4
 bash "$T_TMP/cl/claude" --name 'my hub' >/dev/null 2>&1; assert_status "a hub name is one word: orchestrators are told to type it" $? 4
 assert_eq "...the record stays" "$(jq -r .name "$P/hub.json")" "hub"
 hub name lead >/dev/null; out=$(bash "$T_TMP/cl/claude" 2>&1); assert_status "a session with no name is refused" $? 4
@@ -158,7 +158,7 @@ hub start app app-2 --still 2 --max-wait 15 >/dev/null 2>&1; assert_status "neve
 hub log two-1 done >/dev/null
 hub start two two-1 >/dev/null 2>&1; assert_status "never started on a closed task" $? 4
 
-# ---- an orchestrator already running outside hivemind is found, never doubled ----
+# ---- an orchestrator already running outside hivehouse is found, never doubled ----
 # Claude Code keeps a record of every running session (<config>/sessions/<pid>.json: its name, folder and tmux pane)
 mk tri; hub add tri --home tri >/dev/null; t3=$(idof "$(hub task tri --text "Fix it")")
 live() {  # live <name> <cwd> [<tmux value>]: a running process named claude, with Claude Code's record of it
@@ -176,7 +176,7 @@ lp=$(live tri-builder "$H/tri")
 assert_eq "a session that is no orchestrator is not one" "$(hub status tri --json | jq -r '.projects[0].orchestrator.state')" "none"
 lp=$(live tri-orchestrator "$H/tri")
 s=$(hub status tri --json)
-assert_eq "a running orchestrator hivemind never registered is found" "$(printf '%s' "$s" | jq -r '.projects[0].orchestrator.state')" "unregistered"
+assert_eq "a running orchestrator hivehouse never registered is found" "$(printf '%s' "$s" | jq -r '.projects[0].orchestrator.state')" "unregistered"
 assert_eq "...by its name, process and pane" "$(printf '%s' "$s" | jq -r '.projects[0].orchestrator | [.name, .pid, .pane] | map(tostring) | join(" ")')" "tri-orchestrator $lp %77"
 hub start tri "$t3" --still 2 --max-wait 15 >/dev/null 2>"$T_TMP/tri.err"; assert_status "...and never started a second time" $? 4
 assert_contains "...the refusal says how it joins" "$(cat "$T_TMP/tri.err")" "hm-spawn --self"
@@ -226,10 +226,10 @@ assert_eq "...and handed once" "$(jq -r --arg i "$t5" 'select(.id == $i and .eve
 
 # ---- run: the two owner-only skills, typed into a running orchestrator's own pane (on the server it is recorded on) ----
 mk ru; hub add ru --home ru >/dev/null; RU="$H/ru/$T_STATE"; mkdir -p "$RU"
-SB="$T_TMP/b.sock"   # a second tmux server: a registered orchestrator's pane is not always on hivemind's own
+SB="$T_TMP/b.sock"   # a second tmux server: a registered orchestrator's pane is not always on hivehouse's own
 ru_pane() {  # ru_pane <fake claude mode> [capture to draw]: a fresh pane on that server, recorded as ru's orchestrator (a stand-in process for its Claude)
   tmux -S "$SB" kill-server 2>/dev/null; sleep 0.3
-  RUPANE=$(env -u HIVEMIND_HOME tmux -S "$SB" new-session -d -x 200 -y 56 -P -F '#{pane_id}' -s rub -c "$H/ru" -e "HM_FAKE_CLAUDE=$1" -e "HM_FAKE_DIALOG=${2:-}" 'exec claude --name ru-orchestrator') || return 1
+  RUPANE=$(env -u HIVEHOUSE_HOME tmux -S "$SB" new-session -d -x 200 -y 56 -P -F '#{pane_id}' -s rub -c "$H/ru" -e "HM_FAKE_CLAUDE=$1" -e "HM_FAKE_DIALOG=${2:-}" 'exec claude --name ru-orchestrator') || return 1
   t_track "$(tmux -S "$SB" display -p '#{pid}')"
   ( exec -a claude sleep 300 ) >/dev/null 2>&1 & RUCLAUDE=$!; disown "$RUCLAUDE"; t_track "$RUCLAUDE"; sleep 0.3
   local i; i=$(hm_pane_identity "$SB" "$RUPANE")
@@ -248,7 +248,7 @@ hub run ru overnight ru-9 >/dev/null 2>&1; assert_status "...a task nobody asked
 hub run tri cleanup "$t3" >/dev/null 2>"$T_TMP/r.err"; assert_status "...no orchestrator is recorded" $? 4
 assert_contains "......it says to start one" "$(cat "$T_TMP/r.err")" "hm-hub start tri"
 lp=$(live tri-orchestrator "$H/tri")
-hub run tri overnight "$t3" >/dev/null 2>"$T_TMP/r.err"; assert_status "...an orchestrator outside hivemind" $? 4
+hub run tri overnight "$t3" >/dev/null 2>"$T_TMP/r.err"; assert_status "...an orchestrator outside hivehouse" $? 4
 assert_contains "......it says to register it" "$(cat "$T_TMP/r.err")" "hm-spawn --self"
 kill "$lp" 2>/dev/null; sleep 0.3
 ru_pane idle
@@ -372,7 +372,7 @@ hub answer ru --choice 1 --seen "$(jj "$(hub dialog ru)" .fingerprint)" >/dev/nu
 assert_eq "...one Up, then Enter" "$(seq_of)" "KEY: UP KEY: ENTER "
 # a dialog on an agent's screen: the same, on that agent's pane
 ru_pane idle
-APANE=$(env -u HIVEMIND_HOME tmux -S "$SB" new-window -d -P -F '#{pane_id}' -t rub: -n impl -e "HM_FAKE_CLAUDE=dialogfile" -e "HM_FAKE_DIALOG=$FX/03-bash-permission.ansi" 'exec claude')
+APANE=$(env -u HIVEHOUSE_HOME tmux -S "$SB" new-window -d -P -F '#{pane_id}' -t rub: -n impl -e "HM_FAKE_CLAUDE=dialogfile" -e "HM_FAKE_DIALOG=$FX/03-bash-permission.ansi" 'exec claude')
 ai=$(hm_pane_identity "$SB" "$APANE")
 jq --arg k "$SB" --arg p "$APANE" --arg pp "${ai%%$'\t'*}" --arg ps "${ai#*$'\t'}" '.agents += [{name:"impl", pane:$p, socket:$k, pane_pid:$pp, pane_started:$ps}]' "$RU/team.json" > "$RU/team.json.t" && mv "$RU/team.json.t" "$RU/team.json"
 sleep 1
@@ -393,7 +393,7 @@ assert_status "a log while answer waits for the dialog to go away" "$lrc" 0
 [ $((t1 - t0)) -le 2 ] && ok "...is not held up by the wait" || bad "the log waited $((t1 - t0)) s for the lock"
 wait "$sa"; assert_eq "...and the answer reports the dialog is still there" "$(jq -r .dialog_gone "$T_TMP/slow.out")" "false"
 tmux -S "$SB" kill-server 2>/dev/null
-# a session running outside hivemind: its pane is read only where its record says it is
+# a session running outside hivehouse: its pane is read only where its record says it is
 mk unr; hub add unr --home unr >/dev/null
 hm_tmux set-option -g default-size 200x56   # the captures are 50 lines: a window of the default 24 would scroll the dialog away
 up=$(hm_open_window unr orchestrator "$H/unr" "exec claude" -e "HM_FAKE_CLAUDE=dialogfile" -e "HM_FAKE_DIALOG=$FX/01-trust-folder.ansi"); sleep 1
@@ -401,7 +401,7 @@ utm=$(hm_tmux display-message -p -t "$up" '#{session_name}:#{window_id}.#{pane_i
 upid=$(hm_tmux display-message -p -t "$up" '#{pane_pid}')   # the pane's own process is the session: its record names that pid
 mkdir -p "$CLAUDE_CONFIG_DIR/sessions"
 jq -nc --argjson p "$upid" --arg n unr-orchestrator --arg c "$H/unr" --arg t "$utm" '{pid:$p, name:$n, cwd:$c, tmux:$t, kind:"interactive"}' > "$CLAUDE_CONFIG_DIR/sessions/$upid.json"
-assert_eq "an orchestrator outside hivemind, on hivemind's own server, as its record says: its dialog is read" "$(jj "$(hub dialog unr)" .pane)" "$up"
+assert_eq "an orchestrator outside hivehouse, on hivehouse's own server, as its record says: its dialog is read" "$(jj "$(hub dialog unr)" .pane)" "$up"
 assert_eq "...and status sees the question" "$(hub status unr --json | jq -r '.projects[0].orchestrator.question')" "true"
 ufp=$(jj "$(hub dialog unr)" .fingerprint)
 # the record names this very pane, but the process it names is not inside it (two tmux servers can both have a pane %0)

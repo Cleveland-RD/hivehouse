@@ -7,4 +7,4 @@ timeout_seconds: 600
 allowed_tools: [Read, Glob, Grep, Skill, AskUserQuestion]
 ---
 
-/hivemind:start Add a --count flag to src/records.sh that prints only the number of records, and a test for it in tests/test_records.sh. Done when make test passes with the new test. Nothing else changes.
+/hivehouse:start Add a --count flag to src/records.sh that prints only the number of records, and a test for it in tests/test_records.sh. Done when make test passes with the new test. Nothing else changes.

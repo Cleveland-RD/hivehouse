@@ -78,7 +78,7 @@ case "$pushes" in *force*|*--mirror*|*--delete*|*" +"*|*" -f"*) bad "the push li
 # the away marker: a second layer behind hm-away-hook, which is the guard (a Bash command can unset the variable for itself)
 before=$(git --git-dir="$bare" for-each-ref refs/heads)
 HM_AWAY_BYPASS=1 hm-push up "$h1" away-blocked >"$T_TMP/out" 2>"$T_TMP/err"; assert_status "the away marker refuses a valid push" $? 4
-assert_contains "...saying it is hivemind's away mode" "$(cat "$T_TMP/err")" "away mode"
+assert_contains "...saying it is hivehouse's away mode" "$(cat "$T_TMP/err")" "away mode"
 assert_eq "...and nothing reached the remote" "$(git --git-dir="$bare" for-each-ref refs/heads)" "$before"
 HM_AWAY_BYPASS=1 hm-push >/dev/null 2>&1; assert_status "...even with no arguments" $? 4
 HM_AWAY_BYPASS=0 hm-push up "$h1" away-ok >/dev/null 2>&1; assert_status "a marker other than 1 does not refuse" $? 0

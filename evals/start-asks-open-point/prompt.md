@@ -7,4 +7,4 @@ timeout_seconds: 600
 allowed_tools: [Read, Glob, Grep, Skill, AskUserQuestion]
 ---
 
-/hivemind:start Add an export of the records so they can be opened somewhere else.
+/hivehouse:start Add an export of the records so they can be opened somewhere else.

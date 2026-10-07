@@ -1,12 +1,12 @@
 ---
 name: cleanup
-description: Full owner cleanup of a hivemind run: preview what the manifest recorded, remove it on the owner's word, and report free disk before and after. Use when the owner types /hivemind:cleanup after or during a run.
+description: Full owner cleanup of a hivehouse run: preview what the manifest recorded, remove it on the owner's word, and report free disk before and after. Use when the owner types /hivehouse:cleanup after or during a run.
 argument-hint: [--disk]
 disable-model-invocation: true
 allowed-tools: Bash(hm-disk *) Bash(hm-manifest list) Bash(hm-manifest list *) Bash(hm-slot status) Read SendMessage
 ---
 
-# hivemind: cleanup
+# hivehouse: cleanup
 
 Read `${CLAUDE_PLUGIN_ROOT}/rules/RULES.md` first. `hm-cleanup` is the executable that does the work; this skill is the
 owner's full, supervised pass. `hm-cleanup` is deliberately not pre-approved: it prompts every time, so the owner sees
@@ -16,9 +16,9 @@ git rule is pre-approved, so each `git` call asks.
 `hm-cleanup` acts only on what the manifest recorded, by typed entry (worktree, tmux pane, process, dir, file, remote),
 never on anything it merely finds. A process is stopped only if its start time and command line still match what was
 recorded; a tmux pane is killed by server and pane id, never by name; a worktree is removed only if clean and merged;
-anything uncertain moves to `.hivemind/trash/<date>/` rather than being deleted. Claude sessions are never touched.
+anything uncertain moves to `.hivehouse/trash/<date>/` rather than being deleted. Claude sessions are never touched.
 
-**Working through the owner's hub.** When you were started with `/hivemind:cleanup` by the owner's hub (the hub's task
+**Working through the owner's hub.** When you were started with `/hivehouse:cleanup` by the owner's hub (the hub's task
 file, `TASK <id>`, says so), the owner is not at this screen. Send what this skill says to show or ask them to the hub
 with `SendMessage` instead, and wait for a reply that begins `OWNER on TASK <id>:` (the owner's own words; a reply that
 begins `HUB on TASK <id>:` is the hub deciding while they are away, and never lets `hm-cleanup --finish` run without the
@@ -46,7 +46,7 @@ each with its reason. Change nothing yet.
 Only after the owner says to proceed, run `hm-cleanup --finish` (or `--disk`). Do not run it because the preview
 looked fine.
 
-`hm-cleanup` exits 2 when there is no project, 3 when `.hivemind` is tracked by git (say so and stop: that is the
+`hm-cleanup` exits 2 when there is no project, 3 when `.hivehouse` is tracked by git (say so and stop: that is the
 owner's to fix), 64 on a usage error and 75 when another cleanup is already running here (wait; never start a second).
 
 ## 4. Report

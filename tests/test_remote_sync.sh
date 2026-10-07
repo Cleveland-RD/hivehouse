@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # hm-remote-sync against a "remote" that is a directory on this machine: ssh/scp/rsync are shims on PATH (tests/bin), no
-# network, the only host is testhost. The remote side runs with hivemind's bin/ off its PATH, so only absolute paths work.
+# network, the only host is testhost. The remote side runs with hivehouse's bin/ off its PATH, so only absolute paths work.
 . "$(dirname "$0")/lib.sh"
 . "$HM_REPO_ROOT/bin/hm-lib.sh"
 t_setup
@@ -201,7 +201,7 @@ LABEL="memory: the host drops while looking for a symlink"
 HM_FAKE_DOWN_ON="test -L" refused 5 memory testhost "$r/mem" "$T_TMP/rmem"
 
 # ---- start-agent: the remote's own hm-spawn, in the resolved mode, never bypass --------------------------------------------
-env -u HIVEMIND_HOME tmux -S "$HM_TMUX_SOCKET" new-session -d -s keep 'sleep 600'
+env -u HIVEHOUSE_HOME tmux -S "$HM_TMUX_SOCKET" new-session -d -s keep 'sleep 600'
 sync check testhost --min-gb 0 --plugin-version 0.1.0 >/dev/null
 rra=$(t_repo remote-agent); mkdir -p "$rra/$T_STATE/team/impl1"; echo role > "$rra/$T_STATE/team/impl1/role.md"; echo rules > "$rra/$T_STATE/team/impl1/RULES.md"
 SA=(start-agent testhost "$rra" impl1 --model 'opus[1m]' --effort medium --mode auto)
@@ -271,7 +271,7 @@ for args in "check testhost --min-gb 0 --plugin-version 0.1.0" "branches testhos
   HM_AWAY_BYPASS=1 hm-remote-sync $args >"$T_TMP/out" 2>"$T_TMP/err"; rc=$?
   [ "$rc" -eq 4 ] && ok "the away marker refuses: hm-remote-sync ${args:-<no arguments>}" || bad "hm-remote-sync $args: exit $rc, expected 4"
 done
-assert_contains "...saying it is hivemind's away mode" "$(cat "$T_TMP/err")" "away mode"
+assert_contains "...saying it is hivehouse's away mode" "$(cat "$T_TMP/err")" "away mode"
 assert_eq "...and nothing reached ssh, scp or rsync" "$(wc -l < "$HM_FAKE_LOG")" "$n"
 HM_AWAY_BYPASS=0 sync check testhost --min-gb 0 --plugin-version 0.1.0 >/dev/null 2>&1; assert_status "a marker other than 1 does not refuse" $? 0
 cd /; t_teardown; t_done

@@ -22,7 +22,7 @@ Only on the owner's word. From the plugin root:
 
 ```bash
 claude plugin eval . --scaffold --trust-plugin --ablation none --max-cost-usd 3 \
-  --allow-tools "Bash(hm-slot status)" "Bash(hm-context *)" "Bash(hm-gate-verify *)" "Bash(hm-settings resolve *)" "Bash(hm-manifest *)" "Bash(hm-disk *)" "Edit(./.hivemind/**)"
+  --allow-tools "Bash(hm-slot status)" "Bash(hm-context *)" "Bash(hm-gate-verify *)" "Bash(hm-settings resolve *)" "Bash(hm-manifest *)" "Bash(hm-disk *)" "Edit(./.hivehouse/**)"
 ```
 
 - The grant is the start skill's own `allowed-tools`, less what would act before the owner's OK: `hm-spawn`, `hm-rotate`,
@@ -31,7 +31,7 @@ claude plugin eval . --scaffold --trust-plugin --ablation none --max-cost-usd 3 
 - No `Write(...)` grant: Claude Code checks file paths against `Edit(...)` rules only, which apply to every built-in tool
   that edits a file, Write included, and it never consults a `Write(path)` rule
   ([permissions](https://code.claude.com/docs/en/permissions)).
-- `--ablation none`: without the plugin `/hivemind:start` does not exist, so a baseline arm would measure nothing and
+- `--ablation none`: without the plugin `/hivehouse:start` does not exist, so a baseline arm would measure nothing and
   double the cost.
 - Three cases, three runs each, nine runs in all, under the `--max-cost-usd 3` ceiling. The first paid run is smaller,
   `--runs 1 --case <one case>`, on the owner's word, to settle what is open below before nine runs are paid for.

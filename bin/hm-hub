@@ -2,12 +2,12 @@
 # The owner's hub: one Claude session in the owner's work folder that knows every project, hands each task to that
 # project's orchestrator, wakes an orchestrator a restart stopped and starts one where none is. It never reads or
 # changes a project's code: everything here is records, tmux and fixed lines. bash 3.2 compatible.
-# The hub's state is <work folder>/.hivemind-hub/: projects.json, hub.json (the hub's own session), tasks.jsonl (the
+# The hub's state is <work folder>/.hivehouse-hub/: projects.json, hub.json (the hub's own session), tasks.jsonl (the
 # ledger, one event per line), tasks/<id>.md (each task's text), memory/<project>.md (the hub's notes), panes/<project>.json
 # (an orchestrator this hub started, with the line it is to be sent and whether it was: kept until that session registers,
 # so a start stopped at a question is continued rather than made twice), runs/<project>.json (the same for a line `run` types
 # into a running orchestrator's own pane). HM_HUB names the work folder; else the nearest
-# folder at or above the cwd holding .hivemind-hub/.
+# folder at or above the cwd holding .hivehouse-hub/.
 # answers.jsonl is the log of dialogs answered through `answer` (a dialog belongs to no task). Away mode (the owner's
 # delegate file, see bin/hm-lib.sh) adds away.json (when `away` printed its lines), decisions/<task id>.md (what the hub
 # decided for the owner, word for word), holds/<project> (projects the owner keeps the hub away from), recovery.jsonl (the
@@ -16,7 +16,7 @@
 # Exit: 2 not found (no hub, project, task, agent or record), 4 refused value or state, 5 a dialog needs a person, 1 never idle,
 # 64 usage.
 set -u
-# Everything this writes under .hivemind-hub/ is at most 755 for a folder and 644 for a file, whatever the caller's umask was (umask 002, the
+# Everything this writes under .hivehouse-hub/ is at most 755 for a folder and 644 for a file, whatever the caller's umask was (umask 002, the
 # default where each user has their own group, would make 775 and 664, which the delegate check refuses). seal_hub puts right what an
 # earlier umask made.
 HM_CALLER_UMASK=$(umask)   # a pane the hub starts gets the caller's umask back: 022 is for the hub's own records, not an agent's files
@@ -184,7 +184,7 @@ pending() {  # pending <hub root> <project>: 0 a pane this hub started is still 
   [ "$rc" -eq 1 ] && rm -f "$f"
   return "$rc"
 }
-# An orchestrator running outside hivemind (started by hand, or restarted after a restart without registering) is found in
+# An orchestrator running outside hivehouse (started by hand, or restarted after a restart without registering) is found in
 # Claude Code's own record of each running session, <config dir>/sessions/<pid>.json: its name, folder and tmux pane
 # (undocumented, as hm_session_record reads it). It is the project's when its name is <project>-orchestrator or the name
 # the team recorded, or when it sits in the project's home with "orchestrator" in its name. This hub's own session and a
@@ -207,8 +207,8 @@ live_orchestrator() {  # live_orchestrator <hub root> <project> <home> <recorded
   done
   return 1
 }
-# unreg_pane_ok <pane> <the session record's tmux value> <its pid>: 0 when the pane is on hivemind's own tmux server, is the very
-# pane the record of a session running outside hivemind names (session:@window.%pane), and that session's process runs inside it
+# unreg_pane_ok <pane> <the session record's tmux value> <its pid>: 0 when the pane is on hivehouse's own tmux server, is the very
+# pane the record of a session running outside hivehouse names (session:@window.%pane), and that session's process runs inside it
 # (the pane's own process is the process or one of its ancestors). A pane id alone says nothing about which server it is on, and two
 # servers can both have a first pane named alike, so nothing is read from it or sent to it otherwise.
 unreg_pane_ok() {
@@ -223,7 +223,7 @@ unreg_pane_ok() {
   return 1
 }
 # orch_state <hub root> <project> <home>: sets O_AGENT, O_NAME, O_SID, O_STATE (running, stopped, unknown, none, resumable (no record, but a transcript), or
-# unregistered: a live session outside hivemind, with O_PID and O_PANE), and O_QUESTION (true when a dialog waits on the
+# unregistered: a live session outside hivehouse, with O_PID and O_PANE), and O_QUESTION (true when a dialog waits on the
 # screen of a running orchestrator's pane).
 orch_state() {
   local entry="" l r
@@ -301,7 +301,7 @@ start_opts() {  # start_opts <model allowed 0|1> [--model m] [--mode m] [--still
 # sending <record>: 0 while the hm-hub that owns the record's line (a start, a wake or a continue) is still waiting to send
 # it: the pane is then coming up, not waiting on the owner, and nothing else may send its line
 sending() { local p; p=$(hm_json_get "$1" .sender_pid); [ -n "$p" ] && hm_alive "$p" && hm_lstart_is "$p" "$(hm_json_get "$1" .sender_started)"; }
-# project_mode <home>: the owner's --mode, made stricter by the project's own .hivemind/settings.json (and auto raised to bypass only
+# project_mode <home>: the owner's --mode, made stricter by the project's own .hivehouse/settings.json (and auto raised to bypass only
 # while the owner is away, A7), as
 # hm-spawn's agents get it (hm-settings); the hub's folder is no repository, so it is resolved in the project's home
 project_mode() {
@@ -339,7 +339,7 @@ launch() {
   if [ "$MODE" = bypassPermissions ]; then mkdir -p "$root/$HM_HUB_DIR/panes"; hm_bypass_launch "$cwd" "$mcpf" || { rm -f "$mcpf"; hm_die 4 "cannot prepare the away MCP file for $name"; }
   else rm -f "$mcpf"; fi   # an earlier bypass start's file may hold server secrets and is not this launch's
   c="umask $HM_CALLER_UMASK; exec $(printf '%q ' claude "$@" ${HM_BP_ARGS[@]+"${HM_BP_ARGS[@]}"})"   # the pane's files are the caller's, not the hub's records
-  envs=(-e "HIVEMIND_HOME=$(hm_home)" -e "HM_PROJECT=$cwd" ${HM_BP_ENVS[@]+"${HM_BP_ENVS[@]}"})
+  envs=(-e "HIVEHOUSE_HOME=$(hm_home)" -e "HM_PROJECT=$cwd" ${HM_BP_ENVS[@]+"${HM_BP_ENVS[@]}"})
   [ -n "${HM_TMUX_SOCKET:-}" ] && envs+=(-e "HM_TMUX_SOCKET=$HM_TMUX_SOCKET")
   pane=$(umask "$HM_CALLER_UMASK"; hm_open_window "$name" orchestrator "$cwd" "$c" "${envs[@]}") || { rc=$?; rm -f "$mcpf"; exit $rc; }
   socket=$(hm_tmux display-message -p -t "$pane" '#{socket_path}') || exit $?
@@ -360,7 +360,7 @@ launch() {
 finish() {
   local root="$1" name="$2" dir="${3:-panes}" f pane line rc socket kind task
   f="$root/$HM_HUB_DIR/$dir/$name.json"; pane=$(hm_json_get "$f" .pane); line=$(hm_json_get "$f" .line); socket=$(hm_json_get "$f" .socket)
-  case "$line" in ''|*$'\n'*) hm_die 4 "the line recorded for $name is not one hivemind will type" ;; esac
+  case "$line" in ''|*$'\n'*) hm_die 4 "the line recorded for $name is not one hivehouse will type" ;; esac
   wait_idle "$pane" "$STILL" "$MAXWAIT" "$socket"; rc=$?
   case "$rc" in
     0) ;;
@@ -434,14 +434,14 @@ hung_try() {
   HUNG_STOPPED=1
   if [ "$kind" = orchestrator ]; then
     starts=$((starts + 1))   # its wake is one of the day's sessions
-    actions=$(printf '%s' "$actions" | jq -c --arg p "$n" --arg t "$task" --arg w "$why; hivemind stopped it" '. + [{action:"wake", project:$p, task:$t, why:$w}]')
+    actions=$(printf '%s' "$actions" | jq -c --arg p "$n" --arg t "$task" --arg w "$why; hivehouse stopped it" '. + [{action:"wake", project:$p, task:$t, why:$w}]')
   else
-    actions=$(printf '%s' "$actions" | jq -c --arg p "$n" --arg a "$a" --arg w "$why; hivemind stopped it: bring it back with hm-spawn --respawn $a --resume" '. + [{action:"restart", project:$p, agents:[$a], why:$w}]')
+    actions=$(printf '%s' "$actions" | jq -c --arg p "$n" --arg a "$a" --arg w "$why; hivehouse stopped it: bring it back with hm-spawn --respawn $a --resume" '. + [{action:"restart", project:$p, agents:[$a], why:$w}]')
   fi
 }
 # dialog_target <hub root> <project> <agent or empty>: the screen a dialog is read from and answered on. Sets T_SOCKET, T_PANE
 # and T_SESSION. The orchestrator by default: its registered pane, else the pane this hub started for it and it has not
-# registered from (a start's first dialog), else the pane of one running outside hivemind. An agent must be on the team
+# registered from (a start's first dialog), else the pane of one running outside hivehouse. An agent must be on the team
 # (exit 2) and running (exit 4). Needs HOME_DIR, so call it after need_project.
 dialog_target() {
   local root="$1" name="$2" want="$3" entry tr r e wroot roots nroots
@@ -454,7 +454,7 @@ dialog_target() {
     elif pending "$root" "$name"; then
       T_SOCKET=$(hm_json_get "$root/$HM_HUB_DIR/panes/$name.json" .socket); T_PANE=$(hm_json_get "$root/$HM_HUB_DIR/panes/$name.json" .pane); T_SESSION="$name-orchestrator"
     elif [ "$O_STATE" = unregistered ]; then
-      unreg_pane_ok "$O_PANE" "$O_TMUX" "$O_PID" || hm_die 4 "$O_NAME runs outside hivemind, and pane ${O_PANE:-?} is not on this machine's hivemind tmux server as its session record says: answer it in the pane"
+      unreg_pane_ok "$O_PANE" "$O_TMUX" "$O_PID" || hm_die 4 "$O_NAME runs outside hivehouse, and pane ${O_PANE:-?} is not on this machine's hivehouse tmux server as its session record says: answer it in the pane"
       T_PANE="$O_PANE"; T_SESSION="$O_NAME"
     fi
     [ -n "$T_PANE" ] || hm_die 4 "$name has no orchestrator screen to read ($O_STATE)"
@@ -509,7 +509,7 @@ self)
   [ -n "$name" ] || name=$(hm_session_record "$pid" .name)
   hubn=$(hub_chosen_name "$root" 2>/dev/null) || hubn=hub
   [ -n "$name" ] || hm_die 4 "this session has no name: start the hub with claude --name $hubn /$PLUGIN:hub (or type /rename $hubn), or pass --name"
-  hm_is_session_name "$name" || hm_die 4 "a session name hivemind will type is one line of letters, digits, space, - _ . ( ), at most 64: $name"
+  hm_is_session_name "$name" || hm_die 4 "a session name hivehouse will type is one line of letters, digits, space, - _ . ( ), at most 64: $name"
   # orchestrators are told to type it (hm-spawn --self --hub <name>), so it is one word
   case "$name" in *[' ()']*) hm_die 4 "the hub's name is one word (letters, digits, - _ .): $name; rename the session" ;; esac
   jq -nc --arg n "$name" --arg p "$pid" --arg s "$(hm_lstart "$pid")" --arg sid "$(hm_session_record "$pid" .sessionId)" --arg at "$(hm_now)" \
@@ -721,7 +721,7 @@ status)
       (.[] |
         "",
         "\(.name)\(if .held then "  (held: the hub starts and wakes nothing here)" else "" end)",
-        "  orchestrator  \(if .orchestrator.state == "unregistered" then "running, not registered with hivemind" elif .orchestrator.state == "resumable" then "stopped, not registered (resumable)" else .orchestrator.state end)\(if .orchestrator.name then "  \(.orchestrator.name)" else "" end)\(if .orchestrator.pane then " in pane \(.orchestrator.pane)" else "" end)\(if .orchestrator.question then "  (a question on its screen)" else "" end)\(if .orchestrator.starting then (if .orchestrator.starting.typed or .orchestrator.starting.sending then "  (coming up in pane \(.orchestrator.starting.pane))" else "  (waiting in pane \(.orchestrator.starting.pane)\(if .orchestrator.starting.question then " on a question" else "" end): hm-hub continue \(.name))" end) else "" end)",
+        "  orchestrator  \(if .orchestrator.state == "unregistered" then "running, not registered with hivehouse" elif .orchestrator.state == "resumable" then "stopped, not registered (resumable)" else .orchestrator.state end)\(if .orchestrator.name then "  \(.orchestrator.name)" else "" end)\(if .orchestrator.pane then " in pane \(.orchestrator.pane)" else "" end)\(if .orchestrator.question then "  (a question on its screen)" else "" end)\(if .orchestrator.starting then (if .orchestrator.starting.typed or .orchestrator.starting.sending then "  (coming up in pane \(.orchestrator.starting.pane))" else "  (waiting in pane \(.orchestrator.starting.pane)\(if .orchestrator.starting.question then " on a question" else "" end): hm-hub continue \(.name))" end) else "" end)",
         "  agents        \(if (.agents | length) == 0 then "none" else "\([.agents[] | select(.state == "running")] | length) of \(.agents | length) running\([.agents[] | select(.state != "running" or .question) | "\(.ref) \(if .question then "has a question on its screen" else .state end)"] | if length > 0 then "  (\(join(", ")))" else "" end)" end)",
         "  tasks         \(.open_tasks) open",
         (.repos | to_entries[] | "\(if .key == 0 then "  folders       " else "                " end)\(.value.folder + (" " * ($fw - (.value.folder | length))))  \(.value.kind)\(if .value.branch then "  \(.value.branch)  \(if .value.changed == 0 then "clean" else "\(.value.changed) changed" end)" else "" end)"))'
@@ -791,7 +791,7 @@ wake)
     none) hm_die 2 "no orchestrator is recorded for $name: start one on a task with hm-hub start $name <task id>" ;;
     resumable) ;;   # nothing recorded, but a transcript of it: resumed below by its session id
     running) hm_die 4 "$name's orchestrator is running as $O_NAME: message it instead" ;;
-    unregistered) hm_die 4 "$name's orchestrator is running as $O_NAME (pid $O_PID${O_PANE:+, pane $O_PANE}) but is not registered with hivemind: ask it to run hm-spawn --self --agent orchestrator --hub $hn" ;;
+    unregistered) hm_die 4 "$name's orchestrator is running as $O_NAME (pid $O_PID${O_PANE:+, pane $O_PANE}) but is not registered with hivehouse: ask it to run hm-spawn --self --agent orchestrator --hub $hn" ;;
     unknown) hm_die 4 "cannot tell whether $name's orchestrator is running; nothing was started" ;;
   esac
   [ -n "$O_SID" ] || hm_die 2 "$name's orchestrator has no session recorded, so there is no conversation to resume"
@@ -799,7 +799,7 @@ wake)
   # conversation means it is running, and a second process on it would fork it
   if holder=$(hm_session_holder "$O_SID"); then who=${O_NAME:-$name}; hm_die 4 "$who's conversation is already open in a live session (pid $holder): it is running; nothing was started."; fi
   project_mode "$HOME_DIR"
-  hm_is_session_name "$O_NAME" || hm_die 4 "$name's orchestrator name is not one hivemind will type"
+  hm_is_session_name "$O_NAME" || hm_die 4 "$name's orchestrator name is not one hivehouse will type"
   args=(--resume "$O_SID" --name "$O_NAME"); [ -z "$MODE" ] || args+=(--permission-mode "$MODE")
   launch "$root" "$name" wake "$O_ROOT" \
     "You are $O_NAME, resumed by $hn after a restart. Register again with hm-spawn --self --agent $O_AGENT --hub $hn, run hm-context --all, and run hm-spawn --respawn <agent> for each agent it marks (not running). Then send $hn one line, first word BACK: which agents are back and what you were doing." \
@@ -819,11 +819,11 @@ start)
   orch_state "$root" "$name" "$HOME_DIR"
   case "$O_STATE" in
     none|resumable) ;;
-    unregistered) hm_die 4 "$name's orchestrator is already running as $O_NAME (pid $O_PID${O_PANE:+, pane $O_PANE}) but is not registered with hivemind: ask it to run hm-spawn --self --agent orchestrator --hub $hn, then hand it the task" ;;
+    unregistered) hm_die 4 "$name's orchestrator is already running as $O_NAME (pid $O_PID${O_PANE:+, pane $O_PANE}) but is not registered with hivehouse: ask it to run hm-spawn --self --agent orchestrator --hub $hn, then hand it the task" ;;
     *) hm_die 4 "$name already has an orchestrator ($O_STATE): message it, or wake it with hm-hub wake $name" ;;
   esac
   tf="$root/$HM_HUB_DIR/tasks/$id.md"
-  hm_is_typed_path "$tf" || hm_die 4 "the task's path is not one hivemind will type: $tf"
+  hm_is_typed_path "$tf" || hm_die 4 "the task's path is not one hivehouse will type: $tf"
   project_mode "$HOME_DIR"
   args=(--name "$name-orchestrator"); [ -z "$MODEL" ] || args+=(--model "$MODEL"); [ -z "$MODE" ] || args+=(--permission-mode "$MODE")
   if [ "$overnight" = 1 ]; then sline=$(overnight_line "$id" "$tf" "$hn"); else sline="/$PLUGIN:start Task $id: read $tf. It came from the owner through $hn."; fi
@@ -852,11 +852,11 @@ run)
     running) ;;
     stopped) hm_die 4 "$name's orchestrator is stopped: wake it first with hm-hub wake $name" ;;
     none|resumable) hm_die 4 "$name has no orchestrator: start one first with hm-hub start $name $id" ;;
-    unregistered) hm_die 4 "$name's orchestrator is running as $O_NAME but is not registered with hivemind: ask it to run hm-spawn --self --agent orchestrator --hub $hn first" ;;
+    unregistered) hm_die 4 "$name's orchestrator is running as $O_NAME but is not registered with hivehouse: ask it to run hm-spawn --self --agent orchestrator --hub $hn first" ;;
     *) hm_die 4 "cannot tell whether $name's orchestrator is running; nothing was typed" ;;
   esac
   tf="$root/$HM_HUB_DIR/tasks/$id.md"
-  hm_is_typed_path "$tf" || hm_die 4 "the task's path is not one hivemind will type: $tf"
+  hm_is_typed_path "$tf" || hm_die 4 "the task's path is not one hivehouse will type: $tf"
   entry=$(hm_self_entry "$O_ROOT")
   rsocket=$(printf '%s' "$entry" | jq -r '.socket // empty'); rpane=$(printf '%s' "$entry" | jq -r '.pane // empty')
   [ -n "$rpane" ] || hm_die 4 "$name's orchestrator has no pane recorded"
@@ -977,7 +977,7 @@ continue)
 
 away)
   # Prints what the owner pastes to turn delegate mode on: the sudo lines that make the root-owned delegate file, and the
-  # hub's own start line (marked, in bypass, with only its allowed MCP servers). hivemind never runs sudo itself, so a changed
+  # hub's own start line (marked, in bypass, with only its allowed MCP servers). hivehouse never runs sudo itself, so a changed
   # script cannot take the password, and the owner sees what runs as root. The hub is found from the cwd alone.
   until=""; allow=""
   while [ $# -gt 0 ]; do
@@ -988,7 +988,7 @@ away)
   [ -n "$until" ] || hm_die 64 "$USAGE"
   root=$(hub_root_cwd) || exit $?
   hubn=$(hub_chosen_name "$root" 2>/dev/null) || hubn=hub
-  hm_is_typed_path "$root" || hm_die 4 "the hub's folder is not a path hivemind will print into a command: $root"
+  hm_is_typed_path "$root" || hm_die 4 "the hub's folder is not a path hivehouse will print into a command: $root"
   case "$allow" in *[!${HM_LOWER}${HM_UPPER}${HM_DIGITS}_,.:-]*) hm_die 4 "--mcp-allow is a comma-separated list of server or tool names" ;; esac
   now=$(/bin/date +%s)
   case "$until" in
@@ -1033,7 +1033,7 @@ away)
   seal_hub "$root"
   file=$(hm_delegate_path) || hm_die 4 "this user's id cannot be read, so there is no delegate file to name"
   dir=${file%/*}; base=${dir%/*}; grp=root; [ ! -d /System/Library ] || grp=wheel
-  hm_is_typed_path "$file" || hm_die 4 "the delegate file's path is not one hivemind will print into a command: $file"
+  hm_is_typed_path "$file" || hm_die 4 "the delegate file's path is not one hivehouse will print into a command: $file"
   mcp="$root/$HM_HUB_DIR/away-mcp.json"
   cdir=$(hm_claude_dir); cj=$(hm_claude_json)
   hm_write_away_mcp "$mcp" "$allow" "$root" || hm_die 1 "cannot write $mcp"
@@ -1041,7 +1041,7 @@ away)
   jq -nc --arg s "$(epoch_iso "$now")" --argjson u "$epoch" '{since:$s, until:$u}' > "$root/$HM_HUB_DIR/away.json"
   sid=$(hm_json_get "$root/$HM_HUB_DIR/hub.json" .session_id)
   case "$sid" in ''|*[!${HM_LOWER}${HM_UPPER}${HM_DIGITS}-]*) sid="" ;; esac
-  echo "# Away until $(epoch_local "$epoch") (at most 7 days). Paste these lines in a terminal: hivemind never runs sudo, and what runs as root is only this."
+  echo "# Away until $(epoch_local "$epoch") (at most 7 days). Paste these lines in a terminal: hivehouse never runs sudo, and what runs as root is only this."
   echo "# This file is for $(/usr/bin/id -un) (uid $(/usr/bin/id -u)): one file for each user, so another user on this machine is not away. The uid is written into the lines, so an administrator can paste these lines from another account."
   printf 'sudo mkdir -p -- %q\n' "$dir"
   printf "printf '%%s\\\\n' %q %q %q %q | sudo tee -- %q > /dev/null\n" "$HM_DELEGATE_LINE1" "hub=$root" "until=$epoch" "mcp=$allow" "$file"
@@ -1083,9 +1083,9 @@ away)
 back)
   [ $# -eq 0 ] || hm_die 64 "$USAGE"
   root=$(hub_root_cwd) || exit $?
-  hm_is_typed_path "$root" || hm_die 4 "the hub's folder is not a path hivemind will print into a command: $root"
+  hm_is_typed_path "$root" || hm_die 4 "the hub's folder is not a path hivehouse will print into a command: $root"
   file=$(hm_delegate_path) || hm_die 4 "this user's id cannot be read, so there is no delegate file to name"
-  hm_is_typed_path "$file" || hm_die 4 "the delegate file's path is not one hivemind will print into a command: $file"
+  hm_is_typed_path "$file" || hm_die 4 "the delegate file's path is not one hivehouse will print into a command: $file"
   sid=$(hm_json_get "$root/$HM_HUB_DIR/hub.json" .session_id)
   case "$sid" in ''|*[!${HM_LOWER}${HM_UPPER}${HM_DIGITS}-]*) sid="" ;; esac
   echo "# Away ends when this file is gone. Paste the line in a terminal:"

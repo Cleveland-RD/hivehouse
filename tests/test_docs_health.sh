@@ -45,7 +45,7 @@ out=$(run '{"groups":[{"name":"A","repos":["/a"]},{"name":"B","repos":["/c"]}],"
 assert_eq "one named group, case-insensitive" "$(field "$out" '.groups|join(",")')" "B"
 out=$(run '{"groups":[{"name":"A","repos":["/a"]}],"group":"zzz"}' /never); assert_eq "no group matched is refused" "$(field "$out" .ok)" "false"
 
-# the write line is conditional on the tracked check, which comes first; nothing writes to .hivemind/reports unconditionally (S1)
+# the write line is conditional on the tracked check, which comes first; nothing writes to .hivehouse/reports unconditionally (S1)
 out=$(run undefined /some/proj); prompt=$(field "$out" .reportPrompt)
 before_tracked=${prompt%%those files are tracked*}; before_cond=${prompt%%'Unless the check above sent the report to'*}
 if [ "$before_tracked" != "$prompt" ] && [ "$before_cond" != "$prompt" ] && [ ${#before_tracked} -lt ${#before_cond} ]; then ok "the tracked-$T_STATE sentence comes before the conditional write line"; else bad "the tracked-$T_STATE sentence comes before the conditional write line"; fi
@@ -57,7 +57,7 @@ out=$(run '{"reportPath":"/elsewhere/report.md"}' /some/proj); prompt=$(field "$
 assert_contains "a given path is written unconditionally" "$prompt" 'Write the report to /elsewhere/report.md (create the file'
 case "$prompt" in *"Unless the check above"*|*"never under $T_STATE/"*) bad "a given path has no tracked-check wording" ;; *) ok "a given path has no tracked-check wording" ;; esac
 
-# a report that cannot go under .hivemind/ goes outside every repository, never into the working directory (S1 again)
+# a report that cannot go under .hivehouse/ goes outside every repository, never into the working directory (S1 again)
 for spec in undefined '{"reportPath":"/elsewhere/report.md"}'; do
   out=$(run "$spec" /some/proj); prompt=$(field "$out" .reportPrompt)
   assert_contains "fallback ($spec): outside every repository, in TMPDIR" "$prompt" 'OUTSIDE every repository, to '

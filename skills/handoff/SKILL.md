@@ -6,7 +6,7 @@ when_to_use: Also when an orchestrator asks an agent to update its START HERE bl
 
 # Session handoff
 
-Read `${CLAUDE_PLUGIN_ROOT}/rules/RULES.md` first if you are inside a hivemind team.
+Read `${CLAUDE_PLUGIN_ROOT}/rules/RULES.md` first if you are inside a hivehouse team.
 
 Produce a handoff that lets a fresh agent with zero prior context resume work immediately.
 
@@ -25,9 +25,9 @@ manual, not a changelog. Priority order:
 3. **Next steps**: what to do next, detailed enough to start immediately.
 4. **What was done**: a summary, for context only.
 
-## Inside a hivemind team
+## Inside a hivehouse team
 
-Each agent, the orchestrator included, keeps one file: `.hivemind/handoffs/<agent>.md`. Its newest **START HERE**
+Each agent, the orchestrator included, keeps one file: `.hivehouse/handoffs/<agent>.md`. Its newest **START HERE**
 block is at the top and is the agent's whole prompt after a `/clear`; older blocks and dated log lines sit beneath.
 
 ### The START HERE block
@@ -36,7 +36,7 @@ block is at the top and is the agent's whole prompt after a `/clear`; older bloc
 ## START HERE — <machine/context>, written <weekday date time> (from `date`) by <project>-<agent> (supersedes every block below)
 
 I am <project>-<agent>. Report ONLY to <orchestrator>.
-Rules: <the 4-6 rules that matter most now, one line each; the rest are in .hivemind/team/<agent>/RULES.md>.
+Rules: <the 4-6 rules that matter most now, one line each; the rest are in .hivehouse/team/<agent>/RULES.md>.
 
 STATE: <idle | mid-task: which>. Branch <b>, worktree <path>, tip <hash>. Pushed / not pushed. Gated / not gated.
 DONE: <what is finished, one line each, with hashes>.
@@ -53,14 +53,14 @@ from memory. Verify every hash, path and count against the source before writing
 
 After a clear, the orchestrator sends this (`hm-spawn` and `hm-rotate` send it for you):
 
-`You are <project>-<agent>. Read <root>/.hivemind/handoffs/<agent>.md from the top: its START HERE block is your prompt, and <root>/.hivemind/team/<agent>/ holds your role and the rules. Report to <orchestrator>. Wait for its first message before any work.`
+`You are <project>-<agent>. Read <root>/.hivehouse/handoffs/<agent>.md from the top: its START HERE block is your prompt, and <root>/.hivehouse/team/<agent>/ holds your role and the rules. Report to <orchestrator>. Wait for its first message before any work.`
 
 <orchestrator> is the orchestrator session's own name, read when the line is sent (so a rename is followed), or
 <project>-orchestrator when it cannot be read.
 
 The orchestrator's own line, after `hm-self-rotate`, is shorter: it reports to nobody and waits for nobody.
 
-`You are <orchestrator>. Read <root>/.hivemind/handoffs/<agent>.md from the top: its START HERE block is your prompt.`
+`You are <orchestrator>. Read <root>/.hivehouse/handoffs/<agent>.md from the top: its START HERE block is your prompt.`
 
 When the owner uses the i-have-adhd output style (`hm-adhd` finds it), the line adds `Read <its SKILL.md> and follow it
 for every message to the owner.`
@@ -77,12 +77,12 @@ When the orchestrator (or your own check) says the context is at `${user_config.
 
 - For an agent: read every session's level with `hm-context --all`; at the threshold ask for the update; on "done" run
   `hm-rotate <agent>`. It waits until the pane is idle, sends `/clear`, checks it landed, sends the pickup line, and
-  logs the levels before and after in `.hivemind/rotate.log`.
+  logs the levels before and after in `.hivehouse/rotate.log`.
 - For itself: update its own block, then `hm-self-rotate <orchestrator agent name>` as the last act of the turn. It
   detaches, waits until the orchestrator is idle, and does the same.
 - After a rotation, the agent re-reads any file before editing it; a remembered file may be stale.
 
-## Outside a hivemind team
+## Outside a hivehouse team
 
 Use this structure for a standalone handoff. Every section is mandatory; write "None" for an empty one.
 

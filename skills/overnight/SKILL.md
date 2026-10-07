@@ -1,13 +1,13 @@
 ---
 name: overnight
-description: Run a queue of work unattended on this machine or a named remote host, with a team of Claude sessions, a heartbeat and a morning report. Use when the owner types /hivemind:overnight.
+description: Run a queue of work unattended on this machine or a named remote host, with a team of Claude sessions, a heartbeat and a morning report. Use when the owner types /hivehouse:overnight.
 when_to_use: When the owner wants work to continue while they are away, or to move a team to another machine for the night.
 argument-hint: <what to work through>
 disable-model-invocation: true
-allowed-tools: Bash(hm-spawn *) Bash(hm-rotate *) Bash(hm-self-rotate *) Bash(hm-slot status) Bash(hm-slot release *) Bash(hm-context *) Bash(hm-gate-verify *) Bash(hm-settings resolve *) Bash(hm-manifest *) Bash(hm-disk *) Bash(hm-adhd) Bash(git status *) Bash(git log *) Bash(git diff *) Bash(git rev-parse *) Bash(git show *) Read Edit(./.hivemind/**) Write(./.hivemind/**) AskUserQuestion SendMessage ListAgents CronCreate CronDelete CronList
+allowed-tools: Bash(hm-spawn *) Bash(hm-rotate *) Bash(hm-self-rotate *) Bash(hm-slot status) Bash(hm-slot release *) Bash(hm-context *) Bash(hm-gate-verify *) Bash(hm-settings resolve *) Bash(hm-manifest *) Bash(hm-disk *) Bash(hm-adhd) Bash(git status *) Bash(git log *) Bash(git diff *) Bash(git rev-parse *) Bash(git show *) Read Edit(./.hivehouse/**) Write(./.hivehouse/**) AskUserQuestion SendMessage ListAgents CronCreate CronDelete CronList
 ---
 
-# hivemind: overnight
+# hivehouse: overnight
 
 You run a queue of work while the owner is away. The work: $ARGUMENTS
 
@@ -59,7 +59,7 @@ decision made for the owner: ask instead.
 
 ## 2. Write the queue
 
-Write `.hivemind/overnight-queue.md`: each item with its done condition; each paid step with its price; what may be
+Write `.hivehouse/overnight-queue.md`: each item with its done condition; each paid step with its price; what may be
 pushed, naming what CI runs on that push (deploys, migrations), since a push that deploys is an outward step; and the
 morning-report template from `${CLAUDE_SKILL_DIR}/morning-report.md`. Show it to the owner and take their OK.
 
@@ -76,7 +76,7 @@ on a permission prompt with nobody there, and what they must set (`permission_mo
 started in auto mode). Ask whether they want to change that or stop.
 
 A dedicated host (`${user_config.dedicated_hosts}`) is where the owner may start a bypass session by hand, and only when they
-confirm it that time; a previous night's yes does not carry. hivemind never starts bypass itself except in away mode, on this
+confirm it that time; a previous night's yes does not carry. hivehouse never starts bypass itself except in away mode, on this
 machine, for a project the owner's delegate file lists: `hm-spawn` refuses it otherwise (exit 4), and so does the remote one.
 An agent on a remote host is started by `hm-remote-sync start-agent`, in the resolved mode and never in bypass, which asks
 permission each time.
@@ -85,7 +85,7 @@ permission each time.
 
 Over ssh, with `hm-remote-sync`, in this order, each on its own call:
 
-- `check`: free disk first, the hivemind plugin installed at the same version (a private marketplace needs git
+- `check`: free disk first, the hivehouse plugin installed at the same version (a private marketplace needs git
   credentials there), and the plugin's install path, which every later remote call uses by absolute path;
 - `branches`: bundles of the branches the remote lacks;
 - `files`: files git does not carry, by manifest, verified by sha256;
@@ -94,7 +94,7 @@ Over ssh, with `hm-remote-sync`, in this order, each on its own call:
 - `secret`: such as `.env`, copied at mode 0600, recorded in the remote's manifest and removed by its cleanup; settings
   are compared by key hash and never printed;
 - `start-agent`: how an agent starts there (step 5). First send the agent's `role.md` and `RULES.md` to
-  `<root>/.hivemind/team/<agent>/` with `files`, then `hm-remote-sync start-agent <host> <root> <agent> --model … --effort …
+  `<root>/.hivehouse/team/<agent>/` with `files`, then `hm-remote-sync start-agent <host> <root> <agent> --model … --effort …
   --mode <resolved>` (add `--worktree <abs> --branch <b> --base <b>` for a worktree). It runs the remote's own `hm-spawn`, in
   the resolved mode and never in bypass, and asks permission each time.
 
@@ -141,7 +141,7 @@ route around a refusal, never retry it differently, and never stop the night sil
 
 ## 7. Morning
 
-Write the report from `${CLAUDE_SKILL_DIR}/morning-report.md` to `.hivemind/morning-report-<YYYY-MM-DD>.md`, the date from `date`: what landed, what is on a branch only, spend, and the
+Write the report from `${CLAUDE_SKILL_DIR}/morning-report.md` to `.hivehouse/morning-report-<YYYY-MM-DD>.md`, the date from `date`: what landed, what is on a branch only, spend, and the
 owner's questions. Delete the heartbeat (`CronDelete`). The return trip of branches and files from a remote host, and
 the remote's cleanup (`hm-remote-sync`, then `hm-cleanup --finish --dry-run` and `hm-cleanup --finish`), happen only
 on the owner's word.

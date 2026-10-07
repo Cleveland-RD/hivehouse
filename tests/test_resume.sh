@@ -5,7 +5,7 @@
 . "$HM_REPO_ROOT/bin/hm-lib.sh"
 t_setup
 r=$(t_repo proj); cd "$r"; echo role > "$T_TMP/impl.md"; echo rules > "$T_TMP/RULES.md"
-env -u HIVEMIND_HOME tmux -S "$HM_TMUX_SOCKET" new-session -d -s keep 'sleep 600'
+env -u HIVEHOUSE_HOME tmux -S "$HM_TMUX_SOCKET" new-session -d -s keep 'sleep 600'
 S="$r/$T_STATE"
 spawn() { hm-spawn --agent "$1" --role "$T_TMP/impl.md" --rules "$T_TMP/RULES.md" --model sonnet --effort medium --mode "${2:-auto}" --still 2 --max-wait 15; }
 respawn() { hm-spawn --respawn "$@" --still 2 --max-wait 15; }
@@ -67,7 +67,7 @@ np=$(respawn impl --resume); assert_status "--resume with a recorded session" $?
 sc=$(screen "$np")
 assert_contains "claude is started with --resume" "$sc" "ARGV: --resume"
 assert_contains "...and the recorded session id" "$sc" "ARGV: sess-abc-123"
-assert_contains "the agent is typed the short restart line" "$sc" "GOT: You were restarted by hivemind after your session stopped responding. Carry on where you were; your handoff is $HANDOFF."
+assert_contains "the agent is typed the short restart line" "$sc" "GOT: You were restarted by hivehouse after your session stopped responding. Carry on where you were; your handoff is $HANDOFF."
 case "$sc" in *"You are proj-impl. Read"*) bad "the pickup line was typed too" ;; *) ok "...not the pickup line" ;; esac
 assert_eq "it is registered again as recorded" "$(pane)" "$np"
 hm_team_agent_is "$r" impl; assert_status "...and runs as recorded" $? 0

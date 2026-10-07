@@ -9,7 +9,7 @@ import { HUB_DIR, PANE, PLUGIN, PREFIX } from './names'
 // Everything shown is read from hm-hub; the only things done here are the Resume and Continue presses, which run
 // `hm-hub wake` and `hm-hub continue`.
 // The command that opens the screen. Never a skill's name: Claude Code refuses a command named as one of the plugin's own
-// skills (/hub is the skill, /hivemind:hub), and tests/test_hub_screen.sh holds it to that.
+// skills (/hub is the skill, /hivehouse:hub), and tests/test_hub_screen.sh holds it to that.
 const COMMAND = 'hub-screen'
 const EVERY_MS = 20_000
 const WAKE_TIMEOUT_MS = 150_000 // hm-hub waits up to 90 s for a started session to be idle
@@ -18,13 +18,13 @@ const ANSWER_TIMEOUT_MS = 30_000 // hm-hub answer sends its keys and then watche
 const EMPTY: HubView = { root: '', hubName: '', projects: [], tasks: [], dialogs: {}, away: null, awayRefused: null, lastAway: null, updatedAt: 0, error: '' }
 // The atoms' plugin must be a string literal in this file (the engine reads the source to list what a module reads and writes), so
 // it is spelled here, not taken from names.ts; tests/test_names.sh holds it to .claude-plugin/plugin.json's name.
-const view = atom({ plugin: 'hivemind', key: 'hubView' } as const, EMPTY)
+const view = atom({ plugin: 'hivehouse', key: 'hubView' } as const, EMPTY)
 // the project a press is acting on, one at a time
-const acting = atom({ plugin: 'hivemind', key: 'hubResuming' } as const, '')
+const acting = atom({ plugin: 'hivehouse', key: 'hubResuming' } as const, '')
 // the start of the away period whose decisions the owner has marked seen (a newer away starts unseen)
-const seenAway = atom({ plugin: 'hivemind', key: 'hubSeenAway' } as const, '')
+const seenAway = atom({ plugin: 'hivehouse', key: 'hubSeenAway' } as const, '')
 
-// The session is the hub when its own folder holds .hivemind-hub/ (a folder, not a link): hm-session-hook's rule.
+// The session is the hub when its own folder holds .hivehouse-hub/ (a folder, not a link): hm-session-hook's rule.
 let hubRootOnce: Promise<string | null> | null = null
 function hubRoot($: EngineInterface): Promise<string | null> {
   hubRootOnce ??= (async () => {
@@ -443,7 +443,7 @@ function commandsOnly(command: string): string {
 export const register: Register = (on, options) => {
   // the mode orchestrators run in, as the hub's own sessions do: cross-session messages wait for approval across modes
   const mode = typeof options.permission_mode_local === 'string' ? options.permission_mode_local : ''
-  // the level at which hivemind rotates a session: a level at or above it is drawn as a warning
+  // the level at which hivehouse rotates a session: a level at or above it is drawn as a warning
   const rotateAt = typeof options.rotate_at_percent === 'number' ? options.rotate_at_percent : 50
   const autoStart = options.hub_auto_start !== false
 

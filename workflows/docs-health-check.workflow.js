@@ -7,10 +7,10 @@
  * MINIMAL-CHURN change plan, and (in apply mode) applies it to the WORKING TREE.
  * It NEVER commits: you review the uncommitted diff.
  *
- * INVOKE (a plugin workflow is namespaced by its plugin, so as a command it is /hivemind:docs-health-check):
- *   /hivemind:docs-health-check                  -> the current project (git top level of the working directory), report only, 30 days
- *   /hivemind:docs-health-check apply            -> the same, applying the plan to the working tree (uncommitted)
- *   /hivemind:docs-health-check report 60        -> report only, last 60 days
+ * INVOKE (a plugin workflow is namespaced by its plugin, so as a command it is /hivehouse:docs-health-check):
+ *   /hivehouse:docs-health-check                  -> the current project (git top level of the working directory), report only, 30 days
+ *   /hivehouse:docs-health-check apply            -> the same, applying the plan to the working tree (uncommitted)
+ *   /hivehouse:docs-health-check report 60        -> report only, last 60 days
  * Or programmatically:
  *   Workflow({ scriptPath: "<plugin root>/workflows/docs-health-check.workflow.js", args: { mode: "apply", sinceDays: 60 } })
  *   Workflow({ scriptPath: "...", args: { groups: [{ name: "Backend", repos: ["/abs/api", "/abs/web"] }] } })  // named groups
@@ -21,8 +21,8 @@
  *   group:      string | string[]                  run only these named group(s) from `groups`; needs `groups`.
  *   sinceDays:  number                             default 30  (window for "recent changes")
  *   mode:       "report" | "apply"                 default "report"  (apply = write to working tree, NO commit)
- *   reportPath: absolute path for the md report    default <first repo>/.hivemind/reports/docs-health-report-<date>.md
- *               (.hivemind/ is where hivemind keeps per-project state and git ignores it, so report mode leaves the tree as it was)
+ *   reportPath: absolute path for the md report    default <first repo>/.hivehouse/reports/docs-health-report-<date>.md
+ *               (.hivehouse/ is where hivehouse keeps per-project state and git ignores it, so report mode leaves the tree as it was)
  *
  * The workflow runtime has no shell or working-directory global, so the current project is found by one small agent
  * that runs `git rev-parse --show-toplevel`.
@@ -49,7 +49,7 @@ export const meta = {
 // ----------------------------- config -----------------------------
 // Normalize args so this works whether invoked programmatically with an OBJECT
 // (Workflow({ args: { mode: "apply", sinceDays: 60 } })) OR as a slash command with
-// positional TEXT (/hivemind:docs-health-check apply 60). Token rules for the text form:
+// positional TEXT (/hivehouse:docs-health-check apply 60). Token rules for the text form:
 //   a number (optional trailing 'd') -> sinceDays ; "report"/"apply" -> mode ;
 //   anything else -> group name(s), which need `groups` to name them.
 function normalizeArgs(a) {
@@ -107,20 +107,20 @@ if (named) {
 }
 const sinceDays = A.sinceDays || 30
 const mode = (A.mode === 'apply') ? 'apply' : 'report'
-// default: <first repo>/.hivemind/reports/docs-health-report-<date>.md, the date filled in by the report agent. .hivemind/ is
-// where hivemind keeps per-project state; it is git-ignored through .git/info/exclude, so the report is never an untracked file
+// default: <first repo>/.hivehouse/reports/docs-health-report-<date>.md, the date filled in by the report agent. .hivehouse/ is
+// where hivehouse keeps per-project state; it is git-ignored through .git/info/exclude, so the report is never an untracked file
 // (which would make report mode change the tree and turn a gate's dirty check red).
 const firstRepo = groups[0].repos[0].replace(/\/+$/, '')
-const reportPath = A.reportPath || `${firstRepo}/.hivemind/reports/docs-health-report-<date>.md`
+const reportPath = A.reportPath || `${firstRepo}/.hivehouse/reports/docs-health-report-<date>.md`
 const reportInState = !A.reportPath
 // the line hm_ensure_state writes (bin/hm-lib.sh), the same one and only when absent
-const IGNORE_STATE = `Before writing the report, make sure git ignores .hivemind/ in ${firstRepo}: run \`git -C ${firstRepo} ls-files -- .hivemind\`; if it prints anything, those files are tracked, so do not write under .hivemind/ at all: write the report OUTSIDE every repository, to \`\${TMPDIR:-/tmp}/docs-health-report-<date>.md\` (resolve $TMPDIR with Bash), and say so in the reportPath you return and in the summary. Otherwise run \`common=$(git -C ${firstRepo} rev-parse --path-format=absolute --git-common-dir)\`, then \`mkdir -p "$common/info"\`, \`touch "$common/info/exclude"\` and \`grep -qx '/.hivemind/' "$common/info/exclude" || echo '/.hivemind/' >> "$common/info/exclude"\` (append that exact line, and only when it is absent), and \`mkdir -p ${firstRepo}/.hivemind/reports\`.`
+const IGNORE_STATE = `Before writing the report, make sure git ignores .hivehouse/ in ${firstRepo}: run \`git -C ${firstRepo} ls-files -- .hivehouse\`; if it prints anything, those files are tracked, so do not write under .hivehouse/ at all: write the report OUTSIDE every repository, to \`\${TMPDIR:-/tmp}/docs-health-report-<date>.md\` (resolve $TMPDIR with Bash), and say so in the reportPath you return and in the summary. Otherwise run \`common=$(git -C ${firstRepo} rev-parse --path-format=absolute --git-common-dir)\`, then \`mkdir -p "$common/info"\`, \`touch "$common/info/exclude"\` and \`grep -qx '/.hivehouse/' "$common/info/exclude" || echo '/.hivehouse/' >> "$common/info/exclude"\` (append that exact line, and only when it is absent), and \`mkdir -p ${firstRepo}/.hivehouse/reports\`.`
 const WRITE_UNLESS_TRACKED = `Unless the check above sent the report to \${TMPDIR:-/tmp}, write the report to ${reportPath} (create the file; replace <date> with today's date).`
 const WRITE_GIVEN = `Write the report to ${reportPath} (create the file; replace <date> with today's date).`
 const base = (p) => p.replace(/\/+$/, '').split('/').pop()
 
 // ----------------------------- shared rules -----------------------------
-const EXCLUSIONS = `Do NOT touch, move, rewrite, or rename any of: HANDOFF.md files and anything under .hivemind/ (session snapshots and team state), backup or operational-data folders under docs/ (any directory named like *-backups), generated files, node_modules, .next, .git, or anything matched by .gitignore. Leave them untouched.`
+const EXCLUSIONS = `Do NOT touch, move, rewrite, or rename any of: HANDOFF.md files and anything under .hivehouse/ (session snapshots and team state), backup or operational-data folders under docs/ (any directory named like *-backups), generated files, node_modules, .next, .git, or anything matched by .gitignore. Leave them untouched.`
 
 const CONVENTIONS = `Conventions this repo set should converge on (apply only where it does not cause churn-for-churn):
 - File names: kebab-case (lowercase, hyphen-separated). Conventional ROOT files keep their canonical names: README.md, CLAUDE.md, AGENTS.md, LICENSE, CHANGELOG.md, and a docs index named docs/README.md.
@@ -318,7 +318,7 @@ ${JSON.stringify(allResults, null, 2)}
 
 The report must have, per group and per repo: (a) recent-change documentation gaps, (b) inconsistencies (naming/structure/stale/broken-link/missing-index/duplication), (c) cross-repo issues + the unified-structure recommendation, (d) ${applied ? 'what was APPLIED (and any judgment calls / deferred items / remaining broken links)' : 'the recommended change plan'}, and (e) deleteCandidates (never auto-applied) for human decision. End with a prioritized, cross-project "Top actions" list.
 Determine today's date with \`date +%F\` via Bash. ${reportInState ? IGNORE_STATE + '\n' + WRITE_UNLESS_TRACKED : WRITE_GIVEN}
-If you cannot write to the path you chose, write the report OUTSIDE every repository, to \${TMPDIR:-/tmp}/docs-health-report-<date>.md (resolve $TMPDIR with Bash), and say so in the reportPath you return and in the summary. Never write the report inside a repository anywhere but at ${reportPath}${reportInState ? ', and never under .hivemind/ when the check above found it tracked' : ''}. Return the actual reportPath you wrote, a short summary, and the top actions.`
+If you cannot write to the path you chose, write the report OUTSIDE every repository, to \${TMPDIR:-/tmp}/docs-health-report-<date>.md (resolve $TMPDIR with Bash), and say so in the reportPath you return and in the summary. Never write the report inside a repository anywhere but at ${reportPath}${reportInState ? ', and never under .hivehouse/ when the check above found it tracked' : ''}. Return the actual reportPath you wrote, a short summary, and the top actions.`
 
 // ----------------------------- run -----------------------------
 log(`docs-health-check | mode=${mode} | window=${sinceDays}d | groups: ${groups.map((g) => `${g.name}(${g.repos.length})`).join(', ')}`)

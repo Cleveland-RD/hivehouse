@@ -3,7 +3,7 @@
 . "$HM_REPO_ROOT/bin/hm-lib.sh"
 t_setup
 r=$(t_repo proj); cd "$r"
-LOCK="$HIVEMIND_HOME/slot.lock"
+LOCK="$HIVEHOUSE_HOME/slot.lock"
 assert_eq "free at start" "$(hm-slot status)" "free"
 out=$(hm-slot run gate -- bash -c 'hm-slot status'); assert_contains "held during run" "$out" '"label":"gate"'
 assert_contains "holder records the project" "$out" "\"project\":\"$r\""

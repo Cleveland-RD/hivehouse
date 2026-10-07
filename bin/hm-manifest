@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Typed manifest of what hivemind created. Never stores a command: hm-cleanup derives removal from the kind.
+# Typed manifest of what hivehouse created. Never stores a command: hm-cleanup derives removal from the kind.
 set -u
 . "$(dirname "$0")/hm-lib.sh"
 . "$(dirname "$0")/hm-paths.sh"
@@ -85,7 +85,7 @@ with_lock() {  # every write to the manifest runs under one mkdir lock
   local wait="${HM_LOCK_WAIT_S:-10}" tries=0 json
   json=$(hm_holder_json $$)
   until hm_lock_try "$LOCK" "$json"; do
-    tries=$((tries + 1)); [ "$tries" -gt $((wait * 10)) ] && hm_die 75 "manifest is locked by another hivemind process"
+    tries=$((tries + 1)); [ "$tries" -gt $((wait * 10)) ] && hm_die 75 "manifest is locked by another hivehouse process"
     sleep 0.1
   done
   trap 'hm_lock_release "$LOCK" $$' EXIT

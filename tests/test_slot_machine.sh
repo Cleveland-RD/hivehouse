@@ -12,8 +12,8 @@ mkslot() {  # a valid fixture: slot/ and slot/queue/ mode 2775, the parents 755
 }
 SB=$(t_slot_bin "$M"); SBX=$(t_slot_bin "$M" 0)
 used() {  # used <bin dir>: which slot a run under that copy of bin/ takes: machine, or the user's own
-  rm -rf "$HIVEMIND_HOME/slot.lock"
-  env -u HM_SLOT_LOCAL "$1/hm-slot" run probe -- sh -c "[ -d '$M/slot.lock' ] && echo machine || { [ -d '$HIVEMIND_HOME/slot.lock' ] && echo own; }"
+  rm -rf "$HIVEHOUSE_HOME/slot.lock"
+  env -u HM_SLOT_LOCAL "$1/hm-slot" run probe -- sh -c "[ -d '$M/slot.lock' ] && echo machine || { [ -d '$HIVEHOUSE_HOME/slot.lock' ] && echo own; }"
 }
 why() { env -u HM_SLOT_LOCAL "$SB/hm-slot" status 2>&1 >/dev/null; }
 # --- the four-digit mode
@@ -33,8 +33,8 @@ out=$(env -u HM_SLOT_LOCAL "$SB/hm-slot" run lbl -- "$SB/hm-slot" status 2>/dev/
 ( umask 022; env -u HM_SLOT_LOCAL "$SB/hm-slot" run perm -- sh -c "stat -f %Lp '$M/slot.lock' '$M/slot.lock/holder.json' > '$T_TMP/perm'" )
 assert_eq "its lock and holder record are group-writable, so another user can take over a gone holder" "$(tr '\n' ' ' < "$T_TMP/perm")" "775 664 "
 # --- the test environment never touches the machine path
-mkslot; rm -rf "$HIVEMIND_HOME/slot.lock"
-"$SB/hm-slot" run local -- sh -c "[ -d '$HIVEMIND_HOME/slot.lock' ]"; assert_status "HM_SLOT_LOCAL=1 (the test environment's) uses the user's own slot" $? 0
+mkslot; rm -rf "$HIVEHOUSE_HOME/slot.lock"
+"$SB/hm-slot" run local -- sh -c "[ -d '$HIVEHOUSE_HOME/slot.lock' ]"; assert_status "HM_SLOT_LOCAL=1 (the test environment's) uses the user's own slot" $? 0
 [ ! -e "$M/slot.lock" ] && [ -z "$(ls -A "$M/queue")" ] && ok "...and leaves a valid machine folder untouched" || bad "...and leaves a valid machine folder untouched"
 assert_eq "t_setup sets HM_SLOT_LOCAL" "${HM_SLOT_LOCAL:-}" "1"
 assert_contains "status says why" "$("$SB/hm-slot" status 2>&1 >/dev/null)" "HM_SLOT_LOCAL=1"

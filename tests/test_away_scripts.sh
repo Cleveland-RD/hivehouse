@@ -12,7 +12,7 @@ echo "-- hm-cleanup"
 for a in "--finish" "--finish --dry-run" "--dry-run --finish"; do
   HM_AWAY_BYPASS=1 hm-cleanup $a >"$T_TMP/out" 2>"$T_TMP/err"; assert_status "the away marker refuses: hm-cleanup $a" $? 4
 done
-assert_contains "...saying it is hivemind's away mode" "$(cat "$T_TMP/err")" "away mode"
+assert_contains "...saying it is hivehouse's away mode" "$(cat "$T_TMP/err")" "away mode"
 assert_contains "...and to tell the owner" "$(cat "$T_TMP/err")" "owner"
 [ ! -e "$r/$T_STATE" ] && ok "...before anything is written" || bad "the refused --finish wrote $T_STATE"
 HM_AWAY_BYPASS=1 hm-cleanup --disk >"$T_TMP/out" 2>"$T_TMP/err"; assert_status "hm-cleanup --disk stays allowed with the marker" $? 0
