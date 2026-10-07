@@ -16,6 +16,10 @@
 # Exit: 2 not found (no hub, project, task, agent or record), 4 refused value or state, 5 a dialog needs a person, 1 never idle,
 # 64 usage.
 set -u
+# Everything this writes under .hivemind-hub/ is at most 755 for a folder and 644 for a file, whatever the caller's umask was (umask 002, the
+# default where each user has their own group, would make 775 and 664, which the delegate check refuses). seal_hub puts right what an
+# earlier umask made.
+umask 022
 # Privileged mode (-p) skips BASH_ENV and takes no functions from the environment, and the fixed /bin/bash cannot be swapped
 # through PATH: the owner's away file is judged by code nothing in the environment can change. Nothing here finds its sibling
 # scripts through PATH either.
@@ -78,10 +82,14 @@ hub_root_cwd() {  # the work folder holding .hivemind-hub/, found from the cwd a
   hm_die 2 "no hub here: run hm-hub init in your work folder"
 }
 # delegate_for_hub <hub root>: 0 when the owner's delegate file is valid and names this hub; AWAY_UNTIL is its epoch
-AWAY_UNTIL=""
+AWAY_UNTIL=""; AWAY_REFUSED=""
 delegate_for_hub() {
-  AWAY_UNTIL=""
-  hm_delegate_mine || return 1
+  AWAY_UNTIL=""; AWAY_REFUSED=""
+  if ! hm_delegate_mine; then
+    # a file that is there and refused says why (status shows it), unless it names a hub that is not this one
+    if [ "$HM_DR_ABSENT" != 1 ] && { [ -z "$HM_DR_HUB" ] || [ "$(cd "$HM_DR_HUB" 2>/dev/null && pwd -P)" = "$1" ]; }; then AWAY_REFUSED=$HM_DELEGATE_WHY; fi
+    return 1
+  fi
   [ "$HM_DG_HUB" = "$1" ] || return 1
   AWAY_UNTIL=$HM_DG_UNTIL
 }
@@ -425,6 +433,10 @@ old_shared() {  # old_shared <delegate base>: when the 0.3.0 shared file is stil
   printf 'sudo rm -f -- %q\n' "$1/delegate"
 }
 
+seal_hub() {  # seal_hub <hub root>: takes group and others' write off .hivemind-hub/ and all inside it, which this user owns
+  chmod -R go-w "$1/.hivemind-hub" || hm_die 4 "cannot take group and others' write off $1/.hivemind-hub"
+}
+
 case "$cmd" in
 init)
   [ $# -eq 0 ] || hm_die 64 "$USAGE"
@@ -433,6 +445,7 @@ init)
   mkdir -p "$d/.hivemind-hub/memory" "$d/.hivemind-hub/tasks" || exit $?
   [ -f "$d/.hivemind-hub/projects.json" ] || echo '{"projects":[]}' > "$d/.hivemind-hub/projects.json"
   touch "$d/.hivemind-hub/tasks.jsonl"
+  seal_hub "$d"
   echo "$d/.hivemind-hub" ;;
 
 self)
@@ -448,6 +461,7 @@ self)
   jq -nc --arg n "$name" --arg p "$pid" --arg s "$(hm_lstart "$pid")" --arg sid "$(hm_session_record "$pid" .sessionId)" --arg at "$(hm_now)" \
     '{name:$n, claude_pid:$p, claude_started:$s, at:$at} + (if $sid != "" then {session_id:$sid} else {} end)' \
     > "$root/.hivemind-hub/hub.json.tmp$$" && mv "$root/.hivemind-hub/hub.json.tmp$$" "$root/.hivemind-hub/hub.json"
+  seal_hub "$root"
   echo "$name" ;;
 
 discover)
@@ -496,6 +510,7 @@ add)
   f="$root/.hivemind-hub/projects.json"
   jq --arg n "$name" --arg h "$h" --args '.projects += [{name:$n, home:$h, repos:$ARGS.positional}]' "${list[@]}" < "$f" > "$f.tmp$$" \
     && mv "$f.tmp$$" "$f" || { rm -f "$f.tmp$$"; exit 1; }
+  seal_hub "$root"
   echo "$name" ;;
 
 remove)
@@ -505,6 +520,7 @@ remove)
   [ -n "$(project "$root" "$1")" ] || hm_die 2 "no project named $1 in this hub"
   f="$root/.hivemind-hub/projects.json"
   jq --arg n "$1" '.projects |= map(select(.name != $n))' "$f" > "$f.tmp$$" && mv "$f.tmp$$" "$f"
+  seal_hub "$root"
   echo "$1" ;;
 
 status)
@@ -519,6 +535,7 @@ status)
     away=$(jq -nc --argjson u "$AWAY_UNTIL" --arg since "$(hm_json_get "$root/.hivemind-hub/away.json" .since)" '{until:$u} + (if $since != "" then {since:$since} else {} end)')
   fi
   hub=$(printf '%s' "$hub" | jq -c --argjson a "$away" 'if $a == null then . else . + {away:$a} end')
+  [ -z "$AWAY_REFUSED" ] || hub=$(printf '%s' "$hub" | jq -c --arg r "$AWAY_REFUSED" '. + {away_refused:$r}')
   # the last away period, which stays after it ends: the screen and the hub keep what was decided in it until it is seen
   last=$(jq -c 'select(.since and .until) | {since, until}' "$root/.hivemind-hub/away.json" 2>/dev/null | head -1)
   [ -z "$last" ] || hub=$(printf '%s' "$hub" | jq -c --argjson l "$last" '. + {last_away:$l}')
@@ -578,6 +595,7 @@ status)
     jq -n --arg root "$root" --argjson h "$hub" --argjson p "$out" '{hub:({root:$root} + $h), projects:$p}'
   else
     awaytxt=""; [ "$away" = null ] || awaytxt="  ·  away until $(epoch_local "$AWAY_UNTIL")"
+    [ -z "$AWAY_REFUSED" ] || awaytxt="  ·  away refused: $AWAY_REFUSED"
     printf '%s' "$out" | jq -r --arg root "$root" --arg awaytxt "$awaytxt" --arg hub "$(printf '%s' "$hub" | jq -r '.name // "hub (not recorded: hm-hub self)"')" '
       def n($k; $w): "\($k) \($w)\(if $k == 1 then "" else "s" end)";
       (map(.repos[].folder | length) | max // 0) as $fw |
@@ -867,6 +885,27 @@ away)
   hm_is_number "$epoch" || hm_die 64 "--until is an epoch, +<n>m|h|d, or YYYY-MM-DD[ HH:MM] (local time): $until"
   [ "$epoch" -gt "$now" ] || hm_die 4 "--until is not in the future"
   [ "$epoch" -le $((now + 604800)) ] || hm_die 4 "away is at most 7 days: the hub's heartbeat does not outlive that"
+  # the hub's records and each project home are checked as the delegate check will check them, before anything is printed: an away that
+  # would be refused unseen is not worth the owner's sudo. The group-writable ones this user owns are fixed by a line needing no sudo.
+  me=$(hm_real_uid); hm_is_number "$me" || hm_die 4 "this user's id cannot be read"
+  bad=""; hm_hub_records_trusted "$root" "$me" || bad=$HM_BAD_LIST
+  while IFS=$'\t' read -r name home; do
+    [ -n "$home" ] || continue
+    case "$home" in /*) a=$home ;; *) a="$root/$home" ;; esac
+    a=$(cd "$a" 2>/dev/null && pwd -P) || continue
+    hm_path_trusted "$a" dir "$me" strict || bad="$bad$a"$'\t'"$HM_DELEGATE_WHY"$'\n'
+  done < <(jq -r '.projects[]? | [.name, .home] | @tsv' "$root/.hivemind-hub/projects.json" 2>/dev/null)
+  if [ -n "$bad" ]; then
+    echo "# Not away: the delegate check would refuse this hub, so no line to paste is printed."
+    while IFS=$'\t' read -r p why; do
+      [ -n "$p" ] || continue
+      echo "# $why"
+      # only a path this user owns, that is no link, fails for being writable (hm_path_trusted asks the owner and the kind first)
+      case "$why" in *"writable by group or others"*) printf 'chmod go-w -- %q\n' "$p" ;; esac
+    done <<< "$bad"
+    hm_die 4 "away needs the hub's records and every project home to be this user's and not writable by group or others (fix them with the lines above, then run hm-hub away again)"
+  fi
+  seal_hub "$root"
   file=$(hm_delegate_path) || hm_die 4 "this user's id cannot be read, so there is no delegate file to name"
   dir=${file%/*}; base=${dir%/*}; grp=root; [ ! -d /System/Library ] || grp=wheel
   hm_is_typed_path "$file" || hm_die 4 "the delegate file's path is not one hivemind will print into a command: $file"

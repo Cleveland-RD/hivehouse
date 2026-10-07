@@ -133,6 +133,16 @@ mkdel "$T_TMP"; case "$(dhub status --json | jq -c '.hub | has("away")')" in fal
 mkdel "$H" "$((NOW - 10))"; case "$(dhub status --json | jq -c '.hub | has("away")')" in false) ok "an expired file is not away" ;; *) bad "away shown for an expired file" ;; esac
 mkdel; chmod 666 "$DF"; case "$(dhub status --json | jq -c '.hub | has("away")')" in false) ok "a file anyone could write is not away" ;; *) bad "away shown for a writable file" ;; esac
 mkdel
+# a file at the user's path that is refused says why in status (away_refused): the owner who pasted the lines and still sees "not away"
+refused() { dhub status --json | jq -r '.hub.away_refused // empty'; }
+assert_eq "a valid file: nothing is refused" "$(refused)" ""
+rm -f "$DF"; assert_eq "no file at all: nothing is refused" "$(refused)" ""
+mkdel "$H" "$((NOW - 10))"; assert_contains "a file the check refuses by its own content (expired): the reason reaches status" "$(refused)" "the file has expired"
+assert_contains "...and the plain status" "$(dhub status 2>&1)" "away refused: the file has expired"
+mkdel; chmod 664 "$P/projects.json"; assert_contains "a file refused for an ownership check (projects.json): its reason reaches status" "$(refused)" "projects.json is writable by group or others"
+chmod 644 "$P/projects.json"; assert_eq "...and goes when the records are put right" "$(refused)" ""
+mkdel "$T_TMP"; assert_eq "a file naming another hub says nothing about this one" "$(refused)" ""
+mkdel
 
 # the last away period stays in status after away has ended (for the screen and the hub's return)
 assert_eq "the last away period is in status, with no valid file" "$(hub status --json | jq -c '.hub.last_away | [has("since"), (.until | type)]')" '[true,"number"]'

@@ -666,7 +666,8 @@ hm_machine_slot_ok() {
 }
 hm_delegate_read() {  # hm_delegate_read <path> <uid> [<now>]: prints "<hub><TAB><until><TAB><mcp>" when the file is valid; 1 when it is not
   local f="$1" want="$2" now="${3:-}" d p hub until mcp i l1="" l2="" l3="" l4="" l5=""
-  HM_DELEGATE_WHY=""; HM_DR_HUB=""; HM_DR_UNTIL=""; HM_DR_MCP=""
+  HM_DELEGATE_WHY=""; HM_DR_HUB=""; HM_DR_UNTIL=""; HM_DR_MCP=""; HM_DR_ABSENT=""
+  [ -e "$f" ] || [ -L "$f" ] || HM_DR_ABSENT=1   # no file at all: not away, and nothing to explain
   [ -n "$now" ] || now=$(/bin/date +%s)
   case "$f" in /*) ;; *) HM_DELEGATE_WHY="the path is not absolute"; return 1 ;; esac
   hm_is_number "$want" && hm_is_number "$now" || { HM_DELEGATE_WHY="bad uid or time"; return 1; }
@@ -701,17 +702,29 @@ hm_delegate_now() { hm_delegate_read "$(hm_delegate_path)" 0; }
 # hm_delegate_now is dropped and its HM_DR_* variables are read instead. It is the only caller of hm_delegate_now. The hub, its
 # .hivemind-hub/, projects.json (which decides the homes that get bypass) and hub.json (the identity away_hub_caller checks) must belong to
 # the caller and not be a link or writable by group or others: a user who could write them could name their own project, or the hub.
+# hm_hub_records_trusted <hub root> <uid>: 0 when the hub folder, .hivemind-hub/, projects.json and hub.json all belong to that user (hm_path_trusted
+# strict); else 1, with HM_DELEGATE_WHY the first reason and HM_BAD_LIST every failing path as "<path><TAB><reason>" lines. The one list of what
+# decides a hub, shared by hm_delegate_mine and the check `hm-hub away` runs before it prints anything.
+HM_BAD_LIST=""
+hm_hub_records_trusted() {
+  local h="$1" u="$2" kind p first=""
+  HM_BAD_LIST=""
+  for kind in "dir:$h" "dir:$h/.hivemind-hub" "file:$h/.hivemind-hub/projects.json" "file:$h/.hivemind-hub/hub.json"; do
+    p=${kind#*:}
+    hm_path_trusted "$p" "${kind%%:*}" "$u" strict && continue
+    [ -n "$first" ] || first=$HM_DELEGATE_WHY
+    HM_BAD_LIST="$HM_BAD_LIST$p"$'\t'"$HM_DELEGATE_WHY"$'\n'
+  done
+  [ -z "$HM_BAD_LIST" ] && return 0
+  HM_DELEGATE_WHY=$first; return 1
+}
 HM_DG_UID=""
 hm_delegate_mine() {
-  local f
   HM_DG_HUB=""; HM_DG_UNTIL=""; HM_DG_MCP=""; HM_DG_UID=$(hm_real_uid) || HM_DG_UID=""
   case "$HM_DG_UID" in ''|*[!0-9]*) HM_DG_UID=""; HM_DELEGATE_WHY="this user's id cannot be read"; return 1 ;; esac
   hm_delegate_now >/dev/null || return 1
   HM_DG_HUB=$(cd "$HM_DR_HUB" 2>/dev/null && pwd -P) || { HM_DG_HUB=""; HM_DELEGATE_WHY="the hub folder $HM_DR_HUB cannot be entered"; return 1; }
-  hm_path_trusted "$HM_DG_HUB" dir "$HM_DG_UID" strict && hm_path_trusted "$HM_DG_HUB/.hivemind-hub" dir "$HM_DG_UID" strict || { HM_DG_HUB=""; return 1; }
-  for f in projects.json hub.json; do
-    hm_path_trusted "$HM_DG_HUB/.hivemind-hub/$f" file "$HM_DG_UID" strict || { HM_DG_HUB=""; return 1; }
-  done
+  hm_hub_records_trusted "$HM_DG_HUB" "$HM_DG_UID" || { HM_DG_HUB=""; return 1; }
   HM_DG_UNTIL=$HM_DR_UNTIL; HM_DG_MCP=$HM_DR_MCP
 }
 # hm_env_has <pid> <NAME=value>: 0 the process was launched with it; 1 its environment is visible and lacks it; 2 no
