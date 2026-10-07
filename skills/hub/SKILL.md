@@ -170,7 +170,7 @@ from a file or an environment variable.
   marked (`HH_AWAY_BYPASS=1`), in bypass, with only its allowed MCP servers. Tell the owner to exit this session and start
   the hub with it. A refusal is not an error to work round. `hh-hub away` checks the hub's records, each project home and
   each worktree team root first, and when one would be refused it prints no `sudo` line: it prints the reasons and, for
-  a path the owner owns that the group or others can write, a `chmod go-w -- <path>` line (no sudo).
+  a path the owner owns that the group or others can write, a `chmod -- go-w <path>` line (no sudo).
   Pass the reasons and the chmod lines to the owner word for word, and run `hh-hub away` again only when the owner says
   they ran them. A delegate file that exists but is refused (not root's, expired, a hub record the group can write) shows in
   `hh-hub status --json` as `hub.away_refused`, with its first reason, and on the screen as "away refused": the hub is

@@ -135,6 +135,18 @@ t_teardown() {  # idempotent: called by the trap and by tests that end explicitl
 t_plugin_beside() {  # t_plugin_beside <a copy of bin/>: plugin.json where bin/hh-lib.sh looks for it, one folder up (hh_plugin_name)
   mkdir -p "$1/../.claude-plugin" && cp "$HH_REPO_ROOT/.claude-plugin/plugin.json" "$1/../.claude-plugin/plugin.json"
 }
+# t_run_printed <lines>: runs each command line a tool printed for an administrator (sudo lines) or for the owner, as this user: sudo
+# dropped and root:<group> read as this user and group, so a line that BSD chmod, chown or mkdir cannot read (an option after its
+# argument, say) fails here as it would on the owner's Mac. Prints each line that failed with its error and returns their count.
+t_run_printed() {
+  local line n=0 me; me="$(id -un):$(id -gn)"
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    line=$(printf '%s' "$line" | sed -e 's/sudo //g' -e "s/root:[A-Za-z0-9_-]*/$me/g")
+    bash -c "$line" >/dev/null 2>"$T_TMP/printed.err" || { printf 'FAILED: %s: %s\n' "$line" "$(cat "$T_TMP/printed.err")" >&2; n=$((n + 1)); }
+  done <<< "$1"
+  return "$n"
+}
 t_repo() {  # t_repo <name> -> prints path of a fresh git repo with one commit
   local d="$T_TMP/$1"; mkdir -p "$d"
   git -C "$d" init -q -b main; git -C "$d" config user.email t@t; git -C "$d" config user.name t

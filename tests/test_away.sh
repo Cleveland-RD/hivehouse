@@ -60,16 +60,16 @@ QB=$(printf '%q' "$T_MAC_BASE")   # as the printed sudo lines quote it
 case "$(uname -s)" in
   Darwin) assert_contains "...the folder, quoted for the shell" "$out" "sudo mkdir -p -- ${QB}/delegate.d"
           assert_contains "...the user's own file made by tee" "$out" "| sudo tee -- ${QB}/delegate.d/$REALUID > /dev/null"
-          assert_contains "...owned by root, with the folders above it" "$out" "sudo chown root:wheel -- ${QB} ${QB}/delegate.d ${QB}/delegate.d/$REALUID"
-          assert_contains "...the folders at 0755" "$out" "sudo chmod 0755 -- ${QB} ${QB}/delegate.d" ;;
+          assert_contains "...owned by root, with the folders above it" "$out" "sudo chown -- root:wheel ${QB} ${QB}/delegate.d ${QB}/delegate.d/$REALUID"
+          assert_contains "...the folders at 0755" "$out" "sudo chmod -- 0755 ${QB} ${QB}/delegate.d" ;;
   *)      assert_contains "...the folder" "$out" 'sudo mkdir -p -- '"$T_LINUX_BASE"'/delegate.d'
           assert_contains "...the user's own file made by tee" "$out" "| sudo tee -- $T_LINUX_BASE/delegate.d/$REALUID > /dev/null"
-          assert_contains "...owned by root, with the folders above it" "$out" "sudo chown root:root -- $T_LINUX_BASE $T_LINUX_BASE/delegate.d $T_LINUX_BASE/delegate.d/$REALUID"
-          assert_contains "...the folders at 0755" "$out" 'sudo chmod 0755 -- '"$T_LINUX_BASE"' '"$T_LINUX_BASE"'/delegate.d' ;;
+          assert_contains "...owned by root, with the folders above it" "$out" "sudo chown -- root:root $T_LINUX_BASE $T_LINUX_BASE/delegate.d $T_LINUX_BASE/delegate.d/$REALUID"
+          assert_contains "...the folders at 0755" "$out" 'sudo chmod -- 0755 '"$T_LINUX_BASE"' '"$T_LINUX_BASE"'/delegate.d' ;;
 esac
 assert_contains "...a comment names the user and the uid" "$out" "# This file is for $(/usr/bin/id -un) (uid $REALUID)"
 assert_contains "...and says an administrator can paste the lines from another account" "$out" "an administrator can paste these lines from another account"
-assert_contains "...mode 0644" "$out" 'sudo chmod 0644 -- '
+assert_contains "...mode 0644" "$out" 'sudo chmod -- 0644 '
 assert_contains "...the content names this hub" "$out" "hub=$H"
 assert_contains "...and its MCP list (empty here) as the fourth line" "$out" "mcp= | sudo tee"
 until_epoch=$(printf '%s\n' "$out" | sed -n 's/.*until=\([0-9]*\).*/\1/p' | head -1)
@@ -118,6 +118,9 @@ assert_contains "...which resumes the hub" "$out" "claude --resume sess-hub-1"
 OB="$T_TMP/oldbase"; mkdir -p "$OB"
 OBIN=$(t_base_bin oldbin "$OB") || bad "t_base_bin"
 out=$(cd "$H" && "$OBIN/hh-hub" away --until +1h); assert_status "away under a scratch base" $? 0
+# every sudo line it printed, run as this user on the scratch base: BSD chown and chmod read an option after the owner or the mode as a
+# file ("chown: --: No such file or directory"), which GNU accepts, so only a Mac shows it
+t_run_printed "$(printf '%s\n' "$out" | grep -E '^sudo |\| sudo ')"; assert_status "...and each sudo line it printed runs (options before the owner and the mode)" $? 0
 out=$(cd "$H" && "$OBIN/hh-hub" back); assert_contains "back prints the line that removes the user's own file" "$out" "sudo rm -f -- $OB/delegate.d/$REALUID"
 assert_eq "...and still no sudo ran" "$(cat "$HH_SUDO_LOG")" ""
 

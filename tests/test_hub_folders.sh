@@ -100,7 +100,7 @@ kill "$mine" 2>/dev/null
 S="$HH_REPO_ROOT/skills/hub/SKILL.md"
 grep -q 'hh-hub drop' "$S" && grep -q 'hh-hub add <project> --repo <folder>`' "$S" && ok "the hub skill names add --repo and drop" || bad "the hub skill does not name add --repo and drop"
 grep -q 'run `ListAgents`' "$S" && grep -q 'hh-hub name <name>' "$S" && ok "the hub skill names the ListAgents name check and hh-hub name" || bad "the hub skill does not name the name check"
-for w in 'hub.away_refused' 'chmod go-w' 'the reasons and the chmod lines'; do
+for w in 'hub.away_refused' 'chmod -- go-w' 'the reasons and the chmod lines'; do
   grep -q -- "$w" "$HH_REPO_ROOT/skills/hub/SKILL.md" && ok "the hub skill's away section names: $w" || bad "the hub skill does not name: $w"
 done
 for f in skills/hub/SKILL.md README.md; do

@@ -1020,7 +1020,7 @@ away)
       [ -n "$p" ] || continue
       echo "# $why"
       # only a path this user owns, that is no link, fails for being writable (hh_path_trusted asks the owner and the kind first)
-      case "$why" in *"writable by group or others"*) printf 'chmod go-w -- %q\n' "$p" ;; esac
+      case "$why" in *"writable by group or others"*) printf 'chmod -- go-w %q\n' "$p" ;; esac
     done <<< "$bad"
     hh_die 4 "away needs the hub's records and every project home to be this user's and not writable by group or others (fix them with the lines above, then run hh-hub away again)"
   fi
@@ -1039,9 +1039,9 @@ away)
   echo "# This file is for $(/usr/bin/id -un) (uid $(/usr/bin/id -u)): one file for each user, so another user on this machine is not away. The uid is written into the lines, so an administrator can paste these lines from another account."
   printf 'sudo mkdir -p -- %q\n' "$dir"
   printf "printf '%%s\\\\n' %q %q %q %q | sudo tee -- %q > /dev/null\n" "$HH_DELEGATE_LINE1" "hub=$root" "until=$epoch" "mcp=$allow" "$file"
-  printf 'sudo chown root:%s -- %q %q %q\n' "$grp" "$base" "$dir" "$file"
-  printf 'sudo chmod 0755 -- %q %q\n' "$base" "$dir"
-  printf 'sudo chmod 0644 -- %q\n' "$file"
+  printf 'sudo chown -- root:%s %q %q %q\n' "$grp" "$base" "$dir" "$file"
+  printf 'sudo chmod -- 0755 %q %q\n' "$base" "$dir"
+  printf 'sudo chmod -- 0644 %q\n' "$file"
   echo "# Then exit the running hub (so two do not share the folder) and start it again with these lines: marked, in bypass, with only its allowed MCP servers."
   printf 'cd %q\n' "$root"
   if [ -n "$sid" ]; then

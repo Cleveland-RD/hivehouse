@@ -125,9 +125,9 @@ case "${1:-}" in
     echo "# Run once, as an administrator. It makes the one heavy-job slot for every user of this machine (hivehouse never runs sudo)."
     echo "# Until it is made, each user has a slot of their own. The slot is coordination, not a security boundary."
     echo "sudo mkdir -p -- '$slot/queue'"
-    echo "sudo chown root:$wheel -- '$par'"
-    echo "sudo chmod 0755 -- '$par'"
-    echo "sudo chown root:$grp -- '$slot' '$slot/queue'"
-    echo "sudo chmod 2775 -- '$slot' '$slot/queue'" ;;
+    echo "sudo chown -- root:$wheel '$par'"
+    echo "sudo chmod -- 0755 '$par'"
+    echo "sudo chown -- root:$grp '$slot' '$slot/queue'"
+    echo "sudo chmod -- 2775 '$slot' '$slot/queue'" ;;
   *) echo "usage: hh-slot run|acquire|release|status|setup" >&2; exit 64 ;;
 esac

@@ -64,9 +64,10 @@ wait $h $w; assert_eq "the queue is empty after" "$(ls "$M/queue" | wc -l | tr -
 # --- hh-slot setup prints the lines and runs nothing
 out=$("$SB/hh-slot" setup); assert_status "setup succeeds" $? 0
 assert_contains "mkdir for both folders" "$out" "sudo mkdir -p -- '$M/queue'"
-assert_contains "chmod 2775 for both" "$out" "sudo chmod 2775 -- '$M' '$M/queue'"
-assert_contains "chown to root and staff on macOS" "$out" "sudo chown root:staff -- '$M' '$M/queue'"
-assert_contains "the parent is root's and 0755" "$out" "sudo chmod 0755 -- '$T_TMP/mach/base'"
-assert_contains "a group can be named" "$("$SB/hh-slot" setup users)" "sudo chown root:users -- '$M' '$M/queue'"
+assert_contains "chmod 2775 for both" "$out" "sudo chmod -- 2775 '$M' '$M/queue'"
+assert_contains "chown to root and staff on macOS" "$out" "sudo chown -- root:staff '$M' '$M/queue'"
+assert_contains "the parent is root's and 0755" "$out" "sudo chmod -- 0755 '$T_TMP/mach/base'"
+t_run_printed "$(printf '%s\n' "$out" | grep '^sudo ')"; assert_status "each printed sudo line runs as this user on the scratch folder (BSD chown and chmod take the options first)" $? 0
+assert_contains "a group can be named" "$("$SB/hh-slot" setup users)" "sudo chown -- root:users '$M' '$M/queue'"
 "$SB/hh-slot" setup 'a b' 2>/dev/null; assert_status "a bad group name is a usage error" $? 64
 cd /; t_done

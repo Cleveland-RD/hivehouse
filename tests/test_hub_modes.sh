@@ -49,13 +49,15 @@ out=$(hub away --until +1h 2>"$T_TMP/away.err"); rc=$?
 assert_status "away with a group-writable projects.json is refused" $rc 4
 case "$out" in *sudo*) bad "away printed a sudo line for a hub that would be refused" ;; *) ok "...and prints no sudo line" ;; esac
 assert_contains "...the reason is named" "$(cat "$T_TMP/away.err")$out" "$P/projects.json is writable by group or others"
-assert_contains "...with the line that fixes it, which needs no sudo" "$(cat "$T_TMP/away.err")$out" "chmod go-w -- $P/projects.json"
+assert_contains "...with the line that fixes it, which needs no sudo" "$(cat "$T_TMP/away.err")$out" "chmod -- go-w $P/projects.json"
+t_run_printed "$(printf '%s\n' "$(cat "$T_TMP/away.err")$out" | grep '^chmod ')"; assert_status "...and that line runs (BSD chmod reads a -- after the mode as a file)" $? 0
 chmod 644 "$P/projects.json"
 chmod 775 "$H/alpha"
 out=$(hub away --until +1h 2>"$T_TMP/away.err"); rc=$?
 assert_status "a group-writable project home is refused too" $rc 4
 case "$out" in *sudo*) bad "a sudo line was printed for a group-writable home" ;; *) ok "...no sudo line" ;; esac
-assert_contains "...the home is named, with its fix" "$(cat "$T_TMP/away.err")$out" "chmod go-w -- $H/alpha"
+assert_contains "...the home is named, with its fix" "$(cat "$T_TMP/away.err")$out" "chmod -- go-w $H/alpha"
+t_run_printed "$(printf '%s\n' "$(cat "$T_TMP/away.err")$out" | grep '^chmod ')"; assert_status "...and that line runs (BSD chmod reads a -- after the mode as a file)" $? 0
 chmod 755 "$H/alpha"
 # a team root in a worktree of a listed home is checked as the bypass check checks it, so a group-writable one is refused here, seen, with its fix
 git -C "$H/alpha" worktree add -q "$H/alpha-wt" -b wt; mkdir -p "$H/alpha-wt/$T_STATE"; echo '{"agents":[]}' > "$H/alpha-wt/$T_STATE/team.json"
@@ -68,7 +70,7 @@ chmod 775 "$H/alpha-wt"
 out=$(hub away --until +1h 2>"$T_TMP/away.err"); rc=$?
 assert_status "a group-writable worktree team root of a listed home is refused" $rc 4
 case "$out" in *sudo*) bad "a sudo line was printed for a group-writable team root" ;; *) ok "...no sudo line" ;; esac
-assert_contains "...the team root is named, with its fix" "$(cat "$T_TMP/away.err")$out" "chmod go-w -- $H/alpha-wt"
+assert_contains "...the team root is named, with its fix" "$(cat "$T_TMP/away.err")$out" "chmod -- go-w $H/alpha-wt"
 chmod 755 "$H/alpha-wt"
 out=$(hub away --until +1h 2>/dev/null); assert_status "...and once it is put right, away prints its lines" $? 0
 rm -f "$P/away.json"
@@ -83,19 +85,20 @@ if [ -n "$gw" ]; then
   jq --arg h "$gw" '.projects += [{name:"sys",home:$h,repos:[]}]' "$T_TMP/projects.saved" > "$P/projects.json"
   out=$(hub away --until +1h 2>"$T_TMP/away.err")
   assert_contains "a root-owned home the group can write is refused, for its owner" "$out" "$gw is owned by uid 0"
-  case "$out" in *"chmod go-w -- $gw"*) bad "a chmod line for a folder this user does not own" ;; *) ok "...with no chmod line: it is not this user's to change" ;; esac
+  case "$out" in *"chmod -- go-w $gw"*) bad "a chmod line for a folder this user does not own" ;; *) ok "...with no chmod line: it is not this user's to change" ;; esac
 else echo "  SKIP no root-owned, group-writable folder to use as a home here"; fi
 cp "$T_TMP/projects.saved" "$P/projects.json"; chmod 644 "$P/projects.json"
 chmod 775 "$H"
 out=$(hub away --until +1h 2>"$T_TMP/away.err"); rc=$?
 assert_status "a group-writable hub folder is refused" $rc 4
-assert_contains "...named with its fix" "$(cat "$T_TMP/away.err")$out" "chmod go-w -- $H"
+assert_contains "...named with its fix" "$(cat "$T_TMP/away.err")$out" "chmod -- go-w $H"
+t_run_printed "$(printf '%s\n' "$(cat "$T_TMP/away.err")$out" | grep '^chmod ')"; assert_status "...and that line runs (BSD chmod reads a -- after the mode as a file)" $? 0
 chmod 755 "$H"
 rm "$P/hub.json"
 out=$(hub away --until +1h 2>"$T_TMP/away.err"); rc=$?
 assert_status "a hub that has not recorded itself is refused" $rc 4
 assert_contains "...says hub.json is missing" "$(cat "$T_TMP/away.err")$out" "hub.json cannot be read"
-case "$(cat "$T_TMP/away.err")$out" in *"chmod go-w -- $P/hub.json"*) bad "a chmod line for a file that is not there" ;; *) ok "...with no chmod line, since there is nothing to change" ;; esac
+case "$(cat "$T_TMP/away.err")$out" in *"chmod -- go-w $P/hub.json"*) bad "a chmod line for a file that is not there" ;; *) ok "...with no chmod line, since there is nothing to change" ;; esac
 bash "$T_TMP/cl/claude" --name hub >/dev/null
 chmod -R g+w "$P/holds" "$P/decisions"; chmod g+w "$P/tasks.jsonl"
 out=$(hub away --until +1h 2>/dev/null); assert_status "a complete hub: away prints its lines" $? 0
