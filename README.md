@@ -101,8 +101,8 @@ One Claude session in the owner's work folder, the folder above every project, i
   orchestrators reply to the hub by name) and opens the hub by itself, which takes one model turn. The `hub_auto_start`
   setting turns that off; then start it with `claude --name hub /hivemind:hub`.
   The name belongs to the hub's folder: `hm-hub name <name>` keeps it in `.hivemind-hub/name`, and the hub starts from it
-  (`<name>-2` beside another). `ListAgents` shows sessions on other machines too, so a hub that finds its name taken
-  there says so once and never renames itself.
+  (`<name>-2` beside another). `ListAgents` shows sessions on other machines only while Remote Control is connected, and without it
+  the check finds nothing; a hub that finds its name taken there says so once and never renames itself.
 - **Projects span folders.** A project is its home, the repository its team works from, and any other folders it
   covers (`hm-hub add <project> --home <folder> --repo <folder>...`). The hub proposes the groups from `hm-hub discover`
   and adds only what the owner confirms. `hm-hub add <project> --repo <folder>...` adds folders to a project that exists,

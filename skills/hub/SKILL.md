@@ -36,7 +36,8 @@ each time. That is intended.
    task: nobody could reply.
    Then run `ListAgents`. If another live session already has this session's name (a second machine's hub is named
    `hub` too), tell the owner once which machine has it and how to fix it: `/rename <name>` here, or `hm-hub name <name>`
-   in that machine's hub folder, so its next start takes another name. Never rename yourself.
+   in that machine's hub folder, so its next start takes another name. Never rename yourself. `ListAgents` lists
+   sessions on other machines only while Remote Control is connected; without it the check finds nothing, so say nothing.
 2. `hm-adhd`. When it prints a path, Read that file and follow it for every message to the owner.
 3. `hm-hub status` and `hm-hub tasks --open`.
 4. Greet the owner with one line per project: its orchestrator's state, its agents, its open tasks. Name anything that
