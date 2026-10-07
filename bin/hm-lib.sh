@@ -2,13 +2,31 @@
 # Shared by every hm-* executable. bash 3.2 compatible. Never reads plugin variables: settings arrive as arguments
 # or HM_* environment set by hm-spawn.
 # A command substitution does not stop its caller: write x=$(hm_project_root) || exit $?, never a bare x=$(...).
-hm_die()  { echo "hivemind: $2" >&2; exit "$1"; }
+# ---- the names: each is spelled here and nowhere else in bin/ (tests/test_names.sh holds it to that); hooks/names.ts is the
+# twin for the hub screen ------------------------------------------------------------------------------------------------
+HM_PREFIX='hivemind'                     # what a message to the user begins with: "<prefix>: ..."
+HM_STATE_DIR='.hivemind'                 # a project's state folder, under its root
+HM_HUB_DIR='.hivemind-hub'               # the hub's folder, under its work folder
+HM_HOME_DIR='.hivemind'                  # the per-user home (slot, registry, queue), under $HOME
+HM_MAC_BASE='/Library/Application Support/hivemind'   # the delegate files' folder, and the machine slot's, on macOS
+HM_LINUX_BASE='/etc/hivemind'            # the delegate files' folder on Linux
+HM_LINUX_SLOT='/var/lib/hivemind/slot'   # the machine slot on Linux
+HM_DELEGATE_LINE1='hivemind-delegate 1'  # the delegate file's first line
+hm_plugin_name() {  # use as x=$(hm_plugin_name) || exit $?. The plugin's name, read with built-ins from .claude-plugin/plugin.json (its top-level "name" line)
+  local f l n="" pre='  "name": "'; f="$(dirname "${BASH_SOURCE[0]}")/../.claude-plugin/plugin.json"
+  while IFS= read -r l; do
+    case "$l" in "$pre"*) n=${l#"$pre"}; n=${n%%\"*}; break ;; esac
+  done 2>/dev/null < "$f"
+  case "$n" in ''|*[!a-z0-9-]*) echo "$HM_PREFIX: cannot read the plugin's name from $f" >&2; return 2 ;; esac
+  printf '%s\n' "$n"
+}
+hm_die()  { echo "$HM_PREFIX: $2" >&2; exit "$1"; }
 # A session hivemind launched in bypass while the owner is away carries HM_AWAY_BYPASS=1 (A31). Whatever leaves the machine or ends the
 # run for good is refused to it. This is a second layer: a Bash command can unset the variable for itself, so hm-away-hook is the guard.
 hm_refuse_away() {  # hm_refuse_away <what>: exit 4 when this process is in a marked session
   [ "${HM_AWAY_BYPASS:-}" != 1 ] || hm_die 4 "hivemind's away mode refuses $1 while the owner is away (HM_AWAY_BYPASS is set); tell the owner what you needed"
 }
-hm_home() { printf '%s\n' "${HIVEMIND_HOME:-$HOME/.hivemind}"; }
+hm_home() { printf '%s\n' "${HIVEMIND_HOME:-$HOME/$HM_HOME_DIR}"; }
 hm_now()  { /bin/date -u +%Y-%m-%dT%H:%M:%SZ; }
 hm_project_root() {
   if [ -n "${HM_PROJECT:-}" ]; then
@@ -43,7 +61,7 @@ hm_repo_home() {  # hm_repo_home <dir>: the home of the repository <dir> is the 
   [ "$b" = "$d" ] || return 1
   printf '%s\n' "$home"
 }
-hm_team_roots() {  # hm_team_roots <home>: the home, then each worktree of its repository with .hivemind/team.json, one per line
+hm_team_roots() {  # hm_team_roots <home>: the home, then each worktree of its repository with $HM_STATE_DIR/team.json, one per line
   local h d line wt r seen=""
   h=$(cd -P "$1" 2>/dev/null && pwd -P) || return 1
   printf '%s\n' "$h"
@@ -57,7 +75,7 @@ hm_team_roots() {  # hm_team_roots <home>: the home, then each worktree of its r
     [ "$wt" != "$h" ] || continue
     r=$(hm_repo_home "$wt") || continue
     [ "$r" = "$h" ] || continue
-    [ -f "$wt/.hivemind/team.json" ] || continue
+    [ -f "$wt/$HM_STATE_DIR/team.json" ] || continue
     case "$seen" in *"|$wt|"*) continue ;; esac
     seen="$seen|$wt|"; printf '%s\n' "$wt"
   done
@@ -68,17 +86,17 @@ hm_project_home() {  # hm_project_home <root>: the home a team root takes its se
 hm_project_key() {  # basename plus a short hash of the full path: app and app-impl never clash
   local p="$1"; printf '%s-%s\n' "$(basename "$p")" "$(printf '%s' "$p" | shasum | cut -c1-6)"
 }
-hm_state() { local root; root=$(hm_project_root) || exit $?; printf '%s/.hivemind\n' "$root"; }
-hm_ensure_state() {  # creates .hivemind/, excludes it through info/exclude, refuses if any of it is tracked
+hm_state() { local root; root=$(hm_project_root) || exit $?; printf '%s/%s\n' "$root" "$HM_STATE_DIR"; }
+hm_ensure_state() {  # creates $HM_STATE_DIR/, excludes it through info/exclude, refuses if any of it is tracked
   local root common excl
   root=$(hm_project_root) || exit $?
   common=$(git -C "$root" rev-parse --path-format=absolute --git-common-dir) || exit $?
-  if [ -n "$(git -C "$root" ls-files -- .hivemind)" ]; then
-    hm_die 3 "files under .hivemind/ are tracked by git; untrack them before using hivemind here"
+  if [ -n "$(git -C "$root" ls-files -- $HM_STATE_DIR)" ]; then
+    hm_die 3 "files under $HM_STATE_DIR/ are tracked by git; untrack them before using hivemind here"
   fi
-  mkdir -p "$root/.hivemind" "$common/info"
+  mkdir -p "$root/$HM_STATE_DIR" "$common/info"
   excl="$common/info/exclude"; touch "$excl"
-  grep -qx '/.hivemind/' "$excl" || echo '/.hivemind/' >> "$excl"
+  grep -qx "/$HM_STATE_DIR/" "$excl" || echo "/$HM_STATE_DIR/" >> "$excl"
 }
 hm_json_get() {  # hm_json_get <file> <jq path>: the root-owned jq (HM_JQ, set below) when there is one, else jq from PATH for scripts that decide nothing
   if [ -n "${HM_JQ:-}" ]; then "$HM_JQ" -r "$2 // empty" "$1" 2>/dev/null; else jq -r "$2 // empty" "$1" 2>/dev/null; fi
@@ -160,7 +178,7 @@ hm_team_agent_is() {  # hm_team_agent_is <project root> <agent>
   # one read, fields joined by the unit separator: a whitespace separator would fold an empty field into its neighbour
   e=$(jq -r --arg a "$2" '[.agents[]? | select(.name == $a)][0] // empty
       | [.socket, .pane, .pane_pid, .pane_started, .claude_pid, .claude_started] | map(. // "" | tostring) | join("\u001f")' \
-      "$1/.hivemind/team.json" 2>/dev/null)
+      "$1/$HM_STATE_DIR/team.json" 2>/dev/null)
   [ -n "$e" ] || return 3
   IFS=$'\x1f' read -r socket pane ppid pstarted cpid cstarted <<< "$e"
   [ -n "$pane" ] && [ -n "$ppid" ] && [ -n "$pstarted" ] || return 3
@@ -399,9 +417,9 @@ hm_owner_statusline() {  # hm_owner_statusline <session cwd>
 # it. The one writer, for the SessionStart hook and for hm-spawn --self. Never writes for a bad agent name or into a tracked
 # .hivemind; the write is atomic. Returns 1 when nothing was written.
 hm_write_session() {  # hm_write_session <project root> <agent> <session id> <transcript path> <source>
-  local dir="$1/.hivemind/team/$2"
+  local dir="$1/$HM_STATE_DIR/team/$2"
   hm_is_agent_name "$2" && [ -n "$3" ] || return 1
-  [ -z "$(git -C "$1" ls-files -- .hivemind 2>/dev/null)" ] || return 1
+  [ -z "$(git -C "$1" ls-files -- $HM_STATE_DIR 2>/dev/null)" ] || return 1
   mkdir -p "$dir" 2>/dev/null || return 1
   jq -nc --arg s "$3" --arg t "$4" --arg src "$5" --arg at "$(hm_now)" '{session_id:$s, transcript_path:$t, source:$src, at:$at}' \
     > "$dir/session.json.tmp$$" 2>/dev/null && mv "$dir/session.json.tmp$$" "$dir/session.json" || { rm -f "$dir/session.json.tmp$$"; return 1; }
@@ -411,7 +429,7 @@ hm_write_session() {  # hm_write_session <project root> <agent> <session id> <tr
 # orchestrator itself (hm-self-rotate) reports to nobody, waits for nobody, and --self gives it no role or rules dir.
 hm_pickup_line() {  # hm_pickup_line <project name> <project root> <agent>
   if [ "$(hm_self_entry "$2" | jq -r '.name // empty' 2>/dev/null)" = "$3" ]; then
-    printf 'You are %s. Read %s/.hivemind/handoffs/%s.md from the top: its START HERE block is your prompt.' "$(hm_orchestrator_name "$2")" "$2" "$3"
+    printf 'You are %s. Read %s/%s/handoffs/%s.md from the top: its START HERE block is your prompt.' "$(hm_orchestrator_name "$2")" "$2" "$HM_STATE_DIR" "$3"
     # registered with --hub: the owner talks to it through the hub, which a /clear would otherwise forget
     local hub; hub=$(hm_self_entry "$2" | jq -r '.hub // empty' 2>/dev/null)
     if [ -n "$hub" ] && hm_is_session_name "$hub"; then
@@ -420,16 +438,16 @@ hm_pickup_line() {  # hm_pickup_line <project name> <project root> <agent>
     # the owner's output style, when installed, is read again after every clear (a /clear wipes it with the rest)
     local style; style=$(hm_adhd_skill 2>/dev/null) || return 0
     if hm_is_typed_path "$style"; then printf ' Read %s and follow it for every message to the owner.' "$style"
-    else echo "hivemind: the i-have-adhd path is not one hivemind will type, so the pickup line leaves it out: $style" >&2; fi
+    else echo "$HM_PREFIX: the i-have-adhd path is not one hivemind will type, so the pickup line leaves it out: $style" >&2; fi
     return
   fi
-  printf 'You are %s-%s. Read %s/.hivemind/handoffs/%s.md from the top: its START HERE block is your prompt, and %s/.hivemind/team/%s/ holds your role and the rules. Report to %s. Wait for its first message before any work.' \
-    "$1" "$3" "$2" "$3" "$2" "$3" "$(hm_orchestrator_name "$2")"
+  printf 'You are %s-%s. Read %s/%s/handoffs/%s.md from the top: its START HERE block is your prompt, and %s/%s/team/%s/ holds your role and the rules. Report to %s. Wait for its first message before any work.' \
+    "$1" "$3" "$2" "$HM_STATE_DIR" "$3" "$2" "$HM_STATE_DIR" "$3" "$(hm_orchestrator_name "$2")"
 }
 # What an agent resumed with its own session (hm-spawn --respawn --resume) is typed instead of the pickup line: its session
 # already holds the work, so it is told only why it was restarted and where its handoff is.
 hm_resume_line() {  # hm_resume_line <project root> <agent>
-  printf 'You were restarted by hivemind after your session stopped responding. Carry on where you were; your handoff is %s/.hivemind/handoffs/%s.md.' "$1" "$2"
+  printf 'You were restarted by hivemind after your session stopped responding. Carry on where you were; your handoff is %s/%s/handoffs/%s.md.' "$1" "$HM_STATE_DIR" "$2"
 }
 
 # The ASCII letters and digits, listed and never written as a range: under bash 3.2 a bracket range follows the locale's
@@ -533,7 +551,7 @@ hm_resume_candidate() {  # hm_resume_candidate <title> <team root>...
 # every session, so it is not loaded a second time. Prints the path, or fails.
 hm_adhd_skill() {
   local flag="$(hm_claude_dir)/.i-have-adhd-always" d
-  if [ -e "$flag" ]; then echo "hivemind: i-have-adhd is always on ($flag) and applies itself; not loaded again" >&2; return 1; fi
+  if [ -e "$flag" ]; then echo "$HM_PREFIX: i-have-adhd is always on ($flag) and applies itself; not loaded again" >&2; return 1; fi
   while IFS= read -r d; do
     [ -n "$d" ] && [ -f "$d/skills/i-have-adhd/SKILL.md" ] && { printf '%s\n' "$d/skills/i-have-adhd/SKILL.md"; return 0; }
   done <<EOF2
@@ -548,7 +566,7 @@ hm_is_typed_path() {  # hm_is_typed_path <path>: 0 when it is one
   [ "${#1}" -le 256 ]
 }
 hm_self_entry() {  # hm_self_entry <project root>: the team.json entry hm-spawn --self wrote (only it records a Claude process), or nothing
-  "${HM_JQ:-jq}" -c '[.agents[]? | select((.claude_pid // "") != "")][0] // empty' "$1/.hivemind/team.json" 2>/dev/null
+  "${HM_JQ:-jq}" -c '[.agents[]? | select((.claude_pid // "") != "")][0] // empty' "$1/$HM_STATE_DIR/team.json" 2>/dev/null
 }
 # The name agents report to: the --self orchestrator's session name as Claude Code has it now (a /rename after --self is
 # followed), else the name recorded at --self, else <project>-orchestrator. One helper for every text that names it.
@@ -563,7 +581,7 @@ hm_orchestrator_name() {  # hm_orchestrator_name <project root>
   for n in "$live" "$full"; do
     [ -n "$n" ] || continue
     hm_is_session_name "$n" && { printf '%s\n' "$n"; return 0; }
-    echo "hivemind: the orchestrator's session name is not one hivemind will type; using another" >&2
+    echo "$HM_PREFIX: the orchestrator's session name is not one hivemind will type; using another" >&2
   done
   printf '%s-orchestrator\n' "$(basename "$1")"
 }
@@ -705,7 +723,7 @@ hm_pane_dialog() {  # hm_pane_dialog <socket, or empty for hivemind's own server
 # the process's real uid, read by /usr/bin/id: bash 3.2 takes UID and EUID from the environment, even under -p. One exact line, which a test rewrites.
 hm_real_uid() { /usr/bin/id -u; }
 # the folder of the delegate files, under /Library on macOS (/etc is a link there), /etc on Linux: macOS has /System, and $OSTYPE would come through the environment
-hm_delegate_base() { if [ -d /System/Library ]; then echo '/Library/Application Support/hivemind'; else echo /etc/hivemind; fi; }
+hm_delegate_base() { if [ -d /System/Library ]; then echo "$HM_MAC_BASE"; else echo "$HM_LINUX_BASE"; fi; }
 hm_delegate_path() {  # one file per user: <base>/delegate.d/<uid>; no path when the uid is not digits
   local u; u=$(hm_real_uid) || return 1
   case "$u" in ''|*[!0-9]*) return 1 ;; esac
@@ -759,7 +777,7 @@ hm_chain_trusted() {
 # the lines): slot/ and slot/queue/, owned by root, mode exactly 2775, under folders only root can write. Used only when all of
 # that holds; HM_SLOT_LOCAL=1 opts out and nothing in the environment can name another folder. The two one-line functions are
 # the tests' seams: a scratch copy of bin/ rewrites them to a fixture and to this user's uid.
-hm_machine_slot_dir() { if [ -d /System/Library ]; then echo '/Library/Application Support/hivemind/slot'; else echo '/var/lib/hivemind/slot'; fi; }
+hm_machine_slot_dir() { if [ -d /System/Library ]; then echo "$HM_MAC_BASE/slot"; else echo "$HM_LINUX_SLOT"; fi; }
 hm_machine_slot_owner() { echo 0; }
 # hm_machine_slot_ok <dir>: 0 when the folder may be used; otherwise 1 with the reason in HM_SLOT_WHY
 hm_machine_slot_ok() {
@@ -812,7 +830,7 @@ hm_delegate_read() {  # hm_delegate_read <path> <uid> [<now>]: prints "<hub><TAB
   { IFS= read -r l1; IFS= read -r l2; IFS= read -r l3; IFS= read -r l4; IFS= read -r l5 && l5=x; } < "$f" 2>/dev/null
   [ -z "$l5" ] || { HM_DELEGATE_WHY="the content is more than four lines"; return 1; }
   case "$l1$l2$l3$l4" in *$'\r'*) HM_DELEGATE_WHY="the content has carriage returns"; return 1 ;; esac
-  [ "$l1" = 'hivemind-delegate 1' ] || { HM_DELEGATE_WHY="the first line is not 'hivemind-delegate 1'"; return 1; }
+  [ "$l1" = "$HM_DELEGATE_LINE1" ] || { HM_DELEGATE_WHY="the first line is not '$HM_DELEGATE_LINE1'"; return 1; }
   hub=$l2; until=$l3
   case "$hub" in hub=/*) hub=${hub#hub=} ;; *) HM_DELEGATE_WHY="line 2 is not hub=<absolute path>"; return 1 ;; esac
   hm_is_typed_path "$hub" || { HM_DELEGATE_WHY="the hub path is not one hivemind will type"; return 1; }
@@ -838,7 +856,7 @@ HM_BAD_LIST=""
 hm_hub_records_trusted() {
   local h="$1" u="$2" kind p first=""
   HM_BAD_LIST=""
-  for kind in "dir:$h" "dir:$h/.hivemind-hub" "file:$h/.hivemind-hub/projects.json" "file:$h/.hivemind-hub/hub.json"; do
+  for kind in "dir:$h" "dir:$h/$HM_HUB_DIR" "file:$h/$HM_HUB_DIR/projects.json" "file:$h/$HM_HUB_DIR/hub.json"; do
     p=${kind#*:}
     hm_path_trusted "$p" "${kind%%:*}" "$u" strict && continue
     [ -n "$first" ] || first=$HM_DELEGATE_WHY
@@ -925,7 +943,7 @@ hm_delegate_for_project() {  # hm_delegate_for_project <project root>: 0 when de
       hm_path_trusted "$abs" dir "$HM_DG_UID" strict && hm_path_trusted "$t" dir "$HM_DG_UID" strict || break 2
       HM_DG_PROJECT=$name; return 0
     done < <(hm_team_roots "$abs")
-  done < <("$HM_JQ" -r '.projects[]? | [.name, .home] | @tsv' "$hub/.hivemind-hub/projects.json" 2>/dev/null)
+  done < <("$HM_JQ" -r '.projects[]? | [.name, .home] | @tsv' "$hub/$HM_HUB_DIR/projects.json" 2>/dev/null)
   HM_DG_HUB=""; HM_DG_UNTIL=""; HM_DG_MCP=""
   return 1
 }

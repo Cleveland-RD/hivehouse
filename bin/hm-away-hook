@@ -50,11 +50,11 @@ protected_one() {  # protected_one <canonical path>: 0 when Claude Code's settin
   # the hub's records (hub.json is the identity away_hub_caller checks and the hub a SendMessage resolves by pid; projects.json lists what
   # may get bypass): only the hub's own session writes them, and any other marked session is refused
   if [ "$PROJ_REAL" != "$HUB" ]; then
-    case "$p" in "$HUB/.hivemind-hub"|"$HUB/.hivemind-hub/"*)
-      P_WHY="the hub's records (.hivemind-hub) can be changed only by the hub's own session, never by an agent's or an orchestrator's"; return 0 ;; esac
+    case "$p" in "$HUB/$HM_HUB_DIR"|"$HUB/$HM_HUB_DIR/"*)
+      P_WHY="the hub's records ($HM_HUB_DIR) can be changed only by the hub's own session, never by an agent's or an orchestrator's"; return 0 ;; esac
   fi
   # a team.json names every agent's process: hivemind's own scripts write it from their code, never a session's tools (the hub's too)
-  case "$p" in */.hivemind/team.json) P_WHY="a team's team.json is written by hivemind's own scripts, never through a session's tools"; return 0 ;; esac
+  case "$p" in */$HM_STATE_DIR/team.json) P_WHY="a team's team.json is written by hivemind's own scripts, never through a session's tools"; return 0 ;; esac
   return 1
 }
 protected() {  # protected <path> <cwd>: the path itself, and where its links lead (a write goes to the target); a link loop counts
@@ -79,7 +79,7 @@ tool=$(printf '%s' "$input" | "$HM_JQ" -er '.tool_name | strings' 2>/dev/null) |
 cwd=$(printf '%s' "$input" | "$HM_JQ" -r '.cwd // empty | strings' 2>/dev/null) || deny "its input could not be parsed"
 [ -n "$cwd" ] || cwd=$PWD
 [ -n "${HM_PROJECT:-}" ] || deny "the project (HM_PROJECT) is missing from the session's launch env"
-[ -n "${HM_AWAY_HUB:-}" ] && [ -d "$HM_AWAY_HUB/.hivemind-hub" ] || deny "the hub's folder (HM_AWAY_HUB) is missing or unreadable"
+[ -n "${HM_AWAY_HUB:-}" ] && [ -d "$HM_AWAY_HUB/$HM_HUB_DIR" ] || deny "the hub's folder (HM_AWAY_HUB) is missing or unreadable"
 HUB=$(cd -P "$HM_AWAY_HUB" && pwd -P) || deny "the hub's folder cannot be read"
 PROJ_REAL=$(cd -P "$HM_PROJECT" 2>/dev/null && pwd -P) || PROJ_REAL=""   # a project that cannot be read is no hub: the stricter reading
 allow=${HM_AWAY_MCP_ALLOW-}
@@ -119,15 +119,15 @@ add_team() {  # add_team <project home>: its orchestrator and its agents, <proje
   while IFS=$'\x1f' read -r a pp ps; do
     [ -n "$a" ] || continue
     add_id "$(basename "$home")-$a" "$pp" "$ps"
-  done < <("$HM_JQ" -r '.agents[]? | [.name, .pane_pid, .pane_started] | map(. // "" | tostring) | join("\u001f")' "$home/.hivemind/team.json" 2>/dev/null)
+  done < <("$HM_JQ" -r '.agents[]? | [.name, .pane_pid, .pane_started] | map(. // "" | tostring) | join("\u001f")' "$home/$HM_STATE_DIR/team.json" 2>/dev/null)
 }
 msg_check() {
   local to ref pid i n live role proj p h t
   to=$(printf '%s' "$input" | "$HM_JQ" -er '.tool_input.to' 2>/dev/null) || deny "its SendMessage target cannot be read"
   case "$to" in main) return 0 ;; esac
   # who the session is, and whom it may message
-  hubpid=$(hm_json_get "$HUB/.hivemind-hub/hub.json" .claude_pid); hubst=$(hm_json_get "$HUB/.hivemind-hub/hub.json" .claude_started)
-  hubname=$(hm_json_get "$HUB/.hivemind-hub/hub.json" .name)
+  hubpid=$(hm_json_get "$HUB/$HM_HUB_DIR/hub.json" .claude_pid); hubst=$(hm_json_get "$HUB/$HM_HUB_DIR/hub.json" .claude_started)
+  hubname=$(hm_json_get "$HUB/$HM_HUB_DIR/hub.json" .name)
   add_id "$hubname" "$hubpid" "$hubst"
   proj=$(cd -P "$HM_PROJECT" 2>/dev/null && pwd -P) || proj=""   # an unreadable project has no team: only the hub and main pass
   if [ "$proj" = "$HUB" ]; then
@@ -136,7 +136,7 @@ msg_check() {
       case "$h" in /*) ;; *) h="$HUB/$h" ;; esac
       p=$(cd -P "$h" 2>/dev/null && pwd -P) || continue
       while IFS= read -r t <&3; do add_orchestrator "$t"; done 3< <(hm_team_roots "$p")   # the home and each worktree team of it: read without git
-    done < <("$HM_JQ" -r '.projects[]?.home // empty' "$HUB/.hivemind-hub/projects.json" 2>/dev/null)
+    done < <("$HM_JQ" -r '.projects[]?.home // empty' "$HUB/$HM_HUB_DIR/projects.json" 2>/dev/null)
   else
     add_team "$proj"
   fi

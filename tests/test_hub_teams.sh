@@ -33,7 +33,7 @@ assert_eq "an orchestrator registered in a worktree of the home runs" "$(proj '.
 assert_eq "...its agents are listed, each with its worktree" "$(proj '.projects[0].agents | map([.name, .worktree] | join("@")) | join(",")')" "impl@$WT"
 assert_contains "...the plain status names it" "$(hub status app)" "running"
 # status reads each team root's levels once per project (the home and the worktree: two), not once for the orchestrator and again for the agents
-CB="$T_TMP/ctxbin"; rm -rf "$CB"; mkdir -p "$CB"; cp -R "$HM_REPO_ROOT/bin/." "$CB/"; mv "$CB/hm-context" "$CB/hm-context.real"
+CB="$T_TMP/ctxbin"; rm -rf "$CB"; mkdir -p "$CB"; cp -R "$HM_REPO_ROOT/bin/." "$CB/"; t_plugin_beside "$CB"; mv "$CB/hm-context" "$CB/hm-context.real"
 printf '#!/bin/bash\necho "$HM_PROJECT" >> "%s/ctx.calls"\nexec "%s/hm-context.real" "$@"\n' "$T_TMP" "$CB" > "$CB/hm-context"; chmod +x "$CB/hm-context"
 : > "$T_TMP/ctx.calls"; (cd "$H" && "$CB/hm-hub" status app --json >/dev/null)
 assert_eq "hm-context ran once for each team root in one status call" "$(sort "$T_TMP/ctx.calls" | uniq -c | awk '{print $1}' | tr '\n' ' ')" "1 1 "

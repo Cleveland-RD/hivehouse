@@ -20,14 +20,14 @@ hm_check_path_safe() {  # hm_check_path_safe <resolved> <project root>: never a 
     q=$(cd "$q" && pwd -P)
     case "$q/" in "$rp"/*) echo "refused path (is or contains a protected directory): $rp"; return 1 ;; esac
   done
-  [ "$rp" = "$root/.hivemind" ] && { echo "refused path: $rp"; return 1; }
+  [ "$rp" = "$root/$HM_STATE_DIR" ] && { echo "refused path: $rp"; return 1; }
   if [ -L "$rp" ]; then echo "refused: $rp is a symlink"; return 1; fi
   if [ -e "$rp" ] && [ ! -O "$rp" ]; then echo "refused: $rp is not owned by the caller"; return 1; fi
   return 0
 }
 hm_check_path_outside() {  # hm_check_path_outside <resolved> <project root> <manifest file>: file and dir entries
   local rp="$1" root="$2" w
-  case "$rp/" in "$root/.hivemind/tmp/"*) ;; "$root/"*) echo "refused: $rp is inside the project"; return 1 ;; esac
+  case "$rp/" in "$root/$HM_STATE_DIR/tmp/"*) ;; "$root/"*) echo "refused: $rp is inside the project"; return 1 ;; esac
   while IFS= read -r w; do
     [ -n "$w" ] || continue
     case "$rp/" in "$w/"*) echo "refused: $rp is inside the recorded worktree $w"; return 1 ;; esac

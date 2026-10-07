@@ -145,7 +145,7 @@ assert_eq "...--session still wins" "$(jq -r '.agents[]|select(.name=="named").s
 # the agent's statusLine is hm-statusline (Claude Code's window for hm-context), which runs the owner's own; the plugin's path
 # and the project's are quoted, so a space in either works
 echo '{"statusLine":{"type":"command","command":"echo OWNER; exit 4","padding":2}}' > "$CLAUDE_CONFIG_DIR/settings.json"
-mkdir -p "$T_TMP/plug in"; cp -R "$HM_REPO_ROOT/bin" "$T_TMP/plug in/"
+mkdir -p "$T_TMP/plug in"; cp -R "$HM_REPO_ROOT/bin" "$T_TMP/plug in/"; t_plugin_beside "$T_TMP/plug in/bin"
 sp=$(t_repo "my proj"); cd "$sp"
 spane=$("$T_TMP/plug in/bin/hm-spawn" --agent sl --role "$T_TMP/impl.md" --rules "$T_TMP/RULES.md" --model sonnet --effort medium --mode auto --still 2 --max-wait 15)
 assert_status "spawn with spaces in the plugin's and the project's paths" $? 0

@@ -25,7 +25,7 @@ done
 [ "$mode" != finish ] || hm_refuse_away "hm-cleanup --finish"
 hm_ensure_state || exit $?
 ROOT=$(hm_project_root) || exit $?
-STATE="$ROOT/.hivemind"; FILE="$STATE/manifest.jsonl"; LOCK="$STATE/cleanup.lock"
+STATE="$ROOT/$HM_STATE_DIR"; FILE="$STATE/manifest.jsonl"; LOCK="$STATE/cleanup.lock"
 export HM_PROJECT="$ROOT"   # hm-manifest drop finds this project whatever the cwd
 MANIFEST="$(dirname "$0")/hm-manifest"
 if [ "$dry" = 0 ]; then

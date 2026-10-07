@@ -45,7 +45,7 @@ if [ -n "$respawn" ]; then
   ROOT=$(hm_project_root) || exit $?
   hm_ensure_state || exit $?
   export HM_PROJECT="$ROOT"
-  rec() { jq -r --arg a "$respawn" --arg k "$1" '[.agents[]? | select(.name == $a)][0] // empty | .[$k] // empty | tostring' "$ROOT/.hivemind/team.json" 2>/dev/null; }
+  rec() { jq -r --arg a "$respawn" --arg k "$1" '[.agents[]? | select(.name == $a)][0] // empty | .[$k] // empty | tostring' "$ROOT/$HM_STATE_DIR/team.json" 2>/dev/null; }
   [ -n "$(rec name)" ] || hm_die 2 "no agent named $respawn in this project's team"
   [ -z "$(rec claude_pid)" ] || hm_die 4 "$respawn is the orchestrator: it registers again in its own session with hm-spawn --self --agent $respawn"
   hm_team_agent_is "$ROOT" "$respawn"; case $? in
@@ -61,7 +61,7 @@ if [ -n "$respawn" ]; then
   else mode=$recmode; fi
   agent="$respawn"; model=$(rec model); effort=$(rec effort); wt=$(rec worktree); branch=$(rec branch)
   [ -z "$(rec window)" ] || window=$(rec window)
-  role="$ROOT/.hivemind/team/$agent/role.md"; rules="$ROOT/.hivemind/team/$agent/RULES.md"
+  role="$ROOT/$HM_STATE_DIR/team/$agent/role.md"; rules="$ROOT/$HM_STATE_DIR/team/$agent/RULES.md"
   [ -z "$wt" ] || base=$("$HM_BIN/hm-manifest" list --kind worktree | jq -r --arg p "$wt" 'select(.path == $p) | .base // empty' | head -1)
 fi
 [ -n "$agent" ] || hm_die 64 "$USAGE"
@@ -101,7 +101,7 @@ else
   hm_ensure_state || exit $?
   export HM_PROJECT="$ROOT"
 fi
-STATE="$ROOT/.hivemind"; project=$(basename "$ROOT")
+STATE="$ROOT/$HM_STATE_DIR"; project=$(basename "$ROOT")
 
 identify() {  # identify <pane> <socket>: the pane's identity, and for --self the Claude process that is registering it
   local ident
@@ -151,14 +151,14 @@ if [ "$self" = 1 ]; then
   # an orchestrator the hub launched in bypass was given an MCP file beside its pane record: it lives with the team from here. When the
   # delegate file no longer says so (it expired before this registration) the file may hold server secrets and is removed from the hub's folder.
   if hm_delegate_for_project "$ROOT"; then
-    amf="$HM_DG_HUB/.hivemind-hub/panes/$HM_DG_PROJECT-mcp.json"
+    amf="$HM_DG_HUB/$HM_HUB_DIR/panes/$HM_DG_PROJECT-mcp.json"
     if [ -f "$amf" ]; then
       { mkdir -p "$STATE/team/$agent" && mv "$amf" "$STATE/team/$agent/away-mcp.json"; } \
         || { rm -f "$amf"; echo "hm-spawn: could not move the hub's MCP file for $HM_DG_PROJECT into $STATE/team/$agent (removed it); the orchestrator has none" >&2; }
     fi
-  elif [ -n "${HM_AWAY_HUB:-}" ] && [ -d "$HM_AWAY_HUB/.hivemind-hub" ]; then
-    amn=$(jq -r --arg h "$HM_AWAY_HUB" --arg r "$ROOT" '.projects[]? | select((.home | if startswith("/") then . else $h + "/" + . end) == $r) | .name' "$HM_AWAY_HUB/.hivemind-hub/projects.json" 2>/dev/null | head -1)
-    ! hm_is_agent_name "$amn" || rm -f "$HM_AWAY_HUB/.hivemind-hub/panes/$amn-mcp.json"
+  elif [ -n "${HM_AWAY_HUB:-}" ] && [ -d "$HM_AWAY_HUB/$HM_HUB_DIR" ]; then
+    amn=$(jq -r --arg h "$HM_AWAY_HUB" --arg r "$ROOT" '.projects[]? | select((.home | if startswith("/") then . else $h + "/" + . end) == $r) | .name' "$HM_AWAY_HUB/$HM_HUB_DIR/projects.json" 2>/dev/null | head -1)
+    ! hm_is_agent_name "$amn" || rm -f "$HM_AWAY_HUB/$HM_HUB_DIR/panes/$amn-mcp.json"
   fi
   # the session's own name, as agents are told to report to it (hm_orchestrator_name reads it live; this is its fallback)
   [ -n "$oname" ] || { oname=$(hm_session_record "$CLAUDE_PID" .name); hm_is_session_name "$oname" || oname=""; }
@@ -168,10 +168,10 @@ if [ "$self" = 1 ]; then
   # Code's own record of this process. The hook writes it again after a /clear.
   sid=$(hm_session_record "$CLAUDE_PID" .sessionId)
   if tp=$(hm_session_transcript "$sid"); then
-    hm_write_session "$ROOT" "$agent" "$sid" "$tp" self || echo "hivemind: could not record $agent's session; hm-context reads ? until its next /clear" >&2
+    hm_write_session "$ROOT" "$agent" "$sid" "$tp" self || echo "$HM_PREFIX: could not record $agent's session; hm-context reads ? until its next /clear" >&2
   else   # a record of another session (an earlier orchestrator's) would be read as this one's
     [ "$(hm_json_get "$STATE/team/$agent/session.json" .session_id)" = "$sid" ] || rm -f "$STATE/team/$agent/session.json"
-    echo "hivemind: no single transcript found for $agent's session; hm-context reads ? until its next /clear" >&2
+    echo "$HM_PREFIX: no single transcript found for $agent's session; hm-context reads ? until its next /clear" >&2
   fi
   echo "$pane"; exit 0
 fi
@@ -194,8 +194,8 @@ mkdir -p "$STATE/team/$agent" "$STATE/handoffs"
 [ "$role" -ef "$STATE/team/$agent/role.md" ] || cp "$role" "$STATE/team/$agent/role.md"
 [ "$rules" -ef "$STATE/team/$agent/RULES.md" ] || cp "$rules" "$STATE/team/$agent/RULES.md"
 if [ ! -f "$STATE/handoffs/$agent.md" ]; then
-  printf '# %s handoff\n\n## START HERE\n\nI am %s-%s. Report only to %s. Read .hivemind/team/%s/ (my role and the rules) first, then wait for its first message before any work.\n' \
-    "$agent" "$project" "$agent" "$(hm_orchestrator_name "$ROOT")" "$agent" > "$STATE/handoffs/$agent.md"
+  printf '# %s handoff\n\n## START HERE\n\nI am %s-%s. Report only to %s. Read %s/team/%s/ (my role and the rules) first, then wait for its first message before any work.\n' \
+    "$agent" "$project" "$agent" "$(hm_orchestrator_name "$ROOT")" "$HM_STATE_DIR" "$agent" > "$STATE/handoffs/$agent.md"
 fi
 
 # No --session: an agent goes beside the pane that spawns it (the orchestrator's own tmux session), when that pane is on the server
@@ -240,8 +240,8 @@ upsert_team "$(jq -nc --arg n "$agent" --arg p "$pane" --arg s "$socket" --arg m
 wait_idle "$pane" "$still" "$maxwait"; rc=$?
 case "$rc" in
   0) ;;
-  3) echo "hivemind: a dialog is waiting in pane $pane ($agent): answer it yourself; nothing was typed" >&2; exit 5 ;;
-  *) echo "hivemind: pane $pane ($agent) never went idle within ${maxwait}s; nothing was sent" >&2; exit 1 ;;
+  3) echo "$HM_PREFIX: a dialog is waiting in pane $pane ($agent): answer it yourself; nothing was typed" >&2; exit 5 ;;
+  *) echo "$HM_PREFIX: pane $pane ($agent) never went idle within ${maxwait}s; nothing was sent" >&2; exit 1 ;;
 esac
 if [ -n "$resume_id" ]; then line=$(hm_resume_line "$ROOT" "$agent"); else line=$(hm_pickup_line "$project" "$ROOT" "$agent"); fi
 hm_tmux send-keys -t "$pane" -l "$line"

@@ -10,7 +10,8 @@ case "$min" in ''|*[!0-9.]*|*.*.*) hm_die 4 "--min-gb must be a non-negative num
 kb=$(df -Pk "$path" | awk 'NR==2 {print $4}'); gb=$((kb / 1024 / 1024))
 low=0; [ "$gb" -lt "${min%.*}" ] && low=1
 if [ "$hook" = 1 ]; then
-  [ "$low" = 1 ] && jq -nc --arg m "Free disk is ${gb} GB (below ${min} GB). Run /hivemind:cleanup or hm-cleanup --disk before heavy work." \
+  plugin=$(hm_plugin_name) || exit $?
+  [ "$low" = 1 ] && jq -nc --arg m "Free disk is ${gb} GB (below ${min} GB). Run /$plugin:cleanup or hm-cleanup --disk before heavy work." \
     '{hookSpecificOutput:{hookEventName:"SessionStart",additionalContext:$m}}'
   exit 0
 fi

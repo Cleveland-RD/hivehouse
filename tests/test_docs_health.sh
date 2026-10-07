@@ -15,7 +15,7 @@ prompt=$(field "$out" .reportPrompt)
 assert_contains "no args: the report goes under .hivemind/reports, not docs/" "$prompt" "write the report to /some/proj/.hivemind/reports/docs-health-report-<date>.md"
 case "$prompt" in */some/proj/docs/*) bad "no args: nothing is written under docs/" ;; *) ok "no args: nothing is written under docs/" ;; esac
 assert_contains "no args: the report agent makes git ignore .hivemind/ first" "$prompt" "grep -qx '/.hivemind/' \"\$common/info/exclude\" || echo '/.hivemind/' >> \"\$common/info/exclude\""
-assert_contains "no args: that is the line hm_ensure_state writes" "$(grep -n "grep -qx" "$HM_REPO_ROOT/bin/hm-lib.sh")" "grep -qx '/.hivemind/' \"\$excl\" || echo '/.hivemind/' >> \"\$excl\""
+assert_contains "no args: that is the line hm_ensure_state writes" "$(grep -n "grep -qx" "$HM_REPO_ROOT/bin/hm-lib.sh")" 'grep -qx "/$HM_STATE_DIR/" "$excl" || echo "/$HM_STATE_DIR/" >> "$excl"'
 assert_contains "no args: it appends only when absent and refuses to write into a tracked .hivemind/" "$prompt" "ls-files -- .hivemind"
 out=$(run '{"reportPath":"/elsewhere/report.md"}' /some/proj)
 prompt=$(field "$out" .reportPrompt)

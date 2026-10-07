@@ -40,16 +40,16 @@ valid "$owner" || hm_die 4 "owner value for $key is not allowed here: $owner"
 root=$(hm_project_root) || exit $?
 # every team root of a project (its home, and each worktree with a team) takes its settings from the home: a worktree's own file is never read
 home=$(hm_project_home "$root") || exit $?
-if [ -n "$(git -C "$home" ls-files -- .hivemind)" ]; then
-  hm_die 3 "files under .hivemind/ are tracked by git; untrack them before using hivemind here"
+if [ -n "$(git -C "$home" ls-files -- $HM_STATE_DIR)" ]; then
+  hm_die 3 "files under $HM_STATE_DIR/ are tracked by git; untrack them before using hivemind here"
 fi
-file="$home/.hivemind/settings.json"
+file="$home/$HM_STATE_DIR/settings.json"
 emit() {  # emit <value>: print it; permission_mode left at the owner's auto becomes bypassPermissions for a marked caller while the owner is away
   if [ "$key" = permission_mode ] && [ "$1" = auto ] && [ "$owner" = auto ] && hm_delegate_for_project "$root"; then
     hm_away_caller
     case $? in
       0) printf 'bypassPermissions\n'; return ;;
-      2) echo "hivemind: this session's launch environment cannot be read, so the away marker cannot be checked; no bypass: using $1" >&2 ;;
+      2) echo "$HM_PREFIX: this session's launch environment cannot be read, so the away marker cannot be checked; no bypass: using $1" >&2 ;;
     esac
   fi
   printf '%s\n' "$1"
@@ -63,12 +63,12 @@ done
 [ "$(jq -r --arg k "$key" 'has($k)' "$file")" = true ] || { emit "$owner"; exit 0; }
 proj=$(jq -r --arg k "$key" '.[$k] | tostring' "$file") || exit 4
 if [ "$key" = permission_mode ] && [ "$proj" = bypassPermissions ]; then
-  echo "hivemind: project $key bypassPermissions is never effective; using the owner's $owner" >&2
+  echo "$HM_PREFIX: project $key bypassPermissions is never effective; using the owner's $owner" >&2
   emit "$owner"; exit 0
 fi
 valid "$proj" || hm_die 4 "project value for $key is not allowed: $proj"
 if stricter "$proj" "$owner"; then printf '%s\n' "$proj"
 else
-  [ "$proj" = "$owner" ] || echo "hivemind: project $key $proj is looser than the owner's $owner; using the owner's" >&2
+  [ "$proj" = "$owner" ] || echo "$HM_PREFIX: project $key $proj is looser than the owner's $owner; using the owner's" >&2
   emit "$owner"
 fi

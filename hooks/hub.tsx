@@ -2,12 +2,12 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
 import type { HubAgent, HubDialog, HubProject, HubTask, HubView } from '../types'
+import { HUB_DIR, PANE, PLUGIN, PREFIX } from './names'
 
 // The owner's hub (bin/hm-hub, skills/hub): in the session started in the hub's own folder, and only there, a screen of
 // what waits on the owner and of every project's orchestrator, and a guard that keeps the hub off the projects' files.
 // Everything shown is read from hm-hub; the only things done here are the Resume and Continue presses, which run
 // `hm-hub wake` and `hm-hub continue`.
-const PANE = 'hivemind-hub'
 // The command that opens the screen. Never a skill's name: Claude Code refuses a command named as one of the plugin's own
 // skills (/hub is the skill, /hivemind:hub), and tests/test_hub_screen.sh holds it to that.
 const COMMAND = 'hub-screen'
@@ -16,6 +16,8 @@ const WAKE_TIMEOUT_MS = 150_000 // hm-hub waits up to 90 s for a started session
 const ANSWER_TIMEOUT_MS = 30_000 // hm-hub answer sends its keys and then watches a few seconds
 
 const EMPTY: HubView = { root: '', hubName: '', projects: [], tasks: [], dialogs: {}, away: null, awayRefused: null, lastAway: null, updatedAt: 0, error: '' }
+// The atoms' plugin must be a string literal in this file (the engine reads the source to list what a module reads and writes), so
+// it is spelled here, not taken from names.ts; tests/test_names.sh holds it to .claude-plugin/plugin.json's name.
 const view = atom({ plugin: 'hivemind', key: 'hubView' } as const, EMPTY)
 // the project a press is acting on, one at a time
 const acting = atom({ plugin: 'hivemind', key: 'hubResuming' } as const, '')
@@ -28,7 +30,7 @@ function hubRoot($: EngineInterface): Promise<string | null> {
   hubRootOnce ??= (async () => {
     try {
       const cwd = await $.session.cwd()
-      const st = await $.fs.stat(`${cwd}/.hivemind-hub`)
+      const st = await $.fs.stat(`${cwd}/${HUB_DIR}`)
       return st.kind === 'dir' && !st.isLink ? cwd : null
     } catch {
       return null
@@ -109,7 +111,8 @@ async function tick($: EngineInterface): Promise<void> {
 }
 
 function lastLine(text: string): string {
-  return (text.trim().split('\n').pop() ?? '').replace(/^hivemind: /, '')
+  const last = text.trim().split('\n').pop() ?? ''
+  return last.startsWith(`${PREFIX}: `) ? last.slice(PREFIX.length + 2) : last
 }
 
 // A press is the owner's own word for that one action: Resume wakes a stopped orchestrator (hm-hub wake), Continue sends
@@ -180,7 +183,7 @@ async function nameAndGreet($: EngineInterface, root: string): Promise<void> {
     const n = JSON.parse(r.stdout) as { found?: boolean; source?: string; free?: string }
     if (!n.found || n.source === 'user' || !n.free) return
     await $.command.run({ command: 'rename', args: n.free })
-    await $.command.run({ command: 'hivemind:hub' })
+    await $.command.run({ command: `${PLUGIN}:hub` })
   } catch (err) {
     $.ui.toast(`hub: this session could not name itself (${err instanceof Error ? err.message : String(err)}); type /rename ${await chosenName($, root)}`)
   }
@@ -203,7 +206,7 @@ async function realPath($: EngineInterface, path: string): Promise<string | null
 
 async function projectFolders($: EngineInterface, root: string): Promise<string[]> {
   try {
-    const text = await $.fs.read(`${root}/.hivemind-hub/projects.json`)
+    const text = await $.fs.read(`${root}/${HUB_DIR}/projects.json`)
     const list = (JSON.parse(typeof text === 'string' ? text : '{}') as { projects?: { home?: string; repos?: string[] }[] }).projects ?? []
     return list.flatMap(p => [p.home ?? '', ...(p.repos ?? [])]).filter(f => f !== '').map(f => (f.startsWith('/') ? f : `${root}/${f}`))
   } catch {
@@ -221,7 +224,7 @@ async function editRefusal($: EngineInterface, path: string): Promise<string | n
   if (!root) return null
   const abs = path.startsWith('/') ? path : `${root}/${path}`
   const real = (await realPath($, abs)) ?? abs
-  if (inside(real, await realPath($, `${root}/.hivemind-hub`))) return null
+  if (inside(real, await realPath($, `${root}/${HUB_DIR}`))) return null
   const folders = await Promise.all([root, ...(await projectFolders($, root))].map(f => realPath($, f)))
   return folders.some(f => inside(real, f)) ? `${KEEP_OFF} (${path})` : null
 }

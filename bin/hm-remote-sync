@@ -33,7 +33,7 @@ fi
 ROOT=$(hm_project_root) || exit $?
 hm_ensure_state || exit $?
 export HM_PROJECT="$ROOT"
-STATE="$ROOT/.hivemind"; REC="$STATE/remote/$host.json"
+STATE="$ROOT/$HM_STATE_DIR"; REC="$STATE/remote/$host.json"
 
 # ---- the only places ssh, scp and rsync are called -------------------------------------------------------------------
 hm_ssh()   { ssh -o BatchMode=yes -o ConnectTimeout=10 -- "$host" "$@"; }
@@ -89,7 +89,8 @@ check)
   kb=$(rrun sh -c 'df -Pk "$HOME" | tail -1' | awk '{print $4}')
   case "$kb" in ''|*[!0-9]*) flag "the free space on $host could not be read"; gb=0 ;; *) gb=$(( kb / 1024 / 1024 )); say "free: ${gb} GB on $host"; [ "$gb" -ge "$mingb" ] || flag "free disk ${gb} GB is below $mingb GB" ;; esac   # digits only: the remote's text never reaches bash arithmetic
   cv=$(rrun claude --version 2>/dev/null | clean | head -1); say "claude: ${cv:-none}"; [ -n "$cv" ] || flag "claude is not installed on $host"
-  plug=$(rrun claude plugin list --json 2>/dev/null | jq -c '[.[] | select((.id // "") | startswith("hivemind@"))][0] // empty' 2>/dev/null)
+  pname=$(hm_plugin_name) || exit $?
+  plug=$(rrun claude plugin list --json 2>/dev/null | jq -c --arg p "$pname@" '[.[] | select((.id // "") | startswith($p))][0] // empty' 2>/dev/null)
   ver=$(printf '%s' "$plug" | jq -r '.version // empty' 2>/dev/null | clean); ip=$(printf '%s' "$plug" | jq -r '.installPath // empty' 2>/dev/null)
   say "plugin: ${ver:-not installed}"
   [ -n "$ver" ] || flag "the hivemind plugin is not installed on $host"
@@ -119,7 +120,7 @@ branches)
   reach; need_remote_root "$rroot"
   rrun git -C "$rroot" rev-parse --git-dir >/dev/null 2>&1 || hm_die 4 "$rroot is not a git repository on $host"
   mkdir -p "$STATE/tmp"; tmpd=$(mktemp -d "$STATE/tmp/bundle.XXXXXX") || exit 1
-  bdir=$(rsafe_dir "$rroot" .hivemind/tmp) || exit $?
+  bdir=$(rsafe_dir "$rroot" $HM_STATE_DIR/tmp) || exit $?
   rbundle="$bdir/hm-$$.bundle"
   cleanup() { rm -rf "$tmpd"; rrun rm -f "$rbundle" >/dev/null 2>&1; }; trap cleanup EXIT
   refs=(); for b in "${list[@]}"; do refs+=("refs/heads/${b}"); done
@@ -191,7 +192,7 @@ secret)
   [ $# -eq 2 ] || hm_die 64 "$USAGE"
   rroot="$1"; rel="$2"
   rel_ok "$rel" || hm_die 4 "path refused (relative, no .., not starting with -): $rel"
-  case "$rel" in .hivemind/tmp/*) ;; *) hm_die 4 "a secret goes under .hivemind/tmp/ only: the remote manifest refuses a file entry elsewhere in the project" ;; esac
+  case "$rel" in $HM_STATE_DIR/tmp/*) ;; *) hm_die 4 "a secret goes under $HM_STATE_DIR/tmp/ only: the remote manifest refuses a file entry elsewhere in the project" ;; esac
   [ ! -L "$ROOT/$rel" ] || hm_die 4 "the secret is a symlink: $rel"
   [ -f "$ROOT/$rel" ] || hm_die 4 "no such file here: $rel"
   local_parent_ok "$rel"
@@ -266,7 +267,7 @@ start-agent)
   fi
   ip=$(install_path) || exit $?
   reach; need_remote_root "$rroot"
-  role="$rroot/.hivemind/team/$agent/role.md"; rules="$rroot/.hivemind/team/$agent/RULES.md"
+  role="$rroot/$HM_STATE_DIR/team/$agent/role.md"; rules="$rroot/$HM_STATE_DIR/team/$agent/RULES.md"
   for f in "$role" "$rules"; do rrun test -f "$f" || { [ $? -eq 255 ] && unreachable; hm_die 4 "$f is not on $host: send it with hm-remote-sync files first"; }; done
   args=(--agent "$agent" --role "$role" --rules "$rules" --model "$model" --effort "$effort" --mode "$mode")
   [ -z "$wt" ] || args+=(--worktree "$wt" --branch "$branch" --base "$base")

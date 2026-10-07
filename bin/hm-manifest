@@ -5,7 +5,7 @@ set -u
 . "$(dirname "$0")/hm-paths.sh"
 hm_ensure_state
 ROOT=$(hm_project_root) || exit $?
-STATE="$ROOT/.hivemind"; FILE="$STATE/manifest.jsonl"; LOCK="$STATE/manifest.lock"
+STATE="$ROOT/$HM_STATE_DIR"; FILE="$STATE/manifest.jsonl"; LOCK="$STATE/manifest.lock"
 touch "$FILE"
 
 allowed() {

@@ -95,6 +95,9 @@ t_teardown() {  # idempotent: called by the trap and by tests that end explicitl
   t_remove_dirs "$T_TMP"
   rm -rf "$T_TMP"; T_TMP=""
 }
+t_plugin_beside() {  # t_plugin_beside <a copy of bin/>: plugin.json where bin/hm-lib.sh looks for it, one folder up (hm_plugin_name)
+  mkdir -p "$1/../.claude-plugin" && cp "$HM_REPO_ROOT/.claude-plugin/plugin.json" "$1/../.claude-plugin/plugin.json"
+}
 t_repo() {  # t_repo <name> -> prints path of a fresh git repo with one commit
   local d="$T_TMP/$1"; mkdir -p "$d"
   git -C "$d" init -q -b main; git -C "$d" config user.email t@t; git -C "$d" config user.name t
@@ -106,7 +109,7 @@ t_repo() {  # t_repo <name> -> prints path of a fresh git repo with one commit
 # line is replaced only if it is found exactly once; production has no override of its own. Prints the copy's folder.
 t_delegate_bin() {
   local d="$T_TMP/delegate-bin" n
-  rm -rf "$d"; mkdir -p "$d"; cp -R "$HM_REPO_ROOT/bin/." "$d/"
+  rm -rf "$d"; mkdir -p "$d"; cp -R "$HM_REPO_ROOT/bin/." "$d/"; t_plugin_beside "$d"
   n=$(grep -c '^hm_delegate_now() { hm_delegate_read "$(hm_delegate_path)" 0; }$' "$d/hm-lib.sh")
   [ "$n" = 1 ] || { echo "t_delegate_bin: the production line matched $n times" >&2; return 1; }
   awk -v f="$1" -v u="$(id -u)" '/^hm_delegate_now\(\) \{ hm_delegate_read / { print "hm_delegate_now() { hm_delegate_read \"" f "\" " u "; }"; next } { print }' "$d/hm-lib.sh" > "$d/hm-lib.sh.new" && mv "$d/hm-lib.sh.new" "$d/hm-lib.sh"
@@ -117,7 +120,7 @@ t_delegate_bin() {
 # it is found exactly once; production has no override of its own. Prints the copy's folder.
 t_slot_bin() {
   local d n; d=$(mktemp -d "$T_TMP/slot-bin.XXXXXX") || return 1
-  rm -rf "$d"; mkdir -p "$d"; cp -R "$HM_REPO_ROOT/bin/." "$d/"
+  rm -rf "$d"; mkdir -p "$d"; cp -R "$HM_REPO_ROOT/bin/." "$d/"; t_plugin_beside "$d"
   for n in 'hm_machine_slot_dir() { if ' 'hm_machine_slot_owner() { echo 0; }'; do
     [ "$(grep -c -F -- "$n" "$d/hm-lib.sh")" = 1 ] || { echo "t_slot_bin: the production line '$n' did not match once" >&2; return 1; }
   done
@@ -129,7 +132,7 @@ t_slot_bin() {
 # instead, so the lines `hm-hub away` and `back` print can be tested against a folder the test controls. Found exactly once. Prints the copy.
 t_base_bin() {
   local d="$T_TMP/$1" n
-  rm -rf "$d"; mkdir -p "$d"; cp -R "$HM_REPO_ROOT/bin/." "$d/"
+  rm -rf "$d"; mkdir -p "$d"; cp -R "$HM_REPO_ROOT/bin/." "$d/"; t_plugin_beside "$d"
   n=$(grep -c '^hm_delegate_base() { if ' "$d/hm-lib.sh")
   [ "$n" = 1 ] || { echo "t_base_bin: the production line matched $n times" >&2; return 1; }
   awk -v b="$2" '/^hm_delegate_base\(\) \{ if / { print "hm_delegate_base() { echo \"" b "\"; }"; next } { print }' "$d/hm-lib.sh" > "$d/hm-lib.sh.new" && mv "$d/hm-lib.sh.new" "$d/hm-lib.sh"
@@ -139,7 +142,7 @@ t_base_bin() {
 # <candidates> (space-separated paths) instead, so the resolver can be tested with paths the test controls. Found exactly once.
 t_jq_bin() {
   local d="$T_TMP/$1" n
-  rm -rf "$d"; mkdir -p "$d"; cp -R "$HM_REPO_ROOT/bin/." "$d/"
+  rm -rf "$d"; mkdir -p "$d"; cp -R "$HM_REPO_ROOT/bin/." "$d/"; t_plugin_beside "$d"
   n=$(grep -c '^hm_jq_candidates() { echo ' "$d/hm-lib.sh")
   [ "$n" = 1 ] || { echo "t_jq_bin: the production line matched $n times" >&2; return 1; }
   awk -v c="$2" '/^hm_jq_candidates\(\) \{ echo / { print "hm_jq_candidates() { echo \"" c "\"; }"; next } { print }' "$d/hm-lib.sh" > "$d/hm-lib.sh.new" && mv "$d/hm-lib.sh.new" "$d/hm-lib.sh"
