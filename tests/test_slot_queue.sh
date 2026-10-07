@@ -44,7 +44,7 @@ wait $h
 sleep 30 & p=$!; t_track $p; mkdir -p "$Q"
 hm-slot run holder -- sleep 3 & h=$!; sleep 0.5
 secret="$T_TMP/secret"; echo keep > "$secret"
-ln -s "$secret" "$Q/$(printf '%010d' "$(date +%s)")-$p.json"; ln -s "$secret" "$Q/$(printf '%010d' $(( $(date +%s) + 1 )))-$p.json"
+for k in 0 1 2 3 4; do ln -s "$secret" "$Q/$(printf '%010d' $(( $(date +%s) + k )))-$p.json"; done   # whichever second it files in
 hm-slot acquire planted --pid $p --wait 1 2>/dev/null; assert_status "a ticket name taken by a link makes the write fail" $? 1
 assert_eq "...and the file it pointed at is untouched" "$(cat "$secret")" "keep"
 wait $h; kill $p; wait $p 2>/dev/null
@@ -64,5 +64,27 @@ assert_eq "...leaving no ticket" "$(ls "$Q" 2>/dev/null | wc -l | tr -d ' ')" "0
 SECONDS=0; hm-slot run outer -- env HM_SLOT_HELD=1 hm-slot run --wait 2 inner -- true 2>"$T_TMP/nest2.err"; s=$?; d=$SECONDS
 [ "$s" = 75 ] && [ "$d" -ge 2 ] && ok "a HM_SLOT_HELD that is not the holder changes nothing: it waits out its time" || bad "HM_SLOT_HELD=1: exit $s after $d s"
 case "$(cat "$T_TMP/nest2.err")" in *"own parent"*) bad "...and it must not say parent" ;; *) ok "...and does not claim the holder is its parent" ;; esac
+# ...also with another waiter ahead of it in the queue (the outer holds, W waits for the lock, the inner waits behind W)
+rm -rf "$Q" "$LOCK"; out3="$T_TMP/three"; : > "$out3"; rm -f "$T_TMP/in3.res"
+hm-slot run --wait outer -- sh -c "sleep 2; SECONDS=0; hm-slot run --wait 8 inner -- true 2>'$T_TMP/in3.err'; echo \$? \$SECONDS > '$T_TMP/in3.res'" & o3=$!
+sleep 0.7
+hm-slot run --wait 8 other -- sh -c "echo other >> '$out3'" 2>/dev/null & w3=$!
+wait $o3 $w3
+read -r rc3 secs3 < "$T_TMP/in3.res"
+assert_eq "the nested --wait is refused (75) even with another waiter ahead of it" "$rc3" "75"
+[ "${secs3:-99}" -le 2 ] && ok "...at once, not after its own time" || bad "...took ${secs3:-?} s"
+assert_contains "...and says why" "$(cat "$T_TMP/in3.err")" "held by your own parent"
+assert_eq "...and the waiter ahead of it still ran" "$(cat "$out3")" "other"
+# ...the check runs on every pass: an older live ticket keeps this one off the head, and the parent takes the slot after it filed
+rm -rf "$Q" "$LOCK"; mkdir -p "$Q"; sleep 60 & old3=$!; t_track $old3; hm_holder_json $old3 '{"label":"older"}' > "$Q/0000000001-$old3.json"
+SECONDS=0; ( HM_SLOT_HELD=$$ hm-slot run --wait 8 child -- true 2>"$T_TMP/c3.err"; echo $? > "$T_TMP/c3.rc" ) & c3=$!
+sleep 1; mkdir "$LOCK"; hm_holder_json $$ '{"label":"parent"}' > "$LOCK/holder.json"
+wait $c3; assert_eq "a waiter off the head still refuses once its parent holds the slot" "$(cat "$T_TMP/c3.rc")" "75"
+assert_contains "...saying so" "$(cat "$T_TMP/c3.err")" "held by your own parent"
+rm -rf "$LOCK" "$Q"; kill $old3; wait $old3 2>/dev/null
+# ...and a holder that is gone is not "the parent": it is taken over
+sleep 30 & dead3=$!; kill $dead3; wait $dead3 2>/dev/null
+mkdir "$LOCK"; jq -nc --argjson pid "$dead3" '{pid:$pid,lstart:"Mon Jan  1 00:00:00 2001",created:0}' > "$LOCK/holder.json"
+HM_SLOT_HELD=$dead3 hm-slot run --wait 3 afterdead -- true 2>/dev/null; assert_status "a gone holder named by HM_SLOT_HELD is taken over, not refused" $? 0
 hm-slot run --wait w -- true; assert_status "--wait with no time and a free slot just runs" $? 0
 cd /; t_done

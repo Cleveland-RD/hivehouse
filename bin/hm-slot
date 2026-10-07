@@ -32,8 +32,16 @@ busy() {  # the holder on stderr, then the way out
   cat "$LOCK/holder.json" >&2 2>/dev/null; echo "hm-slot: busy; the lock is $LOCK (a holder whose process is gone is taken over; remove the directory by hand only if it is not)" >&2
 }
 drop_ticket() { [ -z "$TICKET" ] || rm -f "$TICKET"; TICKET=""; }
+parent_holds() {  # 0 (and the reason on stderr) when the live holder is the process that exported HM_SLOT_HELD, an ancestor of this one:
+  # waiting for a slot an ancestor holds would never end. The variable can only make this refuse sooner; it never grants the slot.
+  local hp
+  [ -n "${HM_SLOT_HELD:-}" ] && [ -d "$LOCK" ] || return 1
+  hp=$(hm_json_get "$LOCK/holder.json" .pid)
+  [ "$hp" = "$HM_SLOT_HELD" ] && ! hm_lock_stale "$LOCK" || return 1
+  busy; echo "hm-slot: the slot is held by your own parent (pid $hp): a command run under it cannot wait for it" >&2
+}
 take() {  # take <label> <pid> [<wait>]: 0 held, 75 busy (the holder is printed), 1 no ticket could be filed. <wait>: "" no, "inf", or seconds
-  local json first deadline="" name hp
+  local json first deadline="" name
   json=$(hm_holder_json "$2" "$(jq -nc --arg label "$1" --arg project "$PROJECT" --arg agent "${HM_AGENT:-owner}" \
     --arg since "$(hm_now)" '{label:$label,project:$project,agent:$agent,since:$since}')") || return 1
   [ "$MACHINE" = 1 ] || mkdir -p "$HOME_DIR"
@@ -53,15 +61,10 @@ take() {  # take <label> <pid> [<wait>]: 0 held, 75 busy (the holder is printed)
   TICKET="$QUEUE/$name"
   trap 'drop_ticket' EXIT; trap 'exit 130' INT; trap 'exit 143' TERM
   while :; do
+    parent_holds && { drop_ticket; return 75; }   # at every pass, not only at the head: a waiter ahead of this one would hide it
     first=$(hm_queue_live "$QUEUE"); first=${first%%$'\n'*}
     if [ "$first" = "$name" ]; then
       if group_write hm_lock_try "$LOCK" "$json"; then drop_ticket; return 0; fi
-      # waiting for a slot an ancestor of this process holds would never end: refuse at once. HM_SLOT_HELD can only make this
-      # refuse sooner; it never grants the slot.
-      hp=$(hm_json_get "$LOCK/holder.json" .pid)
-      if [ -n "${HM_SLOT_HELD:-}" ] && [ "$hp" = "$HM_SLOT_HELD" ]; then
-        drop_ticket; busy; echo "hm-slot: the slot is held by your own parent (pid $hp): a command run under it cannot wait for it" >&2; return 75
-      fi
     elif [ -z "$first" ] || [ ! -e "$TICKET" ]; then
       echo "hm-slot: the ticket $name is gone from $QUEUE" >&2; TICKET=""; return 1   # another process removed it
     fi
