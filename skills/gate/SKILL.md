@@ -34,7 +34,7 @@ Choose the log path (outside the tracked tree, for example `.hivemind/tmp/<name>
   slot itself (never wrap it in `hm-slot run`), runs every step even after a failure, and writes `<name> exit <n>`
   after each. Step names are letters, digits, `_`, `.`, `-` only, and never `..`.
 - A gate that is already one script printing `<step> exit <n>` lines:
-  `hm-slot run gate -- <script>` with its output redirected to the log file, as the project records it.
+  `hm-slot run --wait gate -- <script>` with its output redirected to the log file, as the project records it.
 
 ## 4. Verify the log
 
