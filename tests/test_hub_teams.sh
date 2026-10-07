@@ -32,6 +32,13 @@ jq -nc --arg k "$HM_TMUX_SOCKET" --arg kp "$kp" --arg p "${ki%%$'\t'*}" --arg s 
 assert_eq "an orchestrator registered in a worktree of the home runs" "$(proj '.projects[0].orchestrator.state')" "running"
 assert_eq "...its agents are listed, each with its worktree" "$(proj '.projects[0].agents | map([.name, .worktree] | join("@")) | join(",")')" "impl@$WT"
 assert_contains "...the plain status names it" "$(hub status app)" "running"
+# an orchestrator whose tokens exceed the window that is only assumed shows as unknown, never as a percent over 100
+jq -nc '{type:"assistant", isSidechain:false, message:{model:"claude-sonnet-5-5", usage:{input_tokens:300000, cache_read_input_tokens:0, cache_creation_input_tokens:0, output_tokens:0}}}' > "$T_TMP/big.jsonl"
+jq -nc --arg t "$T_TMP/big.jsonl" '{session_id:"sess-big", transcript_path:$t}' > "$WT/.hivemind/team/orchestrator/session.json"
+assert_eq "the status carries no context number when the window is unknown" "$(proj '.projects[0].orchestrator | has("context")')" "false"
+assert_eq "...it says the window is unknown, with the tokens" "$(proj '.projects[0].orchestrator | [.context_unknown, .context_tokens] | map(tostring) | join(" ")')" "true 300000"
+assert_eq "...and no context in the whole status is over 100" "$(hub status app --json | jq '[.. | .context? | numbers | select(. > 100)] | length')" "0"
+rm "$WT/.hivemind/team/orchestrator/session.json"
 mkdir -p "$H/app/.hivemind"
 jq -c '{agents: [.agents[] | select(.name == "orchestrator")]}' "$WT/.hivemind/team.json" > "$H/app/.hivemind/team.json"
 assert_eq "registered in both roots (same process): it counts once, as running" "$(proj '.projects[0].orchestrator.state')" "running"

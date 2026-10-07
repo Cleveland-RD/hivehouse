@@ -611,10 +611,12 @@ status)
   # open tasks per project: those whose last event (a note aside) neither closes them
   opens=$(jq -s --argjson c "$HUB_CLOSED_JSON" '[group_by(.id)[] | {p: .[0].project, s: ([.[] | select(.event != "note")] | last | .event)}
     | select((.s as $s | $c | index($s)) | not)] | group_by(.p) | map({key: .[0].p, value: length}) | from_entries' "$root/.hivemind-hub/tasks.jsonl")
-  level() {  # level <agent>: {context, context_assumed} from this project's $levels when one was read, else {}
+  level() {  # level <agent>: {context, context_assumed} (or {context_unknown, context_tokens}) from this project's $levels when one was read, else {}
     local l c x=false
     l=$(printf '%s\n' "$levels" | awk -v a="$1" '$1 == a { print; exit }'); c=$(printf '%s' "$l" | awk '{print $2}')
     case "$c" in ''|*[!0-9]*) echo '{}'; return ;; esac
+    # tokens over a window that is only assumed: no percent, so nothing in the status reads over 100
+    case "$l" in *"(window unknown)"*) jq -nc --argjson c "$c" '{context_unknown:true, context_tokens:$c}'; return ;; esac
     case "$l" in *"(window assumed"*) x=true ;; esac   # never inside $(...): bash 3.2 misreads a case there
     jq -nc --argjson c "$c" --argjson x "$x" '{context:$c, context_assumed:$x}'
   }
