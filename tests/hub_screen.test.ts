@@ -105,7 +105,7 @@ const ran = (exitCode: number, stdout: string, stderr = '') => ({ value: { exitC
 // refuseAll is set).
 // shown: whether Claude Code lists the screen as open and shown (its own record of the plugin's panes). session: what
 // Claude Code records of this session (hm-hub naming) and how many turns it has had; slash: the slash commands run.
-type Session = { turns: number; naming?: { found: boolean; name: string; source: string; free: string } }
+type Session = { turns: number; naming?: { found: boolean; name: string; source: string; free: string }; namingFails?: string }
 function world(on: On, runs: string[][], opened: string[] = [], commands: string[] = [], refuseAll = false, shown = { now: true },
   session: Session = { turns: 3 }, slash: string[][] = []) {
   on('session.turns', async () => ({ value: session.turns }))
@@ -136,6 +136,7 @@ function world(on: On, runs: string[][], opened: string[] = [], commands: string
       return d ? ran(0, JSON.stringify(d)) : ran(4, '', 'hivemind: no dialog is on that screen')
     }
     if (sub === 'answer') return ran(ANSWER.code, ANSWER.stdout, ANSWER.stderr)
+    if (sub === 'naming' && session.namingFails) return ran(4, '', session.namingFails)
     if (sub === 'naming' && session.naming) return ran(0, JSON.stringify(session.naming))
     return ran(64, '', 'hivemind: usage')
   })
@@ -370,6 +371,16 @@ leftAlone('the owner named', { turns: 0, naming: { ...UNNAMED, name: 'hub', sour
 leftAlone('resumed or reloaded (it has had turns)', { turns: 4, naming: UNNAMED })
 leftAlone('Claude Code keeps no record of', { turns: 0, naming: { ...UNNAMED, found: false } })
 leftAlone('nobody is at the prompt of (claude -p, the SDK)', { turns: 0, naming: UNNAMED }, false)
+
+test('a name the hub cannot take is said on the toast, not dropped', async ($, on) => {
+  const ran: string[][] = []
+  const clock = mock.clock(on, { now: NOW })
+  world(on, [], [], [], false, { now: true }, { turns: 0, namingFails: 'hivemind: /work/.hivemind-hub/name holds no usable name' }, ran)
+  await $.session.start({ cwd: ROOT, surface: 'terminal', isInteractive: true })
+  await clock.settle()
+  expect(ran).toEqual([])
+  expect(TOASTS.some(t => t.includes('no name chosen') && t.includes('holds no usable name'))).toBe(true)
+})
 
 test('the setting turns the naming off', { options: { hub_auto_start: false } }, async ($, on) => {
   const ran: string[][] = []
