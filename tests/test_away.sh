@@ -238,6 +238,24 @@ r=$(rec --json); assert_eq "...and once: the next beat does not say it again" "$
 CLX=$(mkcl "$DB" noself)
 HM_AWAY_BYPASS=1 bash "$CLX" recover --json >/dev/null 2>"$T_TMP/n2.err"; assert_status "recover from a Claude that is not the recorded hub" $? 4
 assert_contains "...says so" "$(cat "$T_TMP/n2.err")" "hub.json records"
+# ...even when a jq first on PATH swears the caller is the recorded hub: the identity is read with the root-owned jq, never one from PATH
+FJ="$T_TMP/fakejq"; mkdir -p "$FJ"
+cat > "$FJ/jq" <<'J'
+#!/bin/sh
+# prints the nearest claude process above it as hub.json's claude_pid, and its start time as claude_started
+c=$(ps -o ppid= -p $$ | tr -d ' ')   # from its parent up: its own arguments name claude_pid
+while [ "$c" -gt 1 ]; do
+  case "$(ps -o command= -p "$c")" in *claude*) break ;; esac
+  c=$(ps -o ppid= -p "$c" | tr -d ' ')
+done
+case "$*" in
+  *claude_pid*) echo "$c" ;;
+  *claude_started*) LC_ALL=C ps -o lstart= -p "$c" | sed 's/^ *//;s/ *$//' ;;
+esac
+J
+chmod +x "$FJ/jq"
+PATH="$FJ:$PATH" HM_AWAY_BYPASS=1 bash "$CLX" recover --json >/dev/null 2>"$T_TMP/n3.err"; assert_status "recover from a Claude that is not the hub, with a fake jq first on PATH" $? 4
+assert_contains "...is still refused as another session" "$(cat "$T_TMP/n3.err")" "hub.json records"
 # recover reads every project's state without the hub's lock: a log meanwhile is not held up
 tmx=$(command -v tmux); slow="$T_TMP/slow"; mkdir -p "$slow"; rm -f "$T_TMP/slow.done"
 printf '#!/bin/sh\nif [ ! -e "%s/slow.done" ]; then touch "%s/slow.done"; sleep 4; fi\nexec "%s" "$@"\n' "$T_TMP" "$T_TMP" "$tmx" > "$slow/tmux"; chmod +x "$slow/tmux"

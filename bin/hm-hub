@@ -98,7 +98,7 @@ delegate_for_hub() {
 }
 epoch_local() { date -r "$1" '+%Y-%m-%d %H:%M' 2>/dev/null || date -d "@$1" '+%Y-%m-%d %H:%M'; }   # epoch_local <epoch>
 epoch_iso() { date -u -r "$1" '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null || date -u -d "@$1" '+%Y-%m-%dT%H:%M:%SZ'; }
-# away_hub_caller <hub root>: exits 4 unless the caller's own Claude is the hub hub.json records (pid and start time) and carries the away
+# away_hub_caller <hub root> (always after delegate_for_hub, whose hm_delegate_mine refuses without a root-owned jq, so hm_json_get below uses it): exits 4 unless the caller's own Claude is the hub hub.json records (pid and start time) and carries the away
 # marker; an environment that cannot be read is a refusal too. recover and a bypass launch both ask it.
 # (hub.json's claude_started is compared with hm_lstart_is: the C form or the caller's locale's. A record in any other form is refused
 # until `hm-hub self` records it again, which the hub skill runs at every start: this only ever fails closed.)
