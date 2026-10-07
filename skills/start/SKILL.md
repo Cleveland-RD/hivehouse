@@ -100,7 +100,7 @@ again before adding an agent later. This approval is a plan confirmation, separa
 
 First register this pane as the orchestrator, once: `hm-spawn --self --agent orchestrator`, adding `--window <tokens>` when you
 know this session's context window (never a guess from the model name: without it hivemind records the window Claude Code reported
-for the session, or none, and `hm-context` then says "window unknown" for a reading it cannot place). An agent name is bare (the
+for the session, or none, and `hm-context` then reads "(window assumed 200000)" until the tokens pass 200000, and "(window unknown)" after). An agent name is bare (the
 project is added where a name is shown), so never put the project in it. Step 8's `hm-context --all` and
 `hm-self-rotate` find you through it. It exits 4 when that name already belongs to a pane hivemind spawned; tell the
 owner rather than choosing another name.

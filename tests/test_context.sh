@@ -59,4 +59,8 @@ git rm -qf --cached .hivemind/leak
 mkdir "$T_TMP/norepo"; cd "$T_TMP/norepo"
 hm-context impl >/dev/null 2>&1; assert_status "outside a repo" $? 2
 [ ! -e "$T_TMP/norepo/.hivemind" ] && ok "nothing written outside a repo" || bad "wrote .hivemind outside a repo"
+# what the start skill says hm-context prints when the window is not recorded: the assumed window, until the tokens pass it
+SK="$HM_REPO_ROOT/skills/start/SKILL.md"
+tr '\n' ' ' < "$SK" | tr -s ' ' | grep -q 'window assumed 200000' && ok "the start skill says the reading is (window assumed 200000)" || bad "the start skill does not name (window assumed 200000)"
+tr '\n' ' ' < "$SK" | tr -s ' ' | grep -q 'then says "window unknown" for a reading it cannot place' && bad "the start skill still says hm-context says window unknown for a reading it cannot place" || ok "...and no longer says unknown for every reading"
 cd /; t_teardown; t_done
