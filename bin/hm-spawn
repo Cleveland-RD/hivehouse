@@ -140,6 +140,14 @@ if [ "$self" = 1 ]; then
     hm_is_session_name "$hub" || hub=""
   fi
   register "$pane" "$socket" || exit $?
+  # The window: the one given, else the one Claude Code reported for this very session (hm-statusline's context.json, when there is one
+  # and it was read in this session), else none. It is never guessed here: hm-context assumes one for a reading, and says so.
+  if [ "$wgiven" = 0 ]; then
+    window=""; msid=$(hm_session_record "$CLAUDE_PID" .sessionId)
+    if [ -n "$msid" ] && [ "$(hm_json_get "$STATE/team/$agent/context.json" .session_id)" = "$msid" ]; then
+      mw=$(hm_json_get "$STATE/team/$agent/context.json" .window); case "$mw" in ''|*[!0-9]*|0) ;; *) window=$mw ;; esac
+    fi
+  fi
   # an orchestrator the hub launched in bypass was given an MCP file beside its pane record: it lives with the team from here. When the
   # delegate file no longer says so (it expired before this registration) the file may hold server secrets and is removed from the hub's folder.
   if hm_delegate_for_project "$ROOT"; then
@@ -154,8 +162,8 @@ if [ "$self" = 1 ]; then
   fi
   # the session's own name, as agents are told to report to it (hm_orchestrator_name reads it live; this is its fallback)
   [ -n "$oname" ] || { oname=$(hm_session_record "$CLAUDE_PID" .name); hm_is_session_name "$oname" || oname=""; }
-  upsert_team "$(jq -nc --arg n "$agent" --arg p "$pane" --arg s "$socket" --argjson w "$window" --arg pp "$PANE_PID" --arg ps "$PANE_STARTED" --arg cp "$CLAUDE_PID" --arg cs "$CLAUDE_STARTED" --arg nf "$oname" --arg hub "$hub" \
-    '{name:$n, pane:$p, socket:$s, window:$w, pane_pid:$pp, pane_started:$ps} + (if $cp != "" then {claude_pid:$cp, claude_started:$cs} else {} end) + (if $nf != "" then {name_full:$nf} else {} end) + (if $hub != "" then {hub:$hub} else {} end)')"
+  upsert_team "$(jq -nc --arg n "$agent" --arg p "$pane" --arg s "$socket" --arg w "$window" --arg pp "$PANE_PID" --arg ps "$PANE_STARTED" --arg cp "$CLAUDE_PID" --arg cs "$CLAUDE_STARTED" --arg nf "$oname" --arg hub "$hub" \
+    '{name:$n, pane:$p, socket:$s, pane_pid:$pp, pane_started:$ps} + (if $w != "" then {window:($w | tonumber)} else {} end) + (if $cp != "" then {claude_pid:$cp, claude_started:$cs} else {} end) + (if $nf != "" then {name_full:$nf} else {} end) + (if $hub != "" then {hub:$hub} else {} end)')"
   # Its SessionStart hook ran before this registration existed, so it wrote nothing: the session is recorded here, from Claude
   # Code's own record of this process. The hook writes it again after a /clear.
   sid=$(hm_session_record "$CLAUDE_PID" .sessionId)
