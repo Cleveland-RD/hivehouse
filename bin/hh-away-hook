@@ -113,12 +113,13 @@ add_orchestrator() {  # add_orchestrator <project home>
   [ -z "$live" ] || add_id "$live" "$pid" "$st"
   [ -z "$full" ] || add_id "$full" "$pid" "$st"
 }
-add_team() {  # add_team <project home>: its orchestrator and its agents, <project>-<agent>
+add_team() {  # add_team <project home>: its orchestrator and its agents, <project>-<agent> and the short name hh-spawn gave <agent>
   local home="$1" a pp ps
   add_orchestrator "$home"
   while IFS=$'\x1f' read -r a pp ps; do
     [ -n "$a" ] || continue
     add_id "$(basename "$home")-$a" "$pp" "$ps"
+    add_id "$a" "$pp" "$ps"   # the short name: only of an agent in this team's own team.json, never matched freely
   done < <("$HH_JQ" -r '.agents[]? | [.name, .pane_pid, .pane_started] | map(. // "" | tostring) | join("\u001f")' "$home/$HH_STATE_DIR/team.json" 2>/dev/null)
 }
 msg_check() {

@@ -18,6 +18,7 @@ spawn hub1; HP=$SP; HS=$SS
 spawn proj-orchestrator; OP=$SP; OS=$SS
 spawn proj-implementer; IP=$SP; IS=$SS
 spawn other-orchestrator; XP=$SP; XS=$SS
+spawn other-designer; DP=$SP; DS=$SS
 sleep 1.1; spawn stranger; SGP=$SP; SGS=$SS
 jq -nc --arg p "$HP" --arg s "$HS" '{name:"hub1",claude_pid:$p,claude_started:$s}' > "$hub/$T_HUB/hub.json"
 jq -nc --arg a "$proj" --arg b "$other" '{projects:[{name:"proj",home:$a,repos:[]},{name:"other",home:$b,repos:[]}]}' > "$hub/$T_HUB/projects.json"
@@ -25,11 +26,13 @@ jq -nc --arg op "$OP" --arg os "$OS" --arg ip "$IP" --arg is "$IS" --arg sg "$SG
   '{agents:[{name:"orchestrator",claude_pid:$op,claude_started:$os,name_full:"proj-orchestrator",pane_pid:"1",pane_started:"x"},
             {name:"implementer",pane_pid:$ip,pane_started:$is},
             {name:"reused",pane_pid:$sg,pane_started:"Mon Jan  1 00:00:00 2001"}]}' > "$proj/$T_STATE/team.json"
-jq -nc --arg op "$XP" --arg os "$XS" '{agents:[{name:"orchestrator",claude_pid:$op,claude_started:$os,name_full:"other-orchestrator",pane_pid:"1",pane_started:"x"}]}' > "$other/$T_STATE/team.json"
+jq -nc --arg op "$XP" --arg os "$XS" --arg dp "$DP" --arg ds "$DS" '{agents:[{name:"orchestrator",claude_pid:$op,claude_started:$os,name_full:"other-orchestrator",pane_pid:"1",pane_started:"x"},
+            {name:"designer",pane_pid:$dp,pane_started:$ds},
+            {name:"implementer",pane_pid:$dp,pane_started:$ds}]}' > "$other/$T_STATE/team.json"
 HOOK="${HH_AWAY_HOOK_TEST:-$HH_REPO_ROOT/bin/hh-away-hook}"
 ALLOW=""; ROLE=proj
 hook() {  # hook <json>: the hook as a marked session of $ROLE; sets RC and ERR
-  local pr="$proj"; [ "$ROLE" != hub ] || pr="$hub"
+  local pr="$proj"; [ "$ROLE" != hub ] || pr="$hub"; [ "$ROLE" != other ] || pr="$other"
   ERR=$(printf '%s' "$1" | HH_AWAY_BYPASS=1 HH_PROJECT="$pr" HH_AWAY_HUB="$hub" HH_AWAY_MCP_ALLOW="$ALLOW" "$HOOK" 2>&1 >/dev/null); RC=$?
 }
 tc() { jq -nc --arg c "$1" --arg d "$proj" '{tool_name:"Bash",cwd:$d,tool_input:{command:$c}}'; }
@@ -252,6 +255,13 @@ tool_allowed "agent to its orchestrator by live name" "$(msg proj-orchestrator)"
 tool_allowed "a [ref] suffix is removed" "$(msg 'proj-orchestrator [3fa9c1]')"
 tool_allowed "to its hub" "$(msg hub1)"
 tool_allowed "to a team agent <project>-<agent>" "$(msg proj-implementer)"
+# an orchestrator names an agent as hh-spawn named it (the short name), resolved against its own team's team.json only
+tool_allowed "a team agent by its short name" "$(msg implementer)"
+tool_allowed "...with a [ref] suffix" "$(msg 'implementer [3fa9c1]')"
+tool_denied "a short name that only another team has" "$(msg designer)"
+tool_denied "the short name of an agent of a team the caller is not in, by its long name" "$(msg other-designer)"
+tool_denied "a short name nobody has" "$(msg no-such-agent)"
+tool_denied "a short name whose recorded process start differs (pid reuse)" "$(msg reused)"
 tool_allowed "a reply by uds address (orchestrator)" "$(msg "uds:/tmp/cc-socks/$OP.sock")"
 tool_allowed "a reply by uds address (hub)" "$(msg "uds:/tmp/cc-socks/$HP.sock")"
 tool_allowed "a reply by uds address (agent)" "$(msg "uds:/tmp/cc-socks/$IP.sock")"
@@ -278,6 +288,16 @@ tool_denied "a non-string target" '{"tool_name":"SendMessage","cwd":"/","tool_in
 spawn proj-implementer; IMP=$SP
 tool_denied "an impostor with an agent's name" "$(msg proj-implementer)"
 kill "$IMP" 2>/dev/null; sleep 0.2
+spawn implementer; IMS=$SP
+tool_denied "an impostor carrying the short name of an agent" "$(msg implementer)"
+kill "$IMS" 2>/dev/null; sleep 0.2
+ROLE=other
+tool_allowed "the other team's agent by its short name, from its own team" "$(msg designer)"
+tool_allowed "...and the same short name as the first team's agent means this team's" "$(msg implementer)"
+tool_denied "...but not a short name only the first team has" "$(msg reused)"
+ROLE=hub
+tool_denied "the hub reaches an agent by no short name, only orchestrators" "$(msg implementer)"
+ROLE=proj
 tool_allowed "the name is the agent's again once the impostor is gone" "$(msg proj-implementer)"
 spawn hub1; HIMP=$SP
 tool_denied "an impostor with the hub's name" "$(msg hub1)"
