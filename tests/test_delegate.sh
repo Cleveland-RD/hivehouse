@@ -85,6 +85,55 @@ hm_delegate_read "area/delegate" "$ME" "$NOW" >/dev/null 2>&1 && bad "a relative
 hm_delegate_read "$D/nothing" "$ME" "$NOW" >/dev/null 2>&1 && bad "a missing file is valid" || ok "a missing file is refused"
 mkf; ok_ && ok "...and the valid file is valid again" || bad "the valid file stopped being valid"
 
+# ---- the file belongs to the user who reads it: hm_delegate_mine, in this shell, with the hub's records checked ----
+# the production read is one fixed path as root; here it reads the fixture, as this user (the seam t_delegate_bin gives the executables)
+hm_delegate_now() { hm_delegate_read "$F" "$ME"; }
+HB="$T_TMP/dg/hub"; HP="$T_TMP/dg/homes"
+mkhub() {  # mkhub: a complete hub of this user's, and a file naming it
+  rm -rf "$HB" "$HP"; mkdir -p "$HB/.hivemind-hub" "$HP/mine"; chmod 755 "$HB" "$HB/.hivemind-hub" "$HP" "$HP/mine"
+  printf '{"projects":[{"name":"mine","home":"%s","repos":[]}]}\n' "$HP/mine" > "$HB/.hivemind-hub/projects.json"
+  printf '{"name":"hub"}\n' > "$HB/.hivemind-hub/hub.json"; chmod 644 "$HB/.hivemind-hub/projects.json" "$HB/.hivemind-hub/hub.json"
+  mkf "" "hub=$HB"
+}
+mine() { hm_delegate_mine; }   # never inside $(...): the point is that it sets its variables in this shell
+mkhub; mine; assert_status "a complete hub of this user's, named by a valid file" $? 0
+assert_eq "...sets the hub, resolved" "$HM_DG_HUB" "$(cd "$HB" && pwd -P)"
+assert_eq "...and when it ends" "$HM_DG_UNTIL" "$((NOW + 3600))"
+mkhub; mine >/dev/null; mkf "$((NOW - 1))" "hub=$HB"; mine; rc=$?
+assert_status "an expired file is refused" $rc 1
+assert_contains "...for its own reason, seen in this shell" "$HM_DELEGATE_WHY" "the file has expired"
+assert_eq "...and sets no hub" "$HM_DG_HUB" ""
+mkhub; hm_real_uid() { echo $((ME + 1)); }; mine; assert_status "a hub that belongs to another uid is refused" $? 1
+assert_contains "...for the owner reason" "$HM_DELEGATE_WHY" "$HB is owned by uid $ME"
+hm_real_uid() { /usr/bin/id -u; }
+mkhub; hm_real_uid() { echo; }; mine; assert_status "no readable uid, no valid file (fail closed)" $? 1
+assert_contains "...for its own reason" "$HM_DELEGATE_WHY" "this user's id cannot be read"
+hm_real_uid() { echo 5x; }; mine; assert_status "an uid with a letter in it too" $? 1
+hm_real_uid() { /usr/bin/id -u; }
+mkhub; chmod 775 "$HB"; mine; assert_status "a group-writable hub folder is refused" $? 1
+assert_contains "...for its own reason" "$HM_DELEGATE_WHY" "$HB is writable by group or others"
+mkhub; chmod 775 "$HB/.hivemind-hub"; mine; assert_status "a group-writable .hivemind-hub is refused" $? 1
+assert_contains "...for its own reason" "$HM_DELEGATE_WHY" "$HB/.hivemind-hub is writable by group or others"
+mkhub; chmod 664 "$HB/.hivemind-hub/projects.json"; mine; assert_status "a group-writable projects.json is refused" $? 1
+assert_contains "...for its own reason" "$HM_DELEGATE_WHY" "projects.json is writable by group or others"
+mkhub; chmod 664 "$HB/.hivemind-hub/hub.json"; mine; assert_status "a group-writable hub.json is refused" $? 1
+assert_contains "...for its own reason" "$HM_DELEGATE_WHY" "hub.json is writable by group or others"
+mkhub; rm "$HB/.hivemind-hub/hub.json"; mine; assert_status "a hub that never recorded itself (no hub.json) is refused" $? 1
+assert_contains "...for its own reason" "$HM_DELEGATE_WHY" "hub.json cannot be read"
+mkhub; mv "$HB/.hivemind-hub/projects.json" "$HB/.hivemind-hub/p.real"; ln -s "$HB/.hivemind-hub/p.real" "$HB/.hivemind-hub/projects.json"; mine; assert_status "a link in place of projects.json is refused" $? 1
+assert_contains "...for its own reason" "$HM_DELEGATE_WHY" "projects.json is a link"
+# a project's home: owned by the caller, not a link, not writable by group or others (a session working in another user's folder loads their CLAUDE.md, hooks and .mcp.json)
+mkhub; mkdir -p "$HP/grp"; chmod 775 "$HP/grp"
+printf '{"projects":[{"name":"mine","home":"%s","repos":[]},{"name":"grp","home":"%s","repos":[]},{"name":"sys","home":"/usr","repos":[]}]}\n' "$HP/mine" "$HP/grp" > "$HB/.hivemind-hub/projects.json"
+hm_delegate_for_project "$HP/mine"; assert_status "a project home of the caller's is accepted" $? 0
+assert_eq "...and names the project" "$HM_DG_PROJECT" "mine"
+hm_delegate_for_project "$HP/grp"; assert_status "a group-writable project home is refused" $? 1
+assert_contains "...for its own reason" "$HM_DELEGATE_WHY" "$HP/grp is writable by group or others"
+hm_delegate_for_project /usr; assert_status "a project home owned by root is refused" $? 1
+assert_contains "...for the owner reason" "$HM_DELEGATE_WHY" "/usr is owned by uid 0"
+assert_eq "...a refused project sets nothing" "$HM_DG_HUB$HM_DG_PROJECT" ""
+hm_delegate_for_project "$HP/mine"; assert_status "...while the caller's own project still is accepted" $? 0
+
 # ---- the launch environment of a process (the marker's check, A42) ----
 pp=$(t_env_probe HM_PROBE_TEST=1) || pp=""
 [ -n "$pp" ] || { ( HM_PROBE_TEST=1 bash -c 'exec -a claude sleep 30' ) & pp=$!; }   # a platform binary: readable on Linux only

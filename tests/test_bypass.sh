@@ -25,6 +25,7 @@ mkdel
 if ! hm_delegate_read "$DF" "$ME" "$NOW" >/dev/null 2>&1; then hm_delegate_read "$DF" "$ME" "$NOW" >/dev/null 2>&1; echo "  SKIP the fixture folder is not eligible here: $HM_DELEGATE_WHY"; t_done; exit 0; fi
 DB=$(t_delegate_bin "$DF")
 mk app; mk other; (cd "$H" && hm-hub init >/dev/null && hm-hub add app --home app >/dev/null)   # "other" is no project of the hub
+printf '{"name":"hub"}\n' > "$P/hub.json"   # a hub that recorded itself (hm-hub self): the delegate check requires hub.json to be this user's
 printf '{"mcpServers":{"docs":{"command":"docs-mcp"},"extra":{"command":"extra-mcp"}}}\n' > "$CLAUDE_CONFIG_DIR/.claude.json"
 NCP=$(t_node_claude "$H/app"); NCO=$(t_node_claude "$H/other"); NCH=$(t_node_claude "$H" "$DB/hm-hub")
 echo role > "$T_TMP/role.md"; echo rules > "$T_TMP/RULES.md"
@@ -124,6 +125,7 @@ hh() { local who=$1; shift; (cd "$H" && "${M[@]}" node "$who" "$DB/hm-hub" "$@" 
 # a delegate file that names ANOTHER hub, which also lists this project: the hub that runs this hm-hub is not the one the owner meant
 H2="$T_TMP/work2"; mkdir -p "$H2/.hivemind-hub"; H2=$(cd "$H2" && pwd -P)
 jq -nc --arg h "$H/app" '{projects:[{name:"app", home:$h, repos:[$h]}]}' > "$H2/.hivemind-hub/projects.json"
+printf '{"name":"hub2"}\n' > "$H2/.hivemind-hub/hub.json"   # a complete hub of this user's: only the name it is given differs
 hh0() { (cd "$H" && env node "$NCH" "$DB/hm-hub" "$@" 2>"$T_TMP/hh.err"); }
 t1=$(hh "$NCH" task app --text "First"); t1=${t1%%$'\t'*}
 hh "$NCH" start app "$t1" --mode bypassPermissions --still 2 --max-wait 15 >/dev/null; assert_status "hm-hub start --mode bypassPermissions is refused, whoever asks" $? 4

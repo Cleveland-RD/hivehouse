@@ -696,13 +696,22 @@ hm_delegate_read() {  # hm_delegate_read <path> <uid> [<now>]: prints "<hub><TAB
   printf '%s\t%s\t%s\n' "$hub" "$until" "$mcp"
 }
 hm_delegate_now() { hm_delegate_read "$(hm_delegate_path)" 0; }
-# hm_delegate_mine: 0 when this user's delegate file is valid; sets HM_DG_HUB (resolved), HM_DG_UNTIL, HM_DG_MCP, else HM_DELEGATE_WHY. It
-# runs in the caller's shell, never inside $(...): the output of hm_delegate_now is dropped and its HM_DR_* variables are read instead.
-# It is the only caller of hm_delegate_now.
+# hm_delegate_mine: 0 when this user's delegate file is valid and the hub it names is this user's; sets HM_DG_HUB (resolved), HM_DG_UNTIL,
+# HM_DG_MCP and HM_DG_UID, else HM_DELEGATE_WHY says which check failed. It runs in the caller's shell, never inside $(...): the output of
+# hm_delegate_now is dropped and its HM_DR_* variables are read instead. It is the only caller of hm_delegate_now. The hub, its
+# .hivemind-hub/, projects.json (which decides the homes that get bypass) and hub.json (the identity away_hub_caller checks) must belong to
+# the caller and not be a link or writable by group or others: a user who could write them could name their own project, or the hub.
+HM_DG_UID=""
 hm_delegate_mine() {
-  HM_DG_HUB=""; HM_DG_UNTIL=""; HM_DG_MCP=""
+  local f
+  HM_DG_HUB=""; HM_DG_UNTIL=""; HM_DG_MCP=""; HM_DG_UID=$(hm_real_uid) || HM_DG_UID=""
+  case "$HM_DG_UID" in ''|*[!0-9]*) HM_DG_UID=""; HM_DELEGATE_WHY="this user's id cannot be read"; return 1 ;; esac
   hm_delegate_now >/dev/null || return 1
   HM_DG_HUB=$(cd "$HM_DR_HUB" 2>/dev/null && pwd -P) || { HM_DG_HUB=""; HM_DELEGATE_WHY="the hub folder $HM_DR_HUB cannot be entered"; return 1; }
+  hm_path_trusted "$HM_DG_HUB" dir "$HM_DG_UID" strict && hm_path_trusted "$HM_DG_HUB/.hivemind-hub" dir "$HM_DG_UID" strict || { HM_DG_HUB=""; return 1; }
+  for f in projects.json hub.json; do
+    hm_path_trusted "$HM_DG_HUB/.hivemind-hub/$f" file "$HM_DG_UID" strict || { HM_DG_HUB=""; return 1; }
+  done
   HM_DG_UNTIL=$HM_DR_UNTIL; HM_DG_MCP=$HM_DR_MCP
 }
 # hm_env_has <pid> <NAME=value>: 0 the process was launched with it; 1 its environment is visible and lacks it; 2 no
@@ -765,7 +774,12 @@ hm_delegate_for_project() {  # hm_delegate_for_project <project root>: 0 when de
   while IFS=$'\t' read -r name home; do
     case "$home" in /*) abs=$home ;; *) abs="$hub/$home" ;; esac
     abs=$(cd "$abs" 2>/dev/null && pwd -P) || continue
-    if [ "$abs" = "$r" ]; then HM_DG_PROJECT=$name; return 0; fi
+    if [ "$abs" = "$r" ]; then
+      # the home must be the caller's too: bypass sessions run as this user, and in another user's folder (or one the group can write) they would
+      # load that folder's CLAUDE.md, .claude/settings.json hooks and .mcp.json
+      hm_path_trusted "$abs" dir "$HM_DG_UID" strict || break
+      HM_DG_PROJECT=$name; return 0
+    fi
   done < <(jq -r '.projects[]? | [.name, .home] | @tsv' "$hub/.hivemind-hub/projects.json" 2>/dev/null)
   HM_DG_HUB=""; HM_DG_UNTIL=""; HM_DG_MCP=""
   return 1
