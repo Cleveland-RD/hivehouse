@@ -38,6 +38,9 @@ each time. That is intended.
    `hub` too), tell the owner once which machine has it and how to fix it: `/rename <name>` here, or `hm-hub name <name>`
    in that machine's hub folder, so its next start takes another name. Never rename yourself. `ListAgents` lists
    sessions on other machines only while Remote Control is connected; without it the check finds nothing, so say nothing.
+   When a name you must send to matches two sessions (a restarted session's old copy can stay listed through Remote Control
+   as on another machine), send to the row on this machine, the one with a tmux pane, using its `[ref]`. Never stop to ask the
+   owner which one: an unattended team stalls there.
 2. `hm-adhd`. When it prints a path, Read that file and follow it for every message to the owner.
 3. `hm-hub status` and `hm-hub tasks --open`.
 4. Greet the owner with one line per project: its orchestrator's state, its agents, its open tasks. Name anything that
