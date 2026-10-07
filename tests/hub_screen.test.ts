@@ -257,6 +257,21 @@ test('the guard reads quotes inside $( ) and here-strings and partly quoted here
   await passes('a $( ) inside double quotes inside $( ), then git push as plain quoted text', `echo "$(echo "$(echo a)" ; echo b) git push"`)
   await passes('a $( ) with its own quotes inside double quotes inside $( ), then git push as quoted text', `echo "$(echo "$(printf "%s)" a)" ; echo b) git push"`)
   await passes('a git push only in a quoted string inside $( )', `echo "$(echo 'git push')"`)
+  // a heredoc starts only where the shell would start one: not in arithmetic, not in quotes, and its delimiter starts with a letter,
+  // an underscore, a quote or a backslash; a quoted delimiter is the whole quoted string, spaces included
+  await refused('<< in $(( )) is a shift', 'echo $((1<<2))\ngit push')
+  await refused('<< in an assignment of $(( )) is a shift', 'x=$((a<<b))\ngit commit -m y')
+  await refused('<< in a (( )) command is a shift', '(( x<<y ))\ngit push')
+  await refused('an opener in double quotes is text', 'echo "x <<EOF y"\ngit push')
+  await refused('an opener in single quotes is text', "echo 'x <<EOF y'\ngit push")
+  await refused('an opener in $\'..\' is text', "echo $'x <<EOF y'\ngit push")
+  await refused('an opener after an escaped quote inside $\'..\' is still text', "echo $'it\\'s <<EOF y'\ngit push")
+  await refused('an opener in a quote that began on an earlier line is text', 'echo "a\nb <<EOF y"\ngit push')
+  await refused('a delimiter that starts with a digit is no delimiter', 'cat <<2\ngit push')
+  await refused('a quoted delimiter with a space, then a command after its end line', 'cat <<"E O F"\nbody\nE O F\ngit push')
+  await passes('a quoted delimiter with a space: the body is quoted text', 'cat <<"E O F"\n$(git push)\nE O F')
+  await passes('a quoted delimiter with a space: the body, by its end line', 'cat <<"E O F"\nnote: git push later\nE O F')
+  await refused('an unquoted opener after a quote closed on the same line is still one', 'echo "a" <<EOF\n$(git push)\nEOF')
   // a here-string is no heredoc: the lines after it are commands
   await refused('a here-string <<<"x" then a command', 'cat <<<"hello"\ngit commit -m y')
   await refused("a here-string <<<'x' then a command", "cat <<<'hello'\ngit commit -m y")

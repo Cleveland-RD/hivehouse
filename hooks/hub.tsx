@@ -226,7 +226,8 @@ const GIT_WRITES =
 // it quoted, and the delimiter is the whole word with them removed) not at all. A here-string (<<<) is no heredoc. Quoting
 // follows the shell's own: '...' has no escapes (an apostrophe inside it is written '\'' : close, escaped apostrophe, open),
 // "..." and $'...' take a backslash escape, and a backslash outside quotes escapes the next character, so an escaped quote
-// opens nothing. A quote that never closes holds the rest. Inside $( ) the same rules decide where the span ends: a ) in quotes,
+// opens nothing. A quote that never closes holds the rest. A heredoc opens only in unquoted command text, outside $(( )) and (( ))
+// arithmetic, and its delimiter starts with a letter, an underscore, a quote or a backslash; when unsure, the lines after it are read as commands. Inside $( ) the same rules decide where the span ends: a ) in quotes,
 // backticks or after a backslash is no closing paren.
 
 // Where a quoted span that opened just before text[j] ends (just past its closing mark), or the end of the text. In "..." a
@@ -305,22 +306,95 @@ function expansionsOf(text: string): string {
   return out
 }
 
+// The delimiter word that starts at line[k], as the shell reads it: it starts with a letter, an underscore, a quote or a backslash;
+// quoted strings are taken whole (spaces included) and a backslash takes the next character; an unquoted word ends at a space or
+// one of ; & | < > ( ). null when it is none (a heredoc is then not assumed: the lines after it are read as commands).
+function delimiterAt(line: string, k: number): { word: string; quoted: boolean; end: number } | null {
+  if (!/[A-Za-z_'"\\]/.test(line.charAt(k))) return null
+  let word = ''
+  let quoted = false
+  let i = k
+  while (i < line.length && !/[\s;&|<>()]/.test(line.charAt(i))) {
+    const c = line.charAt(i)
+    if (c === '\\') {
+      if (i + 1 >= line.length) return null
+      word += line.charAt(i + 1)
+      quoted = true
+      i += 2
+    } else if (c === "'" || c === '"') {
+      let j = i + 1
+      let part = ''
+      while (j < line.length && line.charAt(j) !== c) {
+        if (c === '"' && line.charAt(j) === '\\' && j + 1 < line.length) j++
+        part += line.charAt(j)
+        j++
+      }
+      if (j >= line.length) return null
+      word += part
+      quoted = true
+      i = j + 1
+    } else {
+      word += c
+      i++
+    }
+  }
+  return { word, quoted, end: i }
+}
+
+// Where a heredoc opens on this line, if one does, and the quote still open at its end (a quote can run over several lines). Only
+// unquoted command text counts: not text in quotes, not << inside $(( )) or (( )) arithmetic (a shift), not a here-string (<<<).
+function openerIn(line: string, open: string): { opens: { word: string; quoted: boolean } | null; open: string } {
+  let q = open
+  for (let i = 0; i < line.length; i++) {
+    const c = line.charAt(i)
+    if (q === "'") {
+      if (c === "'") q = ''
+    } else if (q === 'a') {
+      if (c === '\\') i++
+      else if (c === "'") q = ''
+    } else if (q === '"') {
+      if (c === '\\') i++
+      else if (c === '"') q = ''
+    } else if (c === '\\') i++
+    else if (c === "'") q = "'"
+    else if (c === '"') q = '"'
+    else if (c === '$' && line.charAt(i + 1) === "'") {
+      q = 'a'
+      i++
+    } else if ((c === '$' && line.startsWith('((', i + 1)) || (c === '(' && line.charAt(i + 1) === '(')) {
+      const k = line.indexOf('))', i + 2)
+      if (k < 0) return { opens: null, open: q }
+      i = k + 1
+    } else if (c === '<' && line.charAt(i + 1) === '<') {
+      // a here-string (<<<) is no heredoc: its third < is no delimiter, and the pair is skipped
+      let k = i + 2
+      if (line.charAt(k) === '-') k++
+      while (line.charAt(k) === ' ' || line.charAt(k) === '\t') k++
+      const d = delimiterAt(line, k)
+      if (d) return { opens: { word: d.word, quoted: d.quoted }, open: '' }
+      i++
+    }
+  }
+  return { opens: null, open: q }
+}
+
 function commandsOnly(command: string): string {
   const kept: string[] = []
   let ran = ''
-  let until = ''
+  let until: string | null = null
   let unquoted = false
+  let open = ''
   for (const line of command.split('\n')) {
-    if (until) {
-      if (line.trim() === until) until = ''
+    if (until !== null) {
+      if (line.trim() === until) until = null
       else if (unquoted) ran += expansionsOf(line) + '\n'
       continue
     }
-    const opens = /(?<!<)<<(?!<)-?\s*([^\s;&|<>()]+)/.exec(line)
-    if (opens) {
-      const word = opens[1] ?? ''
-      until = word.replace(/['"\\]/g, '')
-      unquoted = !/['"\\]/.test(word)
+    const r = openerIn(line, open)
+    open = r.open
+    if (r.opens) {
+      until = r.opens.word
+      unquoted = !r.opens.quoted
     }
     kept.push(line)
   }
