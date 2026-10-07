@@ -129,8 +129,7 @@ One Claude session in the owner's work folder, the folder above every project, i
   orchestrator already running outside hivemind is found in Claude Code's own session records and never doubled. Each
   start asks the owner first, and runs in the owner's local permission mode (`permission_mode_local`, the one hivemind's
   agents run in), made stricter where the project's own `.hivemind/settings.json` says so. Start the hub in that mode
-  too: measured on Claude Code 2.1.292, messages between sessions in different modes were delivered at once, but a session can
-  still hold one for its own user's approval, and nobody is at an unattended hub to give it.
+  too: sessions in different modes hold each other's messages for an approval nobody sees.
 - **Through the hub.** The orchestrator registers with `hm-spawn --self --hub <hub>`, so every pickup line, after each
   rotation too, says the owner talks through the hub. It sends its questions, plan, blockers and results there; the hub
   shows them word for word and carries the answer back. The ledger records each task's state; a plan, a question and a
