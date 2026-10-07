@@ -220,11 +220,11 @@ unreg_pane_ok() {
   done
   return 1
 }
-# orch_state <hub root> <project> <home>: sets O_AGENT, O_NAME, O_SID, O_STATE (running, stopped, unknown, none, or
+# orch_state <hub root> <project> <home>: sets O_AGENT, O_NAME, O_SID, O_STATE (running, stopped, unknown, none, resumable (no record, but a transcript), or
 # unregistered: a live session outside hivemind, with O_PID and O_PANE), and O_QUESTION (true when a dialog waits on the
 # screen of a running orchestrator's pane).
 orch_state() {
-  local entry="" l r
+  local entry="" l r rl
   O_AGENT=""; O_NAME=""; O_SID=""; O_STATE=none; O_PID=""; O_PANE=""; O_TMUX=""; O_QUESTION=false; O_ROOT=$3
   # the first team root (the home, then each worktree with a team) that holds the --self orchestrator's entry; one registered in two counts once
   while IFS= read -r r; do
@@ -249,6 +249,14 @@ orch_state() {
       [ -n "$O_PANE" ] && unreg_pane_ok "$O_PANE" "$O_TMUX" "$O_PID" && hm_pane_question "" "$O_PANE" && O_QUESTION=true
     fi ;;
   esac
+  # nothing recorded of its conversation: a transcript of this project's orchestrator under a team root's folder key (hm_resume_candidate)
+  rl=(); while IFS= read -r r; do rl+=("$r"); done < <(hm_team_roots "$3")
+  if [ -z "$O_SID" ] && { [ "$O_STATE" = none ] || [ "$O_STATE" = stopped ]; } && hm_resume_candidate "$2-orchestrator" "${rl[@]}"; then
+    O_SID=$HM_RESUME_SID; O_ROOT=$HM_RESUME_ROOT
+    [ -n "$O_AGENT" ] || O_AGENT=orchestrator
+    [ -n "$O_NAME" ] || O_NAME="$2-orchestrator"
+    [ "$O_STATE" != none ] || O_STATE=resumable
+  fi
 }
 start_opts() {  # start_opts <model allowed 0|1> [--model m] [--mode m] [--still s] [--max-wait s]: MODEL, MODE, STILL, MAXWAIT
   local allow="$1"; shift
@@ -628,7 +636,7 @@ status)
     orch_state "$root" "$n" "$home"
     # each session's context level as hm-context reads it, per team root: "<agent> <level>[ (window assumed N)][ (not running)]"
     olv='{}'
-    if [ -n "$O_AGENT" ] && [ "$O_STATE" != unregistered ]; then
+    if [ -n "$O_AGENT" ] && [ "$O_STATE" != unregistered ] && [ "$O_STATE" != resumable ]; then
       levels=$(HM_PROJECT="$O_ROOT" "$HM_BIN/hm-context" --all 2>/dev/null) || levels=""
       olv=$(level "$O_AGENT")
     fi
@@ -671,7 +679,7 @@ status)
       (.[] |
         "",
         "\(.name)\(if .held then "  (held: the hub starts and wakes nothing here)" else "" end)",
-        "  orchestrator  \(if .orchestrator.state == "unregistered" then "running, not registered with hivemind" else .orchestrator.state end)\(if .orchestrator.name then "  \(.orchestrator.name)" else "" end)\(if .orchestrator.pane then " in pane \(.orchestrator.pane)" else "" end)\(if .orchestrator.question then "  (a question on its screen)" else "" end)\(if .orchestrator.starting then (if .orchestrator.starting.typed or .orchestrator.starting.sending then "  (coming up in pane \(.orchestrator.starting.pane))" else "  (waiting in pane \(.orchestrator.starting.pane)\(if .orchestrator.starting.question then " on a question" else "" end): hm-hub continue \(.name))" end) else "" end)",
+        "  orchestrator  \(if .orchestrator.state == "unregistered" then "running, not registered with hivemind" elif .orchestrator.state == "resumable" then "stopped, not registered (resumable)" else .orchestrator.state end)\(if .orchestrator.name then "  \(.orchestrator.name)" else "" end)\(if .orchestrator.pane then " in pane \(.orchestrator.pane)" else "" end)\(if .orchestrator.question then "  (a question on its screen)" else "" end)\(if .orchestrator.starting then (if .orchestrator.starting.typed or .orchestrator.starting.sending then "  (coming up in pane \(.orchestrator.starting.pane))" else "  (waiting in pane \(.orchestrator.starting.pane)\(if .orchestrator.starting.question then " on a question" else "" end): hm-hub continue \(.name))" end) else "" end)",
         "  agents        \(if (.agents | length) == 0 then "none" else "\([.agents[] | select(.state == "running")] | length) of \(.agents | length) running\([.agents[] | select(.state != "running" or .question) | "\(.name) \(if .question then "has a question on its screen" else .state end)"] | if length > 0 then "  (\(join(", ")))" else "" end)" end)",
         "  tasks         \(.open_tasks) open",
         (.repos | to_entries[] | "\(if .key == 0 then "  folders       " else "                " end)\(.value.folder + (" " * ($fw - (.value.folder | length))))  \(.value.kind)\(if .value.branch then "  \(.value.branch)  \(if .value.changed == 0 then "clean" else "\(.value.changed) changed" end)" else "" end)"))'
@@ -739,6 +747,7 @@ wake)
   orch_state "$root" "$name" "$HOME_DIR"
   case "$O_STATE" in
     none) hm_die 2 "no orchestrator is recorded for $name: start one on a task with hm-hub start $name <task id>" ;;
+    resumable) ;;   # nothing recorded, but a transcript of it: resumed below by its session id
     running) hm_die 4 "$name's orchestrator is running as $O_NAME: message it instead" ;;
     unregistered) hm_die 4 "$name's orchestrator is running as $O_NAME (pid $O_PID${O_PANE:+, pane $O_PANE}) but is not registered with hivemind: ask it to run hm-spawn --self --agent orchestrator --hub $hn" ;;
     unknown) hm_die 4 "cannot tell whether $name's orchestrator is running; nothing was started" ;;
@@ -767,7 +776,7 @@ start)
   in_list "$st" "$HUB_CLOSED" && hm_die 4 "task $id is $st"
   orch_state "$root" "$name" "$HOME_DIR"
   case "$O_STATE" in
-    none) ;;
+    none|resumable) ;;
     unregistered) hm_die 4 "$name's orchestrator is already running as $O_NAME (pid $O_PID${O_PANE:+, pane $O_PANE}) but is not registered with hivemind: ask it to run hm-spawn --self --agent orchestrator --hub $hn, then hand it the task" ;;
     *) hm_die 4 "$name already has an orchestrator ($O_STATE): message it, or wake it with hm-hub wake $name" ;;
   esac
@@ -800,7 +809,7 @@ run)
   case "$O_STATE" in
     running) ;;
     stopped) hm_die 4 "$name's orchestrator is stopped: wake it first with hm-hub wake $name" ;;
-    none) hm_die 4 "$name has no orchestrator: start one first with hm-hub start $name $id" ;;
+    none|resumable) hm_die 4 "$name has no orchestrator: start one first with hm-hub start $name $id" ;;
     unregistered) hm_die 4 "$name's orchestrator is running as $O_NAME but is not registered with hivemind: ask it to run hm-spawn --self --agent orchestrator --hub $hn first" ;;
     *) hm_die 4 "cannot tell whether $name's orchestrator is running; nothing was typed" ;;
   esac

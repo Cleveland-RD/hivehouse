@@ -471,6 +471,38 @@ hm_session_transcript() {  # hm_session_transcript <session id>: the one <id>.js
   n=$(printf '%s' "$m" | grep -c .)
   [ "$n" -eq 1 ] && printf '%s\n' "$m"
 }
+# A conversation that ended without registering: Claude Code's transcripts, <config dir>/projects/<key>/<session id>.jsonl (the format is Claude
+# Code's and undocumented; this is the one place it is read for this). <key> is the folder with / . _ & and space each turned into '-', so
+# a/b, a_b and a-b share one: the key alone proves nothing, and the records' own cwd must be the team root, exactly and alone. A root whose key
+# folder is not there (Claude Code shortens a long path in a way not measured) is skipped, never guessed. Of the newest 20 transcripts per root,
+# the newest whose last custom-title record is <title> and whose every cwd is the root wins. Sets HM_RESUME_SID and HM_RESUME_ROOT, else fails.
+HM_RESUME_SID=""; HM_RESUME_ROOT=""
+hm_mtime() {  # hm_mtime <path>: modification time, epoch seconds
+  if /usr/bin/stat --version >/dev/null 2>&1; then /usr/bin/stat -c %Y -- "$1"; else /usr/bin/stat -f %m "$1"; fi
+}
+hm_resume_candidate() {  # hm_resume_candidate <title> <team root>...
+  local title="$1" r key dir f id t last cwds best=0 n
+  HM_RESUME_SID=""; HM_RESUME_ROOT=""; shift
+  for r in "$@"; do
+    key=$(printf '%s' "$r" | tr '/._& ' '-----')
+    dir="$(hm_claude_dir)/projects/$key"
+    [ -d "$dir" ] || continue
+    n=0
+    for f in $(ls -t "$dir"/*.jsonl 2>/dev/null); do
+      n=$((n + 1)); [ "$n" -le 20 ] || break
+      id=${f##*/}; id=${id%.jsonl}
+      case "$id" in ''|*[!${HM_LOWER}${HM_UPPER}${HM_DIGITS}-]*) continue ;; esac
+      last=$(grep -a '"type":"custom-title"' "$f" 2>/dev/null | tail -1 | jq -r '.customTitle // empty' 2>/dev/null)
+      [ "$last" = "$title" ] || continue
+      cwds=$(jq -r '.cwd // empty' "$f" 2>/dev/null | sort -u)
+      [ "$cwds" = "$r" ] || continue
+      t=$(hm_mtime "$f") || continue
+      if [ "$t" -gt "$best" ]; then best=$t; HM_RESUME_SID=$id; HM_RESUME_ROOT=$r; fi
+      break   # the newest match of this root; a later root may still beat it
+    done
+  done
+  [ -n "$HM_RESUME_SID" ]
+}
 # The i-have-adhd output style (an optional companion plugin): its SKILL.md when Claude Code lists a plugin of that name,
 # from any marketplace, as enabled and the file is there. Reads `claude plugin list --json` and tests the file, nothing
 # else; never installs, enables or switches it on. When its always-on flag exists the plugin already applies itself to
