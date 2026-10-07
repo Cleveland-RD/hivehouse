@@ -98,7 +98,9 @@ again before adding an agent later. This approval is a plan confirmation, separa
 
 ## 6. Spawn
 
-First register this pane as the orchestrator, once: `hm-spawn --self --agent orchestrator`. An agent name is bare (the
+First register this pane as the orchestrator, once: `hm-spawn --self --agent orchestrator`, adding `--window <tokens>` when you
+know this session's context window (never a guess from the model name: without it hivemind records the window Claude Code reported
+for the session, or none, and `hm-context` then says "window unknown" for a reading it cannot place). An agent name is bare (the
 project is added where a name is shown), so never put the project in it. Step 8's `hm-context --all` and
 `hm-self-rotate` find you through it. It exits 4 when that name already belongs to a pane hivemind spawned; tell the
 owner rather than choosing another name.
@@ -140,7 +142,8 @@ A new agent waits for its first message. Send it its brief with `SendMessage`, f
 ## 8. Rotate at every check
 
 At each check read every session's context level, yours included: `hm-context --all`. A level followed by "(window
-assumed N)" was read against a guessed window, not Claude Code's own; say so when you act on it. At or above
+assumed N)" was read against a guessed window, not Claude Code's own; say so when you act on it. A level written "N tokens (window
+unknown)" has no percent: the tokens exceed the guess, so judge it by the tokens and your own window. At or above
 `${user_config.rotate_at_percent}`% the agent updates its START HERE block, says "done", and you run
 `hm-rotate <agent>`. It waits for the pane to be idle, clears, sends the pickup line and logs the levels. Rotate
 yourself last with `hm-self-rotate orchestrator` as your final act of that turn, after updating your own

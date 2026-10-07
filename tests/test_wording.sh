@@ -45,4 +45,7 @@ done
 # the record comes before the reply: a reply sent first leaves the task waiting on the owner with no decisions/ file
 assert_contains "the hub skill: the decision is recorded FIRST" "$(printf '%s' "$hubskill" | tr '\n' ' ' | tr -s ' ')" "Record the decision FIRST, then send it"
 assert_contains "the hub skill: when decide refuses, nothing is sent" "$(printf '%s' "$hubskill" | tr '\n' ' ' | tr -s ' ')" "If \`decide\` refuses, send nothing"
+# the start skill's --self line passes --window when the window is known, and says what an unknown one reads as
+assert_contains "the start skill: --self passes --window when it is known" "$(tr '\n' ' ' < skills/start/SKILL.md | tr -s ' ')" "hm-spawn --self --agent orchestrator\`, adding \`--window <tokens>\` when you know"
+assert_contains "...and a level with no percent" "$(tr '\n' ' ' < skills/start/SKILL.md | tr -s ' ')" "(window unknown)"
 [ "$FAILS" -eq 0 ] || exit 1
