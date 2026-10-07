@@ -40,7 +40,10 @@ USAGE="usage: hm-hub init
        hm-hub self [--name <session name>]
        hm-hub discover
        hm-hub add <project> --home <folder> [--repo <folder>]...
+       hm-hub add <project> --repo <folder>...        (a project that exists: more folders)
+       hm-hub drop <project> <folder>                 (never the home)
        hm-hub remove <project>
+       hm-hub name [<name>]
        hm-hub status [<project>] [--json]
        hm-hub task <project> [--text <text>]          (no --text: the text is read from stdin)
        hm-hub log <task id> <event> [--note <text>]    events: $HUB_EVENTS
@@ -114,6 +117,12 @@ away_hub_caller() {
 # A project's name follows the agent-name rule (lower-case letters, digits, '_' and '-'): it becomes a tmux session, a
 # task id and part of an orchestrator's session name.
 check_name() { hm_is_agent_name "$1" || hm_die 4 "a project name is lower-case letters, digits, '_' and '-': $1"; }
+hub_chosen_name() {  # hub_chosen_name <hub root>: the name in .hivemind-hub/name, else hub; a value that is no name is refused, not skipped
+  local n="hub"
+  [ -e "$1/.hivemind-hub/name" ] && { IFS= read -r n < "$1/.hivemind-hub/name" || true; }
+  hm_is_agent_name "$n" || hm_die 4 "$1/.hivemind-hub/name holds no usable name (lower-case letters, digits, '_' and '-'): run hm-hub name <name>"
+  printf '%s\n' "$n"
+}
 LOCK=""
 lock() {  # lock <hub root>: the hub's one lock, around every write of projects.json and tasks.jsonl; released on exit
   local i=0 j; j=$(hm_holder_json $$)
@@ -486,9 +495,27 @@ add)
     case "$1" in --home) home="$2" ;; --repo) repos+=("$2") ;; *) hm_die 64 "$USAGE" ;; esac
     shift 2
   done
-  [ -n "$home" ] || hm_die 64 "$USAGE"
+  [ -n "$home" ] || [ ${#repos[@]} -gt 0 ] || hm_die 64 "$USAGE"
   check_name "$name"
   root=$(hub_root) || exit $?
+  if [ -z "$home" ]; then
+    # more folders for a project that exists: the same checks, all under the lock, and all or none
+    lock "$root"
+    [ -n "$(project "$root" "$name")" ] || hm_die 2 "no project named $name in this hub (a new project needs --home)"
+    list=()
+    for r in "${repos[@]}"; do
+      s=$(stored "$root" "$r") || hm_die 4 "no such folder: $r"
+      o=$(owner_of "$root" "$s")
+      [ -z "$o" ] || [ "$o" = "$name" ] || hm_die 4 "$s already belongs to $o"
+      [ "$o" = "$name" ] && continue
+      dup=0; for x in ${list[@]+"${list[@]}"}; do [ "$x" = "$s" ] && dup=1; done
+      [ "$dup" = 1 ] || list+=("$s")
+    done
+    f="$root/.hivemind-hub/projects.json"
+    jq --arg n "$name" --args '.projects |= map(if .name == $n then .repos += $ARGS.positional else . end)' ${list[@]+"${list[@]}"} < "$f" > "$f.tmp$$" \
+      && mv "$f.tmp$$" "$f" || { rm -f "$f.tmp$$"; exit 1; }
+    echo "$name"; exit 0
+  fi
   h=$(stored "$root" "$home") || hm_die 4 "no such folder: $home"
   case "$(kind_of "$(abs "$root" "$h")")" in
     repo) ;;
@@ -512,6 +539,30 @@ add)
     && mv "$f.tmp$$" "$f" || { rm -f "$f.tmp$$"; exit 1; }
   seal_hub "$root"
   echo "$name" ;;
+
+drop)
+  # one folder out of a project; its tasks, task files and memory stay, as with remove. A folder that is gone from the disk
+  # can still be dropped, by the name it was stored under.
+  [ $# -eq 2 ] || hm_die 64 "$USAGE"
+  check_name "$1"; root=$(hub_root) || exit $?
+  lock "$root"
+  [ -n "$(project "$root" "$1")" ] || hm_die 2 "no project named $1 in this hub"
+  s=$(stored "$root" "$2") || { s=${2%/}; case "$s" in "$root"/*) s=${s#"$root"/} ;; esac; }
+  [ "$(project "$root" "$1" | jq -r .home)" != "$s" ] || hm_die 4 "$s is $1's home and is never dropped (hm-hub remove drops the whole project)"
+  [ "$(owner_of "$root" "$s")" = "$1" ] || hm_die 4 "$1 has no folder $s"
+  f="$root/.hivemind-hub/projects.json"
+  jq --arg n "$1" --arg f "$s" '.projects |= map(if .name == $n then .repos |= map(select(. != $f)) else . end)' "$f" > "$f.tmp$$" \
+    && mv "$f.tmp$$" "$f" || { rm -f "$f.tmp$$"; exit 1; }
+  echo "$1" ;;
+
+name)
+  # the hub's own session name (one word), kept in the hub's folder: a second machine's hub need not also be `hub`
+  [ $# -le 1 ] || hm_die 64 "$USAGE"
+  root=$(hub_root) || exit $?
+  if [ $# -eq 0 ]; then hub_chosen_name "$root"; exit $?; fi
+  hm_is_agent_name "$1" || hm_die 4 "the hub's name is lower-case letters, digits, '_' and '-': $1"
+  printf '%s\n' "$1" > "$root/.hivemind-hub/name.tmp$$" && mv "$root/.hivemind-hub/name.tmp$$" "$root/.hivemind-hub/name"
+  echo "$1" ;;
 
 remove)
   [ $# -eq 1 ] || hm_die 64 "$USAGE"
@@ -1123,8 +1174,9 @@ naming)
     hm_is_number "$pid" && hm_alive "$pid" && hm_is_claude "$pid" || continue
     if [ "$fsid" = "$sid" ]; then found=true; mname="$fname"; msource="$fsource"; else taken="$taken|$fname|"; fi
   done
-  free=hub; i=2
-  while case "$taken" in *"|$free|"*) true ;; *) false ;; esac; do free="hub-$i"; i=$((i + 1)); done
+  base=hub; if root=$(hub_root 2>/dev/null); then base=$(hub_chosen_name "$root") || exit $?; fi
+  free=$base; i=2
+  while case "$taken" in *"|$free|"*) true ;; *) false ;; esac; do free="$base-$i"; i=$((i + 1)); done
   jq -nc --argjson f "$found" --arg n "$mname" --arg s "$msource" --arg free "$free" '{found:$f, name:$n, source:$s, free:$free}' ;;
 
 *) hm_die 64 "$USAGE" ;;

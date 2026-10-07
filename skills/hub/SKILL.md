@@ -34,6 +34,9 @@ each time. That is intended.
    that off (`hub_auto_start`; then `claude --name hub /hivemind:hub`). If `hm-hub self` says the session has no name,
    or that its name is not one word, tell the owner to type `/rename hub`; until then show the status, but hand no
    task: nobody could reply.
+   Then run `ListAgents`. If another live session already has this session's name (a second machine's hub is named
+   `hub` too), tell the owner once which machine has it and how to fix it: `/rename <name>` here, or `hm-hub name <name>`
+   in that machine's hub folder, so its next start takes another name. Never rename yourself.
 2. `hm-adhd`. When it prints a path, Read that file and follow it for every message to the owner.
 3. `hm-hub status` and `hm-hub tasks --open`.
 4. Greet the owner with one line per project: its orchestrator's state, its agents, its open tasks. Name anything that
@@ -49,6 +52,9 @@ folder of its own.
 When the hub has no projects, or the owner names one it does not know: `hm-hub discover`, group the folders by their
 names and what they hold, and ask the owner to confirm each group with `AskUserQuestion` (its name, its home, its other
 folders). Add only what the owner confirmed: `hm-hub add <project> --home <folder> --repo <folder> ...`.
+To add a folder to a project that exists: `hm-hub add <project> --repo <folder>`; to take one out: `hm-hub drop <project>
+<folder>` (never its home; `hm-hub remove` drops the whole project). Neither touches the project's tasks, task files or
+memory. Both change what the hub covers, so ask the owner first; neither is pre-approved.
 
 ## 3. The owner asks for work
 

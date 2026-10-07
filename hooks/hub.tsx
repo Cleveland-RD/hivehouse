@@ -161,7 +161,10 @@ async function nameAndGreet($: EngineInterface, root: string): Promise<void> {
   try {
     if ((await $.session.turns()) > 0) return
     const r = await $.process.run([hmHub($), 'naming', '--session', await $.session.id()], { cwd: root, timeoutMs: 30_000 })
-    if (r.exitCode !== 0) return
+    if (r.exitCode !== 0) {
+      $.ui.toast(`hub: no name chosen (${lastLine(r.stderr) || `hm-hub naming exited ${r.exitCode}`}); type /rename hub`)
+      return
+    }
     const n = JSON.parse(r.stdout) as { found?: boolean; source?: string; free?: string }
     if (!n.found || n.source === 'user' || !n.free) return
     await $.command.run({ command: 'rename', args: n.free })
