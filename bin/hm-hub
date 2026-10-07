@@ -269,7 +269,8 @@ orch_state() {
 }
 # is_orchestrator_entry <team root> <agent>: 0 when that team.json entry is the orchestrator orch_state found, or another record of the same process
 # (a root and an entry, not a name: a spawned agent that shares its name in another root is an agent). A --self entry of the same name (it holds a
-# Claude pid) in another root is an orchestrator's record too, a stale one, and is no agent either.
+# Claude pid) in another root is dropped from the agent lists whether it is stale or live: a project has one orchestrator, so a second live --self
+# orchestrator is hidden too.
 is_orchestrator_entry() {
   local e cpid cstart
   [ -n "$O_AGENT" ] || return 1
