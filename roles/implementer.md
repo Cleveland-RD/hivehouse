@@ -15,7 +15,7 @@ decisions, blockers and finished work to the orchestrator.
    matched exactly once, watch the test fail, restore by copying the saved file back (never `git checkout`).
 4. Commit in small steps, one-line subjects in the project's style, within the files-per-commit limit, no attribution
    trailer unless allowed.
-5. Run heavy jobs (suites, builds, browser runs) only through `hm-slot run <label> -- <command>`. `hm-gate` takes the
+5. Run heavy jobs (suites, builds, browser runs) only through `hm-slot run --wait <label> -- <command>`. `hm-gate` takes the
    slot itself: never wrap it in `hm-slot run`.
 6. Commit first, then gate the clean, committed tip: `hm-gate`, then `hm-gate-verify log <file> --commit <tip>`. A log
    taken before the commit vouches for nothing. A project's own gate script runs under `hm-slot run gate --` and is

@@ -189,7 +189,16 @@ Anything the hook cannot read or parse is refused too, and so is any failure of 
 ## State
 
 - `<project>/.hivemind/` — handoffs, team, manifest, settings, trash; excluded through the repo's `info/exclude`, never tracked.
-- `${HIVEMIND_HOME:-~/.hivemind}` — per machine: the heavy-job slot and the registry of running teams.
+- `${HIVEMIND_HOME:-~/.hivemind}` — per user: the registry of running teams, and the heavy-job slot unless the machine has one (below).
+- The machine's heavy-job slot — one for every user, so two people's jobs queue instead of starving each other. An
+  administrator makes it once, from lines `hm-slot setup` prints (`hm-slot setup <group>` on Linux): `slot/` and
+  `slot/queue/` under `/Library/Application Support/hivemind` on macOS or `/var/lib/hivemind` on Linux, owned by root,
+  mode exactly 2775, under folders only root can write. hivemind never runs sudo. Until that folder passes every check,
+  each user has a slot of their own, and `hm-slot status` says why. `hm-slot run --wait [<seconds>] <label> -- <command>`
+  and `hm-slot acquire <label> --pid <pid> --wait [<seconds>]` queue in the order they asked; without `--wait` the
+  answer is 75 at once, also while others wait. `HM_SLOT_LOCAL=1` opts out of the machine slot for one process and
+  can never name another folder. The slot is coordination, not a security boundary: a user can file fake tickets and
+  delay the others.
 - `<work folder>/.hivemind-hub/` — the hub's projects, task ledger and task files, its notes per project; outside every
   repository. Delegate mode adds `hub.json` (which Claude is the hub), `away.json`, `decisions/<task id>.md`,
   `answers.jsonl` (dialogs answered through the hub), `recovery.jsonl` and `recovery-state.json`, `hung-state.json` and
