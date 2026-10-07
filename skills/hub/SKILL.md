@@ -77,6 +77,9 @@ memory. Both change what the hub covers, so ask the owner first; neither is pre-
    - **stopped**: ask "<project>'s orchestrator is stopped. Resume it and its N agents (N+1 sessions)?". On yes:
      `hm-hub wake <project> --mode ${user_config.permission_mode_local}`. It resumes the orchestrator's own conversation, with its own model, and
      tells it to register with you and bring its agents back. Wait for its `BACK` message, then hand the task as above.
+   - **resumable**: nothing is recorded of the orchestrator, but a transcript of its conversation was found (its
+     `session_id` is in the status). Handle it as **stopped**: ask whether to resume it, then `hm-hub wake <project> --mode ${user_config.permission_mode_local}`
+     resumes that conversation by id and tells it to register with you. Do not start a new one while it is resumable.
    - **none**: ask "<project> has no orchestrator yet. Start one on this task (1 session; it plans a team and sends you
      the plan to approve)?". On yes: `hm-hub start <project> <id> --mode ${user_config.permission_mode_local}`. It logs
      the task as handed.

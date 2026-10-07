@@ -50,6 +50,24 @@ const STATUS = {
       agents: [],
       open_tasks: 1,
     },
+    {
+      // nothing recorded, but a transcript of its conversation: wake resumes it by id
+      name: 'six',
+      home: `${ROOT}/six`,
+      repos: [{ folder: 'six', kind: 'repo', branch: 'main', changed: 0 }],
+      orchestrator: { state: 'resumable', question: false, name: 'six-orchestrator', session_id: 'sess-6' },
+      agents: [],
+      open_tasks: 0,
+    },
+    {
+      // tokens over a window that is only assumed: no percent
+      name: 'seven',
+      home: `${ROOT}/seven`,
+      repos: [{ folder: 'seven', kind: 'repo', branch: 'main', changed: 0 }],
+      orchestrator: { state: 'running', question: false, name: 'seven-orchestrator', context_unknown: true, context_tokens: 300000 },
+      agents: [],
+      open_tasks: 0,
+    },
   ],
 }
 const PROJECTS = {
@@ -251,6 +269,12 @@ test('the screen: what needs the owner first, then each project, and Resume wake
   expect(await ui.find({ type: 'Text', text: /not registered/ })).toBeDefined()
   // the orchestrator and the one stopped agent come back; an agent that cannot be told about is not counted
   expect((await ui.find({ key: 'resume-app' }))?.text).toContain('Resume · 2 sessions')
+  // an orchestrator that ended unregistered but has a transcript: named as such, and Resume is there for it
+  expect(await ui.find({ type: 'Text', text: /stopped, not registered/ })).toBeDefined()
+  expect((await ui.find({ key: 'resume-six' }))?.text).toContain('Resume · 1 session')
+  // tokens over an assumed window: unknown, never a percent
+  expect(await ui.find({ type: 'Text', text: /context unknown/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /300000%|30000000%/ })).toBeUndefined()
   expect(await ui.find({ key: 'resume-two' })).toBeUndefined()
   expect(await ui.find({ key: 'resume-tri' })).toBeUndefined()
   // a start still sending its line is coming up: no Continue, nothing waiting on the owner
@@ -261,6 +285,9 @@ test('the screen: what needs the owner first, then each project, and Resume wake
   const wake = runs.find(r => r[1] === 'wake')
   expect(wake?.slice(1)).toEqual(['wake', 'app', '--mode', 'auto'])
   expect(wake?.[0]).toMatch(/\/bin\/hm-hub$/)
+
+  await ui.press({ key: 'resume-six' })
+  expect(runs.filter(r => r[1] === 'wake').pop()?.slice(1)).toEqual(['wake', 'six', '--mode', 'auto'])
 
   await ui.press({ key: 'continue-four' })
   expect(runs.find(r => r[1] === 'continue')?.slice(1)).toEqual(['continue', 'four'])

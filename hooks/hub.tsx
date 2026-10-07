@@ -434,7 +434,7 @@ export const register: Register = (on, options) => {
       const inState = (s: string) => v.tasks.filter(t => t.project === p.name && t.state === s).length
       const nightly = inState('overnight')
       const cleaning = inState('cleanup')
-      const canResume = o.state === 'stopped' && Boolean(o.session_id) && !o.starting
+      const canResume = (o.state === 'stopped' || o.state === 'resumable') && Boolean(o.session_id) && !o.starting
       return (
         <Box key={`p-${p.name}`} flexDirection="column" marginTop={1}>
           <Box flexDirection="row" justifyContent="space-between">
@@ -451,6 +451,7 @@ export const register: Register = (on, options) => {
               {typeof o.context === 'number' ? (
                 <Text color={o.context_assumed ? 'gray' : o.context >= rotateAt ? 'yellow' : 'green'}>{`  ${o.context}%`}</Text>
               ) : null}
+              {o.context_unknown ? <Text color="gray">{'  context unknown'}</Text> : null}
             </Box>,
           )}
           {row(
@@ -602,6 +603,7 @@ function orchestratorLook(p: HubProject): { dot: string; word: string; color: st
     unknown: { dot: '?', word: 'cannot tell', color: 'red' },
     none: { dot: '◌', word: 'no team', color: 'gray' },
     unregistered: { dot: '◑', word: 'not registered', color: 'magenta' },
+    resumable: { dot: '○', word: 'stopped, not registered', color: 'yellow' },
   }
   return looks[o.state] ?? looks.unknown
 }

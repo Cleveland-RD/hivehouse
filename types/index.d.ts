@@ -1,13 +1,15 @@
 // What the hub's screen draws, read from `hm-hub status --json` and `hm-hub tasks --json` (bin/hm-hub owns every field).
 
 // running, stopped, unknown (its process is alive but tmux cannot vouch for it), none (no team recorded), unregistered (a
-// session running outside hivemind, found in Claude Code's own session records)
-export type HubOrchestratorState = 'running' | 'stopped' | 'unknown' | 'none' | 'unregistered'
+// session running outside hivemind, found in Claude Code's own session records), resumable (nothing recorded, but a transcript of
+// its conversation under a team root: hm-hub wake resumes it by id)
+export type HubOrchestratorState = 'running' | 'stopped' | 'unknown' | 'none' | 'unregistered' | 'resumable'
 // as above, and unrecorded: on the team with no identity, so nothing proves either way
 export type HubAgentState = 'running' | 'stopped' | 'unknown' | 'unrecorded'
 
 // question: a dialog waits on its screen, which nobody watches
-export type HubAgent = { name: string; state: HubAgentState; question?: boolean; context?: number; context_assumed?: boolean }
+// context_unknown: its tokens (context_tokens) exceed a window that was only assumed, so there is no percent
+export type HubAgent = { name: string; state: HubAgentState; question?: boolean; context?: number; context_assumed?: boolean; context_unknown?: boolean; context_tokens?: number; worktree?: string }
 
 export type HubOrchestrator = {
   state: HubOrchestratorState
@@ -19,6 +21,8 @@ export type HubOrchestrator = {
   session_id?: string
   context?: number
   context_assumed?: boolean
+  context_unknown?: boolean
+  context_tokens?: number
   // a session this hub started (wake, start) that has not registered yet. typed: its first line was sent; sending: an hm-hub
   // is still waiting to send it (coming up); neither: it stopped, waiting on the owner (hm-hub continue sends it);
   // question: a dialog waits on its screen
