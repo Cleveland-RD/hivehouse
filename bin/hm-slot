@@ -33,7 +33,7 @@ busy() {  # the holder on stderr, then the way out
 }
 drop_ticket() { [ -z "$TICKET" ] || rm -f "$TICKET"; TICKET=""; }
 take() {  # take <label> <pid> [<wait>]: 0 held, 75 busy (the holder is printed), 1 no ticket could be filed. <wait>: "" no, "inf", or seconds
-  local json first deadline="" name
+  local json first deadline="" name hp
   json=$(hm_holder_json "$2" "$(jq -nc --arg label "$1" --arg project "$PROJECT" --arg agent "${HM_AGENT:-owner}" \
     --arg since "$(hm_now)" '{label:$label,project:$project,agent:$agent,since:$since}')") || return 1
   [ "$MACHINE" = 1 ] || mkdir -p "$HOME_DIR"
@@ -43,7 +43,7 @@ take() {  # take <label> <pid> [<wait>]: 0 held, 75 busy (the holder is printed)
     group_write hm_lock_try "$LOCK" "$json" && return 0
     busy; return 75
   fi
-  [ "$3" = inf ] || deadline=$((SECONDS + $3))
+  [ "$3" = inf ] || deadline=$((SECONDS + 10#$3))   # 10#: 08 and 09 are not octal
   mkdir -p "$QUEUE" 2>/dev/null
   name="$(printf '%010d' "$(/bin/date +%s)")-$2.json"
   # created exclusively: a name that exists, or a link put there, makes the write fail instead of being followed
@@ -56,6 +56,12 @@ take() {  # take <label> <pid> [<wait>]: 0 held, 75 busy (the holder is printed)
     first=$(hm_queue_live "$QUEUE"); first=${first%%$'\n'*}
     if [ "$first" = "$name" ]; then
       if group_write hm_lock_try "$LOCK" "$json"; then drop_ticket; return 0; fi
+      # waiting for a slot an ancestor of this process holds would never end: refuse at once. HM_SLOT_HELD can only make this
+      # refuse sooner; it never grants the slot.
+      hp=$(hm_json_get "$LOCK/holder.json" .pid)
+      if [ -n "${HM_SLOT_HELD:-}" ] && [ "$hp" = "$HM_SLOT_HELD" ]; then
+        drop_ticket; busy; echo "hm-slot: the slot is held by your own parent (pid $hp): a command run under it cannot wait for it" >&2; return 75
+      fi
     elif [ -z "$first" ] || [ ! -e "$TICKET" ]; then
       echo "hm-slot: the ticket $name is gone from $QUEUE" >&2; TICKET=""; return 1   # another process removed it
     fi
@@ -77,6 +83,7 @@ case "${1:-}" in
     take "$label" $$ "$WAIT" || exit $?
     trap 'hm_lock_release "$LOCK" $$' EXIT
     trap 'exit 130' INT; trap 'exit 143' TERM
+    export HM_SLOT_HELD=$$   # what a command under this slot reads, so its own --wait for the slot is refused, not waited for
     "$@"; exit $? ;;
   acquire)
     [ "${3:-}" = "--pid" ] && [ -n "${4:-}" ] || hm_die 64 "$USAGE_ACQ"

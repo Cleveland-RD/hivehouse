@@ -53,5 +53,16 @@ hm-slot run --wait 2>/dev/null; assert_status "run --wait with nothing after is 
 hm-slot run --wait 3 onlylabel 2>/dev/null; assert_status "run --wait <s> <label> with no command is a usage error" $? 64
 hm-slot acquire x --pid $$ --wait abc 2>/dev/null; assert_status "acquire --wait with a word that is not a number is a usage error" $? 64
 rm -rf "$Q" "$LOCK"
+hm-slot run --wait 08 zero -- true 2>/dev/null; assert_status "--wait 08 is eight seconds, not an octal error" $? 0
+hm-slot run --wait 09 nine -- true 2>/dev/null; assert_status "--wait 09 too" $? 0
+# --- a --wait under a slot an ancestor holds is refused at once, not waited for
+SECONDS=0; hm-slot run outer -- hm-slot run --wait 8 inner -- true 2>"$T_TMP/nest.err"; s=$?; d=$SECONDS
+assert_status "a --wait nested under the slot its own parent holds is refused (75)" $s 75
+[ "$d" -le 3 ] && ok "...at once" || bad "...took $d s"
+assert_contains "...and says why" "$(cat "$T_TMP/nest.err")" "held by your own parent"
+assert_eq "...leaving no ticket" "$(ls "$Q" 2>/dev/null | wc -l | tr -d ' ')" "0"
+SECONDS=0; hm-slot run outer -- env HM_SLOT_HELD=1 hm-slot run --wait 2 inner -- true 2>"$T_TMP/nest2.err"; s=$?; d=$SECONDS
+[ "$s" = 75 ] && [ "$d" -ge 2 ] && ok "a HM_SLOT_HELD that is not the holder changes nothing: it waits out its time" || bad "HM_SLOT_HELD=1: exit $s after $d s"
+case "$(cat "$T_TMP/nest2.err")" in *"own parent"*) bad "...and it must not say parent" ;; *) ok "...and does not claim the holder is its parent" ;; esac
 hm-slot run --wait w -- true; assert_status "--wait with no time and a free slot just runs" $? 0
 cd /; t_done

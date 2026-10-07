@@ -74,6 +74,10 @@ assert_eq "the waiting gate has filed a ticket" "$(hm-slot status 2>/dev/null | 
 hm-slot release --pid $holder; kill $holder; wait $holder 2>/dev/null
 wait $gp; assert_status "once the slot is free the gate runs" $? 0
 [ -e "$T_TMP/busy-ran" ] && ok "...and its step ran" || bad "...and its step ran"
+# a step that waits for the slot is refused at once: the gate that runs it holds the slot
+SECONDS=0; hm-gate --log "$LOG" -- nested "hm-slot run --wait 8 inner -- true" 2>/dev/null; rc=$?
+assert_eq "a step's own --wait for the slot is refused (its line says 75), not waited for" "$(steps "$LOG")" "nested exit 75"
+[ "$SECONDS" -le 5 ] && ok "...at once" || bad "...took $SECONDS s"
 # an interrupted gate stops now, with the step's own children, writes no line for that step, and frees the slot
 # The step's sleep has a length no other process has, matched as a whole command line, so nothing else is mistaken for it.
 NAP="31.$$"

@@ -52,6 +52,7 @@ fi
 [ "$dirty" = 1 ] && echo "hivemind: the tree has uncommitted changes, so this log will vouch for no commit; commit first, then run the gate on the tip" >&2
 "$(dirname "$0")/hm-slot" acquire gate --pid $$ --wait || exit $?
 trap '"$(dirname "$0")/hm-slot" release --pid $$ --label gate' EXIT
+export HM_SLOT_HELD=$$   # a step that waits for the slot is refused (75), not left waiting for the gate that runs it
 # A step runs in the background, in its own process group (job control), and is waited for, so a signal is handled now
 # rather than when the step ends, and stops everything the step started, not its shell alone.
 set -m
