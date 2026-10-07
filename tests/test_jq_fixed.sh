@@ -16,21 +16,24 @@ hook() {  # hook <hook script> <json> [env]...: the hook as a marked session; se
 tc() { jq -nc --arg c "$1" --arg d "$proj" '{tool_name:"Bash",cwd:$d,tool_input:{command:$c}}'; }
 
 # ---- the resolver ----
-assert_eq "HM_JQ is the resolver's answer when the library loads" "$HM_JQ" "$(hm_jq_fixed)"
+assert_eq "nothing is resolved when the library loads: HM_JQ is empty and not done" "$(env HM_JQ=/tmp/evil HM_JQ_DONE=1 /bin/bash -p -c ". '$HM_REPO_ROOT/bin/hm-lib.sh'; echo \"[\$HM_JQ] \$HM_JQ_DONE\"")" "[] 0"
+assert_eq "...whatever the environment held, even under bash -p" "$(env HM_JQ=/tmp/evil HM_JQ_DONE=1 /bin/bash -p -c ". '$HM_REPO_ROOT/bin/hm-lib.sh'; hm_jq_resolve; echo \"\$HM_JQ \$HM_JQ_DONE\"")" "$REAL 1"
+hm_jq_resolve
+assert_eq "hm_jq_resolve sets HM_JQ to the resolver's answer" "$HM_JQ" "$(hm_jq_fixed)"
 assert_eq "...a root-owned jq, found" "$(hm_path_trusted "$HM_JQ" file 0 loose && echo yes)" "yes"
-assert_eq "an HM_JQ from the environment is overwritten, even under bash -p" "$(env HM_JQ=/tmp/evil /bin/bash -p -c ". '$HM_REPO_ROOT/bin/hm-lib.sh'; echo \"\$HM_JQ\"")" "$HM_JQ"
+HM_JQ=/changed; hm_jq_resolve; assert_eq "...once: a later call leaves it" "$HM_JQ" "/changed"; HM_JQ=$(hm_jq_fixed)
 mkdir -p "$T_TMP/ujq"; chmod 755 "$T_TMP/ujq"; cp "$REAL" "$T_TMP/ujq/jq"; chmod 755 "$T_TMP/ujq/jq"
-UB=$(t_jq_bin ub "$T_TMP/ujq/jq"); r=$(. "$UB/hm-lib.sh"; echo "[$HM_JQ]"); assert_eq "a jq the user owns, at a candidate path, is refused" "$r" "[]"
-UB2=$(t_jq_bin ub2 "/nonexistent/a /nonexistent/b $REAL"); r=$(. "$UB2/hm-lib.sh"; echo "[$HM_JQ]"); assert_eq "...the next candidate that is root's is taken" "$r" "[$REAL]"
+UB=$(t_jq_bin ub "$T_TMP/ujq/jq"); r=$(. "$UB/hm-lib.sh"; hm_jq_resolve; echo "[$HM_JQ]"); assert_eq "a jq the user owns, at a candidate path, is refused" "$r" "[]"
+UB2=$(t_jq_bin ub2 "/nonexistent/a /nonexistent/b $REAL"); r=$(. "$UB2/hm-lib.sh"; hm_jq_resolve; echo "[$HM_JQ]"); assert_eq "...the next candidate that is root's is taken" "$r" "[$REAL]"
 assert_eq "the three paths are the ones the plan names" "$(grep '^hm_jq_candidates() { echo ' "$HM_REPO_ROOT/bin/hm-lib.sh")" "hm_jq_candidates() { echo '/usr/bin/jq /usr/local/bin/jq /opt/homebrew/bin/jq'; }"
 mkdir -p "$T_TMP/ujq2/sub"; chmod 777 "$T_TMP/ujq2"; cp "$REAL" "$T_TMP/ujq2/sub/jq"
 # a root-owned file in a folder the user can write is no better: only a file whose every folder above is root's passes (here the owner check stops it first)
-UB3=$(t_jq_bin ub3 "$T_TMP/ujq2/sub/jq"); r=$(. "$UB3/hm-lib.sh"; echo "[$HM_JQ]"); assert_eq "a jq in a folder the user controls is refused" "$r" "[]"
+UB3=$(t_jq_bin ub3 "$T_TMP/ujq2/sub/jq"); r=$(. "$UB3/hm-lib.sh"; hm_jq_resolve; echo "[$HM_JQ]"); assert_eq "a jq in a folder the user controls is refused" "$r" "[]"
 
 # a root-owned file in a folder the group can write is refused for the folder, not the file (only the parents decide here)
 gf=$(find /Applications /Library -maxdepth 1 -type f -user root 2>/dev/null | head -1)
 if [ -n "$gf" ] && ! hm_path_trusted "${gf%/*}" dir 0 loose; then
-  GB=$(t_jq_bin gb "$gf"); r=$(. "$GB/hm-lib.sh"; echo "[$HM_JQ]"); assert_eq "a root-owned file under a folder the group can write is refused" "$r" "[]"
+  GB=$(t_jq_bin gb "$gf"); r=$(. "$GB/hm-lib.sh"; hm_jq_resolve; echo "[$HM_JQ]"); assert_eq "a root-owned file under a folder the group can write is refused" "$r" "[]"
 else echo "  SKIP no root-owned file under a group-writable folder to use as a candidate here"; fi
 
 # ---- the grant functions never call a bare jq, and hm_delegate_for_project's read of projects.json is pinned to the root-owned one ----

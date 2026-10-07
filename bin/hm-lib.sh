@@ -786,8 +786,13 @@ hm_jq_fixed() {  # prints the path of the first root-owned jq, or fails
   done
   return 1
 }
-# Set here, when the library loads, whatever the environment held (bash -p still imports variables): the resolver's answer, or empty.
-HM_JQ=""; HM_JQ=$(hm_jq_fixed) || HM_JQ=""
+# HM_JQ and HM_JQ_DONE are set here, when the library loads, whatever the environment held (bash -p still imports variables): empty and not done.
+# hm_jq_resolve then fills HM_JQ on first need. A check that grants away powers calls it first and refuses while HM_JQ is empty.
+HM_JQ=""; HM_JQ_DONE=0
+hm_jq_resolve() {  # sets HM_JQ once per process, on first need (the stats cost ~20 ms, which most scripts never need); call it in the caller's shell, since a $(...) would keep its answer to itself
+  [ "$HM_JQ_DONE" = 1 ] && return 0
+  HM_JQ=$(hm_jq_fixed) || HM_JQ=""; HM_JQ_DONE=1
+}
 hm_delegate_read() {  # hm_delegate_read <path> <uid> [<now>]: prints "<hub><TAB><until><TAB><mcp>" when the file is valid; 1 when it is not
   local f="$1" want="$2" now="${3:-}" d hub until mcp l1="" l2="" l3="" l4="" l5=""
   HM_DELEGATE_WHY=""; HM_DR_HUB=""; HM_DR_UNTIL=""; HM_DR_MCP=""; HM_DR_ABSENT=""
@@ -841,6 +846,7 @@ HM_DG_UID=""
 hm_delegate_mine() {
   HM_DG_HUB=""; HM_DG_UNTIL=""; HM_DG_MCP=""; HM_DG_UID=$(hm_real_uid) || HM_DG_UID=""
   case "$HM_DG_UID" in ''|*[!0-9]*) HM_DG_UID=""; HM_DELEGATE_WHY="this user's id cannot be read"; return 1 ;; esac
+  hm_jq_resolve
   [ -n "$HM_JQ" ] || { HM_DELEGATE_WHY="no root-owned jq was found (/usr/bin/jq, /usr/local/bin/jq or /opt/homebrew/bin/jq), so the hub's records cannot be read safely"; return 1; }
   hm_delegate_now >/dev/null || return 1
   HM_DG_HUB=$(cd "$HM_DR_HUB" 2>/dev/null && pwd -P) || { HM_DG_HUB=""; HM_DELEGATE_WHY="the hub folder $HM_DR_HUB cannot be entered"; return 1; }
@@ -945,6 +951,7 @@ hm_check_mode() {  # hm_check_mode <mode> <who> [<project root>]: exits 4 unless
 HM_BP_ENVS=(); HM_BP_ARGS=(); HM_AWAY_MCP_MISSING=""
 hm_write_away_mcp() {  # hm_write_away_mcp <file> <allow list> <project root>: the servers of the list, found; HM_AWAY_MCP_MISSING names the others. Only "$HM_JQ" writes it (with none, nothing runs and it returns 1)
   local f="$1" allow="$2" root="$3" cj e srv def
+  hm_jq_resolve
   cj=$(hm_claude_json); HM_AWAY_MCP_MISSING=""
   ( umask 077; "$HM_JQ" -n '{mcpServers:{}}' > "$f.tmp$$" ) && mv "$f.tmp$$" "$f" && chmod 600 "$f" || return 1
   [ -n "$allow" ] || return 0

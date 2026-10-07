@@ -72,6 +72,7 @@ protected() {  # protected <path> <cwd>: the path itself, and where its links le
 }
 
 # --- inputs
+hm_jq_resolve
 [ -n "$HM_JQ" ] || deny "no root-owned jq was found (/usr/bin/jq, /usr/local/bin/jq or /opt/homebrew/bin/jq), so the tool call cannot be checked"
 input=$(cat) || deny "its input could not be read"
 tool=$(printf '%s' "$input" | "$HM_JQ" -er '.tool_name | strings' 2>/dev/null) || deny "its input is not a tool call"
