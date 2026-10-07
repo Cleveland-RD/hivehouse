@@ -157,12 +157,23 @@ async function answerDialog($: EngineInterface, project: string, agent: string, 
 // only a slash command name a session) and greeted. Only a fresh session Claude Code records as unnamed: a name the owner
 // gave is theirs, a resumed or reloaded session has had turns, and a session with no record, or with nobody at its prompt
 // (`claude -p`, the SDK), is left as it is.
+// The name this hub's folder starts from (`hm-hub name`, default hub): the one the owner is told to /rename to.
+async function chosenName($: EngineInterface, root: string): Promise<string> {
+  try {
+    const r = await $.process.run([hmHub($), 'name'], { cwd: root, timeoutMs: 10_000 })
+    const n = r.stdout.trim()
+    return r.exitCode === 0 && n ? n : 'hub'
+  } catch {
+    return 'hub'
+  }
+}
+
 async function nameAndGreet($: EngineInterface, root: string): Promise<void> {
   try {
     if ((await $.session.turns()) > 0) return
     const r = await $.process.run([hmHub($), 'naming', '--session', await $.session.id()], { cwd: root, timeoutMs: 30_000 })
     if (r.exitCode !== 0) {
-      $.ui.toast(`hub: no name chosen (${lastLine(r.stderr) || `hm-hub naming exited ${r.exitCode}`}); type /rename hub`)
+      $.ui.toast(`hub: no name chosen (${lastLine(r.stderr) || `hm-hub naming exited ${r.exitCode}`}); type /rename ${await chosenName($, root)}`)
       return
     }
     const n = JSON.parse(r.stdout) as { found?: boolean; source?: string; free?: string }
@@ -170,7 +181,7 @@ async function nameAndGreet($: EngineInterface, root: string): Promise<void> {
     await $.command.run({ command: 'rename', args: n.free })
     await $.command.run({ command: 'hivemind:hub' })
   } catch (err) {
-    $.ui.toast(`hub: this session could not name itself (${err instanceof Error ? err.message : String(err)}); type /rename hub`)
+    $.ui.toast(`hub: this session could not name itself (${err instanceof Error ? err.message : String(err)}); type /rename ${await chosenName($, root)}`)
   }
 }
 

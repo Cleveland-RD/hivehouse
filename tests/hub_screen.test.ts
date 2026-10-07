@@ -123,7 +123,7 @@ const ran = (exitCode: number, stdout: string, stderr = '') => ({ value: { exitC
 // refuseAll is set).
 // shown: whether Claude Code lists the screen as open and shown (its own record of the plugin's panes). session: what
 // Claude Code records of this session (hm-hub naming) and how many turns it has had; slash: the slash commands run.
-type Session = { turns: number; naming?: { found: boolean; name: string; source: string; free: string }; namingFails?: string }
+type Session = { turns: number; hubName?: string; naming?: { found: boolean; name: string; source: string; free: string }; namingFails?: string }
 function world(on: On, runs: string[][], opened: string[] = [], commands: string[] = [], refuseAll = false, shown = { now: true },
   session: Session = { turns: 3 }, slash: string[][] = []) {
   on('session.turns', async () => ({ value: session.turns }))
@@ -154,6 +154,7 @@ function world(on: On, runs: string[][], opened: string[] = [], commands: string
       return d ? ran(0, JSON.stringify(d)) : ran(4, '', 'hivemind: no dialog is on that screen')
     }
     if (sub === 'answer') return ran(ANSWER.code, ANSWER.stdout, ANSWER.stderr)
+    if (sub === 'name' && session.hubName) return ran(0, `${session.hubName}\n`)
     if (sub === 'naming' && session.namingFails) return ran(4, '', session.namingFails)
     if (sub === 'naming' && session.naming) return ran(0, JSON.stringify(session.naming))
     return ran(64, '', 'hivemind: usage')
@@ -487,7 +488,15 @@ test('a name the hub cannot take is said on the toast, not dropped', async ($, o
   await $.session.start({ cwd: ROOT, surface: 'terminal', isInteractive: true })
   await clock.settle()
   expect(ran).toEqual([])
-  expect(TOASTS.some(t => t.includes('no name chosen') && t.includes('holds no usable name'))).toBe(true)
+  expect(TOASTS.some(t => t.includes('no name chosen') && t.includes('holds no usable name') && t.includes('type /rename hub'))).toBe(true)
+})
+
+test('the toast names the hub by the name its folder chose', async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  world(on, [], [], [], false, { now: true }, { turns: 0, hubName: 'lead', namingFails: 'hivemind: no name' }, [])
+  await $.session.start({ cwd: ROOT, surface: 'terminal', isInteractive: true })
+  await clock.settle()
+  expect(TOASTS.some(t => t.includes('no name chosen') && t.includes('type /rename lead'))).toBe(true)
 })
 
 test('the setting turns the naming off', { options: { hub_auto_start: false } }, async ($, on) => {

@@ -31,8 +31,8 @@ each time. That is intended.
    stop and tell the owner: this session started before the folder was the hub, so it has no hub screen and no guard
    off project files; exit it and start `claude` here again. From then on every session started here is the hub: a
    plain `claude` names itself `hub` (or `hub-2` beside another) and opens this skill by itself, unless the owner turned
-   that off (`hub_auto_start`; then `claude --name hub /hivemind:hub`). If `hm-hub self` says the session has no name,
-   or that its name is not one word, tell the owner to type `/rename hub`; until then show the status, but hand no
+   that off (`hub_auto_start`; then `claude --name <the hub's name> /hivemind:hub`, the name `hm-hub name` prints: `hub` unless this folder chose another). If `hm-hub self` says the session has no name,
+   or that its name is not one word, tell the owner to type `/rename <the hub's name>`; until then show the status, but hand no
    task: nobody could reply.
    Then run `ListAgents`. If another live session already has this session's name (a second machine's hub is named
    `hub` too), tell the owner once which machine has it and how to fix it: `/rename <name>` here, or `hm-hub name <name>`
