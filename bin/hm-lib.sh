@@ -712,9 +712,24 @@ hm_stat4() {  # hm_stat4 <path>: the path's own mode as four octal digits (setgi
   local m
   if /usr/bin/stat --version >/dev/null 2>&1; then m=$(/usr/bin/stat -c '%a' -- "$1" 2>/dev/null)
   else m=$(/usr/bin/stat -f '%Mp%Lp' "$1" 2>/dev/null); fi
+  hm_pad4 "$m"
+}
+hm_pad4() {  # hm_pad4 <octal digits>: four digits (Linux %a prints 775, not 0775), or fails when it is no octal number
+  local m="$1"
   case "$m" in ''|*[!0-7]*) return 1 ;; esac
   while [ "${#m}" -lt 4 ]; do m="0$m"; done
   printf '%s\n' "$m"
+}
+# hm_chain_trusted <folder> <uid>: the folder and every folder above it pass hm_path_trusted loose (owned by the uid or root, not a
+# link, not writable by group or others); fails with the reason in HM_DELEGATE_WHY. One walk for the delegate file, the machine slot and jq.
+hm_chain_trusted() {
+  local p="$1" want="$2" i=0
+  while :; do
+    [ -n "$p" ] || p=/
+    hm_path_trusted "$p" dir "$want" loose || return 1
+    [ "$p" = / ] && return 0
+    p=${p%/*}; i=$((i + 1)); [ "$i" -lt 64 ] || { HM_DELEGATE_WHY="the path is too deep"; return 1; }
+  done
 }
 # ---- the machine's one slot (bin/hm-slot). One folder for every user, made once by an administrator (hm-slot setup prints
 # the lines): slot/ and slot/queue/, owned by root, mode exactly 2775, under folders only root can write. Used only when all of
@@ -724,7 +739,7 @@ hm_machine_slot_dir() { if [ -d /System/Library ]; then echo '/Library/Applicati
 hm_machine_slot_owner() { echo 0; }
 # hm_machine_slot_ok <dir>: 0 when the folder may be used; otherwise 1 with the reason in HM_SLOT_WHY
 hm_machine_slot_ok() {
-  local d="$1" owner p i=0 f st u m t
+  local d="$1" owner f st u m t
   owner=$(hm_machine_slot_owner)
   [ -d "$d" ] || { HM_SLOT_WHY="$d does not exist"; return 1; }
   for f in "$d" "$d/queue"; do
@@ -736,13 +751,7 @@ hm_machine_slot_ok() {
     m=$(hm_stat4 "$f") || { HM_SLOT_WHY="$f cannot be read"; return 1; }
     [ "$m" = 2775 ] || { HM_SLOT_WHY="$f has mode $m, not 2775"; return 1; }
   done
-  p=${d%/*}; [ -n "$p" ] || p=/
-  while :; do
-    hm_path_trusted "$p" dir "$owner" loose || { HM_SLOT_WHY="$HM_DELEGATE_WHY"; return 1; }
-    [ "$p" = / ] && break
-    p=${p%/*}; [ -n "$p" ] || p=/; i=$((i + 1)); [ "$i" -lt 64 ] || { HM_SLOT_WHY="the path is too deep"; return 1; }
-  done
-  return 0
+  hm_chain_trusted "${d%/*}" "$owner" || { HM_SLOT_WHY="$HM_DELEGATE_WHY"; return 1; }
 }
 # The jq every check that grants away powers uses. A bare `jq` comes from PATH, which a session's own Bash command sets, so a fake one could
 # answer for a hub it is not or a project that is not listed. This is the first of three fixed paths that is root's along its whole path (the
@@ -750,17 +759,10 @@ hm_machine_slot_ok() {
 # passes, and the user's own account is exactly the away session being guarded. macOS has /usr/bin/jq since 15.
 hm_jq_candidates() { echo '/usr/bin/jq /usr/local/bin/jq /opt/homebrew/bin/jq'; }
 hm_jq_fixed() {  # prints the path of the first root-owned jq, or fails
-  local c p i ok
+  local c
   for c in $(hm_jq_candidates); do
     hm_path_trusted "$c" file 0 loose || continue
-    p=${c%/*}; i=0; ok=1
-    while :; do
-      [ -n "$p" ] || p=/
-      hm_path_trusted "$p" dir 0 loose || { ok=0; break; }
-      [ "$p" = / ] && break
-      p=${p%/*}; i=$((i + 1)); [ "$i" -lt 64 ] || { ok=0; break; }
-    done
-    [ "$ok" = 1 ] || continue
+    hm_chain_trusted "${c%/*}" 0 || continue
     printf '%s\n' "$c"; return 0
   done
   return 1
@@ -768,7 +770,7 @@ hm_jq_fixed() {  # prints the path of the first root-owned jq, or fails
 # Set here, when the library loads, whatever the environment held (bash -p still imports variables): the resolver's answer, or empty.
 HM_JQ=""; HM_JQ=$(hm_jq_fixed) || HM_JQ=""
 hm_delegate_read() {  # hm_delegate_read <path> <uid> [<now>]: prints "<hub><TAB><until><TAB><mcp>" when the file is valid; 1 when it is not
-  local f="$1" want="$2" now="${3:-}" d p hub until mcp i l1="" l2="" l3="" l4="" l5=""
+  local f="$1" want="$2" now="${3:-}" d hub until mcp l1="" l2="" l3="" l4="" l5=""
   HM_DELEGATE_WHY=""; HM_DR_HUB=""; HM_DR_UNTIL=""; HM_DR_MCP=""; HM_DR_ABSENT=""
   [ -e "$f" ] || [ -L "$f" ] || HM_DR_ABSENT=1   # no file at all: not away, and nothing to explain
   [ -n "$now" ] || now=$(/bin/date +%s)
@@ -777,12 +779,7 @@ hm_delegate_read() {  # hm_delegate_read <path> <uid> [<now>]: prints "<hub><TAB
   hm_path_trusted "$f" file "$want" strict || return 1
   d=${f%/*}; [ -n "$d" ] || d=/
   hm_path_trusted "$d" dir "$want" strict || return 1
-  p=${d%/*}; [ -n "$p" ] || p=/; i=0
-  while :; do
-    hm_path_trusted "$p" dir "$want" loose || return 1
-    [ "$p" = / ] && break
-    p=${p%/*}; [ -n "$p" ] || p=/; i=$((i + 1)); [ "$i" -lt 64 ] || { HM_DELEGATE_WHY="the path is too deep"; return 1; }
-  done
+  hm_chain_trusted "${d%/*}" "$want" || return 1
   { IFS= read -r l1; IFS= read -r l2; IFS= read -r l3; IFS= read -r l4; IFS= read -r l5 && l5=x; } < "$f" 2>/dev/null
   [ -z "$l5" ] || { HM_DELEGATE_WHY="the content is more than four lines"; return 1; }
   case "$l1$l2$l3$l4" in *$'\r'*) HM_DELEGATE_WHY="the content has carriage returns"; return 1 ;; esac

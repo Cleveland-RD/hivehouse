@@ -19,7 +19,11 @@ why() { env -u HM_SLOT_LOCAL "$SB/hm-slot" status 2>&1 >/dev/null; }
 # --- the four-digit mode
 d="$T_TMP/modes"; mkdir -p "$d/a" "$d/b" "$d/c"; chmod 2775 "$d/a"; chmod 775 "$d/b"; chmod 1777 "$d/c"
 assert_eq "a setgid folder reads 2775" "$(hm_stat4 "$d/a")" "2775"
-assert_eq "without setgid it reads 0775, padded to four digits" "$(hm_stat4 "$d/b")" "0775"
+assert_eq "without setgid it reads 0775" "$(hm_stat4 "$d/b")" "0775"
+assert_eq "hm_pad4 pads 775 (Linux %a) to 0775" "$(hm_pad4 775)" "0775"
+assert_eq "...and 2775 stays" "$(hm_pad4 2775)" "2775"
+assert_eq "...and 0 becomes 0000" "$(hm_pad4 0)" "0000"
+hm_pad4 77x >/dev/null 2>&1; assert_status "...and a non-octal value fails" $? 1
 assert_eq "sticky is kept" "$(hm_stat4 "$d/c")" "1777"
 hm_stat4 "$d/none" 2>/dev/null; assert_status "a missing path fails" $? 1
 # --- a valid folder is used
