@@ -99,3 +99,7 @@ short. If a result looks too small, narrow the scope and run it again, and say w
 A brief carries facts, each with where it was verified, and an open ask. Never a proposal, a reading of the evidence, an
 option list, or a yes-or-no framing: the receiver would answer the frame instead of the question. See
 `brief-template.md`.
+
+## Setups
+
+A need specific to one setup is met by an option or a root-owned allowance, not by code that names that setup. A user's own roles, rules and brief template go in `custom/` (`hh-resolve` finds them), never in the plugin's cached copy, and nothing is ever edited to loosen away mode: print the lines for the owner to paste.

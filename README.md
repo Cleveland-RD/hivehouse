@@ -9,6 +9,12 @@ It carries working methods proven on one long project and nothing specific to th
 the project's own CLAUDE.md (or CLAUDE.local.md) and memory. Skills are instructions; every mechanical action is a
 tested bash executable in `bin/`.
 
+Ask Claude to customise anything: roles, rules, skills' behaviour, options. The one exception is loosening delegate (away) mode, which takes one sudo paste from you. See [Customise hivehouse](#customise-hivehouse).
+
+## Delegate mode
+
+The default is relay mode: every start, wake and answer waits for you. Delegate mode is the mode the hub runs while you are away: it decides internal work inside your projects and keeps the teams running, and it keeps pushes, deploys and spending for you. It is on only while a file only you can write says so, for at most 7 days. Details, and what it guards and does not, are in [Delegate mode (away)](#delegate-mode-away); what you can allow it to do is in [Customising what away mode allows](#customising-what-away-mode-allows).
+
 ## Requirements
 
 - tmux ≥ 3.2 (`new-session` and `new-window` take `-e`; hh-spawn hands each pane its environment that way)
@@ -205,14 +211,70 @@ Anything the hook cannot read or parse is refused too, and so is any failure of 
 - A marked session can still reach the network or start an unmarked Claude in ways the hook does not see: `osascript` running `claude`, a script it wrote, or a tool that is not on the hook's matcher. `WebFetch` and `WebSearch` stay allowed, like `curl` GET, but they are reads that can carry data out in the address or the query.
 - The list of protected files is not complete.
 - The hook guards sessions of this plugin. It assumes the owner's `disableAllHooks` is not set.
-- Nothing runs while the machine is off. Remote hosts are not used while away (`hh-remote-sync` is refused).
+- Nothing runs while the machine is off. Remote hosts are reached while away only by the reads the owner allowed with `--remote-allow` (`hh-remote-sync` is refused).
+
+### Customising what away mode allows
+
+Away mode allows nothing beyond its fixed rules, and only the owner widens them, in the root-owned delegate file. `hh-hub away` writes it from the options below, as lines for you to paste; hivehouse never runs `sudo`, and no agent, hook, setting or option can add to the file or loosen away mode any other way. An agent that is asked to allow something prints the lines for you to paste, and never edits anything to get round the refusal.
+
+- `--remote-allow <hosts>` (comma-separated ssh host names, letters, digits, `.`, `_` and `-`) lets the away sessions read from those hosts, and only read: `ssh <host> <command>` where the command is on a fixed read-only list (listing and capturing tmux panes, `ls`, `cat`, `head`, `tail`, `grep`, `wc`, `df`, `ps`, `git log`/`status`/`diff`/`show`/`rev-parse`, `hh-context`, `hh-slot status`, `hh-hub status` and `tasks`), with no pipe, redirect, quote or substitution in it, no ssh option but a connect timeout and batch mode, and no other host. Nothing that writes, starts a session or runs another program is on the list. `~/.ssh/` stays protected, so a session cannot add a host of its own.
+- `--allow <words>` exempts `scp`, `rsync` or `sftp` from the refusal of their command word, and nothing else, on the local machine. No other word can be listed: not `ssh` (that is `--remote-allow`'s job), not `hh-push`, `hh-remote-sync`, `vercel` or `netlify` (a standing grant would break "a word given for one run does not carry to the next"), and never `claude` or anything that starts a session or a tmux server. An unknown word makes the file invalid, so away mode stays off.
+- What can never be lifted, by any option: starting sessions by hand (`claude`, `tmux new-session` and the like), which would carry no marker and escape every guard; writing Claude Code's settings, hooks and plugin files; `git push` and the other publishing commands.
+- Messages to sessions on other machines stay cut off while away: a Remote Control row does not say which host it is on. The ssh reads above cover status checks. In this release SendMessage to sessions on other machines stays cut off while away.
+- Roles, rules and the brief template are yours to change in `custom/` (see [Customise hivehouse](#customise-hivehouse)), and nothing in `custom/` can loosen away mode. Note that an away agent can rewrite its own team's, and another project's, future roles and rules in custom/: no grant is loosened (away grants come only from the root-owned delegate file), but you should know.
 
 **Which records are trusted, and why.** Only the root-owned delegate file gates bypass and delegate mode. Everything else is writable by the owner's user, so by any of their sessions in bypass, and is trusted only that far: `away.json`, the hub's `tasks.jsonl`, `recovery.jsonl` and `decisions/`, a project's `.hivehouse/settings.json` and `team.json`, and Claude Code's own settings. `hub.json` (which Claude is the hub) and `projects.json` (which folders a project covers, and so which get bypass) are writable by the owner's user, but a marked agent cannot write them through its tools: the hook refuses any write into `.hivehouse-hub/` by a session that is not the hub, and any write to a `team.json` by every marked session, the hub included. Both halves have limits: the hub's own session can still write its folder, and a write the hook's word matching does not recognise gets through, so this is not a security boundary.
+
+## Customise hivehouse
+
+The principle, stated once: setup-specific behaviour is configuration, never a code change. Anything specific to one machine, project or person is met by an option, a file in `custom/` or an allowance in the delegate file, not by editing the plugin. Anything that loosens away mode is root-owned: it lives in the delegate file only you can write.
+
+Ask Claude to customise anything: roles, rules, skills' behaviour, options. The one exception is loosening delegate (away) mode, which takes one sudo paste from you. This part is what Claude reads when you ask.
+
+**Where each change goes**
+
+- **A role, the rules or the brief template: `custom/`.** The plugin cache holds the installed plugin as a copy that is replaced by the next plugin update, so an edit inside it is lost; Claude never edits it (and an away session is refused if it tries). A file under `<project>/.hivehouse/custom/` (this project) or `${HIVEHOUSE_HOME:-~/.hivehouse}/custom/` (you, every project) takes the place of the plugin's file of the same path, the project's before yours before the plugin's:
+  - `custom/roles/<role>.md` replaces `roles/<role>.md` (`implementer`, `fixer`, `reviewer`, `architect`, `product`), and `custom/roles/<new name>.md` adds a role of your own;
+  - `custom/rules/RULES.md` replaces `rules/RULES.md`, which every skill and every agent reads first;
+  - `custom/rules/brief-template.md` replaces `rules/brief-template.md`.
+  - One resolver decides this for every skill: `hh-resolve role <name>`, `hh-resolve rules` and `hh-resolve brief` print the file to read, and a note on stderr says when a custom file is used or ignored. A custom file that is a link, that you do not own or that group or others can write is ignored with that note. `custom/` sits inside `.hivehouse/`, which git never tracks, so the project's files stay on this machine. A role file is copied into the team's folder when an agent is spawned, so a change reaches agents spawned afterwards.
+- **A skill's behaviour.** A skill's own text is the plugin's, and an update replaces it. Everything a skill does is bound by the rules it reads first, so a change in how skills behave goes into `custom/rules/RULES.md` (or a role); a fact about one project goes in that project's `CLAUDE.md`.
+- **Roles and rules for a team you spawn by hand.** `hh-spawn --role <file> --rules <file>` takes any two files: point them at your own copies.
+- **Options.** The plugin options below, set in Claude Code's plugin settings.
+- **Project safety settings.** `<project>/.hivehouse/settings.json` may tighten `permission_mode`, `overnight_ceiling_usd`, `allow_attribution` and `files_per_commit`, never loosen them.
+- **What away mode allows.** `hh-hub away --until <time> [--mcp-allow <list>] [--remote-allow <hosts>] [--allow <words>]` prints the lines that write the delegate file (see [Customising what away mode allows](#customising-what-away-mode-allows)). When you ask Claude to loosen away mode, it prints those lines for you to paste and never edit anything to get round it.
+
+**Every plugin option** (`.claude-plugin/plugin.json`, `userConfig`)
+
+| Option | What it does | Default |
+|---|---|---|
+| `commit_style` | Commit subject style: conventional (type(scope): summary) or free | `conventional` |
+| `allow_attribution` | Allow AI attribution trailers in commits: When off, gates refuse commits carrying Co-Authored-By or similar trailers | `false` |
+| `files_per_commit` | Most files per commit: Gates warn or refuse commits touching more files than this | `5` |
+| `model_orchestrator` | Orchestrator model: Model alias for the orchestrator session | `opus` |
+| `model_builder` | Implementer/fixer model: Model alias for builder agents | `sonnet` |
+| `model_reviewer` | Reviewer/architect/product model: Model alias for reviewing agents | `opus` |
+| `effort_builder` | Builder effort: Reasoning effort for builder agents | `medium` |
+| `effort_reviewer` | Reviewer effort: Reasoning effort for reviewing agents | `high` |
+| `window_orchestrator` | Orchestrator context window (tokens): Used only when Claude Code's own reading of the window is missing (always for the orchestrator); never inferred from a model name | `200000` |
+| `window_builder` | Builder context window (tokens): Used only when Claude Code's own reading of the window is missing; never inferred from a model name | `200000` |
+| `window_reviewer` | Reviewer context window (tokens): Used only when Claude Code's own reading of the window is missing; never inferred from a model name | `200000` |
+| `permission_mode_local` | Agents' permission mode on this machine: Bypass permissions is never used locally, except while the hub is in delegate mode (the owner is away): that needs this set to auto | `auto` |
+| `remote_hosts` | Known remote hosts (comma-separated ssh names): ssh host names hivehouse may run overnight work on | `empty` |
+| `dedicated_hosts` | Remote hosts dedicated to agents (bypass allowed): Comma-separated ssh names where bypass permissions may be used, asked again each time | `empty` |
+| `rotate_at_percent` | Context level that triggers a handoff: Percent of the context window at which an agent hands off and is cleared | `50` |
+| `overnight_ceiling_usd` | Spending ceiling per overnight run (USD): A project may only lower this | `50` |
+| `heartbeat_minutes` | Overnight heartbeat interval (minutes): How often the orchestrator checks context, disk, queue and spend | `30` |
+| `hub_auto_start` | Hub names itself and greets: A plain claude started in the hub's folder names itself hub (or hub-2...) and opens the hub, which takes one model turn; when off, start it with claude --name hub /hivehouse:hub | `true` |
+| `hub_max_starts_per_day` | Hub: sessions started or woken per day while away: Delegate mode: the most sessions the hub starts or wakes in 24 hours before it keeps the rest for you. A guideline the hub passes to hh-hub recover, not a guard | `10` |
+| `away_mcp_allow` | Away: MCP servers an away hub may use: Comma-separated MCP server names, or mcp__<server>__<tool>, loaded for the hub started by hh-hub away (none by default). Allowing a server allows its write tools too | `empty` |
+| `min_free_gb` | Free disk (GB) below which cleanup runs: Below this, sessions get a low-disk warning and cleanup runs | `20` |
 
 ## State
 
 - `<project>/.hivehouse/` — handoffs, team, manifest, settings, trash; excluded through the repo's `info/exclude`, never tracked.
 - `${HIVEHOUSE_HOME:-~/.hivehouse}` — per user: the registry of running teams, and the heavy-job slot unless the machine has one (below).
+- `<project>/.hivehouse/custom/` and `${HIVEHOUSE_HOME:-~/.hivehouse}/custom/` — your own roles, rules and brief template, which an update of the plugin never replaces ([Customise hivehouse](#customise-hivehouse)).
 - The machine's heavy-job slot — one for every user, so two people's jobs queue instead of starving each other. An
   administrator makes it once, from lines `hh-slot setup` prints (`hh-slot setup <group>` on Linux): `slot/` and
   `slot/queue/` under `/Library/Application Support/hivehouse` on macOS or `/var/lib/hivehouse` on Linux, owned by root,
