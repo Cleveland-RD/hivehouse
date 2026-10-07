@@ -19,6 +19,52 @@ hm_project_root() {
     || hm_die 2 "not inside a git repository and HM_PROJECT is not set"
   case "$common" in */.git) (cd "${common%/.git}" && pwd -P) ;; *) hm_die 2 "unsupported repository layout: $common" ;; esac
 }
+# ---- where a project's team is: the home, then each worktree of its repository that has a team ------------------------------------------
+# Read with built-ins only, from the two pointers git keeps: <home>/.git/worktrees/<name>/gitdir (one line, <worktree>/.git) and the worktree's
+# own .git file (gitdir: <home>/.git/worktrees/<name>). A worktree counts only when both agree, each side compared after cd -P (git records a
+# path as it was typed). git 2.48+ can write relative paths (worktree.useRelativePaths): a relative line is resolved against the folder of the
+# file it is in, and one that cannot be resolved means that worktree is no root. These run on the grant path, so none runs the program named
+# by the first word git on PATH, which an away session's own Bash command sets.
+hm_repo_home() {  # hm_repo_home <dir>: the home of the repository <dir> is the top of: a .git folder is itself, a .git file the home it points to. Never walks up.
+  local d line g gd home rest back b
+  d=$(cd -P "$1" 2>/dev/null && pwd -P) || return 1
+  if [ -d "$d/.git" ] && [ ! -L "$d/.git" ]; then printf '%s\n' "$d"; return 0; fi
+  [ -f "$d/.git" ] && [ ! -L "$d/.git" ] || return 1
+  IFS= read -r line < "$d/.git" || [ -n "$line" ] || return 1
+  case "$line" in "gitdir: "*) g=${line#gitdir: } ;; *) return 1 ;; esac
+  case "$g" in /*) ;; *) g="$d/$g" ;; esac
+  gd=$(cd -P "$g" 2>/dev/null && pwd -P) || return 1
+  home=${gd%/.git/worktrees/*}; rest=${gd#"$home/.git/worktrees/"}   # no match leaves $rest the whole path, which has a slash: a submodule's git folder is refused here too
+  case "$rest" in ''|*/*) return 1 ;; esac
+  IFS= read -r back < "$gd/gitdir" || [ -n "$back" ] || return 1
+  case "$back" in */.git) ;; *) return 1 ;; esac
+  case "$back" in /*) ;; *) back="$gd/$back" ;; esac
+  b=$(cd -P "${back%/.git}" 2>/dev/null && pwd -P) || return 1
+  [ "$b" = "$d" ] || return 1
+  printf '%s\n' "$home"
+}
+hm_team_roots() {  # hm_team_roots <home>: the home, then each worktree of its repository with .hivemind/team.json, one per line
+  local h d line wt r seen=""
+  h=$(cd -P "$1" 2>/dev/null && pwd -P) || return 1
+  printf '%s\n' "$h"
+  [ -d "$h/.git/worktrees" ] && [ -d "$h/.git" ] && [ ! -L "$h/.git" ] || return 0
+  for d in "$h"/.git/worktrees/*/; do
+    d=${d%/}; [ -f "$d/gitdir" ] || continue
+    IFS= read -r line < "$d/gitdir" || [ -n "$line" ] || continue
+    case "$line" in */.git) ;; *) continue ;; esac
+    case "$line" in /*) ;; *) line="$d/$line" ;; esac
+    wt=$(cd -P "${line%/.git}" 2>/dev/null && pwd -P) || continue
+    [ "$wt" != "$h" ] || continue
+    r=$(hm_repo_home "$wt") || continue
+    [ "$r" = "$h" ] || continue
+    [ -f "$wt/.hivemind/team.json" ] || continue
+    case "$seen" in *"|$wt|"*) continue ;; esac
+    seen="$seen|$wt|"; printf '%s\n' "$wt"
+  done
+}
+hm_project_home() {  # hm_project_home <root>: the home a team root takes its settings from; a folder that is no repository is its own
+  hm_repo_home "$1" || (cd -P "$1" 2>/dev/null && pwd -P)
+}
 hm_project_key() {  # basename plus a short hash of the full path: app and app-impl never clash
   local p="$1"; printf '%s-%s\n' "$(basename "$p")" "$(printf '%s' "$p" | shasum | cut -c1-6)"
 }
