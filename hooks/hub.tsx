@@ -219,20 +219,61 @@ async function editRefusal($: EngineInterface, path: string): Promise<string | n
 const GIT_WRITES =
   /(^|[;&|(`]|\s)git(\s+-C\s+\S+)?\s+(commit|push|merge|rebase|reset|checkout|switch|restore|stash|cherry-pick|revert|tag|am|apply|clean|rm|mv|add|worktree\s+(?:add|remove|move|prune|repair|lock|unlock)|pull|branch\s+-[dDmMf])\b/
 
-// A command with the words it only carries taken out: a heredoc's body and quoted strings are the owner's text, passed
-// word for word (a task, a note), never a command the shell runs. Quoting follows the shell's own: '...' has no escapes (an
-// apostrophe inside it is written '\'' : close, escaped apostrophe, open), "..." and $'...' take a backslash escape, and a
+// A command with the words it only carries taken out: a quoted string or a heredoc body is the owner's text, passed word for
+// word (a task, a note), never a command the shell runs. What the shell does run inside text it otherwise leaves alone: single
+// quotes and $'...' never; double quotes and an unquoted heredoc (<<EOF) only their $(...) and backtick spans, which are kept
+// for the match; a quoted heredoc (<<'EOF', <<"EOF", <<\EOF) not at all. Quoting follows the shell's own: '...' has no escapes
+// (an apostrophe inside it is written '\'' : close, escaped apostrophe, open), "..." and $'...' take a backslash escape, and a
 // backslash outside quotes escapes the next character, so an escaped quote opens nothing. A quote that never closes holds the rest.
+
+// The $(...) or `...` span that starts at text[i], as the shell would run it, and where it ends; null when none starts there.
+function expansionAt(text: string, i: number): [string, number] | null {
+  if (text.charAt(i) === '$' && text.charAt(i + 1) === '(') {
+    let depth = 1
+    let j = i + 2
+    for (; j < text.length && depth > 0; j++) depth += text.charAt(j) === '(' ? 1 : text.charAt(j) === ')' ? -1 : 0
+    return [`$(${commandsOnly(text.slice(i + 2, depth ? j : j - 1))}) `, j]
+  }
+  if (text.charAt(i) === '`') {
+    let j = i + 1
+    while (j < text.length && text.charAt(j) !== '`') j += text.charAt(j) === '\\' ? 2 : 1
+    return [`\`${commandsOnly(text.slice(i + 1, j))}\` `, j + 1]
+  }
+  return null
+}
+
+// Only the spans of text that the shell runs although it is quoted text: what an unquoted heredoc's body carries.
+function expansionsOf(text: string): string {
+  let out = ''
+  for (let i = 0; i < text.length; ) {
+    if (text.charAt(i) === '\\') i += 2
+    else {
+      const span = expansionAt(text, i)
+      if (span) {
+        out += span[0]
+        i = span[1]
+      } else i++
+    }
+  }
+  return out
+}
+
 function commandsOnly(command: string): string {
   const kept: string[] = []
+  let ran = ''
   let until = ''
+  let unquoted = false
   for (const line of command.split('\n')) {
     if (until) {
       if (line.trim() === until) until = ''
+      else if (unquoted) ran += expansionsOf(line) + '\n'
       continue
     }
-    const opens = /<<-?\s*(['"]?)([A-Za-z_][A-Za-z0-9_]*)\1/.exec(line)
-    if (opens) until = opens[2] ?? ''
+    const opens = /<<-?\s*(\\?)(['"]?)([A-Za-z_][A-Za-z0-9_]*)\2/.exec(line)
+    if (opens) {
+      until = opens[3] ?? ''
+      unquoted = !opens[1] && !opens[2]
+    }
     kept.push(line)
   }
   const text = kept.join('\n')
@@ -245,12 +286,19 @@ function commandsOnly(command: string): string {
     } else if (c === "'" || c === '"' || (c === '$' && text.charAt(i + 1) === "'")) {
       const ansi = c === '$'
       const quote = ansi ? "'" : c
+      let run = ''
       i += ansi ? 2 : 1
-      while (i < text.length && text.charAt(i) !== quote) i += text.charAt(i) === '\\' && (ansi || quote === '"') ? 2 : 1
-      out += ansi ? "$''" : quote + quote
+      while (i < text.length && text.charAt(i) !== quote) {
+        const span = quote === '"' ? expansionAt(text, i) : null
+        if (span) {
+          run += span[0]
+          i = span[1]
+        } else i += text.charAt(i) === '\\' && (ansi || quote === '"') ? 2 : 1
+      }
+      out += ansi ? "$''" : quote + run + quote
     } else out += c
   }
-  return out
+  return out + '\n' + ran
 }
 
 export const register: Register = (on, options) => {

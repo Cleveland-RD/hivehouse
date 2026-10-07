@@ -215,11 +215,20 @@ test('the hub keeps off the projects, and off nothing else', async ($, on) => {
   expect((await bash("sed -i '' '1a\\ do'\\''nt run `git worktree add` here' .hivemind-hub/memory/app.md")).deny).toBeUndefined()
   expect((await bash("hm-hub log app-1 note --note $'it\\'s fine: git commit -m x'")).deny).toBeUndefined()
   expect((await bash('hm-hub log app-1 note --note "say \\"hi\\" then git push"')).deny).toBeUndefined()
-  expect((await bash('hm-hub log app-1 note --note "the user\'s note: `git worktree add x`"')).deny).toBeUndefined()
+  expect((await bash('hm-hub log app-1 note --note "the user\'s note: git worktree add x"')).deny).toBeUndefined()
   expect((await bash("sed -i '' '1a\\ it'\\''s done' .hivemind-hub/memory/app.md; git commit -m x")).deny).toContain('changes a repository')
   // a real command after a quote, in $( ), in backticks, or after an escaped separator still counts
   expect((await bash("echo 'a'; git commit -m x")).deny).toContain('changes a repository')
-  expect((await bash('echo "$(git commit -m x)"')).deny).toBeUndefined() // inside double quotes: the owner's text, as before
+  // inside double quotes and an unquoted heredoc the shell still runs $( ) and backtick spans; single quotes and a quoted heredoc never
+  expect((await bash('echo "$(git commit -m x)"')).deny).toContain('changes a repository')
+  expect((await bash('echo "`git push`"')).deny).toContain('changes a repository')
+  expect((await bash('echo "say $(echo \\"hi\\") and $(git push)"')).deny).toContain('changes a repository')
+  expect((await bash('hm-hub task app <<EOF\nnote\n$(git push)\nEOF')).deny).toContain('changes a repository')
+  expect((await bash('hm-hub task app <<EOF\nnote: git push later\nEOF')).deny).toBeUndefined()
+  expect((await bash("hm-hub task app <<'EOF'\nnote\n$(git push)\nEOF")).deny).toBeUndefined()
+  expect((await bash('hm-hub task app <<"EOF"\nnote\n`git push`\nEOF')).deny).toBeUndefined()
+  expect((await bash("echo '$(git push)'")).deny).toBeUndefined()
+  expect((await bash('echo "$(echo hi)"')).deny).toBeUndefined()
   expect((await bash('echo $(git commit -m x)')).deny).toContain('changes a repository')
   expect((await bash('echo `git push`')).deny).toContain('changes a repository')
   expect((await bash("echo it\\'s; git commit -m x")).deny).toContain('changes a repository')
