@@ -38,10 +38,12 @@ stricter() {  # stricter <project> <owner>: 0 when the project value is strictly
 valid "$owner" || hm_die 4 "owner value for $key is not allowed here: $owner"
 
 root=$(hm_project_root) || exit $?
-if [ -n "$(git -C "$root" ls-files -- .hivemind)" ]; then
+# every team root of a project (its home, and each worktree with a team) takes its settings from the home: a worktree's own file is never read
+home=$(hm_project_home "$root") || exit $?
+if [ -n "$(git -C "$home" ls-files -- .hivemind)" ]; then
   hm_die 3 "files under .hivemind/ are tracked by git; untrack them before using hivemind here"
 fi
-file="$root/.hivemind/settings.json"
+file="$home/.hivemind/settings.json"
 emit() {  # emit <value>: print it; permission_mode left at the owner's auto becomes bypassPermissions for a marked caller while the owner is away
   if [ "$key" = permission_mode ] && [ "$1" = auto ] && [ "$owner" = auto ] && hm_delegate_for_project "$root"; then
     hm_away_caller

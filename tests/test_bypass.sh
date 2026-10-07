@@ -47,6 +47,18 @@ assert_eq "...a project value equal to the owner's does not" "$(st "$NCP" app au
 echo '{"permission_mode":"bypassPermissions"}' > "$H/app/.hivemind/settings.json"
 assert_eq "...a project that names bypass itself gets the owner's rule, not its own word" "$(st "$NCP" app auto env)" "auto"
 rm -f "$H/app/.hivemind/settings.json"
+# a team in a worktree of the project's home: bypass on the same terms, and the settings are the home's, never the worktree's own
+git -C "$H/app" worktree add -q "$H/app-wt" -b wt-team; mkdir -p "$H/app-wt/.hivemind"; echo '{"agents":[]}' > "$H/app-wt/.hivemind/team.json"
+assert_eq "a worktree team root of the project: bypassPermissions" "$(st "$NCP" app-wt auto "${M[@]}")" "bypassPermissions"
+echo '{"permission_mode":"default"}' > "$H/app-wt/.hivemind/settings.json"
+assert_eq "...the worktree's own stricter file changes nothing" "$(st "$NCP" app-wt auto "${M[@]}")" "bypassPermissions"
+rm -f "$H/app-wt/.hivemind/settings.json"
+echo '{"permission_mode":"default"}' > "$H/app/.hivemind/settings.json"
+assert_eq "...the home's stricter mode holds for the worktree" "$(st "$NCP" app-wt auto "${M[@]}")" "default"
+rm -f "$H/app/.hivemind/settings.json"
+chmod 775 "$H/app-wt"; assert_eq "...a group-writable worktree root gets no bypass" "$(st "$NCP" app-wt auto "${M[@]}")" "auto"; chmod 755 "$H/app-wt"
+git -C "$H/other" worktree add -q "$H/other-wt" -b wt-other; mkdir -p "$H/other-wt/.hivemind"; echo '{"agents":[]}' > "$H/other-wt/.hivemind/team.json"
+assert_eq "...a worktree of an unlisted repository gets none" "$(st "$NCO" other-wt auto "${M[@]}")" "auto"
 mkdel "$((NOW - 10))"; assert_eq "...an expired delegate file: no bypass" "$(st "$NCP" app auto "${M[@]}")" "auto"
 mkdel; chmod 666 "$DF"; assert_eq "...a delegate file anyone could write: no bypass" "$(st "$NCP" app auto "${M[@]}")" "auto"; mkdel
 "$DB/hm-settings" resolve permission_mode bypassPermissions >/dev/null 2>&1; assert_status "an owner value of bypassPermissions is refused" $? 4
