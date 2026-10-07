@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# hm_dialog_parse (bin/hm-lib.sh): what a dialog on a Claude Code screen says, as the hub shows it, and the options it
+# hh_dialog_parse (bin/hh-lib.sh): what a dialog on a Claude Code screen says, as the hub shows it, and the options it
 # offers, read from real captures of Claude Code 2.1.291 (tests/fixtures/dialogs/*.ansi, capture-pane -p -e -J).
 . "$(dirname "$0")/lib.sh"
-. "$HM_REPO_ROOT/bin/hm-lib.sh"
-F="$HM_REPO_ROOT/tests/fixtures/dialogs"
-dlg() { hm_dialog_parse < "$F/$1.ansi"; }
+. "$HH_REPO_ROOT/bin/hh-lib.sh"
+F="$HH_REPO_ROOT/tests/fixtures/dialogs"
+dlg() { hh_dialog_parse < "$F/$1.ansi"; }
 j() { printf '%s' "$1" | jq -r "$2"; }
 
 # ---- a numbered permission dialog ----
@@ -23,8 +23,8 @@ case "$(j "$d" .text)" in *"Run exactly this shell command"*) bad "the conversat
 fp=$(j "$d" .fingerprint)
 assert_eq "...a fingerprint of 40 hex digits" "$(printf '%s' "$fp" | grep -Ec '^[0-9a-f]{40}$')" "1"
 assert_eq "...the same screen gives the same fingerprint" "$(j "$(dlg 03-bash-permission)" .fingerprint)" "$fp"
-assert_eq "...padding does not change it" "$(j "$(sed 's/$/   /' "$F/03-bash-permission.ansi" | hm_dialog_parse; )" .fingerprint)" "$fp"
-assert_eq "...nor blank lines after the screen" "$(j "$( (cat "$F/03-bash-permission.ansi"; printf '\n\n\n') | hm_dialog_parse)" .fingerprint)" "$fp"
+assert_eq "...padding does not change it" "$(j "$(sed 's/$/   /' "$F/03-bash-permission.ansi" | hh_dialog_parse; )" .fingerprint)" "$fp"
+assert_eq "...nor blank lines after the screen" "$(j "$( (cat "$F/03-bash-permission.ansi"; printf '\n\n\n') | hh_dialog_parse)" .fingerprint)" "$fp"
 d=$(dlg 04-write-permission)
 assert_eq "an edit permission dialog: three options" "$(j "$d" '[.options[].n] | join(",")')" "1,2,3"
 assert_eq "...the one that switches to accept edits saves a rule" "$(j "$d" '[.options[].saves_rule] | map(tostring) | join(",")')" "false,true,false"
@@ -32,7 +32,7 @@ assert_contains "...its text names the file" "$(j "$d" .text)" "notes.txt"
 [ "$(j "$d" .fingerprint)" != "$fp" ] && ok "...another dialog, another fingerprint" || bad "two dialogs share a fingerprint"
 
 # a rule in the conversation above (a markdown rule, a tool's output) is not the dialog's own top rule
-assert_eq "...a rule in the conversation above does not move its start" "$(j "$( (printf '%s\n' '──────────────────────────'; cat "$F/03-bash-permission.ansi") | hm_dialog_parse)" .fingerprint)" "$fp"
+assert_eq "...a rule in the conversation above does not move its start" "$(j "$( (printf '%s\n' '──────────────────────────'; cat "$F/03-bash-permission.ansi") | hh_dialog_parse)" .fingerprint)" "$fp"
 
 # ---- AskUserQuestion: the owner's own text is never offered ----
 d=$(dlg 05-ask-user-question)
@@ -58,7 +58,7 @@ for n in 02-working-1s 07-idle-after-answer 03b-bash-after-digit-1; do
   dlg "$n" >/dev/null; assert_status "$n is no dialog" $? 3
 done
 # a dialog whose options cannot be read: no options, and the hub says to answer in the pane
-d=$(printf '%s\n' '────────────────────────' ' Do you want to proceed?' ' something new' '' ' Esc to cancel' | hm_dialog_parse); assert_status "an unreadable dialog is still a dialog" $? 0
+d=$(printf '%s\n' '────────────────────────' ' Do you want to proceed?' ' something new' '' ' Esc to cancel' | hh_dialog_parse); assert_status "an unreadable dialog is still a dialog" $? 0
 assert_eq "...of no kind" "$(j "$d" .kind)" "none"
 assert_eq "...with no options" "$(j "$d" '.options | length')" "0"
 t_done

@@ -1,33 +1,33 @@
 #!/usr/bin/env bash
-# hm-remote-sync against a "remote" that is a directory on this machine: ssh/scp/rsync are shims on PATH (tests/bin), no
+# hh-remote-sync against a "remote" that is a directory on this machine: ssh/scp/rsync are shims on PATH (tests/bin), no
 # network, the only host is testhost. The remote side runs with hivehouse's bin/ off its PATH, so only absolute paths work.
 . "$(dirname "$0")/lib.sh"
-. "$HM_REPO_ROOT/bin/hm-lib.sh"
+. "$HH_REPO_ROOT/bin/hh-lib.sh"
 t_setup
 r=$(t_repo proj); cd "$r"
 rr=$(t_repo remote-proj)                      # the remote project root (a git repo, as a real one would be)
-export HM_FAKE_LOG="$T_TMP/fake.log"; : > "$HM_FAKE_LOG"
-sync() { hm-remote-sync "$@"; }
+export HH_FAKE_LOG="$T_TMP/fake.log"; : > "$HH_FAKE_LOG"
+sync() { hh-remote-sync "$@"; }
 quiet() { "$@" >"$T_TMP/out" 2>"$T_TMP/err"; echo $?; }
-refused() { local want="$1"; shift; local rc; rc=$(quiet hm-remote-sync "$@"); [ "$rc" -eq "$want" ] && ok "exit $want: $LABEL" || bad "$LABEL: exit $rc, expected $want"; }
+refused() { local want="$1"; shift; local rc; rc=$(quiet hh-remote-sync "$@"); [ "$rc" -eq "$want" ] && ok "exit $want: $LABEL" || bad "$LABEL: exit $rc, expected $want"; }
 
 # ---- check ---------------------------------------------------------------------------------------------------------
 out=$(sync check testhost --min-gb 0 --plugin-version 0.1.0); assert_status "check passes" $? 0
 assert_contains "check reports the claude version" "$out" "2.1.300"
 rec="$r/$T_STATE/remote/testhost.json"
-assert_eq "the record names the remote install path" "$(jq -r .installPath "$rec")" "$HM_REPO_ROOT"
+assert_eq "the record names the remote install path" "$(jq -r .installPath "$rec")" "$HH_REPO_ROOT"
 assert_eq "the record names the plugin version" "$(jq -r .version "$rec")" "0.1.0"
-assert_eq "no manifest entry for the record (hm-cleanup finds it under $T_STATE)" "$(hm-manifest list | wc -l | tr -d ' ')" "0"
-HM_FAKE_PLUGIN_VERSION=0.0.9 sync check testhost --min-gb 0 --plugin-version 0.1.0 >"$T_TMP/out" 2>&1; assert_status "a different plugin version exits 1" $? 1
+assert_eq "no manifest entry for the record (hh-cleanup finds it under $T_STATE)" "$(hh-manifest list | wc -l | tr -d ' ')" "0"
+HH_FAKE_PLUGIN_VERSION=0.0.9 sync check testhost --min-gb 0 --plugin-version 0.1.0 >"$T_TMP/out" 2>&1; assert_status "a different plugin version exits 1" $? 1
 assert_contains "...and says which" "$(cat "$T_TMP/out")" "0.0.9"
 sync check testhost --min-gb 999999 --plugin-version 0.1.0 >"$T_TMP/out" 2>&1; assert_status "too little free disk exits 1" $? 1
 assert_contains "...and says so" "$(cat "$T_TMP/out")" "free"
-HM_FAKE_SSH=down sync check testhost --min-gb 0 --plugin-version 0.1.0 >/dev/null 2>&1; assert_status "an unreachable host exits 5" $? 5
+HH_FAKE_SSH=down sync check testhost --min-gb 0 --plugin-version 0.1.0 >/dev/null 2>&1; assert_status "an unreachable host exits 5" $? 5
 LABEL="a host with a leading -"; refused 4 check -oProxyCommand=x --min-gb 0 --plugin-version 0.1.0
 LABEL="a host that is only a leading -"; refused 4 check -x --min-gb 0 --plugin-version 0.1.0
 LABEL="a host with a space"; refused 4 check "a b" --min-gb 0 --plugin-version 0.1.0
-LABEL="a host outside the allow-list"; HM_REMOTE_HOSTS="otherhost" refused 4 check testhost --min-gb 0 --plugin-version 0.1.0
-HM_REMOTE_HOSTS="otherhost,testhost" sync check testhost --min-gb 0 --plugin-version 0.1.0 >/dev/null 2>&1; assert_status "a host on the allow-list passes" $? 0
+LABEL="a host outside the allow-list"; HH_REMOTE_HOSTS="otherhost" refused 4 check testhost --min-gb 0 --plugin-version 0.1.0
+HH_REMOTE_HOSTS="otherhost,testhost" sync check testhost --min-gb 0 --plugin-version 0.1.0 >/dev/null 2>&1; assert_status "a host on the allow-list passes" $? 0
 LABEL="a bad --min-gb"; refused 4 check testhost --min-gb abc --plugin-version 0.1.0
 LABEL="no subcommand"; refused 64
 LABEL="an unknown subcommand"; refused 64 frobnicate testhost
@@ -53,8 +53,8 @@ ln -s /etc/hosts src/link; printf 'src/link\n' > "$T_TMP/bad5"; LABEL="a symlink
 LABEL="a relative remote root"; refused 4 files testhost "rel/root" "$T_TMP/list"
 LABEL="a remote root with .."; refused 4 files testhost "/tmp/../etc" "$T_TMP/list"
 LABEL="a missing list file"; refused 4 files testhost "$rr" "$T_TMP/nolist"
-HM_FAKE_SSH=down sync files testhost "$rr" "$T_TMP/list" >/dev/null 2>&1; assert_status "files to an unreachable host exits 5" $? 5
-grep -q -- '--delete' "$HM_REPO_ROOT/bin/hm-remote-sync" && bad "bin/hm-remote-sync mentions --delete" || ok "bin/hm-remote-sync never deletes on the remote"
+HH_FAKE_SSH=down sync files testhost "$rr" "$T_TMP/list" >/dev/null 2>&1; assert_status "files to an unreachable host exits 5" $? 5
+grep -q -- '--delete' "$HH_REPO_ROOT/bin/hh-remote-sync" && bad "bin/hh-remote-sync mentions --delete" || ok "bin/hh-remote-sync never deletes on the remote"
 
 # ---- memory --------------------------------------------------------------------------------------------------------
 mkdir -p mem "$T_TMP/rmem"; echo "one" > mem/one.md; echo "two" > mem/two.md; echo "ignored" > mem/note.txt
@@ -97,23 +97,23 @@ mkdir "$T_TMP/notrepo"; LABEL="a remote root that is not a git repository"; refu
 git checkout -q --detach; LABEL="no branch given and a detached HEAD"; refused 4 branches testhost "$rr"; git checkout -q feat/one
 out=$(sync branches testhost "$rr"); assert_status "no branch given means the current one" $? 0
 assert_contains "...and says which" "$out" "feat/one"
-HM_FAKE_SSH=down sync branches testhost "$rr" feat/one >/dev/null 2>&1; assert_status "branches to an unreachable host exits 5" $? 5
+HH_FAKE_SSH=down sync branches testhost "$rr" feat/one >/dev/null 2>&1; assert_status "branches to an unreachable host exits 5" $? 5
 
 # ---- secret --------------------------------------------------------------------------------------------------------
 VAL="S3CRET-VALUE-$RANDOM$RANDOM"; VAL2="OTHER-VALUE-$RANDOM$RANDOM"
 mkdir -p $T_STATE/tmp; printf 'API_KEY=%s\nONLY_LOCAL=x1\nSAME=ok\n' "$VAL" > $T_STATE/tmp/.env.remote
-: > "$HM_FAKE_LOG"
-out=$(HM_FAKE_REMOTE_UMASK=000 sync secret testhost "$rr" $T_STATE/tmp/.env.remote 2>&1); assert_status "secret is copied" $? 0
+: > "$HH_FAKE_LOG"
+out=$(HH_FAKE_REMOTE_UMASK=000 sync secret testhost "$rr" $T_STATE/tmp/.env.remote 2>&1); assert_status "secret is copied" $? 0
 dest="$rr/$T_STATE/tmp/.env.remote"
 assert_eq "the remote copy equals the local file" "$(cat "$dest")" "$(cat $T_STATE/tmp/.env.remote)"
 assert_eq "the final mode is 600" "$(ls -ln "$dest" | cut -c1-10)" "-rw-------"
-assert_contains "the file was 600 at the moment it was moved into place, under a remote umask of 000" "$(cat "$HM_FAKE_LOG")" "mv-source-mode: -rw-------"
+assert_contains "the file was 600 at the moment it was moved into place, under a remote umask of 000" "$(cat "$HH_FAKE_LOG")" "mv-source-mode: -rw-------"
 case "$out" in *"$VAL"*) bad "the secret's value was printed" ;; *) ok "no value in the output" ;; esac
-case "$(cat "$HM_FAKE_LOG")" in *"$VAL"*) bad "the secret's value reached a command line" ;; *) ok "no value on any command line" ;; esac
-grep -q '^scp:' "$HM_FAKE_LOG" && bad "scp was used for a secret" || ok "scp (which creates files at the remote umask) is not used for a secret"
+case "$(cat "$HH_FAKE_LOG")" in *"$VAL"*) bad "the secret's value reached a command line" ;; *) ok "no value on any command line" ;; esac
+grep -q '^scp:' "$HH_FAKE_LOG" && bad "scp was used for a secret" || ok "scp (which creates files at the remote umask) is not used for a secret"
 assert_contains "the remote manifest records it, via the absolute path" "$(jq -r .kind "$rr/$T_STATE/manifest.jsonl" | tr '\n' ' ')" "file"
 assert_eq "...with the right path" "$(jq -r 'select(.kind=="file")|.path' "$rr/$T_STATE/manifest.jsonl")" "$(cd "$rr" && pwd -P)/$T_STATE/tmp/.env.remote"
-assert_eq "no temporary file is left" "$(ls -A "$rr/$T_STATE/tmp" | grep -c 'hm\.')" "0"
+assert_eq "no temporary file is left" "$(ls -A "$rr/$T_STATE/tmp" | grep -c 'hh\.')" "0"
 out=$(sync secret testhost "$rr" $T_STATE/tmp/.env.remote 2>&1); assert_status "the same secret again is unchanged, exit 0" $? 0
 assert_contains "...and says so" "$out" "unchanged"
 assert_eq "...still one manifest entry" "$(jq -r 'select(.kind=="file")|.path' "$rr/$T_STATE/manifest.jsonl" | wc -l | tr -d ' ')" "1"
@@ -134,7 +134,7 @@ LABEL="a path starting with -"; refused 4 secret testhost "$rr" -x
 LABEL="a secret that does not exist locally"; refused 4 secret testhost "$rr" $T_STATE/tmp/none
 ln -s /etc/hosts $T_STATE/tmp/lnk; LABEL="a symlink as the secret"; refused 4 secret testhost "$rr" $T_STATE/tmp/lnk
 rm -f "$rec"; LABEL="no check record for the host"; refused 4 secret testhost "$rr" $T_STATE/tmp/.env.remote
-HM_FAKE_SSH=down sync secret testhost "$rr" $T_STATE/tmp/.env.remote >/dev/null 2>&1; assert_status "secret to an unreachable host exits 5 (record missing: 4 first, so)" $? 4
+HH_FAKE_SSH=down sync secret testhost "$rr" $T_STATE/tmp/.env.remote >/dev/null 2>&1; assert_status "secret to an unreachable host exits 5 (record missing: 4 first, so)" $? 4
 
 # ---- remote paths --------------------------------------------------------------------------------------------------
 # rsync's remote shell splits on a space or ; so a remote path is limited to a safe alphabet
@@ -147,13 +147,13 @@ LABEL="secret: a remote root with a space"; refused 4 secret testhost "$T_TMP/sp
 printf 'src/a b.txt\n' > "$T_TMP/spl"; echo s > "src/a b.txt"; LABEL="files: a list entry with a space"; refused 4 files testhost "$rr" "$T_TMP/spl"
 
 # a hostile df answer must never reach bash arithmetic (a[$(cmd)] runs the command)
-rm -f "$T_TMP/PWNED"; HM_FAKE_DF="a[\$(touch\${IFS}$T_TMP/PWNED)]" sync check testhost --min-gb 0 --plugin-version 0.1.0 >"$T_TMP/out" 2>&1; assert_status "a non-numeric free-space answer is a finding, exit 1" $? 1
+rm -f "$T_TMP/PWNED"; HH_FAKE_DF="a[\$(touch\${IFS}$T_TMP/PWNED)]" sync check testhost --min-gb 0 --plugin-version 0.1.0 >"$T_TMP/out" 2>&1; assert_status "a non-numeric free-space answer is a finding, exit 1" $? 1
 [ ! -e "$T_TMP/PWNED" ] && ok "...and no command in it ran" || bad "a command inside the df answer ran locally"
-HM_FAKE_DF=1048576 sync check testhost --min-gb 1 --plugin-version 0.1.0 >/dev/null 2>&1; assert_status "a numeric answer is still used (1 GB meets --min-gb 1)" $? 0
+HH_FAKE_DF=1048576 sync check testhost --min-gb 1 --plugin-version 0.1.0 >/dev/null 2>&1; assert_status "a numeric answer is still used (1 GB meets --min-gb 1)" $? 0
 
 # a secret never leaves the named remote root, whatever is a symlink over there
 sync check testhost --min-gb 0 --plugin-version 0.1.0 >/dev/null
-mkdir -p "$T_TMP/elsewhere"; rr2=$(t_repo remote2); : > "$HM_FAKE_LOG"
+mkdir -p "$T_TMP/elsewhere"; rr2=$(t_repo remote2); : > "$HH_FAKE_LOG"
 ln -s "$T_TMP/elsewhere" "$rr2/$T_STATE"
 LABEL="secret: $T_STATE on the remote is a symlink out of the root"; refused 4 secret testhost "$rr2" $T_STATE/tmp/.env.remote
 assert_eq "...and nothing was written outside the root" "$(find "$T_TMP/elsewhere" | wc -l | tr -d ' ')" "1"
@@ -164,12 +164,12 @@ rm "$rr2/$T_STATE/tmp"; mkdir -p "$rr2/$T_STATE/tmp"; ln -s "$T_TMP/elsewhere/ta
 LABEL="secret: the destination is a dangling symlink"; refused 4 secret testhost "$rr2" $T_STATE/tmp/.env.remote
 [ ! -e "$T_TMP/elsewhere/target" ] && ok "...and its target was not created" || bad "the symlink's target was written"
 rm "$rr2/$T_STATE/tmp/.env.remote"
-LABEL="secret: a remote that answers nothing to a path resolution"; HM_FAKE_BLANK_PWD=1 refused 4 secret testhost "$rr2" $T_STATE/tmp/.env.remote
+LABEL="secret: a remote that answers nothing to a path resolution"; HH_FAKE_BLANK_PWD=1 refused 4 secret testhost "$rr2" $T_STATE/tmp/.env.remote
 [ ! -e "$rr2/$T_STATE/tmp/.env.remote" ] && ok "...and nothing was written" || bad "a secret was written after an empty resolution"
 # a file that appears at the destination after the check is never clobbered
-out=$(HM_FAKE_MV_RACE=1 sync secret testhost "$rr2" $T_STATE/tmp/.env.remote 2>&1); assert_status "a file that appeared at the destination is a finding, exit 1" $? 1
+out=$(HH_FAKE_MV_RACE=1 sync secret testhost "$rr2" $T_STATE/tmp/.env.remote 2>&1); assert_status "a file that appeared at the destination is a finding, exit 1" $? 1
 assert_eq "...and it was not overwritten" "$(cat "$rr2/$T_STATE/tmp/.env.remote")" "raced"
-assert_eq "...and no temporary file is left" "$(ls -A "$rr2/$T_STATE/tmp" | grep -c 'hm\.')" "0"
+assert_eq "...and no temporary file is left" "$(ls -A "$rr2/$T_STATE/tmp" | grep -c 'hh\.')" "0"
 rm -f "$rr2/$T_STATE/tmp/.env.remote"
 sync secret testhost "$rr2" $T_STATE/tmp/.env.remote >/dev/null 2>&1; assert_status "a clean remote root still takes the secret" $? 0
 
@@ -198,10 +198,10 @@ rr5=$(t_repo remote5); LABEL="secret: the local $T_STATE/tmp is a symlink out of
 rm $T_STATE/tmp; mv "$T_TMP/tmp.keep" $T_STATE/tmp
 LABEL="memory: the host drops while looking for a symlink"
 # memory: an unreachable host while looking for a symlink is unreachable (5), not a conflict
-HM_FAKE_DOWN_ON="test -L" refused 5 memory testhost "$r/mem" "$T_TMP/rmem"
+HH_FAKE_DOWN_ON="test -L" refused 5 memory testhost "$r/mem" "$T_TMP/rmem"
 
-# ---- start-agent: the remote's own hm-spawn, in the resolved mode, never bypass --------------------------------------------
-env -u HIVEHOUSE_HOME tmux -S "$HM_TMUX_SOCKET" new-session -d -s keep 'sleep 600'
+# ---- start-agent: the remote's own hh-spawn, in the resolved mode, never bypass --------------------------------------------
+env -u HIVEHOUSE_HOME tmux -S "$HH_TMUX_SOCKET" new-session -d -s keep 'sleep 600'
 sync check testhost --min-gb 0 --plugin-version 0.1.0 >/dev/null
 rra=$(t_repo remote-agent); mkdir -p "$rra/$T_STATE/team/impl1"; echo role > "$rra/$T_STATE/team/impl1/role.md"; echo rules > "$rra/$T_STATE/team/impl1/RULES.md"
 SA=(start-agent testhost "$rra" impl1 --model 'opus[1m]' --effort medium --mode auto)
@@ -209,34 +209,34 @@ SA=(start-agent testhost "$rra" impl1 --model 'opus[1m]' --effort medium --mode 
 for RSH in /bin/bash /bin/zsh; do
   [ -x "$RSH" ] || continue; ag=impl1; [ "$RSH" = /bin/bash ] || ag=impl1z
   mkdir -p "$rra/$T_STATE/team/$ag"; echo role > "$rra/$T_STATE/team/$ag/role.md"; echo rules > "$rra/$T_STATE/team/$ag/RULES.md"
-  : > "$HM_FAKE_LOG"; out=$(SHELL=$RSH sync start-agent testhost "$rra" "$ag" --model 'opus[1m]' --effort medium --mode auto 2>"$T_TMP/err"); rc=$?
-  assert_status "start-agent runs the remote's hm-spawn (login shell $RSH)" $rc 0
+  : > "$HH_FAKE_LOG"; out=$(SHELL=$RSH sync start-agent testhost "$rra" "$ag" --model 'opus[1m]' --effort medium --mode auto 2>"$T_TMP/err"); rc=$?
+  assert_status "start-agent runs the remote's hh-spawn (login shell $RSH)" $rc 0
   pane=$(printf '%s\n' "$out" | grep -E '^%[0-9]+$' | tail -1); [ -n "$pane" ] && ok "...and prints the new pane" || bad "no pane in: $out"
-  log=$(cat "$HM_FAKE_LOG"); sl=$(grep 'hm-spawn' "$HM_FAKE_LOG" | head -1)   # the hm-spawn call's own line: the remain-on-exit call carries the same PATH text
-  assert_contains "...by the absolute install path check recorded" "$sl" "$HM_REPO_ROOT/bin/hm-spawn"
+  log=$(cat "$HH_FAKE_LOG"); sl=$(grep 'hh-spawn' "$HH_FAKE_LOG" | head -1)   # the hh-spawn call's own line: the remain-on-exit call carries the same PATH text
+  assert_contains "...by the absolute install path check recorded" "$sl" "$HH_REPO_ROOT/bin/hh-spawn"
   assert_contains "...under the remote's login shell" "$sl" '-lc'
-  assert_contains "...with an explicit PATH in front of the hm-spawn call, then the login PATH" "$sl" '/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:\$PATH'
-  assert_contains "...the project is the remote root" "$sl" "HM_PROJECT=$rra"
+  assert_contains "...with an explicit PATH in front of the hh-spawn call, then the login PATH" "$sl" '/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:\$PATH'
+  assert_contains "...the project is the remote root" "$sl" "HH_PROJECT=$rra"
   assert_contains "...the role and rules are the remote copies under the remote root" "$sl" "--role\\ $rra/$T_STATE/team/$ag/role.md"
   assert_contains "......rules" "$sl" "--rules\\ $rra/$T_STATE/team/$ag/RULES.md"
   assert_contains "...the model is quoted: [ ] is a glob in some shells" "$sl" 'opus\\\[1m\\\]'
   assert_contains "...in the mode it was given" "$sl" "--mode\\ auto"
-  [ -z "$pane" ] || assert_eq "...and the new window stays after its process exits, so a start that dies shows its error" "$(tmux -S "$HM_TMUX_SOCKET" show-options -w -v -t "$pane" remain-on-exit 2>&1)" "on"
+  [ -z "$pane" ] || assert_eq "...and the new window stays after its process exits, so a start that dies shows its error" "$(tmux -S "$HH_TMUX_SOCKET" show-options -w -v -t "$pane" remain-on-exit 2>&1)" "on"
 done
-# a worktree: created on its branch by the remote hm-spawn, the agent runs in it, and the folder-trust warning (KI-7) comes back
+# a worktree: created on its branch by the remote hh-spawn, the agent runs in it, and the folder-trust warning (KI-7) comes back
 ag=impl2; mkdir -p "$rra/$T_STATE/team/$ag"; echo role > "$rra/$T_STATE/team/$ag/role.md"; echo rules > "$rra/$T_STATE/team/$ag/RULES.md"
-rm -f "$CLAUDE_CONFIG_DIR/.claude.json"; : > "$HM_FAKE_LOG"
+rm -f "$CLAUDE_CONFIG_DIR/.claude.json"; : > "$HH_FAKE_LOG"
 out=$(SHELL=/bin/bash sync start-agent testhost "$rra" "$ag" --model m --effort medium --mode auto --worktree "$T_TMP/wt-agent" --branch feat/wt --base main 2>&1); assert_status "start-agent with a worktree" $? 0
-assert_contains "...reached the remote hm-spawn: --worktree" "$(grep 'hm-spawn' "$HM_FAKE_LOG" | head -1)" "--worktree\\ $T_TMP/wt-agent"
+assert_contains "...reached the remote hh-spawn: --worktree" "$(grep 'hh-spawn' "$HH_FAKE_LOG" | head -1)" "--worktree\\ $T_TMP/wt-agent"
 assert_eq "...the worktree exists on its branch" "$(git -C "$T_TMP/wt-agent" rev-parse --abbrev-ref HEAD 2>&1)" "feat/wt"
 wpane=$(printf '%s\n' "$out" | grep -E '^%[0-9]+$' | tail -1)
-assert_eq "...the agent's pane runs in it" "$(cd "$(tmux -S "$HM_TMUX_SOCKET" display-message -p -t "$wpane" '#{pane_current_path}' 2>/dev/null)" 2>/dev/null && pwd -P)" "$(cd "$T_TMP/wt-agent" && pwd -P)"
+assert_eq "...the agent's pane runs in it" "$(cd "$(tmux -S "$HH_TMUX_SOCKET" display-message -p -t "$wpane" '#{pane_current_path}' 2>/dev/null)" 2>/dev/null && pwd -P)" "$(cd "$T_TMP/wt-agent" && pwd -P)"
 assert_contains "...and the folder-trust warning for its main repository comes back in the output" "$out" "folder-trust dialog"
-n=$(wc -l < "$HM_FAKE_LOG")
+n=$(wc -l < "$HH_FAKE_LOG")
 sync "${SA[@]:0:4}" --model m --effort e --mode bypassPermissions >"$T_TMP/out" 2>"$T_TMP/err"; assert_status "start-agent --mode bypassPermissions is refused" $? 4
 assert_contains "...saying why" "$(cat "$T_TMP/err")" "never starts bypassPermissions"
-assert_eq "...before anything reached ssh" "$(wc -l < "$HM_FAKE_LOG")" "$n"
-refusedq() { local n; n=$(wc -l < "$HM_FAKE_LOG"); refused "$@"; assert_eq "......and nothing reached ssh (the remote hm-spawn would refuse it too, so the exit code alone proves nothing)" "$(wc -l < "$HM_FAKE_LOG")" "$n"; }
+assert_eq "...before anything reached ssh" "$(wc -l < "$HH_FAKE_LOG")" "$n"
+refusedq() { local n; n=$(wc -l < "$HH_FAKE_LOG"); refused "$@"; assert_eq "......and nothing reached ssh (the remote hh-spawn would refuse it too, so the exit code alone proves nothing)" "$(wc -l < "$HH_FAKE_LOG")" "$n"; }
 LABEL="start-agent: a mode it does not pass on"; refusedq 4 start-agent testhost "$rra" impl1 --model m --effort e --mode yolo
 LABEL="start-agent: an agent name with a capital"; refusedq 4 start-agent testhost "$rra" Impl1 --model m --effort e --mode auto
 LABEL="start-agent: an agent name that is an option"; refusedq 4 start-agent testhost "$rra" -x --model m --effort e --mode auto
@@ -245,7 +245,7 @@ LABEL="start-agent: an effort with a space"; refusedq 4 start-agent testhost "$r
 LABEL="start-agent: a relative remote root"; refusedq 4 start-agent testhost remote-agent impl1 --model m --effort e --mode auto
 LABEL="start-agent: a remote root with .."; refusedq 4 start-agent testhost "$rra/../x" impl1 --model m --effort e --mode auto
 LABEL="start-agent: a host with a leading -"; refusedq 4 start-agent -oProxyCommand=x "$rra" impl1 --model m --effort e --mode auto
-LABEL="start-agent: a host outside the allow-list"; HM_REMOTE_HOSTS="otherhost" refusedq 4 start-agent testhost "$rra" impl1 --model m --effort e --mode auto
+LABEL="start-agent: a host outside the allow-list"; HH_REMOTE_HOSTS="otherhost" refusedq 4 start-agent testhost "$rra" impl1 --model m --effort e --mode auto
 LABEL="start-agent: a worktree without branch and base"; refusedq 64 start-agent testhost "$rra" impl1 --model m --effort e --mode auto --worktree "$T_TMP/wt-x"
 LABEL="start-agent: a relative worktree"; refusedq 4 start-agent testhost "$rra" impl1 --model m --effort e --mode auto --worktree wt-x --branch b --base main
 LABEL="start-agent: a branch that is an option"; refusedq 4 start-agent testhost "$rra" impl1 --model m --effort e --mode auto --worktree "$T_TMP/wt-x" --branch -evil --base main
@@ -253,25 +253,25 @@ LABEL="start-agent: no model"; refusedq 64 start-agent testhost "$rra" impl1 --e
 LABEL="start-agent: an unknown option"; refusedq 64 start-agent testhost "$rra" impl1 --model m --effort e --mode auto --frob x
 LABEL="start-agent: role and rules not on the remote"; refused 4 start-agent testhost "$rra" nobody --model m --effort e --mode auto
 assert_contains "...says to send them first" "$(cat "$T_TMP/err")" "files first"
-HM_FAKE_SSH=down sync "${SA[@]}" >/dev/null 2>&1; assert_status "start-agent to a host that is down exits 5" $? 5
+HH_FAKE_SSH=down sync "${SA[@]}" >/dev/null 2>&1; assert_status "start-agent to a host that is down exits 5" $? 5
 rm -f "$r/$T_STATE/remote/testhost.json"; sync "${SA[@]}" >/dev/null 2>&1; assert_status "start-agent without a check record is refused" $? 4
 sync check testhost --min-gb 0 --plugin-version 0.1.0 >/dev/null
 
 # ---- common --------------------------------------------------------------------------------------------------------
 sync check testhost --min-gb 0 --plugin-version 0.1.0 >/dev/null
-mkdir "$T_TMP/norepo"; (cd "$T_TMP/norepo" && hm-remote-sync check testhost --min-gb 0 --plugin-version 0.1.0 >/dev/null 2>&1); assert_status "outside a repo" $? 2
+mkdir "$T_TMP/norepo"; (cd "$T_TMP/norepo" && hh-remote-sync check testhost --min-gb 0 --plugin-version 0.1.0 >/dev/null 2>&1); assert_status "outside a repo" $? 2
 [ ! -e "$T_TMP/norepo/$T_STATE" ] && ok "...writing nothing" || bad "wrote $T_STATE outside a repo"
 echo x > $T_STATE/leak; git add -f $T_STATE/leak
 sync check testhost --min-gb 0 --plugin-version 0.1.0 >/dev/null 2>&1; assert_status "a tracked $T_STATE is refused" $? 3
 git rm -qf --cached $T_STATE/leak
-grep -n 'ssh \|scp \|rsync ' "$HM_REPO_ROOT/bin/hm-remote-sync" | grep -vE '^[0-9]+:\s*#|hm_(ssh|scp|rsync)\(\)' | grep -E '(^[0-9]+:[[:space:]]*|[;&|({]|\$\()[[:space:]]*(ssh|scp|rsync) ' >/dev/null && bad "a bare ssh/scp/rsync call outside the hm_* functions" || ok "every ssh/scp/rsync goes through hm_ssh/hm_scp/hm_rsync"
-# ---- the away marker: a second layer behind hm-away-hook, which is the guard (a Bash command can unset the variable for itself)
-n=$(wc -l < "$HM_FAKE_LOG")
+grep -n 'ssh \|scp \|rsync ' "$HH_REPO_ROOT/bin/hh-remote-sync" | grep -vE '^[0-9]+:\s*#|hh_(ssh|scp|rsync)\(\)' | grep -E '(^[0-9]+:[[:space:]]*|[;&|({]|\$\()[[:space:]]*(ssh|scp|rsync) ' >/dev/null && bad "a bare ssh/scp/rsync call outside the hh_* functions" || ok "every ssh/scp/rsync goes through hh_ssh/hh_scp/hh_rsync"
+# ---- the away marker: a second layer behind hh-away-hook, which is the guard (a Bash command can unset the variable for itself)
+n=$(wc -l < "$HH_FAKE_LOG")
 for args in "check testhost --min-gb 0 --plugin-version 0.1.0" "branches testhost $rr" "files testhost $rr /dev/null" "memory testhost $T_TMP $T_TMP/m" "secret testhost $rr x" "start-agent testhost $rr impl1 --model m --effort e --mode auto" "" "bogus"; do
-  HM_AWAY_BYPASS=1 hm-remote-sync $args >"$T_TMP/out" 2>"$T_TMP/err"; rc=$?
-  [ "$rc" -eq 4 ] && ok "the away marker refuses: hm-remote-sync ${args:-<no arguments>}" || bad "hm-remote-sync $args: exit $rc, expected 4"
+  HH_AWAY_BYPASS=1 hh-remote-sync $args >"$T_TMP/out" 2>"$T_TMP/err"; rc=$?
+  [ "$rc" -eq 4 ] && ok "the away marker refuses: hh-remote-sync ${args:-<no arguments>}" || bad "hh-remote-sync $args: exit $rc, expected 4"
 done
 assert_contains "...saying it is hivehouse's away mode" "$(cat "$T_TMP/err")" "away mode"
-assert_eq "...and nothing reached ssh, scp or rsync" "$(wc -l < "$HM_FAKE_LOG")" "$n"
-HM_AWAY_BYPASS=0 sync check testhost --min-gb 0 --plugin-version 0.1.0 >/dev/null 2>&1; assert_status "a marker other than 1 does not refuse" $? 0
+assert_eq "...and nothing reached ssh, scp or rsync" "$(wc -l < "$HH_FAKE_LOG")" "$n"
+HH_AWAY_BYPASS=0 sync check testhost --min-gb 0 --plugin-version 0.1.0 >/dev/null 2>&1; assert_status "a marker other than 1 does not refuse" $? 0
 cd /; t_teardown; t_done

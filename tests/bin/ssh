@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
 # Stand-in for ssh in tests: no network, ever. The "remote" is this machine; the host name is only checked, never resolved.
 # It runs the remote command under bash -c with hivehouse's own bin/ removed from PATH, so only an absolute path to an
-# hm-* executable can work there (A6). HM_FAKE_SSH=down makes it unreachable (exit 255). HM_FAKE_LOG, when set, records
+# hh-* executable can work there (A6). HH_FAKE_SSH=down makes it unreachable (exit 255). HH_FAKE_LOG, when set, records
 # every call (the command only: file contents travel on stdin and are never logged).
 here="$(cd "$(dirname "$0")" && pwd -P)"; repo_bin="$(cd "$here/../../bin" && pwd -P)"
-[ "${HM_FAKE_SSH:-up}" = down ] && exit 255
+[ "${HH_FAKE_SSH:-up}" = down ] && exit 255
 while [ $# -gt 0 ]; do case "$1" in -o|-p|-i) shift 2 ;; --) shift; break ;; -*) shift ;; *) break ;; esac; done
 host="${1:-}"; shift || true
 [ "$host" = testhost ] || { echo "fake ssh: refusing host '$host' (only testhost exists here)" >&2; exit 255; }
-[ -z "${HM_FAKE_BLANK_PWD:-}" ] || case "$*" in *"pwd -P"*) exit 0 ;; esac   # HM_FAKE_BLANK_PWD: a remote that answers nothing to a path resolution
-[ -z "${HM_FAKE_DOWN_ON:-}" ] || case "$*" in *"$HM_FAKE_DOWN_ON"*) exit 255 ;; esac   # HM_FAKE_DOWN_ON: the host drops only a command containing this text
-[ -z "${HM_FAKE_LOG:-}" ] || printf 'ssh: %s\n' "$*" >> "$HM_FAKE_LOG"
+[ -z "${HH_FAKE_BLANK_PWD:-}" ] || case "$*" in *"pwd -P"*) exit 0 ;; esac   # HH_FAKE_BLANK_PWD: a remote that answers nothing to a path resolution
+[ -z "${HH_FAKE_DOWN_ON:-}" ] || case "$*" in *"$HH_FAKE_DOWN_ON"*) exit 255 ;; esac   # HH_FAKE_DOWN_ON: the host drops only a command containing this text
+[ -z "${HH_FAKE_LOG:-}" ] || printf 'ssh: %s\n' "$*" >> "$HH_FAKE_LOG"
 newpath=""; IFS=:; for d in $PATH; do [ "$(cd "$d" 2>/dev/null && pwd -P)" = "$repo_bin" ] || newpath="$newpath:$d"; done; unset IFS
-umask "${HM_FAKE_REMOTE_UMASK:-022}"
+umask "${HH_FAKE_REMOTE_UMASK:-022}"
 PATH="${newpath#:}" exec bash -c "$*"

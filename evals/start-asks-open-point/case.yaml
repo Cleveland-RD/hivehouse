@@ -8,14 +8,14 @@ graders:
   - name: question-marked
     type: regex
     target: trace
-    pattern: '(?:"text":"|\\n)HM-CLARIFY:'
-  # A spawn is hm-spawn run as a command: at the start, after a separator, a backtick, `{` or the start of a `-c` string,
+    pattern: '(?:"text":"|\\n)HH-CLARIFY:'
+  # A spawn is hh-spawn run as a command: at the start, after a separator, a backtick, `{` or the start of a `-c` string,
   # behind assignments or env, timeout, nohup, exec, sudo or xargs, any path before it. Never `--self`, which registers
-  # the calling session, nor a mention such as `command -v hm-spawn`. tests/test_evals.sh pins both lists.
+  # the calling session, nor a mention such as `command -v hh-spawn`. tests/test_evals.sh pins both lists.
   - name: nothing-spawned
     type: tool_used
     tool: Bash
-    input_match: '"command"\s*:\s*"(?:(?:[^"\\]|\\.)*?(?:&&|\|\||[;|(&{`]|\\n|-c\s+(?:\\"|'')))?\s*(?:(?:[A-Za-z_]\w*=(?:[^\s"\\]|\\.)*|env|nohup|exec|sudo|xargs|timeout(?:\s+-\S+)*\s+\S+|-\S+)\s+)*(?:[^\s"\\;&|`]*/)?hm-spawn(?![\w-])(?!(?:[^"\\;&|]|\\.)*--self)'
+    input_match: '"command"\s*:\s*"(?:(?:[^"\\]|\\.)*?(?:&&|\|\||[;|(&{`]|\\n|-c\s+(?:\\"|'')))?\s*(?:(?:[A-Za-z_]\w*=(?:[^\s"\\]|\\.)*|env|nohup|exec|sudo|xargs|timeout(?:\s+-\S+)*\s+\S+|-\S+)\s+)*(?:[^\s"\\;&|`]*/)?hh-spawn(?![\w-])(?!(?:[^"\\;&|]|\\.)*--self)'
     min: 0
     max: 0
     arm: both

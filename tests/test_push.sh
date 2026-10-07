@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# hm-push, against a local bare repository registered as the only remote. No network, no origin.
+# hh-push, against a local bare repository registered as the only remote. No network, no origin.
 . "$(dirname "$0")/lib.sh"
 t_setup
 r=$(t_repo proj); cd "$r"
@@ -10,7 +10,7 @@ h1=$(git rev-parse HEAD)
 echo two > two; git add two; git -c user.email=t@t -c user.name=t commit -qm two; h2=$(git rev-parse HEAD)
 echo three > three; git add three; git -c user.email=t@t -c user.name=t commit -qm three; h3=$(git rev-parse HEAD)
 tip() { git --git-dir="$bare" rev-parse --verify -q "refs/heads/$1" 2>/dev/null; }
-refused() { hm-push "$@" >"$T_TMP/out" 2>"$T_TMP/err"; local rc=$?; [ "$rc" -eq 4 ] && ok "refused: $LABEL" || bad "$LABEL: exit $rc, expected 4"; }
+refused() { hh-push "$@" >"$T_TMP/out" 2>"$T_TMP/err"; local rc=$?; [ "$rc" -eq 4 ] && ok "refused: $LABEL" || bad "$LABEL: exit $rc, expected 4"; }
 nothing_pushed() { [ -z "$(git --git-dir="$bare" for-each-ref refs/heads)" ] && ok "...and nothing reached the remote" || bad "something reached the remote after: $LABEL"; }
 
 LABEL="short hash"; refused up "${h1:0:12}" feat/x; nothing_pushed
@@ -31,16 +31,16 @@ cur=$(git rev-parse --abbrev-ref HEAD); git checkout -q -b prev-branch; git chec
 LABEL="@{-1}, which --branch would expand to another branch"; refused up "$h1" "@{-1}"
 LABEL="refs/heads/ prefixed twice"; refused up "$h1" "refs/heads/x:y"
 LABEL="a branch ending in .lock"; refused up "$h1" "feat/x.lock"
-hm-push up "$h1" >/dev/null 2>&1; assert_status "too few arguments is a usage error" $? 64
+hh-push up "$h1" >/dev/null 2>&1; assert_status "too few arguments is a usage error" $? 64
 
 # a good push lands, as a new branch and then as a fast-forward
-out=$(hm-push up "$h1" feat/x); assert_status "a new branch is pushed" $? 0
+out=$(hh-push up "$h1" feat/x); assert_status "a new branch is pushed" $? 0
 assert_eq "the remote branch equals the hash" "$(tip feat/x)" "$h1"
 assert_contains "the range is printed" "$out" "feat/x"
-out=$(hm-push up "$h3" feat/x); assert_status "a fast-forward is pushed" $? 0
+out=$(hh-push up "$h3" feat/x); assert_status "a fast-forward is pushed" $? 0
 assert_eq "the remote moved to the new hash" "$(tip feat/x)" "$h3"
 assert_contains "the pushed range is old..new" "$out" "${h1:0:7}..${h3:0:7}"
-out=$(hm-push up "$h3" feat/x); assert_status "pushing what is already there is fine" $? 0
+out=$(hh-push up "$h3" feat/x); assert_status "pushing what is already there is fine" $? 0
 assert_contains "...and says so" "$out" "up to date"
 assert_eq "...and changes nothing" "$(tip feat/x)" "$h3"
 # only the named branch moved, though a push refspec is configured for the remote
@@ -60,29 +60,29 @@ assert_eq "...the remote did not rewind" "$(tip feat/x)" "$h3"
 
 # an unreadable remote pushes nothing and says so (exit 5)
 git remote add gone "$T_TMP/does-not-exist.git"
-hm-push gone "$h1" feat/x >/dev/null 2>&1; assert_status "an unreadable remote is exit 5" $? 5
+hh-push gone "$h1" feat/x >/dev/null 2>&1; assert_status "an unreadable remote is exit 5" $? 5
 
 # the arguments reach it unchanged from zsh (the $h:r modifier trap): a braced refspec, and text shaped like one
 if command -v zsh >/dev/null 2>&1; then
-  zsh -c 'h=$(git rev-parse '"$h2"'); hm-push up "$h" feat/z' >/dev/null 2>&1; assert_status "from zsh -c with a computed hash" $? 0
+  zsh -c 'h=$(git rev-parse '"$h2"'); hh-push up "$h" feat/z' >/dev/null 2>&1; assert_status "from zsh -c with a computed hash" $? 0
   assert_eq "zsh pushed the right hash" "$(tip feat/z)" "$h2"
-  zsh -c 'h='"$h3"'; hm-push up "$h:refs/heads/q" feat/q' >/dev/null 2>&1; assert_status "a zsh-modified-looking hash is refused, not mangled into a push" $? 4
+  zsh -c 'h='"$h3"'; hh-push up "$h:refs/heads/q" feat/q' >/dev/null 2>&1; assert_status "a zsh-modified-looking hash is refused, not mangled into a push" $? 4
   [ -z "$(tip feat/q)" ] && ok "...and nothing landed" || bad "feat/q landed"
 else ok "zsh not installed: zsh cases skipped"; fi
 # bash 3.2 and zsh both mangle an unbraced "$var:" followed by a letter in a double-quoted string
-if grep -nE '\$[A-Za-z_][A-Za-z0-9_]*:[A-Za-z]' "$HM_REPO_ROOT/bin/hm-push" >/dev/null; then bad "bin/hm-push has an unbraced \$var: in it"; else ok "no unbraced \$var: in bin/hm-push"; fi
-pushes=$(grep -E '^[^#]*git (-c [^ ]+ )*push' "$HM_REPO_ROOT/bin/hm-push")
-assert_eq "bin/hm-push has exactly one push, with no option but -q" "$(printf '%s\n' "$pushes" | wc -l | tr -d ' ')" "1"
+if grep -nE '\$[A-Za-z_][A-Za-z0-9_]*:[A-Za-z]' "$HH_REPO_ROOT/bin/hh-push" >/dev/null; then bad "bin/hh-push has an unbraced \$var: in it"; else ok "no unbraced \$var: in bin/hh-push"; fi
+pushes=$(grep -E '^[^#]*git (-c [^ ]+ )*push' "$HH_REPO_ROOT/bin/hh-push")
+assert_eq "bin/hh-push has exactly one push, with no option but -q" "$(printf '%s\n' "$pushes" | wc -l | tr -d ' ')" "1"
 case "$pushes" in *force*|*--mirror*|*--delete*|*" +"*|*" -f"*) bad "the push line carries a forcing option: $pushes" ;; *) ok "the push line carries no forcing option" ;; esac
 
-# the away marker: a second layer behind hm-away-hook, which is the guard (a Bash command can unset the variable for itself)
+# the away marker: a second layer behind hh-away-hook, which is the guard (a Bash command can unset the variable for itself)
 before=$(git --git-dir="$bare" for-each-ref refs/heads)
-HM_AWAY_BYPASS=1 hm-push up "$h1" away-blocked >"$T_TMP/out" 2>"$T_TMP/err"; assert_status "the away marker refuses a valid push" $? 4
+HH_AWAY_BYPASS=1 hh-push up "$h1" away-blocked >"$T_TMP/out" 2>"$T_TMP/err"; assert_status "the away marker refuses a valid push" $? 4
 assert_contains "...saying it is hivehouse's away mode" "$(cat "$T_TMP/err")" "away mode"
 assert_eq "...and nothing reached the remote" "$(git --git-dir="$bare" for-each-ref refs/heads)" "$before"
-HM_AWAY_BYPASS=1 hm-push >/dev/null 2>&1; assert_status "...even with no arguments" $? 4
-HM_AWAY_BYPASS=0 hm-push up "$h1" away-ok >/dev/null 2>&1; assert_status "a marker other than 1 does not refuse" $? 0
+HH_AWAY_BYPASS=1 hh-push >/dev/null 2>&1; assert_status "...even with no arguments" $? 4
+HH_AWAY_BYPASS=0 hh-push up "$h1" away-ok >/dev/null 2>&1; assert_status "a marker other than 1 does not refuse" $? 0
 
 # outside a repository: exit 2
-mkdir "$T_TMP/norepo"; (cd "$T_TMP/norepo" && hm-push up "$h1" feat/x >/dev/null 2>&1); assert_status "outside a repo" $? 2
+mkdir "$T_TMP/norepo"; (cd "$T_TMP/norepo" && hh-push up "$h1" feat/x >/dev/null 2>&1); assert_status "outside a repo" $? 2
 cd /; t_teardown; t_done

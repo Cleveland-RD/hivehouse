@@ -1,6 +1,6 @@
 ---
 description: A clear task in a project whose facts are all recorded is planned, and nothing is spawned before the owner approves the plan.
-expected_outcome: An HM-PLAN line with the team, then a stop to wait for approval; no hm-spawn call.
+expected_outcome: An HH-PLAN line with the team, then a stop to wait for approval; no hh-spawn call.
 runs: 3
 max_turns: 30
 timeout_seconds: 600

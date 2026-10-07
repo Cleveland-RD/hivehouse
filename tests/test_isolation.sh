@@ -14,7 +14,7 @@ before=$(snap)
 printf '#!/usr/bin/env bash\ntouch "%s/ran-foreign-plugin"\n[ -z "${ZZ_HOME:-}" ] || printf x >> "$ZZ_HOME/registry/pane.json"\n[ -z "${ZZ_PROJECT:-}" ] || printf x >> "$ZZ_PROJECT/team.json"\n' "$CAN" > "$F/bin/zz-spawn"
 # a tool in an ordinary PATH folder: the PATH filter leaves it, so only the environment can keep the caller's variables from it
 P="$T_TMP/plain/bin"; mkdir -p "$P"
-printf '#!/usr/bin/env bash\n[ -z "${ZZ_HOME:-}" ] || printf x >> "$ZZ_HOME/registry/pane.json"\n[ -z "${GIT_DIR:-}" ] || touch "%s/saw-git-dir"\n[ -z "${HM_PROJECT:-}" ] || touch "%s/saw-own-project"\n[ -z "${TMUX:-}" ] || touch "%s/saw-tmux"\necho reached\n' "$CAN" "$CAN" "$CAN" > "$P/zz-reg"
+printf '#!/usr/bin/env bash\n[ -z "${ZZ_HOME:-}" ] || printf x >> "$ZZ_HOME/registry/pane.json"\n[ -z "${GIT_DIR:-}" ] || touch "%s/saw-git-dir"\n[ -z "${HH_PROJECT:-}" ] || touch "%s/saw-own-project"\n[ -z "${TMUX:-}" ] || touch "%s/saw-tmux"\necho reached\n' "$CAN" "$CAN" "$CAN" > "$P/zz-reg"
 chmod +x "$F/bin/zz-spawn" "$P/zz-reg"
 # the probe: a test's own start (lib.sh, t_setup) inside the poisoned caller; the stand-in claude has the shape of the leaking one
 cat > "$T_TMP/probe.sh" <<'PROBE'
@@ -24,15 +24,15 @@ echo "foreign-tool: $(command -v zz-spawn || echo none)"
 echo "plain-tool: $(command -v zz-reg || echo none)"
 printf '#!/usr/bin/env bash\nzz-spawn "$@"; echo rc=$?\nzz-reg\n' > "$T_TMP/standin"
 echo "standin: $(bash "$T_TMP/standin" 2>&1 | tr '\n' ' ')"
-echo "vars: $(env | grep -cE '^(ZZ_|GIT_DIR=|TMUX=|HM_PROJECT=|HM_AGENT=)')"
+echo "vars: $(env | grep -cE '^(ZZ_|GIT_DIR=|TMUX=|HH_PROJECT=|HH_AGENT=)')"
 echo "home: $HOME"
 echo "path-head: ${PATH%%:*}"
 echo "own-bin: $(command -v $2)"
 echo "tools: $(command -v git jq tmux | wc -l | tr -d ' ')"
-echo "cleanup-switch: ${HM_CLEANUP_TEST:-unset}"
+echo "cleanup-switch: ${HH_CLEANUP_TEST:-unset}"
 PROBE
-out=$(env ZZ_HOME="$CAN/home" ZZ_PROJECT="$CAN/proj" ZZ_AGENT=orchestrator HM_PROJECT="$CAN/proj" HM_AGENT=orchestrator GIT_DIR="$CAN/proj/.git" TMUX=/tmp/zz,1,0 \
-  HM_CLEANUP_TEST=1 PATH="$F/bin:$P:$PATH" bash "$T_TMP/probe.sh" "$HM_REPO_ROOT" hm-hub 2>&1)
+out=$(env ZZ_HOME="$CAN/home" ZZ_PROJECT="$CAN/proj" ZZ_AGENT=orchestrator HH_PROJECT="$CAN/proj" HH_AGENT=orchestrator GIT_DIR="$CAN/proj/.git" TMUX=/tmp/zz,1,0 \
+  HH_CLEANUP_TEST=1 PATH="$F/bin:$P:$PATH" bash "$T_TMP/probe.sh" "$HH_REPO_ROOT" hh-hub 2>&1)
 field() { printf '%s\n' "$out" | sed -n "s/^$1: //p"; }
 assert_eq "the foreign plugin's tool is not on the suite's PATH" "$(field foreign-tool)" "none"
 assert_contains "...a stand-in claude that calls it finds nothing (127)" "$(field standin)" "rc=127"
@@ -43,8 +43,8 @@ assert_eq "the canary home and project are byte for byte as they were" "$(snap)"
 [ ! -e "$CAN/ran-foreign-plugin" ] && ok "the foreign tool never ran" || bad "the foreign tool ran"
 for m in saw-git-dir saw-own-project saw-tmux; do [ ! -e "$CAN/$m" ] && ok "the plain tool did not see $m" || bad "the plain tool saw $m"; done
 assert_eq "HOME is kept" "$(field home)" "$HOME"
-assert_eq "this repo's tests/bin stays first on PATH" "$(field path-head)" "$HM_REPO_ROOT/tests/bin"
-assert_eq "this repo's own tools are the ones found" "$(field own-bin)" "$HM_REPO_ROOT/bin/hm-hub"
+assert_eq "this repo's tests/bin stays first on PATH" "$(field path-head)" "$HH_REPO_ROOT/tests/bin"
+assert_eq "this repo's own tools are the ones found" "$(field own-bin)" "$HH_REPO_ROOT/bin/hh-hub"
 assert_eq "git, jq and tmux are still found" "$(field tools)" "3"
 assert_eq "the opt-in switch of the cleanup test is kept" "$(field cleanup-switch)" "1"
 t_done

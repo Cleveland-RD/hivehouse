@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # Read a gate's result and a range's commits; never run anything. Pre-approved for agents (A16): it takes no command.
-#   hm-gate-verify log <file> [--expect <name>,<name>...] [--commit <commit>]
+#   hh-gate-verify log <file> [--expect <name>,<name>...] [--commit <commit>]
 #     GREEN (<n> steps) only when the file has at least one `<name> exit <n>` line, every one is `exit 0`, no name has
-#     two, and every step the hm-gate header names, and every --expect name, has one. A log with no header (a project's
+#     two, and every step the hh-gate header names, and every --expect name, has one. A log with no header (a project's
 #     own gate script) needs --expect. With --commit, the header must name that commit and a clean tree: a log left from
 #     an earlier run, or a run on uncommitted changes, vouches for nothing. A gate that wrote no step line did not run,
-#     so it is red, not green. An hm-gate log read without --commit is GREEN with a note on stderr: it vouches for no commit.
-#   hm-gate-verify commits <base>..<tip> --max-files <n> --style conventional|free --attribution allow|deny [--no-body]
+#     so it is red, not green. An hh-gate log read without --commit is GREEN with a note on stderr: it vouches for no commit.
+#   hh-gate-verify commits <base>..<tip> --max-files <n> --style conventional|free --attribution allow|deny [--no-body]
 #     Every flag but --no-body is required, so nothing is loosened by leaving one out. Per commit: a subject, the
 #     conventional form when asked, at most <n> files against its first parent (for a merge, only the files where it
 #     differs from the merge git itself computes of its two parents, its own content, since the merged commits are each
@@ -14,36 +14,36 @@
 #     --no-body. An empty range is red: nothing checked is not a pass.
 # Exit: 0 green or ok, 1 red or a violation, 4 a refused range, 64 usage.
 set -u
-. "$(dirname "$0")/hm-lib.sh"
-STEP="^[${HM_STEP_NAME_CHARS}]+ exit [0-9]+\$"
-HEADER="^# hm-gate steps: ([,${HM_STEP_NAME_CHARS}]+) head=([0-9a-f]{40}|none) dirty=([01])\$"
-CONVENTIONAL="^(feat|fix|refactor|docs|style|test|chore|perf)(\\([${HM_LOWER}${HM_DIGITS}-]+\\))?: .+"
+. "$(dirname "$0")/hh-lib.sh"
+STEP="^[${HH_STEP_NAME_CHARS}]+ exit [0-9]+\$"
+HEADER="^# hh-gate steps: ([,${HH_STEP_NAME_CHARS}]+) head=([0-9a-f]{40}|none) dirty=([01])\$"
+CONVENTIONAL="^(feat|fix|refactor|docs|style|test|chore|perf)(\\([${HH_LOWER}${HH_DIGITS}-]+\\))?: .+"
 ATTRIBUTION='^[[:space:]]*(co-authored-by|claude-session)[[:space:]]*:|generated with \[?claude code'
 
 verify_log() {
-  local USAGE="usage: hm-gate-verify log <file> [--expect <name>,<name>...] [--commit <commit>]"
+  local USAGE="usage: hh-gate-verify log <file> [--expect <name>,<name>...] [--commit <commit>]"
   local file expect="" commit="" header="" hsteps="" hhead="" hdirty="" lines red missing="" twice reasons="" n sha
-  [ $# -ge 1 ] || hm_die 64 "$USAGE"
+  [ $# -ge 1 ] || hh_die 64 "$USAGE"
   file="$1"; shift
   while [ $# -gt 0 ]; do case "$1" in
-    --expect) [ -n "${2:-}" ] || hm_die 64 "$USAGE"; expect="$2"; shift 2 ;;
-    --commit) [ -n "${2:-}" ] || hm_die 64 "$USAGE"; commit="$2"; shift 2 ;;
-    *) hm_die 64 "$USAGE" ;; esac; done
-  case "$commit" in -*) hm_die 4 "a commit may not start with '-': $commit" ;; esac
+    --expect) [ -n "${2:-}" ] || hh_die 64 "$USAGE"; expect="$2"; shift 2 ;;
+    --commit) [ -n "${2:-}" ] || hh_die 64 "$USAGE"; commit="$2"; shift 2 ;;
+    *) hh_die 64 "$USAGE" ;; esac; done
+  case "$commit" in -*) hh_die 4 "a commit may not start with '-': $commit" ;; esac
   [ -s "$file" ] || { echo "RED: no gate log at $file"; exit 1; }
-  # hm-gate's header names every step it set out to run, so a gate stopped part way is red without --expect.
+  # hh-gate's header names every step it set out to run, so a gate stopped part way is red without --expect.
   header=$(head -1 "$file")
   if printf '%s\n' "$header" | grep -Eq "$HEADER"; then
     hsteps=$(printf '%s\n' "$header" | sed -E "s/$HEADER/\1/")
     hhead=$(printf '%s\n' "$header" | sed -E "s/$HEADER/\2/")
     hdirty=$(printf '%s\n' "$header" | sed -E "s/$HEADER/\3/")
   elif [ -z "$expect" ]; then
-    echo "RED: $file has no hm-gate header; name the steps it must hold with --expect"; exit 1
+    echo "RED: $file has no hh-gate header; name the steps it must hold with --expect"; exit 1
   fi
   local names=(); IFS=, read -r -a names <<< "${hsteps}${hsteps:+${expect:+,}}${expect}"   # split without globbing
   for n in ${names[@]+"${names[@]}"}; do
-    # hm-gate's own rule (hm_is_step_name), so an expected name can only be one a gate could have written
-    hm_is_step_name "$n" || hm_die 64 "an expected name is a step name ($HM_STEP_NAME_RULE): $n"
+    # hh-gate's own rule (hh_is_step_name), so an expected name can only be one a gate could have written
+    hh_is_step_name "$n" || hh_die 64 "an expected name is a step name ($HH_STEP_NAME_RULE): $n"
   done
   lines=$(grep -E "$STEP" "$file")
   [ -n "$lines" ] || { echo "RED: no steps in $file"; exit 1; }
@@ -53,8 +53,8 @@ verify_log() {
     printf '%s\n' "$lines" | grep -qE "^$(printf '%s' "$n" | sed 's/[.]/\\./g') exit [0-9]+$" || case " $missing " in *" $n "*) ;; *) missing="$missing $n" ;; esac
   done
   if [ -n "$commit" ]; then
-    sha=$(git rev-parse --verify --quiet --end-of-options "$commit^{commit}") || hm_die 4 "unknown commit: $commit"
-    if [ -z "$hhead" ]; then reasons="a log with no hm-gate header vouches for no commit"
+    sha=$(git rev-parse --verify --quiet --end-of-options "$commit^{commit}") || hh_die 4 "unknown commit: $commit"
+    if [ -z "$hhead" ]; then reasons="a log with no hh-gate header vouches for no commit"
     elif [ "$hhead" != "$sha" ]; then reasons="the gate ran on $hhead, not $sha"
     elif [ "$hdirty" = 1 ]; then reasons="the gate ran on a dirty tree, so it vouches for no commit"; fi
   fi
@@ -63,7 +63,7 @@ verify_log() {
     [ -n "$twice" ] && echo "twice: $twice"; [ -n "$reasons" ] && echo "$reasons"; exit 1
   fi
   echo "GREEN ($(printf '%s\n' "$lines" | wc -l | tr -d ' ') steps)"
-  # An hm-gate log read without --commit shows the steps passed, not which commit they ran on: said on stderr, so the
+  # An hh-gate log read without --commit shows the steps passed, not which commit they ran on: said on stderr, so the
   # verdict line stays the same
   if [ -z "$commit" ] && [ -n "$hhead" ]; then
     if [ "$hdirty" = 1 ]; then echo "note: this gate ran on a dirty tree (head $hhead), so it vouches for no commit; commit, gate the tip, and verify with --commit <tip>" >&2
@@ -72,21 +72,21 @@ verify_log() {
 }
 
 verify_commits() {
-  local USAGE="usage: hm-gate-verify commits <base>..<tip> --max-files <n> --style conventional|free --attribution allow|deny [--no-body]"
+  local USAGE="usage: hh-gate-verify commits <base>..<tip> --max-files <n> --style conventional|free --attribution allow|deny [--no-body]"
   local range="${1:-}" max="" style="" attribution="" nobody=0 base tip commits c msg subject body files bad=0 n=0
-  [ -n "$range" ] || hm_die 64 "$USAGE"
-  case "$range" in -*) hm_die 4 "a range may not start with '-': $range" ;; esac
+  [ -n "$range" ] || hh_die 64 "$USAGE"
+  case "$range" in -*) hh_die 4 "a range may not start with '-': $range" ;; esac
   shift
   while [ $# -gt 0 ]; do case "$1" in
     --max-files) max="${2:-}"; shift 2 ;; --style) style="${2:-}"; shift 2 ;;
     --attribution) attribution="${2:-}"; shift 2 ;; --no-body) nobody=1; shift ;;
-    *) hm_die 64 "$USAGE" ;; esac; done
-  printf '%s' "$max" | grep -Eq '^[1-9][0-9]*$' || hm_die 64 "$USAGE"
-  case "$style" in conventional|free) ;; *) hm_die 64 "$USAGE" ;; esac
-  case "$attribution" in allow|deny) ;; *) hm_die 64 "$USAGE" ;; esac
-  case "$range" in *...*|..*|*..) hm_die 64 "$USAGE" ;; *..*) ;; *) hm_die 64 "$USAGE" ;; esac
-  base=$(git rev-parse --verify --quiet --end-of-options "${range%%..*}^{commit}") || hm_die 4 "unknown base: ${range%%..*}"
-  tip=$(git rev-parse --verify --quiet --end-of-options "${range#*..}^{commit}") || hm_die 4 "unknown tip: ${range#*..}"
+    *) hh_die 64 "$USAGE" ;; esac; done
+  printf '%s' "$max" | grep -Eq '^[1-9][0-9]*$' || hh_die 64 "$USAGE"
+  case "$style" in conventional|free) ;; *) hh_die 64 "$USAGE" ;; esac
+  case "$attribution" in allow|deny) ;; *) hh_die 64 "$USAGE" ;; esac
+  case "$range" in *...*|..*|*..) hh_die 64 "$USAGE" ;; *..*) ;; *) hh_die 64 "$USAGE" ;; esac
+  base=$(git rev-parse --verify --quiet --end-of-options "${range%%..*}^{commit}") || hh_die 4 "unknown base: ${range%%..*}"
+  tip=$(git rev-parse --verify --quiet --end-of-options "${range#*..}^{commit}") || hh_die 4 "unknown tip: ${range#*..}"
   commits=$(git rev-list --reverse --end-of-options "$base..$tip") || exit 1
   [ -n "$commits" ] || { echo "RED: no commits in $range"; exit 1; }
   for c in $commits; do
@@ -130,5 +130,5 @@ verify_commits() {
 case "${1:-}" in
   log) shift; verify_log "$@" ;;
   commits) shift; verify_commits "$@" ;;
-  *) hm_die 64 "usage: hm-gate-verify log|commits ..." ;;
+  *) hh_die 64 "usage: hh-gate-verify log|commits ..." ;;
 esac

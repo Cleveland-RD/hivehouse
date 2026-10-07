@@ -28,7 +28,7 @@ these already). Take a fact from here as recorded, but still run its check below
 - The port is free, or a server already answers its health check (a plain read-only request).
 - `git status` is clean, or you know why it is not; the base branch exists.
 - `tmux -V` is 3.0 or later, and `jq` is installed.
-- Free disk is enough: the skill passes the owner's minimum, `hm-disk --min-gb <n>`.
+- Free disk is enough: the skill passes the owner's minimum, `hh-disk --min-gb <n>`.
 
 ## 4. Ask only about what is left
 
@@ -39,5 +39,5 @@ committed file never publishes them. Write nothing until the owner says OK.
 
 ## Markers
 
-Write `HM-CLARIFY:` on its own line before any clarifying question, and `HM-PLAN:` on its own line before the team plan.
+Write `HH-CLARIFY:` on its own line before any clarifying question, and `HH-PLAN:` on its own line before the team plan.
 They are distinct: the first asks, the second asks for approval of a plan.

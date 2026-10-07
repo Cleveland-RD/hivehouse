@@ -1,6 +1,6 @@
 ---
 description: A fully specified task in a project whose facts are all recorded gets no question, only the plan.
-expected_outcome: No HM-CLARIFY line; an HM-PLAN line; no hm-spawn call.
+expected_outcome: No HH-CLARIFY line; an HH-PLAN line; no hh-spawn call.
 runs: 3
 max_turns: 30
 timeout_seconds: 600

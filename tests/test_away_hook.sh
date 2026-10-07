@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
-# hm-away-hook: the PreToolUse hook of a session launched in bypass while the owner is away. It reads the launch marker and
+# hh-away-hook: the PreToolUse hook of a session launched in bypass while the owner is away. It reads the launch marker and
 # the launch env, never the Bash env; it matches by tokens and does not claim to be complete (A43).
 . "$(dirname "$0")/lib.sh"
-. "$HM_REPO_ROOT/bin/hm-lib.sh"
+. "$HH_REPO_ROOT/bin/hh-lib.sh"
 t_setup
 proj=$(t_repo proj); hub="$T_TMP/hub"; mkdir -p "$hub/$T_HUB" "$proj/$T_STATE"
 other=$(t_repo other); mkdir -p "$other/$T_STATE"
-# Stand-ins for Claude sessions: an interpreter running a script named claude (what hm_is_claude reads as one).
+# Stand-ins for Claude sessions: an interpreter running a script named claude (what hh_is_claude reads as one).
 mkdir -p "$T_TMP/cl"; printf '#!/usr/bin/env bash\nfor i in $(seq 120); do sleep 1; done\n' > "$T_TMP/cl/claude"
 SP=""; SS=""
 spawn() {  # spawn <session name or empty>: sets SP (pid) and SS (start time); records the session as Claude Code does
-  bash "$T_TMP/cl/claude" & SP=$!; t_track "$SP"; sleep 0.2; SS=$(hm_lstart "$SP")
+  bash "$T_TMP/cl/claude" & SP=$!; t_track "$SP"; sleep 0.2; SS=$(hh_lstart "$SP")
   mkdir -p "$CLAUDE_CONFIG_DIR/sessions"
   [ -z "$1" ] || jq -nc --argjson p "$SP" --arg n "$1" '{pid:$p,name:$n}' > "$CLAUDE_CONFIG_DIR/sessions/$SP.json"
 }
@@ -26,11 +26,11 @@ jq -nc --arg op "$OP" --arg os "$OS" --arg ip "$IP" --arg is "$IS" --arg sg "$SG
             {name:"implementer",pane_pid:$ip,pane_started:$is},
             {name:"reused",pane_pid:$sg,pane_started:"Mon Jan  1 00:00:00 2001"}]}' > "$proj/$T_STATE/team.json"
 jq -nc --arg op "$XP" --arg os "$XS" '{agents:[{name:"orchestrator",claude_pid:$op,claude_started:$os,name_full:"other-orchestrator",pane_pid:"1",pane_started:"x"}]}' > "$other/$T_STATE/team.json"
-HOOK="${HM_AWAY_HOOK_TEST:-$HM_REPO_ROOT/bin/hm-away-hook}"
+HOOK="${HH_AWAY_HOOK_TEST:-$HH_REPO_ROOT/bin/hh-away-hook}"
 ALLOW=""; ROLE=proj
 hook() {  # hook <json>: the hook as a marked session of $ROLE; sets RC and ERR
   local pr="$proj"; [ "$ROLE" != hub ] || pr="$hub"
-  ERR=$(printf '%s' "$1" | HM_AWAY_BYPASS=1 HM_PROJECT="$pr" HM_AWAY_HUB="$hub" HM_AWAY_MCP_ALLOW="$ALLOW" "$HOOK" 2>&1 >/dev/null); RC=$?
+  ERR=$(printf '%s' "$1" | HH_AWAY_BYPASS=1 HH_PROJECT="$pr" HH_AWAY_HUB="$hub" HH_AWAY_MCP_ALLOW="$ALLOW" "$HOOK" 2>&1 >/dev/null); RC=$?
 }
 tc() { jq -nc --arg c "$1" --arg d "$proj" '{tool_name:"Bash",cwd:$d,tool_input:{command:$c}}'; }
 denied()  { hook "$(tc "$2")"; [ "$RC" -eq 2 ] && [ -n "$ERR" ] && ok "$1" || bad "$1: exit $RC [$ERR]"; }
@@ -42,47 +42,47 @@ msg() { jq -nc --arg t "$1" '{tool_name:"SendMessage",cwd:"/",tool_input:{to:$t,
 fileop() { jq -nc --arg t "$1" --arg f "$2" --arg d "$proj" '{tool_name:$t,cwd:$d,tool_input:{file_path:$f,content:"x"}}'; }
 
 echo "-- no marker: exits 0 at once, whatever it is given"
-r=$(printf 'not json' | env -u HM_AWAY_BYPASS "$HOOK" 2>&1); assert_status "no marker, bad input" $? 0
+r=$(printf 'not json' | env -u HH_AWAY_BYPASS "$HOOK" 2>&1); assert_status "no marker, bad input" $? 0
 assert_eq "no marker, silent" "$r" ""
-printf '%s' "$(tc 'git push')" | env -u HM_AWAY_BYPASS "$HOOK" 2>&1; assert_status "no marker, git push" $? 0
-printf '%s' "$(tc 'git push')" | HM_AWAY_BYPASS=0 "$HOOK" 2>&1; assert_status "marker 0 is no marker" $? 0
-printf '%s' "$(tc 'git push')" | HM_AWAY_BYPASS= "$HOOK" 2>&1; assert_status "empty marker is no marker" $? 0
+printf '%s' "$(tc 'git push')" | env -u HH_AWAY_BYPASS "$HOOK" 2>&1; assert_status "no marker, git push" $? 0
+printf '%s' "$(tc 'git push')" | HH_AWAY_BYPASS=0 "$HOOK" 2>&1; assert_status "marker 0 is no marker" $? 0
+printf '%s' "$(tc 'git push')" | HH_AWAY_BYPASS= "$HOOK" 2>&1; assert_status "empty marker is no marker" $? 0
 
-head -c 400000 /dev/zero | env -u HM_AWAY_BYPASS "$HOOK"; assert_eq "S5 the fast path drains its input (the writer is not hit by SIGPIPE)" "${PIPESTATUS[0]}" 0
+head -c 400000 /dev/zero | env -u HH_AWAY_BYPASS "$HOOK"; assert_eq "S5 the fast path drains its input (the writer is not hit by SIGPIPE)" "${PIPESTATUS[0]}" 0
 echo "-- the hook ignores BASH_ENV and starts under bash -p, like the other executables"
-printf 'HM_AWAY_BYPASS=0\n' > "$T_TMP/benv.sh"
-r=$(printf '%s' "$(tc 'git push')" | BASH_ENV="$T_TMP/benv.sh" HM_AWAY_BYPASS=1 HM_PROJECT="$proj" HM_AWAY_HUB="$hub" HM_AWAY_MCP_ALLOW= "$HOOK" 2>&1 >/dev/null); assert_status "a BASH_ENV that unsets the marker does not turn the hook off" $? 2
+printf 'HH_AWAY_BYPASS=0\n' > "$T_TMP/benv.sh"
+r=$(printf '%s' "$(tc 'git push')" | BASH_ENV="$T_TMP/benv.sh" HH_AWAY_BYPASS=1 HH_PROJECT="$proj" HH_AWAY_HUB="$hub" HH_AWAY_MCP_ALLOW= "$HOOK" 2>&1 >/dev/null); assert_status "a BASH_ENV that unsets the marker does not turn the hook off" $? 2
 mkdir "$T_TMP/dn"; printf '#!/bin/sh\necho /nonexistent\n' > "$T_TMP/dn/dirname"; chmod +x "$T_TMP/dn/dirname"
-r=$(printf '%s' "$(tc 'ls')" | PATH="$T_TMP/dn:$PATH" HM_AWAY_BYPASS=1 HM_PROJECT="$proj" HM_AWAY_HUB="$hub" HM_AWAY_MCP_ALLOW= "$HOOK" 2>&1 >/dev/null); assert_status "a dirname first on PATH cannot move where the hook finds hm-lib.sh" $? 0
-assert_eq "the hook's first line is #!/bin/bash -p" "$(head -1 "$HM_REPO_ROOT/bin/hm-away-hook")" "#!/bin/bash -p"
+r=$(printf '%s' "$(tc 'ls')" | PATH="$T_TMP/dn:$PATH" HH_AWAY_BYPASS=1 HH_PROJECT="$proj" HH_AWAY_HUB="$hub" HH_AWAY_MCP_ALLOW= "$HOOK" 2>&1 >/dev/null); assert_status "a dirname first on PATH cannot move where the hook finds hh-lib.sh" $? 0
+assert_eq "the hook's first line is #!/bin/bash -p" "$(head -1 "$HH_REPO_ROOT/bin/hh-away-hook")" "#!/bin/bash -p"
 echo "-- fail closed (A9)"
 hook 'not json'; assert_status "marker, input not json" $RC 2
 hook '{"cwd":"/"}'; assert_status "marker, no tool name" $RC 2
 hook '{"tool_name":"Bash","tool_input":{}}'; assert_status "Bash with no command" $RC 2
 hook '{"tool_name":"Bash","tool_input":{"command":5}}'; assert_status "Bash with a non-string command" $RC 2
 hook '{"tool_name":"Read","cwd":"/","tool_input":{}}'; assert_status "a tool outside its matcher" $RC 2
-r=$(printf '%s' "$(tc ls)" | HM_AWAY_BYPASS=1 HM_PROJECT="$proj" HM_AWAY_MCP_ALLOW= "$HOOK" 2>&1); assert_status "no hub folder in the env" $? 2
-r=$(printf '%s' "$(tc ls)" | HM_AWAY_BYPASS=1 HM_PROJECT="$proj" HM_AWAY_HUB="$other" HM_AWAY_MCP_ALLOW= "$HOOK" 2>&1); assert_status "hub folder with no $T_HUB" $? 2
-r=$(printf '%s' "$(tc ls)" | HM_AWAY_BYPASS=1 HM_PROJECT="$proj" HM_AWAY_HUB="$T_TMP/none" HM_AWAY_MCP_ALLOW= "$HOOK" 2>&1); assert_status "hub folder that does not exist" $? 2
+r=$(printf '%s' "$(tc ls)" | HH_AWAY_BYPASS=1 HH_PROJECT="$proj" HH_AWAY_MCP_ALLOW= "$HOOK" 2>&1); assert_status "no hub folder in the env" $? 2
+r=$(printf '%s' "$(tc ls)" | HH_AWAY_BYPASS=1 HH_PROJECT="$proj" HH_AWAY_HUB="$other" HH_AWAY_MCP_ALLOW= "$HOOK" 2>&1); assert_status "hub folder with no $T_HUB" $? 2
+r=$(printf '%s' "$(tc ls)" | HH_AWAY_BYPASS=1 HH_PROJECT="$proj" HH_AWAY_HUB="$T_TMP/none" HH_AWAY_MCP_ALLOW= "$HOOK" 2>&1); assert_status "hub folder that does not exist" $? 2
 mkdir -p "$T_TMP/nojq"; for b in bash cat dirname basename ps sed tr grep sleep; do ln -sf "$(command -v $b)" "$T_TMP/nojq/$b"; done
 # a PATH without jq changes nothing (the hook fixes its own); what denies is no root-owned jq at the three fixed paths (tests/test_jq_fixed.sh has the rest)
-r=$(printf '%s' "$(tc ls)" | PATH="$T_TMP/nojq" HM_AWAY_BYPASS=1 HM_PROJECT="$proj" HM_AWAY_HUB="$hub" HM_AWAY_MCP_ALLOW= "$(command -v bash)" "$HOOK" 2>&1); assert_status "a PATH with no jq on it: the hook still finds the root-owned one" $? 0
+r=$(printf '%s' "$(tc ls)" | PATH="$T_TMP/nojq" HH_AWAY_BYPASS=1 HH_PROJECT="$proj" HH_AWAY_HUB="$hub" HH_AWAY_MCP_ALLOW= "$(command -v bash)" "$HOOK" 2>&1); assert_status "a PATH with no jq on it: the hook still finds the root-owned one" $? 0
 NJ=$(t_jq_bin nojqbin "/nonexistent/jq")
-r=$(printf '%s' "$(tc ls)" | HM_AWAY_BYPASS=1 HM_PROJECT="$proj" HM_AWAY_HUB="$hub" HM_AWAY_MCP_ALLOW= "$NJ/hm-away-hook" 2>&1); assert_status "jq missing" $? 2
+r=$(printf '%s' "$(tc ls)" | HH_AWAY_BYPASS=1 HH_PROJECT="$proj" HH_AWAY_HUB="$hub" HH_AWAY_MCP_ALLOW= "$NJ/hh-away-hook" 2>&1); assert_status "jq missing" $? 2
 assert_contains "jq missing says so" "$r" "jq"
-r=$(printf '%s' "$(fileop Write "$proj/a.ts")" | env -u HOME HM_AWAY_BYPASS=1 HM_PROJECT="$proj" HM_AWAY_HUB="$hub" HM_AWAY_MCP_ALLOW= "$HOOK" 2>&1 >/dev/null); rc=$?
+r=$(printf '%s' "$(fileop Write "$proj/a.ts")" | env -u HOME HH_AWAY_BYPASS=1 HH_PROJECT="$proj" HH_AWAY_HUB="$hub" HH_AWAY_MCP_ALLOW= "$HOOK" 2>&1 >/dev/null); rc=$?
 assert_status "an internal failure (no HOME) is a denial, not exit 1" $rc 2
-mkdir -p "$T_TMP/nolib"; cp "$HOOK" "$T_TMP/nolib/hm-away-hook"
-r=$(printf '%s' "$(tc ls)" | HM_AWAY_BYPASS=1 HM_PROJECT="$proj" HM_AWAY_HUB="$hub" HM_AWAY_MCP_ALLOW= "$T_TMP/nolib/hm-away-hook" 2>&1 >/dev/null); assert_status "a missing library is a denial" $? 2
+mkdir -p "$T_TMP/nolib"; cp "$HOOK" "$T_TMP/nolib/hh-away-hook"
+r=$(printf '%s' "$(tc ls)" | HH_AWAY_BYPASS=1 HH_PROJECT="$proj" HH_AWAY_HUB="$hub" HH_AWAY_MCP_ALLOW= "$T_TMP/nolib/hh-away-hook" 2>&1 >/dev/null); assert_status "a missing library is a denial" $? 2
 allowed "plain ls is allowed" "ls -la"
-for c in 'grep -rn vercel src' 'git commit -m "chore(vercel): bump"' 'grep -n ssh bin/hm-spawn' 'cat ssh_config' 'echo netlify scp' 'git log --grep=ssh'; do allowed "S1 a word that is not the command: $c" "$c"; done
-for c in 'sh -c "ssh host"' 'xargs scp a' 'hm-slot run x -- ssh h' 'echo a | ssh h' 'FOO=1 vercel' 'nohup netlify deploy' 'true && scp a h:b' 'bash -c "vercel --prod"'; do denied "S1 the command position: $c" "$c"; done
+for c in 'grep -rn vercel src' 'git commit -m "chore(vercel): bump"' 'grep -n ssh bin/hh-spawn' 'cat ssh_config' 'echo netlify scp' 'git log --grep=ssh'; do allowed "S1 a word that is not the command: $c" "$c"; done
+for c in 'sh -c "ssh host"' 'xargs scp a' 'hh-slot run x -- ssh h' 'echo a | ssh h' 'FOO=1 vercel' 'nohup netlify deploy' 'true && scp a h:b' 'bash -c "vercel --prod"'; do denied "S1 the command position: $c" "$c"; done
 allowed "S4 setup check: ls with the project set" "ls"
 
 for pr in "" unset; do
-  if [ "$pr" = unset ]; then r=$(printf '%s' "$(tc ls)" | env -u HM_PROJECT HM_AWAY_BYPASS=1 HM_AWAY_HUB="$hub" HM_AWAY_MCP_ALLOW= "$HOOK" 2>&1)
-  else r=$(printf '%s' "$(tc ls)" | HM_AWAY_BYPASS=1 HM_PROJECT= HM_AWAY_HUB="$hub" HM_AWAY_MCP_ALLOW= "$HOOK" 2>&1); fi
-  assert_status "S4 a marked session with HM_PROJECT '${pr:-empty}' is refused" $? 2
+  if [ "$pr" = unset ]; then r=$(printf '%s' "$(tc ls)" | env -u HH_PROJECT HH_AWAY_BYPASS=1 HH_AWAY_HUB="$hub" HH_AWAY_MCP_ALLOW= "$HOOK" 2>&1)
+  else r=$(printf '%s' "$(tc ls)" | HH_AWAY_BYPASS=1 HH_PROJECT= HH_AWAY_HUB="$hub" HH_AWAY_MCP_ALLOW= "$HOOK" 2>&1); fi
+  assert_status "S4 a marked session with HH_PROJECT '${pr:-empty}' is refused" $? 2
 done
 echo "-- git push (A22, A32, A38)"
 for c in 'git push' 'git push origin main' 'git -C /tmp/x push' 'git push origin HEAD:main' 'git push +main' 'git push :main' 'git push --delete origin x' \
@@ -93,22 +93,22 @@ for c in 'git push' 'git push origin main' 'git -C /tmp/x push' 'git push origin
 done
 printf '%s' "$ERR" | grep -q . && assert_contains "the refusal says why" "$ERR" "git push"
 echo "-- git and push words that are not the pair"
-allowed "git add bin/hm-push" 'git add bin/hm-push'
+allowed "git add bin/hh-push" 'git add bin/hh-push'
 allowed "git diff -- tests/test_push.sh" 'git diff -- tests/test_push.sh'
 allowed "git status" 'git status'
 allowed "git commit without push" 'git commit -m "feat: add the thing"'
 allowed "bash tests/run.sh test_push.sh" 'bash tests/run.sh test_push.sh'
-allowed "cat bin/hm-push" 'cat bin/hm-push'
+allowed "cat bin/hh-push" 'cat bin/hh-push'
 
-echo "-- hm-push and hm-remote-sync (A32, A38)"
-for c in 'hm-push origin abc main' 'bin/hm-push origin abc main' './bin/hm-push x' "''hm-push x" 'hm-""push x' 'FOO=1 hm-push x' 'env hm-push x' 'nohup hm-push x' 'bash -c "hm-push x"' \
-  'xargs hm-push' 'true; hm-push x' 'echo a && bin/hm-push x' 'xargs -n1 hm-push' 'timeout 5 hm-push x' 'sudo -n hm-push x' 'hm-slot run push -- hm-push origin a b' 'hm-remote-sync status' 'time hm-push x'; do
-  denied "hm-push form: $c" "$c"
+echo "-- hh-push and hh-remote-sync (A32, A38)"
+for c in 'hh-push origin abc main' 'bin/hh-push origin abc main' './bin/hh-push x' "''hh-push x" 'hh-""push x' 'FOO=1 hh-push x' 'env hh-push x' 'nohup hh-push x' 'bash -c "hh-push x"' \
+  'xargs hh-push' 'true; hh-push x' 'echo a && bin/hh-push x' 'xargs -n1 hh-push' 'timeout 5 hh-push x' 'sudo -n hh-push x' 'hh-slot run push -- hh-push origin a b' 'hh-remote-sync status' 'time hh-push x'; do
+  denied "hh-push form: $c" "$c"
 done
-allowed "hm-push as an argument of git add" 'git add bin/hm-push'
-allowed "hm-push inside a commit message" 'git commit -m "docs: about hm-push"'
-allowed "the team's own hm-slot traffic" 'hm-slot run gate -- hm-gate'
-allowed "hm-gate-verify" 'hm-gate-verify log /tmp/x.log --commit abc'
+allowed "hh-push as an argument of git add" 'git add bin/hh-push'
+allowed "hh-push inside a commit message" 'git commit -m "docs: about hh-push"'
+allowed "the team's own hh-slot traffic" 'hh-slot run gate -- hh-gate'
+allowed "hh-gate-verify" 'hh-gate-verify log /tmp/x.log --commit abc'
 
 echo "-- gh (A21)"
 for c in 'gh pr create' 'gh pr merge 3' 'gh api repos/x/y' 'gh issue create' 'gh release create v1' 'gh pr view 3 && gh pr merge 3' 'sh -c "gh pr merge"'; do denied "gh form: $c" "$c"; done
@@ -125,10 +125,10 @@ for c in 'curl http://localhost:3000' 'curl -X GET http://x' 'curl -s -o /dev/nu
 echo "-- the way out of the marker (A52)"
 for c in 'claude' 'claude --permission-mode bypassPermissions' '/usr/local/bin/claude -p hi' 'env X=1 claude' 'nohup claude &' 'bash -c "claude"' \
   'tmux new-window claude' 'tmux split-window -h' 'tmux new-session -d' 'tmux respawn-pane -k' 'tmux respawn-window' 'tmux neww' 'tmux -S /x new-window'; do denied "way out: $c" "$c"; done
-for c in 'tmux run-shell "claude x"' 'tmux run x' 'tmux if-shell true x' 'tmux if x' 'tmux display-popup' 'tmux popup' 'tmux pipe-pane x' 'tmux pipep x' 'tmux source-file x' 'tmux source x' 'tmux send-keys -t %0 "hm-push x" Enter' 'tmux send x'; do denied "S2 tmux way out: $c" "$c"; done
+for c in 'tmux run-shell "claude x"' 'tmux run x' 'tmux if-shell true x' 'tmux if x' 'tmux display-popup' 'tmux popup' 'tmux pipe-pane x' 'tmux pipep x' 'tmux source-file x' 'tmux source x' 'tmux send-keys -t %0 "hh-push x" Enter' 'tmux send x'; do denied "S2 tmux way out: $c" "$c"; done
 allowed "tmux list-panes" 'tmux list-panes -a'
 allowed "which claude" 'which claude'
-allowed "hm-spawn" 'hm-spawn --agent x --role implementer'
+allowed "hh-spawn" 'hh-spawn --agent x --role implementer'
 
 echo "-- protected files, by Bash (A52, A57, A61)"
 CD="$CLAUDE_CONFIG_DIR"
@@ -173,7 +173,7 @@ tool_denied "S3 Write through a link loop" "$(fileop Write "$T_TMP/loop1")"
 tool_allowed "S3 Write through a link to a harmless file" "$(fileop Write "$T_TMP/lnk-harmless")"
 tool_denied "Write through a link to the config dir" "$(fileop Write "$T_TMP/linkdir/settings.json")"
 mkdir -p "$proj/pl/bin"; PROOT="$proj/pl"
-ERR=$(printf '%s' "$(fileop Write "$PROOT/bin/x")" | HM_AWAY_BYPASS=1 HM_PROJECT="$proj" HM_AWAY_HUB="$hub" HM_AWAY_MCP_ALLOW= CLAUDE_PLUGIN_ROOT="$PROOT" "$HOOK" 2>&1 >/dev/null); [ $? -eq 2 ] && ok "Write into the plugin's own folder" || bad "plugin root write allowed"
+ERR=$(printf '%s' "$(fileop Write "$PROOT/bin/x")" | HH_AWAY_BYPASS=1 HH_PROJECT="$proj" HH_AWAY_HUB="$hub" HH_AWAY_MCP_ALLOW= CLAUDE_PLUGIN_ROOT="$PROOT" "$HOOK" 2>&1 >/dev/null); [ $? -eq 2 ] && ok "Write into the plugin's own folder" || bad "plugin root write allowed"
 tool_allowed "Write to an ordinary project file" "$(fileop Write "$proj/src/a.ts")"
 tool_allowed "Edit of an ordinary file" "$(fileop Edit "$proj/README")"
 tool_allowed "Write to memory" "$(fileop Write "$CD/projects/p/memory/n.md")"
@@ -214,7 +214,7 @@ ROLE=proj
 hook "$(fileop Write "$HR/hub.json")"; assert_contains "the refusal for the hub's records says so" "$ERR" "hub's records"
 hook "$(fileop Write "$proj/$T_STATE/team.json")"; assert_contains "the refusal for a team.json says so" "$ERR" "team.json"
 hook "$(fileop Write "$CD/settings.json")"; assert_contains "the refusal for settings still says so" "$ERR" "settings"
-r=$(printf '%s' "$(fileop Write "$HR/hub.json")" | HM_AWAY_BYPASS=1 HM_PROJECT="$T_TMP/no-such-project" HM_AWAY_HUB="$hub" HM_AWAY_MCP_ALLOW= "$HOOK" 2>&1 >/dev/null); assert_status "a session whose project folder cannot be read is not the hub: hub.json is refused" $? 2
+r=$(printf '%s' "$(fileop Write "$HR/hub.json")" | HH_AWAY_BYPASS=1 HH_PROJECT="$T_TMP/no-such-project" HH_AWAY_HUB="$hub" HH_AWAY_MCP_ALLOW= "$HOOK" 2>&1 >/dev/null); assert_status "a session whose project folder cannot be read is not the hub: hub.json is refused" $? 2
 ROLE=hub
 tool_allowed "the hub's Write to its own memory" "$(fileop Write "$HR/memory/n.md")"
 tool_allowed "the hub's Write to its own records, as before" "$(fileop Write "$HR/decisions/x.md")"
@@ -243,8 +243,8 @@ tool_denied "S6 Agent with remote isolation" '{"tool_name":"Agent","cwd":"/","to
 tool_allowed "S6 Agent without isolation" '{"tool_name":"Agent","cwd":"/","tool_input":{"prompt":"x"}}'
 tool_allowed "S6 Agent in a worktree" '{"tool_name":"Agent","cwd":"/","tool_input":{"prompt":"x","isolation":"worktree"}}'
 tool_denied "S6 Agent with an unreadable input" '{"tool_name":"Agent","cwd":"/","tool_input":{"isolation":5}}'
-unset HM_AWAY_MCP_ALLOW
-ERR=$(printf '%s' "$(mcp mcp__x__y)" | HM_AWAY_BYPASS=1 HM_PROJECT="$proj" HM_AWAY_HUB="$hub" "$HOOK" 2>&1 >/dev/null); assert_status "an unset allowlist allows nothing" $? 2
+unset HH_AWAY_MCP_ALLOW
+ERR=$(printf '%s' "$(mcp mcp__x__y)" | HH_AWAY_BYPASS=1 HH_PROJECT="$proj" HH_AWAY_HUB="$hub" "$HOOK" 2>&1 >/dev/null); assert_status "an unset allowlist allows nothing" $? 2
 
 echo "-- SendMessage (A50, A55, A60)"
 ROLE=proj
@@ -298,14 +298,14 @@ tool_allowed "hub to another listed project's orchestrator" "$(msg other-orchest
 tool_allowed "hub to an orchestrator by uds" "$(msg "uds:/tmp/cc-socks/$OP.sock")"
 # the root-owned jq may sit at a path the hook's fixed PATH does not hold (/usr/local/bin, /opt/homebrew/bin): the library functions the hook
 # calls then use that jq, not a bare one. Here the fixed PATH holds every program of /bin and /usr/bin except jq, and jq is reached by path alone.
-REALJQ=""; for c in /usr/bin/jq /usr/local/bin/jq /opt/homebrew/bin/jq; do hm_path_trusted "$c" file 0 loose && REALJQ=$c && break; done
+REALJQ=""; for c in /usr/bin/jq /usr/local/bin/jq /opt/homebrew/bin/jq; do hh_path_trusted "$c" file 0 loose && REALJQ=$c && break; done
 if [ -n "$REALJQ" ]; then
   NP="$T_TMP/nojq-path"; mkdir -p "$NP"; for f in /bin/* /usr/bin/*; do [ -x "$f" ] && [ "${f##*/}" != jq ] && ln -sf "$f" "$NP/${f##*/}" 2>/dev/null; done
   NJ=$(t_jq_bin nojq "$REALJQ")
-  [ "$(grep -c '^PATH=/usr/bin:/bin:/usr/sbin:/sbin   # first of all' "$NJ/hm-away-hook")" = 1 ] && ok "the hook's PATH line is found once" || bad "the hook's PATH line did not match once"
-  sed -i '' "s|^PATH=/usr/bin:/bin:/usr/sbin:/sbin   # first of all|PATH='$NP'   # first of all|" "$NJ/hm-away-hook"
+  [ "$(grep -c '^PATH=/usr/bin:/bin:/usr/sbin:/sbin   # first of all' "$NJ/hh-away-hook")" = 1 ] && ok "the hook's PATH line is found once" || bad "the hook's PATH line did not match once"
+  sed -i '' "s|^PATH=/usr/bin:/bin:/usr/sbin:/sbin   # first of all|PATH='$NP'   # first of all|" "$NJ/hh-away-hook"
   [ -z "$(env -i PATH="$NP" /bin/sh -c 'command -v jq')" ] && ok "...and the fixed PATH of this fixture holds no jq" || bad "the fixture PATH holds a jq"
-  SAVE_HOOK="$HOOK"; HOOK="$NJ/hm-away-hook"
+  SAVE_HOOK="$HOOK"; HOOK="$NJ/hh-away-hook"
   tool_allowed "hub to a project's orchestrator with the root-owned jq off the fixed PATH" "$(msg proj-orchestrator)"
   tool_allowed "hub to an orchestrator by uds, the same" "$(msg "uds:/tmp/cc-socks/$OP.sock")"
   ROLE=proj; tool_allowed "an agent to its own orchestrator, the same" "$(msg proj-orchestrator)"; ROLE=hub
@@ -315,8 +315,8 @@ else echo "  SKIP no root-owned jq on this machine"; fi
 tool_denied "hub to a project's agent" "$(msg proj-implementer)"
 tool_denied "hub to a stranger" "$(msg stranger)"
 tool_denied "hub to a bridge address" "$(msg bridge:x)"
-r=$(printf '%s' "$(msg proj-orchestrator)" | HM_AWAY_BYPASS=1 HM_PROJECT="$hub" HM_AWAY_HUB="$hub" HM_AWAY_MCP_ALLOW= "$HOOK" 2>&1 >/dev/null); assert_status "HM_PROJECT equal to the hub's folder is the hub" $? 0
-r=$(printf '%s' "$(msg proj-implementer)" | HM_AWAY_BYPASS=1 HM_PROJECT="$hub" HM_AWAY_HUB="$hub" HM_AWAY_MCP_ALLOW= "$HOOK" 2>&1 >/dev/null); assert_status "...and has no agents to message" $? 2
+r=$(printf '%s' "$(msg proj-orchestrator)" | HH_AWAY_BYPASS=1 HH_PROJECT="$hub" HH_AWAY_HUB="$hub" HH_AWAY_MCP_ALLOW= "$HOOK" 2>&1 >/dev/null); assert_status "HH_PROJECT equal to the hub's folder is the hub" $? 0
+r=$(printf '%s' "$(msg proj-implementer)" | HH_AWAY_BYPASS=1 HH_PROJECT="$hub" HH_AWAY_HUB="$hub" HH_AWAY_MCP_ALLOW= "$HOOK" 2>&1 >/dev/null); assert_status "...and has no agents to message" $? 2
 # a team registered in a worktree of a listed home: the hub can message its orchestrator, and only that
 wtp="$T_TMP/proj-wt"; git -C "$proj" worktree add -q "$wtp" -b wtteam; wtp=$(cd "$wtp" && pwd -P); mkdir -p "$wtp/$T_STATE"
 spawn wt-orchestrator; WP=$SP; WS=$SS
@@ -335,21 +335,21 @@ ROLE=proj
 tool_denied "an agent of the project does not reach the worktree team's orchestrator" "$(msg wt-orchestrator)"
 ROLE=hub
 echo "-- a project that is not readable"
-r=$(printf '%s' "$(msg hub1)" | HM_AWAY_BYPASS=1 HM_PROJECT="$hub/" HM_AWAY_HUB="$hub" HM_AWAY_MCP_ALLOW= "$HOOK" 2>&1 >/dev/null); assert_status "the hub's own folder written with a trailing slash is still the hub" $? 0
-r=$(printf '%s' "$(msg main)" | HM_AWAY_BYPASS=1 HM_PROJECT="$T_TMP/gone" HM_AWAY_HUB="$hub" HM_AWAY_MCP_ALLOW= "$HOOK" 2>&1 >/dev/null); assert_status "main still passes, the check is by target" $? 0
-r=$(printf '%s' "$(msg proj-orchestrator)" | HM_AWAY_BYPASS=1 HM_PROJECT="$T_TMP/gone" HM_AWAY_HUB="$hub" HM_AWAY_MCP_ALLOW= "$HOOK" 2>&1 >/dev/null); assert_status "an unreadable HM_PROJECT denies a named target" $? 2
+r=$(printf '%s' "$(msg hub1)" | HH_AWAY_BYPASS=1 HH_PROJECT="$hub/" HH_AWAY_HUB="$hub" HH_AWAY_MCP_ALLOW= "$HOOK" 2>&1 >/dev/null); assert_status "the hub's own folder written with a trailing slash is still the hub" $? 0
+r=$(printf '%s' "$(msg main)" | HH_AWAY_BYPASS=1 HH_PROJECT="$T_TMP/gone" HH_AWAY_HUB="$hub" HH_AWAY_MCP_ALLOW= "$HOOK" 2>&1 >/dev/null); assert_status "main still passes, the check is by target" $? 0
+r=$(printf '%s' "$(msg proj-orchestrator)" | HH_AWAY_BYPASS=1 HH_PROJECT="$T_TMP/gone" HH_AWAY_HUB="$hub" HH_AWAY_MCP_ALLOW= "$HOOK" 2>&1 >/dev/null); assert_status "an unreadable HH_PROJECT denies a named target" $? 2
 
 echo "-- the env the Bash tool sees does not matter"
-r=$(printf '%s' "$(tc 'git push')" | HM_AWAY_BYPASS=1 HM_PROJECT="$other" HM_AWAY_HUB="$hub" HM_AWAY_MCP_ALLOW= "$HOOK" 2>&1 >/dev/null); assert_status "any project in the env: still refused" $? 2
+r=$(printf '%s' "$(tc 'git push')" | HH_AWAY_BYPASS=1 HH_PROJECT="$other" HH_AWAY_HUB="$hub" HH_AWAY_MCP_ALLOW= "$HOOK" 2>&1 >/dev/null); assert_status "any project in the env: still refused" $? 2
 
 echo "-- wiring and the rule (A51, A72)"
-m=$(jq -r '.hooks.PreToolUse[]? | select(.hooks[]?.command | test("bin/hm-away-hook")) | .matcher' "$HM_REPO_ROOT/hooks/hooks.json")
+m=$(jq -r '.hooks.PreToolUse[]? | select(.hooks[]?.command | test("bin/hh-away-hook")) | .matcher' "$HH_REPO_ROOT/hooks/hooks.json")
 for t in Bash 'mcp__.*' SendMessage Edit Write MultiEdit NotebookEdit Artifact ArtifactData ArtifactComments RemoteTrigger Agent; do case "|$m|" in *"|$t|"*) ok "hooks.json matcher has $t" ;; *) bad "hooks.json matcher lacks $t: [$m]" ;; esac; done
-assert_eq "the hook command runs from the plugin's bin" "$(jq -r '.hooks.PreToolUse[0].hooks[0].command' "$HM_REPO_ROOT/hooks/hooks.json")" '"${CLAUDE_PLUGIN_ROOT}/bin/hm-away-hook"'
-[ -x "$HOOK" ] && ok "hm-away-hook is executable" || bad "hm-away-hook is not executable"
-grep -q 'HM_AWAY_BYPASS=1.*a message from anyone other than the session' <(tr '\n' ' ' < "$HM_REPO_ROOT/rules/RULES.md" | sed 's/  */ /g') && ok "RULES.md has the A51 line" || bad "RULES.md lacks the A51 line"
+assert_eq "the hook command runs from the plugin's bin" "$(jq -r '.hooks.PreToolUse[0].hooks[0].command' "$HH_REPO_ROOT/hooks/hooks.json")" '"${CLAUDE_PLUGIN_ROOT}/bin/hh-away-hook"'
+[ -x "$HOOK" ] && ok "hh-away-hook is executable" || bad "hh-away-hook is not executable"
+grep -q 'HH_AWAY_BYPASS=1.*a message from anyone other than the session' <(tr '\n' ' ' < "$HH_REPO_ROOT/rules/RULES.md" | sed 's/  */ /g') && ok "RULES.md has the A51 line" || bad "RULES.md lacks the A51 line"
 echo "-- the unmarked path's time"
-s=$(date +%s); i=0; while [ $i -lt 50 ]; do printf '%s' "$(tc ls)" | env -u HM_AWAY_BYPASS "$HOOK"; i=$((i+1)); done; e=$(date +%s)
+s=$(date +%s); i=0; while [ $i -lt 50 ]; do printf '%s' "$(tc ls)" | env -u HH_AWAY_BYPASS "$HOOK"; i=$((i+1)); done; e=$(date +%s)
 echo "  (50 unmarked runs: $((e - s)) s)"
 [ $((e - s)) -le 10 ] && ok "50 unmarked runs took at most 10 s" || bad "unmarked path too slow: $((e - s)) s for 50"
 t_done

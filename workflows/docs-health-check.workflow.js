@@ -113,7 +113,7 @@ const mode = (A.mode === 'apply') ? 'apply' : 'report'
 const firstRepo = groups[0].repos[0].replace(/\/+$/, '')
 const reportPath = A.reportPath || `${firstRepo}/.hivehouse/reports/docs-health-report-<date>.md`
 const reportInState = !A.reportPath
-// the line hm_ensure_state writes (bin/hm-lib.sh), the same one and only when absent
+// the line hh_ensure_state writes (bin/hh-lib.sh), the same one and only when absent
 const IGNORE_STATE = `Before writing the report, make sure git ignores .hivehouse/ in ${firstRepo}: run \`git -C ${firstRepo} ls-files -- .hivehouse\`; if it prints anything, those files are tracked, so do not write under .hivehouse/ at all: write the report OUTSIDE every repository, to \`\${TMPDIR:-/tmp}/docs-health-report-<date>.md\` (resolve $TMPDIR with Bash), and say so in the reportPath you return and in the summary. Otherwise run \`common=$(git -C ${firstRepo} rev-parse --path-format=absolute --git-common-dir)\`, then \`mkdir -p "$common/info"\`, \`touch "$common/info/exclude"\` and \`grep -qx '/.hivehouse/' "$common/info/exclude" || echo '/.hivehouse/' >> "$common/info/exclude"\` (append that exact line, and only when it is absent), and \`mkdir -p ${firstRepo}/.hivehouse/reports\`.`
 const WRITE_UNLESS_TRACKED = `Unless the check above sent the report to \${TMPDIR:-/tmp}, write the report to ${reportPath} (create the file; replace <date> with today's date).`
 const WRITE_GIVEN = `Write the report to ${reportPath} (create the file; replace <date> with today's date).`

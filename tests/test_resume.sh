@@ -1,18 +1,18 @@
 #!/usr/bin/env bash
-# hm-spawn --respawn <n> --mode <m> (only a stricter mode than the recorded one, A11) and --respawn <n> --resume (the agent's
+# hh-spawn --respawn <n> --mode <m> (only a stricter mode than the recorded one, A11) and --respawn <n> --resume (the agent's
 # recorded session is resumed and it is typed the short restart line, not the pickup line; no recorded session: today's respawn).
 . "$(dirname "$0")/lib.sh"
-. "$HM_REPO_ROOT/bin/hm-lib.sh"
+. "$HH_REPO_ROOT/bin/hh-lib.sh"
 t_setup
 r=$(t_repo proj); cd "$r"; echo role > "$T_TMP/impl.md"; echo rules > "$T_TMP/RULES.md"
-env -u HIVEHOUSE_HOME tmux -S "$HM_TMUX_SOCKET" new-session -d -s keep 'sleep 600'
+env -u HIVEHOUSE_HOME tmux -S "$HH_TMUX_SOCKET" new-session -d -s keep 'sleep 600'
 S="$r/$T_STATE"
-spawn() { hm-spawn --agent "$1" --role "$T_TMP/impl.md" --rules "$T_TMP/RULES.md" --model sonnet --effort medium --mode "${2:-auto}" --still 2 --max-wait 15; }
-respawn() { hm-spawn --respawn "$@" --still 2 --max-wait 15; }
+spawn() { hh-spawn --agent "$1" --role "$T_TMP/impl.md" --rules "$T_TMP/RULES.md" --model sonnet --effort medium --mode "${2:-auto}" --still 2 --max-wait 15; }
+respawn() { hh-spawn --respawn "$@" --still 2 --max-wait 15; }
 pane() { jq -r '.agents[]|select(.name=="impl").pane' "$S/team.json"; }
 mode() { jq -r '.agents[]|select(.name=="impl").mode' "$S/team.json"; }
-stop() { hm_tmux kill-pane -t "$(pane)"; sleep 1; }
-screen() { hm_tmux capture-pane -p -J -S - -t "$1"; }
+stop() { hh_tmux kill-pane -t "$(pane)"; sleep 1; }
+screen() { hh_tmux capture-pane -p -J -S - -t "$1"; }
 HANDOFF="$S/handoffs/impl.md"
 mkdir -p "$CLAUDE_CONFIG_DIR/projects/p"; : > "$CLAUDE_CONFIG_DIR/projects/p/sess-abc-123.jsonl"
 spawn impl auto >/dev/null; assert_status "spawn impl in auto" $? 0
@@ -25,7 +25,7 @@ for m in auto bypassPermissions nonsense; do
 done
 assert_contains "the refusal says why" "$(cat "$T_TMP/e")" "stricter"
 assert_eq "...nothing was started and the record is unchanged" "$(mode)" "auto"
-hm_team_agent_is "$r" impl; assert_status "...the agent is still stopped" $? 1
+hh_team_agent_is "$r" impl; assert_status "...the agent is still stopped" $? 1
 np=$(respawn impl --mode default); assert_status "--mode default with auto recorded is accepted" $? 0
 assert_eq "...recorded as default" "$(mode)" "default"
 assert_contains "...and started in it" "$(screen "$np")" "ARGV: default"
@@ -61,7 +61,7 @@ np=$(respawn impl); assert_status "no --resume: a recorded session is not resume
 sc=$(screen "$np"); case "$sc" in *"ARGV: --resume"*) bad "resumed without --resume" ;; *) ok "...started without --resume" ;; esac
 assert_contains "...and typed the pickup line" "$sc" "GOT: You are proj-impl. Read $HANDOFF"
 stop
-np=$(hm-spawn --respawn impl --still 2 --max-wait 15 --resume); assert_status "--resume as the last argument" $? 0
+np=$(hh-spawn --respawn impl --still 2 --max-wait 15 --resume); assert_status "--resume as the last argument" $? 0
 stop
 np=$(respawn impl --resume); assert_status "--resume with a recorded session" $? 0
 sc=$(screen "$np")
@@ -70,7 +70,7 @@ assert_contains "...and the recorded session id" "$sc" "ARGV: sess-abc-123"
 assert_contains "the agent is typed the short restart line" "$sc" "GOT: You were restarted by hivehouse after your session stopped responding. Carry on where you were; your handoff is $HANDOFF."
 case "$sc" in *"You are proj-impl. Read"*) bad "the pickup line was typed too" ;; *) ok "...not the pickup line" ;; esac
 assert_eq "it is registered again as recorded" "$(pane)" "$np"
-hm_team_agent_is "$r" impl; assert_status "...and runs as recorded" $? 0
+hh_team_agent_is "$r" impl; assert_status "...and runs as recorded" $? 0
 
 echo "-- --resume falls back to today's respawn"
 stop; rm -f "$S/team/impl/session.json"
@@ -109,14 +109,14 @@ stop; rm -f "$CLAUDE_CONFIG_DIR/sessions/99999999.json"; printf 'not json' > "$C
 np=$(respawn impl --resume); sc=$(screen "$np"); assert_contains "a broken session record does not block it" "$sc" "ARGV: sess-abc-123"
 rm -f "$CLAUDE_CONFIG_DIR/sessions/1.json"
 
-echo "-- hm_mode_rank and hm-settings agree on the five local modes (they merge when A7 lands)"
+echo "-- hh_mode_rank and hh-settings agree on the five local modes (they merge when A7 lands)"
 rk=$(t_repo ranks); mkdir -p "$rk/$T_STATE"
 agree=0; total=0
 for x in plan dontAsk default acceptEdits auto; do for y in plan dontAsk default acceptEdits auto; do
   printf '{"permission_mode":"%s"}\n' "$x" > "$rk/$T_STATE/settings.json"
-  got=$(cd "$rk" && hm-settings resolve permission_mode "$y" 2>/dev/null)
-  if [ "$(hm_mode_rank "$x")" -lt "$(hm_mode_rank "$y")" ]; then want=$x; else want=$y; fi
-  total=$((total + 1)); [ "$got" = "$want" ] && agree=$((agree + 1)) || bad "project $x, owner $y: hm-settings gave [$got], hm_mode_rank says [$want]"
+  got=$(cd "$rk" && hh-settings resolve permission_mode "$y" 2>/dev/null)
+  if [ "$(hh_mode_rank "$x")" -lt "$(hh_mode_rank "$y")" ]; then want=$x; else want=$y; fi
+  total=$((total + 1)); [ "$got" = "$want" ] && agree=$((agree + 1)) || bad "project $x, owner $y: hh-settings gave [$got], hh_mode_rank says [$want]"
 done; done
 assert_eq "all 25 pairs agree" "$agree/$total" "25/25"
 echo "-- both together, and the usage"
@@ -126,9 +126,9 @@ np=$(respawn impl --resume --mode default); assert_status "--resume with a stric
 sc=$(screen "$np")
 assert_contains "...resumed" "$sc" "ARGV: sess-abc-123"
 assert_contains "...in the stricter mode" "$sc" "ARGV: default"
-hm-spawn --agent x --role "$T_TMP/impl.md" --rules "$T_TMP/RULES.md" --model sonnet --effort medium --mode auto --resume >/dev/null 2>&1; assert_status "--resume without --respawn" $? 64
-hm-spawn --self --agent x --resume >/dev/null 2>&1; assert_status "--resume with --self" $? 64
-hm-spawn --respawn impl --mode >/dev/null 2>&1; assert_status "--mode with no value" $? 64
-hm-spawn --respawn impl --model opus >/dev/null 2>&1; assert_status "--respawn still takes no --model" $? 64
+hh-spawn --agent x --role "$T_TMP/impl.md" --rules "$T_TMP/RULES.md" --model sonnet --effort medium --mode auto --resume >/dev/null 2>&1; assert_status "--resume without --respawn" $? 64
+hh-spawn --self --agent x --resume >/dev/null 2>&1; assert_status "--resume with --self" $? 64
+hh-spawn --respawn impl --mode >/dev/null 2>&1; assert_status "--mode with no value" $? 64
+hh-spawn --respawn impl --model opus >/dev/null 2>&1; assert_status "--respawn still takes no --model" $? 64
 respawn impl --resume >/dev/null 2>&1; assert_status "a running agent is not respawned with --resume either" $? 4
 cd /; t_teardown; t_done

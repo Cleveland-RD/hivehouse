@@ -1,0 +1,37 @@
+#!/bin/bash -p
+# hh-push <remote> <40-hex hash> <branch>: push one commit to one branch, fast-forward only, by full hash.
+# Never forces. The remote must be the NAME of a configured remote (no URL, no path). Exit: 0 pushed or already there,
+# 2 not inside a repository, 4 refused (nothing pushed), 5 the remote could not be read (nothing pushed), 64 usage.
+set -u
+HH_BIN=${0%/*}; [ "$HH_BIN" != "$0" ] || HH_BIN=.   # parameter expansion, never dirname: under -p a function is ignored, an executable on PATH is not
+. "$HH_BIN/hh-lib.sh"
+hh_refuse_away hh-push
+[ $# -ge 3 ] || hh_die 64 "usage: hh-push <remote> <40-hex hash> <branch>"
+[ $# -eq 3 ] || hh_die 4 "hh-push takes exactly three arguments; there is no way to pass options (no --force)"
+remote="$1"; hash="$2"; branch="$3"
+git rev-parse --git-dir >/dev/null 2>&1 || hh_die 2 "not inside a git repository"
+
+printf '%s' "$hash" | grep -Eq '^[0-9a-fA-F]{40}$' || hh_die 4 "the hash must be exactly 40 hex characters: $hash"
+hash=$(printf '%s' "$hash" | tr 'A-F' 'a-f')
+git cat-file -e "${hash}^{commit}" 2>/dev/null || hh_die 4 "$hash is not a commit in this repository"
+case "$remote" in ''|-*) hh_die 4 "bad remote name: $remote" ;; esac
+git remote | grep -Fxq -- "$remote" || hh_die 4 "$remote is not a configured remote (a name is required, not a URL or a path)"
+case "$branch" in ''|-*|*:*) hh_die 4 "bad branch name: $branch" ;; esac
+# the full ref is checked, not `--branch`, which would expand @{-1} to a previously checked-out branch
+git check-ref-format "refs/heads/${branch}" || hh_die 4 "not a valid branch name: $branch"
+
+tip=$(git ls-remote --exit-code --heads -- "$remote" "refs/heads/${branch}" 2>/dev/null); rc=$?
+case "$rc" in
+  0) tip=${tip%%[[:space:]]*} ;;
+  2) tip="" ;;                        # the branch does not exist there yet
+  *) hh_die 5 "could not read $remote; nothing was pushed" ;;
+esac
+if [ -n "$tip" ]; then
+  if [ "$tip" = "$hash" ]; then echo "up to date: $remote $branch is already at $hash"; exit 0; fi
+  # the remote's real tip is judged, never a local tracking ref that may be stale
+  git fetch -q -- "$remote" "$tip" 2>/dev/null || hh_die 5 "could not fetch $tip from $remote; nothing was pushed"
+  git merge-base --is-ancestor "$tip" "$hash" 2>/dev/null \
+    || hh_die 4 "not a fast-forward: $remote $branch is at $tip, which $hash does not contain"
+fi
+git push -q -- "$remote" "${hash}:refs/heads/${branch}" || hh_die 5 "git push failed"
+if [ -n "$tip" ]; then echo "${tip:0:7}..${hash:0:7} $branch"; else echo "new branch ${hash:0:7} $branch"; fi

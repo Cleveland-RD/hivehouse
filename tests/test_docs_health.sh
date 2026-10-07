@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 . "$(dirname "$0")/lib.sh"
 # The moved-in docs-health-check workflow: the default is the current project, report only; named groups only by args.
-W="$HM_REPO_ROOT/workflows/docs-health-check.workflow.js"
-H="$HM_REPO_ROOT/tests/fixtures/docs-health-harness.mjs"
+W="$HH_REPO_ROOT/workflows/docs-health-check.workflow.js"
+H="$HH_REPO_ROOT/tests/fixtures/docs-health-harness.mjs"
 run() { node "$H" "$W" "$1" "${2-}"; }
 field() { printf '%s' "$1" | jq -r "$2"; }
 
@@ -15,7 +15,7 @@ prompt=$(field "$out" .reportPrompt)
 assert_contains "no args: the report goes under $T_STATE/reports, not docs/" "$prompt" "write the report to /some/proj/$T_STATE/reports/docs-health-report-<date>.md"
 case "$prompt" in */some/proj/docs/*) bad "no args: nothing is written under docs/" ;; *) ok "no args: nothing is written under docs/" ;; esac
 assert_contains "no args: the report agent makes git ignore $T_STATE/ first" "$prompt" "grep -qx '/$T_STATE/' \"\$common/info/exclude\" || echo '/$T_STATE/' >> \"\$common/info/exclude\""
-assert_contains "no args: that is the line hm_ensure_state writes" "$(grep -n "grep -qx" "$HM_REPO_ROOT/bin/hm-lib.sh")" 'grep -qx "/$HM_STATE_DIR/" "$excl" || echo "/$HM_STATE_DIR/" >> "$excl"'
+assert_contains "no args: that is the line hh_ensure_state writes" "$(grep -n "grep -qx" "$HH_REPO_ROOT/bin/hh-lib.sh")" 'grep -qx "/$HH_STATE_DIR/" "$excl" || echo "/$HH_STATE_DIR/" >> "$excl"'
 assert_contains "no args: it appends only when absent and refuses to write into a tracked $T_STATE/" "$prompt" "ls-files -- $T_STATE"
 out=$(run '{"reportPath":"/elsewhere/report.md"}' /some/proj)
 prompt=$(field "$out" .reportPrompt)
@@ -79,5 +79,5 @@ done
 # the file itself
 if grep -nE '/Users/|discourse' "$W" >/dev/null; then bad "the workflow names no project and no user path"; else ok "the workflow names no project and no user path"; fi
 assert_contains "meta names the workflow" "$(sed -n '/^export const meta/,/^}/p' "$W")" "name: 'docs-health-check'"
-[ ! -e "$HM_REPO_ROOT/skills/docs-health-check" ] && ok "no wrapper skill (A8)" || bad "no wrapper skill (A8)"
+[ ! -e "$HH_REPO_ROOT/skills/docs-health-check" ] && ok "no wrapper skill (A8)" || bad "no wrapper skill (A8)"
 t_done

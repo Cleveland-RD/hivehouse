@@ -2,12 +2,12 @@
 # Phase 5: folders added to or dropped from an existing project, and the hub's own name (one per hub folder, so a second
 # machine's hub need not also be `hub`).
 . "$(dirname "$0")/lib.sh"
-. "$HM_REPO_ROOT/bin/hm-lib.sh"
+. "$HH_REPO_ROOT/bin/hh-lib.sh"
 t_setup
 H="$T_TMP/work"; mkdir -p "$H"; H=$(cd "$H" && pwd -P)
 mk() { local d="$H/$1"; mkdir -p "$d"; git -C "$d" init -q -b main; git -C "$d" config user.email t@t; git -C "$d" config user.name t
        echo x > "$d/README"; git -C "$d" add README; git -C "$d" commit -qm init; }
-hub() { (cd "$H" && hm-hub "$@"); }
+hub() { (cd "$H" && hh-hub "$@"); }
 P="$H/$T_HUB"
 repos() { jq -c ".projects[] | select(.name == \"$1\") | .repos" "$P/projects.json"; }
 hub init >/dev/null
@@ -35,7 +35,7 @@ hub add app >/dev/null 2>&1; assert_status "a project with nothing to add is a u
 hub add app --home fresh --repo notes >/dev/null 2>&1; assert_status "--home for a project that exists is still refused" $? 4
 # ---- the lock: add and drop run under the hub's one lock ----
 sleep 30 & lp=$!; t_track $lp
-mkdir "$P/lock"; hm_holder_json "$lp" > "$P/lock/holder.json"
+mkdir "$P/lock"; hh_holder_json "$lp" > "$P/lock/holder.json"
 hub add app --repo fresh >/dev/null 2>&1; assert_status "add waits for the hub's lock and gives up" $? 4
 hub drop app extra >/dev/null 2>&1; assert_status "drop waits for the hub's lock and gives up" $? 4
 assert_eq "...nothing changed" "$(repos app)" '["back","front","extra","notes"]'
@@ -97,13 +97,13 @@ printf '\n' > "$P/name"; hub naming --session sess-hub >/dev/null 2>&1; assert_s
 rm -f "$P/name"; assert_eq "...and without the file it is hub again" "$(hub naming --session sess-hub | jq -r .free)" "hub"
 kill "$mine" 2>/dev/null
 # ---- the hub skill names the commands and the clash check ----
-S="$HM_REPO_ROOT/skills/hub/SKILL.md"
-grep -q 'hm-hub drop' "$S" && grep -q 'hm-hub add <project> --repo <folder>`' "$S" && ok "the hub skill names add --repo and drop" || bad "the hub skill does not name add --repo and drop"
-grep -q 'run `ListAgents`' "$S" && grep -q 'hm-hub name <name>' "$S" && ok "the hub skill names the ListAgents name check and hm-hub name" || bad "the hub skill does not name the name check"
+S="$HH_REPO_ROOT/skills/hub/SKILL.md"
+grep -q 'hh-hub drop' "$S" && grep -q 'hh-hub add <project> --repo <folder>`' "$S" && ok "the hub skill names add --repo and drop" || bad "the hub skill does not name add --repo and drop"
+grep -q 'run `ListAgents`' "$S" && grep -q 'hh-hub name <name>' "$S" && ok "the hub skill names the ListAgents name check and hh-hub name" || bad "the hub skill does not name the name check"
 for w in 'hub.away_refused' 'chmod go-w' 'the reasons and the chmod lines'; do
-  grep -q -- "$w" "$HM_REPO_ROOT/skills/hub/SKILL.md" && ok "the hub skill's away section names: $w" || bad "the hub skill does not name: $w"
+  grep -q -- "$w" "$HH_REPO_ROOT/skills/hub/SKILL.md" && ok "the hub skill's away section names: $w" || bad "the hub skill does not name: $w"
 done
 for f in skills/hub/SKILL.md README.md; do
-  tr '\n' ' ' < "$HM_REPO_ROOT/$f" | tr -s ' ' | grep -q 'other machines only while Remote Control is connected' && ok "$f: other machines show only with Remote Control" || bad "$f does not say it sees other machines only while Remote Control is connected"
+  tr '\n' ' ' < "$HH_REPO_ROOT/$f" | tr -s ' ' | grep -q 'other machines only while Remote Control is connected' && ok "$f: other machines show only with Remote Control" || bad "$f does not say it sees other machines only while Remote Control is connected"
 done
 cd /; t_done

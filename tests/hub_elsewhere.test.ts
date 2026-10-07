@@ -1,4 +1,4 @@
-// Outside the hub's folder the hub module does nothing: no screen, no hm-hub call, and every edit and command passes.
+// Outside the hub's folder the hub module does nothing: no screen, no hh-hub call, and every edit and command passes.
 // Run with `claude plugin test <plugin folder>` (each file runs in its own process, so the module starts fresh here).
 import { expect, test } from 'claude-code/testing'
 

@@ -5,8 +5,8 @@
 # never a skip: a check that did not run must not read as one that passed.
 . "$(dirname "$0")/lib.sh"
 t_setup
-EVALS="${HM_EVALS_DIR:-$HM_REPO_ROOT/evals}"
-SKILLS="${HM_SKILLS_DIR:-$HM_REPO_ROOT/skills}"
+EVALS="${HH_EVALS_DIR:-$HH_REPO_ROOT/evals}"
+SKILLS="${HH_SKILLS_DIR:-$HH_REPO_ROOT/skills}"
 export T_TMP
 
 # ---- schema: the keys and values https://code.claude.com/docs/en/plugin-evals documents ---------------------------
@@ -97,11 +97,11 @@ RUBY
     # nothing-spawned counts a spawn and only a spawn, on the JSON a Bash call's input is encoded as
     js=$(node -e 'const rs = JSON.parse(require("fs").readFileSync(process.argv[1])).filter(r => r.label.endsWith("/nothing-spawned"));
       console.log((rs.length > 0 ? "ok" : "FAIL") + "\tevery case has a nothing-spawned grader");
-      const spawns = ["hm-spawn --agent impl --role r.md", "cd /w && hm-spawn --agent impl", "/p/bin/hm-spawn --agent impl", "hm-slot status; hm-spawn --agent a",
-        "echo a\nhm-spawn --agent b", "  hm-spawn --agent a", "HM_X=1 hm-spawn --agent a", "env A=1 hm-spawn --agent a", "timeout 60 hm-spawn --agent a",
-        "nohup hm-spawn --agent a &", "`hm-spawn --agent a`", "{ hm-spawn --agent a; }", "bash -c \"hm-spawn --agent a\""];
-      const not = ["hm-spawn --self --agent orch", "hm-spawn --self --agent o && echo ok", "command -v hm-spawn", "which hm-spawn", "echo \"run hm-spawn\"",
-        "echo a\\nhm-spawn --agent b", "hm-spawn-x --agent a"];
+      const spawns = ["hh-spawn --agent impl --role r.md", "cd /w && hh-spawn --agent impl", "/p/bin/hh-spawn --agent impl", "hh-slot status; hh-spawn --agent a",
+        "echo a\nhh-spawn --agent b", "  hh-spawn --agent a", "HH_X=1 hh-spawn --agent a", "env A=1 hh-spawn --agent a", "timeout 60 hh-spawn --agent a",
+        "nohup hh-spawn --agent a &", "`hh-spawn --agent a`", "{ hh-spawn --agent a; }", "bash -c \"hh-spawn --agent a\""];
+      const not = ["hh-spawn --self --agent orch", "hh-spawn --self --agent o && echo ok", "command -v hh-spawn", "which hh-spawn", "echo \"run hh-spawn\"",
+        "echo a\\nhh-spawn --agent b", "hh-spawn-x --agent a"];
       for (const r of rs) {
         const re = new RegExp(r.pattern, r.flags);
         for (const c of spawns) console.log((re.test(JSON.stringify({ command: c, description: "d" })) ? "ok" : "FAIL") + "\t" + r.label + " counts " + JSON.stringify(c));
@@ -136,11 +136,11 @@ for script in "$EVALS"/*/scaffold.sh; do
 done
 
 # ---- the markers: no instruction a run loads writes one at a line start -------------------------------------------
-# The graders match `HM-PLAN:` and `HM-CLARIFY:` at the start of a text or after a newline in the trace. The skill's
+# The graders match `HH-PLAN:` and `HH-CLARIFY:` at the start of a text or after a newline in the trace. The skill's
 # instructions and the case prompts are in the trace too, so neither may have a line that starts with a marker.
 loaded=$(ls "$EVALS"/*/prompt.md 2>/dev/null)
-if [ -d "$SKILLS" ]; then loaded="$loaded"$'\n'$(find "$SKILLS" -name '*.md'); else bad "the skills are here (on a branch without skills/, set HM_SKILLS_DIR to an export of them)"; fi
-hits=$(printf '%s\n' "$loaded" | grep -v '^$' | xargs grep -nE '^HM-(PLAN|CLARIFY):' 2>/dev/null)
+if [ -d "$SKILLS" ]; then loaded="$loaded"$'\n'$(find "$SKILLS" -name '*.md'); else bad "the skills are here (on a branch without skills/, set HH_SKILLS_DIR to an export of them)"; fi
+hits=$(printf '%s\n' "$loaded" | grep -v '^$' | xargs grep -nE '^HH-(PLAN|CLARIFY):' 2>/dev/null)
 assert_eq "no loaded instruction starts a line with a marker" "$hits" ""
 
 # ---- the documented run grants only what the start skill grants ---------------------------------------------------
@@ -153,14 +153,14 @@ if [ -f "$SKILLS/start/SKILL.md" ]; then
     case " $skill " in *" $g "*) ok "the start skill grants $g" ;; *) bad "the documented run grants $g, which the start skill does not" ;; esac
   done
   # the orchestrator registers and rotates itself under a bare agent name: the project is added where a name is shown
-  names=$(grep -oE '`(hm-spawn --self --agent|hm-self-rotate) [^` ]+' "$SKILLS/start/SKILL.md" | awk '{print $NF}')
-  [ "$(printf '%s\n' "$names" | grep -c .)" -ge 2 ] && ok "the start skill names its own agent for --self and hm-self-rotate" \
-    || bad "the start skill names its own agent for --self and hm-self-rotate"
+  names=$(grep -oE '`(hh-spawn --self --agent|hh-self-rotate) [^` ]+' "$SKILLS/start/SKILL.md" | awk '{print $NF}')
+  [ "$(printf '%s\n' "$names" | grep -c .)" -ge 2 ] && ok "the start skill names its own agent for --self and hh-self-rotate" \
+    || bad "the start skill names its own agent for --self and hh-self-rotate"
   for n in $names; do
     case "$n" in *[!abcdefghijklmnopqrstuvwxyz0123456789_-]*|[-_]*) bad "the start skill's own agent name is bare: $n" ;;
       *) ok "the start skill's own agent name is bare: $n" ;; esac
   done
-  for g in "Bash(hm-spawn *)" "Bash(hm-rotate *)" "Bash(hm-self-rotate *)"; do
+  for g in "Bash(hh-spawn *)" "Bash(hh-rotate *)" "Bash(hh-self-rotate *)"; do
     case "$grants" in *"$g"*) bad "the documented run must not grant $g" ;; *) ok "the documented run does not grant $g" ;; esac
   done
 else bad "the start skill is at $SKILLS/start/SKILL.md, which the documented grants are checked against"; fi

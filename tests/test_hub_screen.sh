@@ -6,13 +6,13 @@ real=$(command -v claude 2>/dev/null)
 . "$(dirname "$0")/lib.sh"
 t_setup
 # Claude Code refuses a command named as one of the plugin's own skills, which the kit cannot see: the name is held here
-cmd=$(sed -n "s/^const COMMAND = '\\([^']*\\)'.*/\\1/p" "$HM_REPO_ROOT/hooks/hub.tsx")
+cmd=$(sed -n "s/^const COMMAND = '\\([^']*\\)'.*/\\1/p" "$HH_REPO_ROOT/hooks/hub.tsx")
 [ -n "$cmd" ] && ok "the screen's command is declared once: /$cmd" || bad "no COMMAND in hooks/hub.tsx"
-[ -e "$HM_REPO_ROOT/skills/$cmd" ] && bad "/$cmd is also a skill's name, which Claude Code refuses" || ok "...and is no skill's name"
+[ -e "$HH_REPO_ROOT/skills/$cmd" ] && bad "/$cmd is also a skill's name, which Claude Code refuses" || ok "...and is no skill's name"
 if [ -z "$real" ] || ! "$real" plugin test --help >/dev/null 2>&1; then
   echo "  SKIP claude plugin test is not available here"; t_done; exit 0
 fi
-out=$(cd "$HM_REPO_ROOT" && CLAUDE_CONFIG_DIR="$HOME/.claude" "$real" plugin test . 2>&1); rc=$?
+out=$(cd "$HH_REPO_ROOT" && CLAUDE_CONFIG_DIR="$HOME/.claude" "$real" plugin test . 2>&1); rc=$?
 assert_status "claude plugin test" "$rc" 0
 assert_contains "...ran the hub's screen tests" "$out" "hub_screen.test.ts"
 assert_contains "...and the outside-the-hub test" "$out" "hub_elsewhere.test.ts"

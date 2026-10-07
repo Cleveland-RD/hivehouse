@@ -1,17 +1,17 @@
 #!/usr/bin/env bash
-# hm_pane_working_seconds (bin/hm-lib.sh): Claude Code's working line ("✳ Effecting… (3s · thinking)") read from a pane, as the
+# hh_pane_working_seconds (bin/hh-lib.sh): Claude Code's working line ("✳ Effecting… (3s · thinking)") read from a pane, as the
 # elapsed seconds. Anything it does not recognise is unknown (the function fails), never working and never hung (A10, A27).
 # Fixtures: tests/fixtures/working/06-working-4s and -7s are REAL captures (Claude Code 2.1.291, capture-pane -p -e -J, scrubbed per
 # A67), as is tests/fixtures/dialogs/02-working-1s. The minutes and hours forms are HAND-BUILT here from the 7s capture by replacing
 # its working line, because no capture of a long run was taken; they follow the lines seen in panes: "✽ Processing… (5m 29s ·
 # ↓ 7.2k tokens)" and "✻ Booping… (36m 18s · ↓ 75.0k tokens)". The hours form is a guess at the format, so it is hand-built too.
 . "$(dirname "$0")/lib.sh"
-. "$HM_REPO_ROOT/bin/hm-lib.sh"
+. "$HH_REPO_ROOT/bin/hh-lib.sh"
 t_setup
-W="$HM_REPO_ROOT/tests/fixtures/working"; D="$HM_REPO_ROOT/tests/fixtures/dialogs"
-secs() { hm_pane_working_seconds < "$1"; }
+W="$HH_REPO_ROOT/tests/fixtures/working"; D="$HH_REPO_ROOT/tests/fixtures/dialogs"
+secs() { hh_pane_working_seconds < "$1"; }
 # built <line> -> a file: the 7s capture with its working line replaced (hand-built)
-built() { hm_pane_clean < "$W/06-working-7s.ansi" | sed "s/✶ Effecting… (6s · thinking)/$1/" > "$T_TMP/built.ansi"; echo "$T_TMP/built.ansi"; }
+built() { hh_pane_clean < "$W/06-working-7s.ansi" | sed "s/✶ Effecting… (6s · thinking)/$1/" > "$T_TMP/built.ansi"; echo "$T_TMP/built.ansi"; }
 
 echo "-- real captures"
 assert_eq "0s (real: Elucidating)" "$(secs "$D/02-working-1s.ansi")" "0"
@@ -36,18 +36,18 @@ for l in '✳ Effecting… (soon)' '✳ Effecting…' '✳ Effecting (3s)' 'Effe
   out=$(secs "$(built "$l")"); rc=$?
   [ "$rc" -ne 0 ] && [ -z "$out" ] && ok "unrecognised line is unknown: $l" || bad "$l: rc $rc out [$out]"
 done
-out=$(printf '' | hm_pane_working_seconds); [ $? -ne 0 ] && [ -z "$out" ] && ok "an empty pane is unknown" || bad "empty pane: [$out]"
-out=$(printf '✳ Effecting… (3s · thinking)\n' | hm_pane_working_seconds); [ $? -ne 0 ] && ok "no prompt box on the screen is unknown" || bad "no box: [$out]"
-out=$(hm_pane_clean < "$W/06-working-7s.ansi" | sed 's/^\(.*\)✶ Effecting… (6s · thinking)/see: ✶ Effecting… (6s · thinking)/' | hm_pane_working_seconds); [ $? -ne 0 ] && [ -z "$out" ] && ok "a working line that does not start its line is unknown (hand-built)" || bad "mid-line working text: [$out]"
-{ hm_pane_clean < "$W/06-working-7s.ansi" | awk '/^[[:space:]]*(─){4,}/ { n++; if (n == 2) exit } { print }'; } > "$T_TMP/onerule.ansi"
+out=$(printf '' | hh_pane_working_seconds); [ $? -ne 0 ] && [ -z "$out" ] && ok "an empty pane is unknown" || bad "empty pane: [$out]"
+out=$(printf '✳ Effecting… (3s · thinking)\n' | hh_pane_working_seconds); [ $? -ne 0 ] && ok "no prompt box on the screen is unknown" || bad "no box: [$out]"
+out=$(hh_pane_clean < "$W/06-working-7s.ansi" | sed 's/^\(.*\)✶ Effecting… (6s · thinking)/see: ✶ Effecting… (6s · thinking)/' | hh_pane_working_seconds); [ $? -ne 0 ] && [ -z "$out" ] && ok "a working line that does not start its line is unknown (hand-built)" || bad "mid-line working text: [$out]"
+{ hh_pane_clean < "$W/06-working-7s.ansi" | awk '/^[[:space:]]*(─){4,}/ { n++; if (n == 2) exit } { print }'; } > "$T_TMP/onerule.ansi"
 out=$(secs "$T_TMP/onerule.ansi"); [ $? -ne 0 ] && [ -z "$out" ] && ok "a screen with only one rule is unknown (hand-built: the capture cut at its second rule)" || bad "one rule: [$out]"
 # repl <replacement lines...> -> a file: the 7s capture with its working line replaced by those lines (hand-built)
-repl() { local f="$T_TMP/repl.$$.ansi"; printf '%s\n' "$@" > "$T_TMP/repl.lines"; hm_pane_clean < "$W/06-working-7s.ansi" | awk -v rf="$T_TMP/repl.lines" '/Effecting… \(6s/ { while ((getline l < rf) > 0) print l; next } { print }' > "$f"; echo "$f"; }
+repl() { local f="$T_TMP/repl.$$.ansi"; printf '%s\n' "$@" > "$T_TMP/repl.lines"; hh_pane_clean < "$W/06-working-7s.ansi" | awk -v rf="$T_TMP/repl.lines" '/Effecting… \(6s/ { while ((getline l < rf) > 0) print l; next } { print }' > "$f"; echo "$f"; }
 unknown() { local out rc; out=$(secs "$1"); rc=$?; [ "$rc" -ne 0 ] && [ -z "$out" ] && ok "unknown: $2" || bad "$2: rc $rc out [$out]"; }
 echo "-- the working line starts its line and is the last thing above the box (A10, R1 of the review)"
 # the reviewer's probe: the real idle capture with a reply that quotes a spinner line, indented as reply text is, above the box
-n=$(hm_pane_clean < "$D/07-idle-after-answer.ansi" | grep -cE '^[[:space:]]*(─){4,}')
-hm_pane_clean < "$D/07-idle-after-answer.ansi" | awk -v n="$n" '/^[[:space:]]*(─){4,}/ { k++; if (k == n - 1) { print "  The spinner line looks like this:"; print "  ✳ Effecting… (6s · thinking)" } } { print }' > "$T_TMP/probe.ansi"
+n=$(hh_pane_clean < "$D/07-idle-after-answer.ansi" | grep -cE '^[[:space:]]*(─){4,}')
+hh_pane_clean < "$D/07-idle-after-answer.ansi" | awk -v n="$n" '/^[[:space:]]*(─){4,}/ { k++; if (k == n - 1) { print "  The spinner line looks like this:"; print "  ✳ Effecting… (6s · thinking)" } } { print }' > "$T_TMP/probe.ansi"
 grep -q '^  ✳ Effecting' "$T_TMP/probe.ansi" && ok "(the probe holds the quoted spinner line above the box)" || bad "the probe was not built"
 unknown "$T_TMP/probe.ansi" "an indented spinner line quoted in a reply above an idle prompt (hand-built from the real idle capture)"
 unknown "$(repl '  ✳ Effecting… (6s · thinking)')" "an indented spinner line is not the session's own"
@@ -67,8 +67,8 @@ out=$(secs "$T_TMP/quoted.ansi"); [ $? -ne 0 ] && [ -z "$out" ] && ok "a quoted 
 { cat "$D/07-idle-after-answer.ansi"; printf '✳ Effecting… (3s · thinking)\n'; } > "$T_TMP/footer.ansi"
 out=$(secs "$T_TMP/footer.ansi"); [ $? -ne 0 ] && [ -z "$out" ] && ok "a working line below the box is unknown" || bad "footer line read as working: [$out]"
 echo "-- it reads a raw or a cleaned pane alike"
-assert_eq "a cleaned pane" "$(hm_pane_clean < "$W/06-working-4s.ansi" | hm_pane_working_seconds)" "3"
-echo "-- the pattern sits beside HM_DIALOG_TEXT"
-a=$(grep -n '^HM_DIALOG_TEXT=' "$HM_REPO_ROOT/bin/hm-lib.sh" | cut -d: -f1); b=$(grep -n '^HM_WORKING_RE=' "$HM_REPO_ROOT/bin/hm-lib.sh" | cut -d: -f1)
-[ -n "$a" ] && [ -n "$b" ] && [ "$((b - a))" -le 12 ] && [ "$b" -ge "$a" ] && ok "HM_WORKING_RE is within twelve lines of HM_DIALOG_TEXT" || bad "HM_WORKING_RE ($b) is not beside HM_DIALOG_TEXT ($a)"
+assert_eq "a cleaned pane" "$(hh_pane_clean < "$W/06-working-4s.ansi" | hh_pane_working_seconds)" "3"
+echo "-- the pattern sits beside HH_DIALOG_TEXT"
+a=$(grep -n '^HH_DIALOG_TEXT=' "$HH_REPO_ROOT/bin/hh-lib.sh" | cut -d: -f1); b=$(grep -n '^HH_WORKING_RE=' "$HH_REPO_ROOT/bin/hh-lib.sh" | cut -d: -f1)
+[ -n "$a" ] && [ -n "$b" ] && [ "$((b - a))" -le 12 ] && [ "$b" -ge "$a" ] && ok "HH_WORKING_RE is within twelve lines of HH_DIALOG_TEXT" || bad "HH_WORKING_RE ($b) is not beside HH_DIALOG_TEXT ($a)"
 t_done

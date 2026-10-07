@@ -1,5 +1,5 @@
 // The hub's screen and guard (hooks/hub.tsx) in the hub's own session. Run with `claude plugin test <plugin folder>`.
-// hm-hub itself is stood in for beneath the plugin: its answers are the shapes tests/test_hub.sh pins.
+// hh-hub itself is stood in for beneath the plugin: its answers are the shapes tests/test_hub.sh pins.
 import { expect, mock, test } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
@@ -21,7 +21,7 @@ const STATUS = {
       agents: [
         { name: 'impl', state: 'stopped', question: false },
         { name: 'rev', state: 'running', question: true },
-        // hm-spawn --respawn refuses an agent whose state cannot be told: it is no session Resume brings back
+        // hh-spawn --respawn refuses an agent whose state cannot be told: it is no session Resume brings back
         { name: 'odd', state: 'unknown', question: false },
       ],
       open_tasks: 2,
@@ -84,8 +84,8 @@ const TASKS = [
   { id: 'app-3', project: 'app', asked: '2026-10-05T11:15:00Z', state: 'overnight', updated: '2026-10-05T11:30:00Z', last_note: null, needs_owner: false },
   { id: 'app-4', project: 'app', asked: '2026-10-05T11:16:00Z', state: 'cleanup', updated: '2026-10-05T11:31:00Z', last_note: null, needs_owner: false },
 ]
-// What `hm-hub dialog` reads on a screen with a question: a permission dialog on the agent rev's, a menu with no digits on
-// the first screen of a start (four), and, for the tests to change, what `hm-hub answer` replies
+// What `hh-hub dialog` reads on a screen with a question: a permission dialog on the agent rev's, a menu with no digits on
+// the first screen of a start (four), and, for the tests to change, what `hh-hub answer` replies
 const FP = 'a'.repeat(40)
 // agents a test adds to the app project: a name used in two team roots comes with a ref, <name>@<team root>
 const EXTRA_AGENTS: Array<{ name: string; state: string; question: boolean; worktree: string; ref: string }> = []
@@ -126,7 +126,7 @@ const ran = (exitCode: number, stdout: string, stderr = '') => ({ value: { exitC
 // opened: the panes asked for; commands: the names registered, refused as Claude Code refuses them (all of them when
 // refuseAll is set).
 // shown: whether Claude Code lists the screen as open and shown (its own record of the plugin's panes). session: what
-// Claude Code records of this session (hm-hub naming) and how many turns it has had; slash: the slash commands run.
+// Claude Code records of this session (hh-hub naming) and how many turns it has had; slash: the slash commands run.
 type Session = { turns: number; hubName?: string; naming?: { found: boolean; name: string; source: string; free: string }; namingFails?: string }
 function world(on: On, runs: string[][], opened: string[] = [], commands: string[] = [], refuseAll = false, shown = { now: true },
   session: Session = { turns: 3 }, slash: string[][] = []) {
@@ -205,12 +205,12 @@ test('the hub keeps off the projects, and off nothing else', async ($, on) => {
   expect((await bash('git -C back commit -m x')).deny).toContain('changes a repository')
   expect((await bash('cd back && git push origin main')).deny).toContain('changes a repository')
   expect((await bash('git -C back status --short')).deny).toBeUndefined()
-  expect((await bash('hm-hub status')).deny).toBeUndefined()
+  expect((await bash('hh-hub status')).deny).toBeUndefined()
   // the owner's own words, carried word for word, are never read as a command
-  expect((await bash("hm-hub task app <<'EOF'\nafter git pull on main, fix the totals\ngit push when done\nEOF")).deny).toBeUndefined()
-  expect((await bash('hm-hub log app-1 done --note "landed, git push done"')).deny).toBeUndefined()
-  expect((await bash("hm-hub log app-1 note --note 'run git commit -m x first'")).deny).toBeUndefined()
-  expect((await bash("hm-hub task app <<'EOF'\nx\nEOF\ngit push origin main")).deny).toContain('changes a repository')
+  expect((await bash("hh-hub task app <<'EOF'\nafter git pull on main, fix the totals\ngit push when done\nEOF")).deny).toBeUndefined()
+  expect((await bash('hh-hub log app-1 done --note "landed, git push done"')).deny).toBeUndefined()
+  expect((await bash("hh-hub log app-1 note --note 'run git commit -m x first'")).deny).toBeUndefined()
+  expect((await bash("hh-hub task app <<'EOF'\nx\nEOF\ngit push origin main")).deny).toContain('changes a repository')
   // git worktree changes a repository only with add, remove, move, prune, repair, lock or unlock
   expect((await bash('git -C back worktree list')).deny).toBeUndefined()
   expect((await bash('git worktree list --porcelain')).deny).toBeUndefined()
@@ -220,9 +220,9 @@ test('the hub keeps off the projects, and off nothing else', async ($, on) => {
   // quoted text follows the shell's own quoting: the '\'' idiom for an apostrophe inside single quotes, $'..' with an escaped quote, an escaped
   // quote inside double quotes. A sed -i on the hub's own memory file whose note holds a git command passes.
   expect((await bash("sed -i '' '1a\\ do'\\''nt run `git worktree add` here' " + HUB_DIR + '/memory/app.md')).deny).toBeUndefined()
-  expect((await bash("hm-hub log app-1 note --note $'it\\'s fine: git commit -m x'")).deny).toBeUndefined()
-  expect((await bash('hm-hub log app-1 note --note "say \\"hi\\" then git push"')).deny).toBeUndefined()
-  expect((await bash('hm-hub log app-1 note --note "the user\'s note: git worktree add x"')).deny).toBeUndefined()
+  expect((await bash("hh-hub log app-1 note --note $'it\\'s fine: git commit -m x'")).deny).toBeUndefined()
+  expect((await bash('hh-hub log app-1 note --note "say \\"hi\\" then git push"')).deny).toBeUndefined()
+  expect((await bash('hh-hub log app-1 note --note "the user\'s note: git worktree add x"')).deny).toBeUndefined()
   expect((await bash(`sed -i '' '1a\\ it'\\''s done' ${HUB_DIR}/memory/app.md; git commit -m x`)).deny).toContain('changes a repository')
   // a real command after a quote, in $( ), in backticks, or after an escaped separator still counts
   expect((await bash("echo 'a'; git commit -m x")).deny).toContain('changes a repository')
@@ -230,10 +230,10 @@ test('the hub keeps off the projects, and off nothing else', async ($, on) => {
   expect((await bash('echo "$(git commit -m x)"')).deny).toContain('changes a repository')
   expect((await bash('echo "`git push`"')).deny).toContain('changes a repository')
   expect((await bash('echo "say $(echo \\"hi\\") and $(git push)"')).deny).toContain('changes a repository')
-  expect((await bash('hm-hub task app <<EOF\nnote\n$(git push)\nEOF')).deny).toContain('changes a repository')
-  expect((await bash('hm-hub task app <<EOF\nnote: git push later\nEOF')).deny).toBeUndefined()
-  expect((await bash("hm-hub task app <<'EOF'\nnote\n$(git push)\nEOF")).deny).toBeUndefined()
-  expect((await bash('hm-hub task app <<"EOF"\nnote\n`git push`\nEOF')).deny).toBeUndefined()
+  expect((await bash('hh-hub task app <<EOF\nnote\n$(git push)\nEOF')).deny).toContain('changes a repository')
+  expect((await bash('hh-hub task app <<EOF\nnote: git push later\nEOF')).deny).toBeUndefined()
+  expect((await bash("hh-hub task app <<'EOF'\nnote\n$(git push)\nEOF")).deny).toBeUndefined()
+  expect((await bash('hh-hub task app <<"EOF"\nnote\n`git push`\nEOF')).deny).toBeUndefined()
   expect((await bash("echo '$(git push)'")).deny).toBeUndefined()
   expect((await bash('echo "$(echo hi)"')).deny).toBeUndefined()
   expect((await bash('echo $(git commit -m x)')).deny).toContain('changes a repository')
@@ -359,7 +359,7 @@ test('the screen: what needs the owner first, then each project, and Resume wake
   await ui.press({ key: 'resume-app' })
   const wake = runs.find(r => r[1] === 'wake')
   expect(wake?.slice(1)).toEqual(['wake', 'app', '--mode', 'auto'])
-  expect(wake?.[0]).toMatch(/\/bin\/hm-hub$/)
+  expect(wake?.[0]).toMatch(/\/bin\/hh-hub$/)
 
   await ui.press({ key: 'resume-six' })
   expect(runs.filter(r => r[1] === 'wake').pop()?.slice(1)).toEqual(['wake', 'six', '--mode', 'auto'])
@@ -376,7 +376,7 @@ test('the screen: what needs the owner first, then each project, and Resume wake
   await ui.press({ key: 'answer-app/rev-esc' })
   expect(runs.filter(r => r[1] === 'answer').pop()?.slice(1)).toEqual(['answer', 'app', 'rev', '--choice', 'esc', '--seen', FP])
 
-  // a refusal (the screen changed under the owner) is told, and the screen reads hm-hub again
+  // a refusal (the screen changed under the owner) is told, and the screen reads hh-hub again
   ANSWER.code = 4
   ANSWER.stdout = ''
   ANSWER.stderr = `${PREFIX}: the dialog changed; look again: nothing was sent`
@@ -455,7 +455,7 @@ test('the screen says when away was refused, with the reason', async ($, on) => 
   }
 })
 
-test('the screen reads hm-hub only while it is open, and once per tick', async ($, on) => {
+test('the screen reads hh-hub only while it is open, and once per tick', async ($, on) => {
   const runs: string[][] = []
   const shown = { now: true }
   const clock = mock.clock(on, { now: NOW })

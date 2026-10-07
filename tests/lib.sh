@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Shared test helpers. Every test runs in its own scratch dirs and its own tmux server.
 set -u
-HM_REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
+HH_REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 # PATH: the fake claude first, so no test can start a real one; then this repo's bin; then the caller's PATH without any other plugin's
 # bin/ (an entry whose parent holds .claude-plugin/plugin.json), so a suite started from a session that has another generation of
 # these tools on its PATH can never reach them by a name this repo's bin does not shadow (the 7 Oct leak). By identity, not by name.
@@ -9,12 +9,12 @@ t_path_without_foreign_plugins() {
   local e r out="" IFS=:
   for e in $PATH; do
     [ -n "$e" ] || continue
-    if [ -f "$e/../.claude-plugin/plugin.json" ]; then r=$(cd "$e" 2>/dev/null && pwd -P); [ "$r" = "$HM_REPO_ROOT/bin" ] || continue; fi
+    if [ -f "$e/../.claude-plugin/plugin.json" ]; then r=$(cd "$e" 2>/dev/null && pwd -P); [ "$r" = "$HH_REPO_ROOT/bin" ] || continue; fi
     out="${out:+$out:}$e"
   done
   printf '%s\n' "$out"
 }
-export PATH="$HM_REPO_ROOT/tests/bin:$HM_REPO_ROOT/bin:$(t_path_without_foreign_plugins)"
+export PATH="$HH_REPO_ROOT/tests/bin:$HH_REPO_ROOT/bin:$(t_path_without_foreign_plugins)"
 # The names, stated here for every test and spelled in no other test (tests/test_names.sh holds it to that). They are written out,
 # not read from bin/, so that a name changed there alone fails the tests. The plugin's name is read from plugin.json, the one
 # place it lives.
@@ -27,14 +27,14 @@ T_LINUX_SLOT='/var/lib/hivehouse/slot'     # the machine slot on Linux
 T_DELEGATE_LINE1='hivehouse-delegate 1'    # the delegate file's first line
 T_PREFIX='hivehouse'                       # what a message begins with: "<prefix>: ..."
 T_PANE='hivehouse-hub'                     # the hub screen's pane
-T_PLUGIN=$(jq -r .name "$HM_REPO_ROOT/.claude-plugin/plugin.json")
+T_PLUGIN=$(jq -r .name "$HH_REPO_ROOT/.claude-plugin/plugin.json")
 FAILS=0
 T_TMP=""
 # A run's ledger: what it started, so that whatever ends it (an assertion, a signal, a kill) the next teardown can
 # finish it. A process is recorded as pid TAB start time, the moment $! names it (the start time is fixed at fork and an
 # exec does not move it); it is signalled only while that pid still has that start time, which a recycled pid would
 # have to share to the second, and never when it is this shell or above it.
-t_lstart() { ps -o lstart= -p "$1" 2>/dev/null | sed 's/^ *//;s/ *$//'; }   # hm_lstart's reading: the reaper shares no code with what it tests
+t_lstart() { ps -o lstart= -p "$1" 2>/dev/null | sed 's/^ *//;s/ *$//'; }   # hh_lstart's reading: the reaper shares no code with what it tests
 t_track() {  # t_track <pid>...: record processes the test started
   local p
   for p in "$@"; do printf '%s\t%s\n' "$p" "$(t_lstart "$p")" >> "$T_TMP/run.ledger"; done
@@ -43,7 +43,7 @@ t_track_group() {  # t_track_group <leader pid>: a process group the test made; 
   printf '%s\t%s\n' "$1" "$(t_lstart "$1")" >> "$T_TMP/run.groups"
 }
 t_outside_tmp() {  # t_outside_tmp -> a fresh dir under /tmp (not under $T_TMP), resolved; teardown removes it
-  local d; d=$(mktemp -d /tmp/hmtest-out.XXXXXX) && d=$(cd "$d" && pwd -P) || return 1
+  local d; d=$(mktemp -d /tmp/hhtest-out.XXXXXX) && d=$(cd "$d" && pwd -P) || return 1
   printf '%s\n' "$d" >> "$T_TMP/run.dirs"; printf '%s\n' "$d"
 }
 t_same() {  # t_same <pid> <recorded start>: 0 when the pid is alive with that start time
@@ -80,14 +80,14 @@ t_remove_dirs() {  # t_remove_dirs <run dir>: the run's t_outside_tmp dirs, each
   local d
   [ -f "$1/run.dirs" ] || return 0
   while IFS= read -r d; do
-    case "$d" in /tmp/hmtest-out.??????|/private/tmp/hmtest-out.??????) ;; *) continue ;; esac
+    case "$d" in /tmp/hhtest-out.??????|/private/tmp/hhtest-out.??????) ;; *) continue ;; esac
     [ -d "$d" ] && [ ! -L "$d" ] && [ -O "$d" ] && rm -rf -- "$d"
   done < "$1/run.dirs"
   return 0
 }
 t_sweep_stale() {  # a run killed outright ran no teardown: the next t_setup finishes it, from what it recorded alone
   local d p s
-  for d in "${TMPDIR:-/tmp}"/hmtest.*; do
+  for d in "${TMPDIR:-/tmp}"/hhtest.*; do
     # a dir with no owner record (an older run, or one still being set up) or one not ours is never touched
     [ -d "$d" ] && [ ! -L "$d" ] && [ -O "$d" ] && [ -f "$d/run.owner" ] || continue
     IFS=$'\t' read -r p s < "$d/run.owner" || continue
@@ -107,7 +107,7 @@ t_allowlist_env() {
   local v
   for v in $(compgen -e); do
     case "$v" in
-      HOME|PATH|USER|LOGNAME|SHELL|TERM|TMPDIR|TZ|LANG|LC_*|PWD|OLDPWD|SHLVL|_|HM_CLEANUP_TEST) ;;
+      HOME|PATH|USER|LOGNAME|SHELL|TERM|TMPDIR|TZ|LANG|LC_*|PWD|OLDPWD|SHLVL|_|HH_CLEANUP_TEST) ;;
       *) unset "$v" ;;
     esac
   done
@@ -115,25 +115,25 @@ t_allowlist_env() {
 t_setup() {
   t_allowlist_env
   t_sweep_stale
-  T_TMP="$(mktemp -d "${TMPDIR:-/tmp}/hmtest.XXXXXX")"; T_TMP="$(cd "$T_TMP" && pwd -P)"
+  T_TMP="$(mktemp -d "${TMPDIR:-/tmp}/hhtest.XXXXXX")"; T_TMP="$(cd "$T_TMP" && pwd -P)"
   printf '%s\t%s\n' "$$" "$(t_lstart $$)" > "$T_TMP/run.owner"
   export HIVEHOUSE_HOME="$T_TMP/home"; mkdir -p "$HIVEHOUSE_HOME"
-  export HM_TMUX_SOCKET="$T_TMP/tmux.sock"
+  export HH_TMUX_SOCKET="$T_TMP/tmux.sock"
   # Claude Code's settings are the run's own, never the machine's: the user's, through CLAUDE_CONFIG_DIR, and managed
-  export CLAUDE_CONFIG_DIR="$T_TMP/claude-config" HM_MANAGED_SETTINGS="$T_TMP/managed-settings.json"; mkdir -p "$CLAUDE_CONFIG_DIR"
-  export HM_SLOT_LOCAL=1   # no test meets the machine's real slot folder
+  export CLAUDE_CONFIG_DIR="$T_TMP/claude-config" HH_MANAGED_SETTINGS="$T_TMP/managed-settings.json"; mkdir -p "$CLAUDE_CONFIG_DIR"
+  export HH_SLOT_LOCAL=1   # no test meets the machine's real slot folder
   trap t_teardown EXIT
   trap 'exit 130' INT; trap 'exit 143' TERM; trap 'exit 129' HUP   # exit runs the EXIT trap, so a signal tears down too
 }
 t_teardown() {  # idempotent: called by the trap and by tests that end explicitly
   [ -n "$T_TMP" ] || return 0
   t_reap_groups "$T_TMP"; t_reap "$T_TMP"
-  tmux -S "$HM_TMUX_SOCKET" kill-server 2>/dev/null || true
+  tmux -S "$HH_TMUX_SOCKET" kill-server 2>/dev/null || true
   t_remove_dirs "$T_TMP"
   rm -rf "$T_TMP"; T_TMP=""
 }
-t_plugin_beside() {  # t_plugin_beside <a copy of bin/>: plugin.json where bin/hm-lib.sh looks for it, one folder up (hm_plugin_name)
-  mkdir -p "$1/../.claude-plugin" && cp "$HM_REPO_ROOT/.claude-plugin/plugin.json" "$1/../.claude-plugin/plugin.json"
+t_plugin_beside() {  # t_plugin_beside <a copy of bin/>: plugin.json where bin/hh-lib.sh looks for it, one folder up (hh_plugin_name)
+  mkdir -p "$1/../.claude-plugin" && cp "$HH_REPO_ROOT/.claude-plugin/plugin.json" "$1/../.claude-plugin/plugin.json"
 }
 t_repo() {  # t_repo <name> -> prints path of a fresh git repo with one commit
   local d="$T_TMP/$1"; mkdir -p "$d"
@@ -146,10 +146,10 @@ t_repo() {  # t_repo <name> -> prints path of a fresh git repo with one commit
 # line is replaced only if it is found exactly once; production has no override of its own. Prints the copy's folder.
 t_delegate_bin() {
   local d="$T_TMP/delegate-bin" n
-  rm -rf "$d"; mkdir -p "$d"; cp -R "$HM_REPO_ROOT/bin/." "$d/"; t_plugin_beside "$d"
-  n=$(grep -c '^hm_delegate_now() { hm_delegate_read "$(hm_delegate_path)" 0; }$' "$d/hm-lib.sh")
+  rm -rf "$d"; mkdir -p "$d"; cp -R "$HH_REPO_ROOT/bin/." "$d/"; t_plugin_beside "$d"
+  n=$(grep -c '^hh_delegate_now() { hh_delegate_read "$(hh_delegate_path)" 0; }$' "$d/hh-lib.sh")
   [ "$n" = 1 ] || { echo "t_delegate_bin: the production line matched $n times" >&2; return 1; }
-  awk -v f="$1" -v u="$(id -u)" '/^hm_delegate_now\(\) \{ hm_delegate_read / { print "hm_delegate_now() { hm_delegate_read \"" f "\" " u "; }"; next } { print }' "$d/hm-lib.sh" > "$d/hm-lib.sh.new" && mv "$d/hm-lib.sh.new" "$d/hm-lib.sh"
+  awk -v f="$1" -v u="$(id -u)" '/^hh_delegate_now\(\) \{ hh_delegate_read / { print "hh_delegate_now() { hh_delegate_read \"" f "\" " u "; }"; next } { print }' "$d/hh-lib.sh" > "$d/hh-lib.sh.new" && mv "$d/hh-lib.sh.new" "$d/hh-lib.sh"
   printf '%s\n' "$d"
 }
 # t_slot_bin <machine slot folder> [<owner uid>]: a scratch copy of bin/ in which the two one-line functions that name the machine's
@@ -157,32 +157,32 @@ t_delegate_bin() {
 # it is found exactly once; production has no override of its own. Prints the copy's folder.
 t_slot_bin() {
   local d n; d=$(mktemp -d "$T_TMP/slot-bin.XXXXXX") || return 1
-  rm -rf "$d"; mkdir -p "$d"; cp -R "$HM_REPO_ROOT/bin/." "$d/"; t_plugin_beside "$d"
-  for n in 'hm_machine_slot_dir() { if ' 'hm_machine_slot_owner() { echo 0; }'; do
-    [ "$(grep -c -F -- "$n" "$d/hm-lib.sh")" = 1 ] || { echo "t_slot_bin: the production line '$n' did not match once" >&2; return 1; }
+  rm -rf "$d"; mkdir -p "$d"; cp -R "$HH_REPO_ROOT/bin/." "$d/"; t_plugin_beside "$d"
+  for n in 'hh_machine_slot_dir() { if ' 'hh_machine_slot_owner() { echo 0; }'; do
+    [ "$(grep -c -F -- "$n" "$d/hh-lib.sh")" = 1 ] || { echo "t_slot_bin: the production line '$n' did not match once" >&2; return 1; }
   done
-  awk -v f="$1" -v u="${2:-$(id -u)}" '/^hm_machine_slot_dir\(\) \{ if / { print "hm_machine_slot_dir() { echo \047" f "\047; }"; next }
-    /^hm_machine_slot_owner\(\) \{ echo 0; \}$/ { print "hm_machine_slot_owner() { echo " u "; }"; next } { print }' "$d/hm-lib.sh" > "$d/hm-lib.sh.new" && mv "$d/hm-lib.sh.new" "$d/hm-lib.sh"
+  awk -v f="$1" -v u="${2:-$(id -u)}" '/^hh_machine_slot_dir\(\) \{ if / { print "hh_machine_slot_dir() { echo \047" f "\047; }"; next }
+    /^hh_machine_slot_owner\(\) \{ echo 0; \}$/ { print "hh_machine_slot_owner() { echo " u "; }"; next } { print }' "$d/hh-lib.sh" > "$d/hh-lib.sh.new" && mv "$d/hh-lib.sh.new" "$d/hh-lib.sh"
   printf '%s\n' "$d"
 }
 # t_base_bin <folder name> <base>: a scratch copy of bin/ in which the one line that names the folder of the delegate files gives <base>
-# instead, so the lines `hm-hub away` and `back` print can be tested against a folder the test controls. Found exactly once. Prints the copy.
+# instead, so the lines `hh-hub away` and `back` print can be tested against a folder the test controls. Found exactly once. Prints the copy.
 t_base_bin() {
   local d="$T_TMP/$1" n
-  rm -rf "$d"; mkdir -p "$d"; cp -R "$HM_REPO_ROOT/bin/." "$d/"; t_plugin_beside "$d"
-  n=$(grep -c '^hm_delegate_base() { if ' "$d/hm-lib.sh")
+  rm -rf "$d"; mkdir -p "$d"; cp -R "$HH_REPO_ROOT/bin/." "$d/"; t_plugin_beside "$d"
+  n=$(grep -c '^hh_delegate_base() { if ' "$d/hh-lib.sh")
   [ "$n" = 1 ] || { echo "t_base_bin: the production line matched $n times" >&2; return 1; }
-  awk -v b="$2" '/^hm_delegate_base\(\) \{ if / { print "hm_delegate_base() { echo \"" b "\"; }"; next } { print }' "$d/hm-lib.sh" > "$d/hm-lib.sh.new" && mv "$d/hm-lib.sh.new" "$d/hm-lib.sh"
+  awk -v b="$2" '/^hh_delegate_base\(\) \{ if / { print "hh_delegate_base() { echo \"" b "\"; }"; next } { print }' "$d/hh-lib.sh" > "$d/hh-lib.sh.new" && mv "$d/hh-lib.sh.new" "$d/hh-lib.sh"
   printf '%s\n' "$d"
 }
 # t_jq_bin <folder name> <candidates>: a scratch copy of bin/ in which the one line that lists where a root-owned jq may be found lists
 # <candidates> (space-separated paths) instead, so the resolver can be tested with paths the test controls. Found exactly once.
 t_jq_bin() {
   local d="$T_TMP/$1" n
-  rm -rf "$d"; mkdir -p "$d"; cp -R "$HM_REPO_ROOT/bin/." "$d/"; t_plugin_beside "$d"
-  n=$(grep -c '^hm_jq_candidates() { echo ' "$d/hm-lib.sh")
+  rm -rf "$d"; mkdir -p "$d"; cp -R "$HH_REPO_ROOT/bin/." "$d/"; t_plugin_beside "$d"
+  n=$(grep -c '^hh_jq_candidates() { echo ' "$d/hh-lib.sh")
   [ "$n" = 1 ] || { echo "t_jq_bin: the production line matched $n times" >&2; return 1; }
-  awk -v c="$2" '/^hm_jq_candidates\(\) \{ echo / { print "hm_jq_candidates() { echo \"" c "\"; }"; next } { print }' "$d/hm-lib.sh" > "$d/hm-lib.sh.new" && mv "$d/hm-lib.sh.new" "$d/hm-lib.sh"
+  awk -v c="$2" '/^hh_jq_candidates\(\) \{ echo / { print "hh_jq_candidates() { echo \"" c "\"; }"; next } { print }' "$d/hh-lib.sh" > "$d/hh-lib.sh.new" && mv "$d/hh-lib.sh.new" "$d/hh-lib.sh"
   printf '%s\n' "$d"
 }
 # t_env_probe <NAME=value>: starts a process launched with that variable and prints its pid. macOS shows no environment for
@@ -193,12 +193,12 @@ t_env_probe() {  # t_env_probe <NAME=value> [argument]...: the arguments become 
   if command -v codesign >/dev/null 2>&1 && codesign -dv "$n" 2>&1 | grep -q 'Platform identifier'; then return 1; fi
   ( env "$v" "$n" -e 'setTimeout(() => {}, 60000)' "$@" >/dev/null 2>&1 & echo $! )
 }
-# t_node_claude <cwd> [<hm-hub to register the hub with>]: a node script named claude, which runs its arguments as a command in <cwd>
-# (after `hm-hub self --name hub`, when a hm-hub is given), with this test's environment as defaults under whatever the launch gives
+# t_node_claude <cwd> [<hh-hub to register the hub with>]: a node script named claude, which runs its arguments as a command in <cwd>
+# (after `hh-hub self --name hub`, when a hh-hub is given), with this test's environment as defaults under whatever the launch gives
 # it. Launched as `[VAR=x] node <script> <command>...`, it is a Claude whose launch environment ps -E can show. Prints its path.
 t_node_claude() {
   local d e; d=$(mktemp -d "$T_TMP/ncl.XXXXXX")
-  e=$(jq -nc --arg PATH "$PATH" --arg HOME "$HOME" --arg HIVEHOUSE_HOME "${HIVEHOUSE_HOME:-}" --arg HM_TMUX_SOCKET "${HM_TMUX_SOCKET:-}" --arg CLAUDE_CONFIG_DIR "${CLAUDE_CONFIG_DIR:-}" --arg HM_MANAGED_SETTINGS "${HM_MANAGED_SETTINGS:-}" '$ARGS.named')
+  e=$(jq -nc --arg PATH "$PATH" --arg HOME "$HOME" --arg HIVEHOUSE_HOME "${HIVEHOUSE_HOME:-}" --arg HH_TMUX_SOCKET "${HH_TMUX_SOCKET:-}" --arg CLAUDE_CONFIG_DIR "${CLAUDE_CONFIG_DIR:-}" --arg HH_MANAGED_SETTINGS "${HH_MANAGED_SETTINGS:-}" '$ARGS.named')
   if [ -n "${2:-}" ]; then
     printf 'const { spawnSync } = require("child_process")\nconst env = Object.assign({}, %s, process.env)\nspawnSync(%s, ["self", "--name", "hub"], { cwd: %s, stdio: "ignore", env })\nconst r = spawnSync(process.argv[2], process.argv.slice(3), { cwd: %s, stdio: "inherit", env })\nprocess.exit(r.status === null ? 1 : r.status)\n' "$e" "\"$2\"" "\"$1\"" "\"$1\"" > "$d/claude"
   else

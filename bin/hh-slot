@@ -1,0 +1,133 @@
+#!/usr/bin/env bash
+# One heavy job at a time on this machine, shared by every project. With the machine's slot folder made (hh-slot setup prints
+# how) it is one slot for every user; without it each user account has its own, under the fixed home (never under a project),
+# so callers with any cwd or environment meet the same one. mkdir is the lock; see hh-lib.sh for the stale rules. A holder is
+# its pid AND that pid's start time, so a reused pid is not mistaken for it. `kill -9` of `hh-slot run` frees the slot (its pid
+# is gone) while the command it started may still be running.
+# A caller that waits (--wait) files a ticket in queue/ and takes the slot only as the oldest live ticket; one that does not is
+# refused (75) at once, also while tickets wait, so it never jumps the queue. HH_SLOT_LOCAL=1 opts out of the machine slot.
+#   hh-slot run [--wait [<s>]] <label> -- <command...>   hold while the command runs; 75 with the holder on stderr if busy
+#   hh-slot acquire <label> --pid <pid> [--wait [<s>]]   hold for a long-lived process (freed when that process dies)
+#   hh-slot release --pid <pid> [--label <l>]   release; refused unless pid and its start time are the holder's
+#   hh-slot status                        holder JSON or "free", then the queue; the slot in use on stderr
+#   hh-slot setup                         print the lines an administrator runs once to make the machine slot
+set -u
+. "$(dirname "$0")/hh-lib.sh"
+PROJECT=$(hh_project_root 2>/dev/null) || PROJECT=""   # machine-wide: works outside any repo, records the project only if found
+HOME_DIR=$(hh_home)
+# The slot in use: the machine's folder when it passes every check and HH_SLOT_LOCAL is not 1, else this user's own.
+MACHINE=0; SLOT_DIR="$HOME_DIR"; HH_SLOT_WHY=""
+if [ "${HH_SLOT_LOCAL:-}" = 1 ]; then SLOT_WHY="HH_SLOT_LOCAL=1"
+elif hh_machine_slot_ok "$(hh_machine_slot_dir)"; then MACHINE=1; SLOT_DIR=$(hh_machine_slot_dir); SLOT_WHY=""
+else SLOT_WHY="$HH_SLOT_WHY; hh-slot setup prints how to make the machine slot"; fi
+LOCK="$SLOT_DIR/slot.lock"; QUEUE="$SLOT_DIR/queue"
+TICKET=""
+USAGE_RUN="usage: hh-slot run [--wait [<seconds>]] <label> -- <command...>"
+USAGE_ACQ="usage: hh-slot acquire <label> --pid <pid> [--wait [<seconds>]]"
+
+group_write() {  # the machine slot's files are group-writable (umask 002), so another user can take over a holder that is gone
+  if [ "$MACHINE" = 1 ]; then ( umask 002; "$@" ); else "$@"; fi
+}
+busy() {  # the holder on stderr, then the way out
+  cat "$LOCK/holder.json" >&2 2>/dev/null; echo "hh-slot: busy; the lock is $LOCK (a holder whose process is gone is taken over; remove the directory by hand only if it is not)" >&2
+}
+drop_ticket() { [ -z "$TICKET" ] || rm -f "$TICKET"; TICKET=""; }
+parent_holds() {  # 0 (and the reason on stderr) when the live holder is the process that exported HH_SLOT_HELD, an ancestor of this one:
+  # waiting for a slot an ancestor holds would never end. The variable can only make this refuse sooner; it never grants the slot.
+  local hp
+  [ -n "${HH_SLOT_HELD:-}" ] && [ -d "$LOCK" ] || return 1
+  hp=$(hh_json_get "$LOCK/holder.json" .pid)
+  [ "$hp" = "$HH_SLOT_HELD" ] && ! hh_lock_stale "$LOCK" || return 1
+  busy; echo "hh-slot: the slot is held by your own parent (pid $hp): a command run under it cannot wait for it" >&2
+}
+take() {  # take <label> <pid> [<wait>]: 0 held, 75 busy (the holder is printed), 1 no ticket could be filed. <wait>: "" no, "inf", or seconds
+  local json first deadline="" name
+  json=$(hh_holder_json "$2" "$(jq -nc --arg label "$1" --arg project "$PROJECT" --arg agent "${HH_AGENT:-owner}" \
+    --arg since "$(hh_now)" '{label:$label,project:$project,agent:$agent,since:$since}')") || return 1
+  [ "$MACHINE" = 1 ] || mkdir -p "$HOME_DIR"
+  if [ -z "${3:-}" ]; then
+    # never ahead of a caller that waits
+    if [ -n "$(hh_queue_live "$QUEUE")" ]; then busy; echo "hh-slot: callers are waiting for it; use --wait to queue" >&2; return 75; fi
+    group_write hh_lock_try "$LOCK" "$json" && return 0
+    busy; return 75
+  fi
+  [ "$3" = inf ] || deadline=$((SECONDS + 10#$3))   # 10#: 08 and 09 are not octal
+  mkdir -p "$QUEUE" 2>/dev/null
+  name="$(printf '%010d' "$(/bin/date +%s)")-$2.json"
+  # created exclusively: a name that exists, or a link put there, makes the write fail instead of being followed
+  if ! ( set -C; [ "$MACHINE" = 1 ] && umask 002; printf '%s\n' "$json" > "$QUEUE/$name" ) 2>/dev/null; then
+    echo "hh-slot: cannot file a ticket: $QUEUE/$name exists or $QUEUE is not writable" >&2; return 1
+  fi
+  TICKET="$QUEUE/$name"
+  trap 'drop_ticket' EXIT; trap 'exit 130' INT; trap 'exit 143' TERM
+  while :; do
+    parent_holds && { drop_ticket; return 75; }   # at every pass, not only at the head: a waiter ahead of this one would hide it
+    first=$(hh_queue_live "$QUEUE"); first=${first%%$'\n'*}
+    if [ "$first" = "$name" ]; then
+      if group_write hh_lock_try "$LOCK" "$json"; then drop_ticket; return 0; fi
+    elif [ -z "$first" ] || [ ! -e "$TICKET" ]; then
+      echo "hh-slot: the ticket $name is gone from $QUEUE" >&2; TICKET=""; return 1   # another process removed it
+    fi
+    if [ -n "$deadline" ] && [ "$SECONDS" -ge "$deadline" ]; then drop_ticket; busy; return 75; fi
+    /bin/sleep 0.5
+  done
+}
+case "${1:-}" in
+  run)
+    shift; WAIT=""
+    if [ "${1:-}" = "--wait" ]; then
+      # --wait [<seconds>] <label>: the seconds are the next word only when it is a number
+      case "${2:-}" in *[!0-9]*|'') WAIT=inf; shift ;; *) WAIT="$2"; shift 2 ;; esac
+      case "${1:-}" in ''|--) hh_die 64 "$USAGE_RUN" ;; esac
+    fi
+    [ $# -ge 2 ] || hh_die 64 "$USAGE_RUN"
+    label="$1"; shift; [ "${1:-}" = "--" ] && shift
+    [ $# -gt 0 ] || hh_die 64 "$USAGE_RUN"
+    take "$label" $$ "$WAIT" || exit $?
+    trap 'hh_lock_release "$LOCK" $$' EXIT
+    trap 'exit 130' INT; trap 'exit 143' TERM
+    export HH_SLOT_HELD=$$   # what a command under this slot reads, so its own --wait for the slot is refused, not waited for
+    "$@"; exit $? ;;
+  acquire)
+    [ "${3:-}" = "--pid" ] && [ -n "${4:-}" ] || hh_die 64 "$USAGE_ACQ"
+    case "$4" in *[!0-9]*) hh_die 64 "pid must be a number" ;; esac
+    WAIT=""
+    if [ "${5:-}" = "--wait" ]; then
+      case "${6:-}" in '') WAIT=inf; [ $# -eq 5 ] || hh_die 64 "$USAGE_ACQ" ;; *[!0-9]*) hh_die 64 "$USAGE_ACQ" ;; *) WAIT="$6"; [ $# -eq 6 ] || hh_die 64 "$USAGE_ACQ" ;; esac
+    else [ $# -eq 4 ] || hh_die 64 "$USAGE_ACQ"; fi
+    hh_alive "$4" || hh_die 4 "pid $4 is not running"
+    take "$2" "$4" "$WAIT" || exit $? ;;
+  release)
+    shift; pid=""; label=""
+    while [ $# -gt 0 ]; do case "$1" in
+      --pid) pid="${2:-}"; shift 2 ;; --label) label="${2:-}"; shift 2 ;;
+      *) hh_die 64 "usage: hh-slot release --pid <pid> [--label <label>]" ;; esac; done
+    [ -n "$pid" ] || hh_die 64 "usage: hh-slot release --pid <pid> [--label <label>]"
+    [ -d "$LOCK" ] || exit 0
+    if [ -n "$label" ] && [ "$(hh_json_get "$LOCK/holder.json" .label)" != "$label" ]; then
+      hh_die 4 "slot is not held under the label $label"; fi
+    hh_lock_release "$LOCK" "$pid" || hh_die 4 "slot is not held by pid $pid" ;;
+  status)
+    if [ -d "$LOCK" ] && ! hh_lock_stale "$LOCK"; then
+      if [ -s "$LOCK/holder.json" ]; then jq -c . "$LOCK/holder.json"; else echo '{"pending":true}'; fi
+    else echo free; fi
+    for n in $(hh_queue_live "$QUEUE"); do jq -c --arg ticket "$n" '. + {ticket:$ticket}' "$QUEUE/$n" 2>/dev/null; done
+    if [ "$MACHINE" = 1 ]; then echo "hh-slot: the machine slot, $SLOT_DIR" >&2
+    else echo "hh-slot: this user's own slot, $SLOT_DIR ($SLOT_WHY)" >&2; fi ;;
+  setup)
+    # Prints the lines; hivehouse never runs sudo. macOS: every local user is in staff. Linux: the group is named in the line.
+    [ $# -le 2 ] || hh_die 64 "usage: hh-slot setup [<group>]"
+    grp="${2:-}"; wheel=root
+    if [ -d /System/Library ]; then [ -n "$grp" ] || grp=staff; wheel=wheel
+    else [ -n "$grp" ] || hh_die 64 "usage: hh-slot setup <group>   (the group whose users share the slot; every one of them must be in it)"; fi
+    case "$grp" in *[!${HH_LOWER}${HH_UPPER}${HH_DIGITS}_-]*) hh_die 64 "a group name is letters, digits, _ and -" ;; esac
+    slot=$(hh_machine_slot_dir); par=${slot%/*}
+    echo "# Run once, as an administrator. It makes the one heavy-job slot for every user of this machine (hivehouse never runs sudo)."
+    echo "# Until it is made, each user has a slot of their own. The slot is coordination, not a security boundary."
+    echo "sudo mkdir -p -- '$slot/queue'"
+    echo "sudo chown root:$wheel -- '$par'"
+    echo "sudo chmod 0755 -- '$par'"
+    echo "sudo chown root:$grp -- '$slot' '$slot/queue'"
+    echo "sudo chmod 2775 -- '$slot' '$slot/queue'" ;;
+  *) echo "usage: hh-slot run|acquire|release|status|setup" >&2; exit 64 ;;
+esac

@@ -2,11 +2,11 @@
 # The hub sees every orchestrator and team of a project: the team roots (its home, then each worktree of its repository that has a
 # team.json), not only the home. A session named after the project counts as its orchestrator when it runs in the home.
 . "$(dirname "$0")/lib.sh"
-. "$HM_REPO_ROOT/bin/hm-lib.sh"
+. "$HH_REPO_ROOT/bin/hh-lib.sh"
 t_setup
-env -u HIVEHOUSE_HOME tmux -S "$HM_TMUX_SOCKET" new-session -d -s keep 'sleep 600'
+env -u HIVEHOUSE_HOME tmux -S "$HH_TMUX_SOCKET" new-session -d -s keep 'sleep 600'
 H="$T_TMP/work"; mkdir -p "$H"; H=$(cd "$H" && pwd -P); P="$H/$T_HUB"
-hub() { (cd "$H" && hm-hub "$@"); }
+hub() { (cd "$H" && hh-hub "$@"); }
 mk() { local d="$H/$1"; mkdir -p "$d"; git -C "$d" init -q -b main; git -C "$d" config user.email t@t; git -C "$d" config user.name t
        echo x > "$d/README"; git -C "$d" add README; git -C "$d" commit -qm init; }
 live() {  # live <name> <cwd>: a running process named claude, with Claude Code's record of it; prints its pid
@@ -18,25 +18,25 @@ live() {  # live <name> <cwd>: a running process named claude, with Claude Code'
 proj() { hub status app --json | jq -r "$1"; }
 mk app; mk other
 hub init >/dev/null; hub add app --home app >/dev/null; hub add other --home other >/dev/null
-mkdir -p "$T_TMP/cl"; printf '#!/usr/bin/env bash\ncd "%s" && hm-hub self "$@"\n' "$H" > "$T_TMP/cl/claude"; bash "$T_TMP/cl/claude" --name hub >/dev/null
+mkdir -p "$T_TMP/cl"; printf '#!/usr/bin/env bash\ncd "%s" && hh-hub self "$@"\n' "$H" > "$T_TMP/cl/claude"; bash "$T_TMP/cl/claude" --name hub >/dev/null
 WT="$H/app-wt"; git -C "$H/app" worktree add -q "$WT" -b team; WT=$(cd "$WT" && pwd -P)
 mkdir -p "$WT/$T_STATE/team/orchestrator"
-kp=$(hm_tmux list-panes -t keep -F '#{pane_id}' | head -1); ki=$(hm_pane_identity "$HM_TMUX_SOCKET" "$kp")
+kp=$(hh_tmux list-panes -t keep -F '#{pane_id}' | head -1); ki=$(hh_pane_identity "$HH_TMUX_SOCKET" "$kp")
 
 # ---- a team registered in a worktree of the home is seen ----
 assert_eq "no team anywhere: none" "$(proj '.projects[0].orchestrator.state')" "none"
 CP=$(live app-orchestrator "$WT")
-jq -nc --arg k "$HM_TMUX_SOCKET" --arg kp "$kp" --arg p "${ki%%$'\t'*}" --arg s "${ki#*$'\t'}" --arg c "$CP" --arg cs "$(hm_lstart "$CP")" \
+jq -nc --arg k "$HH_TMUX_SOCKET" --arg kp "$kp" --arg p "${ki%%$'\t'*}" --arg s "${ki#*$'\t'}" --arg c "$CP" --arg cs "$(hh_lstart "$CP")" \
   '{agents:[{name:"orchestrator", pane:$kp, socket:$k, pane_pid:$p, pane_started:$s, claude_pid:$c, claude_started:$cs, name_full:"app-orchestrator"},
             {name:"impl", pane:$kp, socket:$k, pane_pid:$p, pane_started:$s}]}' > "$WT/$T_STATE/team.json"
 assert_eq "an orchestrator registered in a worktree of the home runs" "$(proj '.projects[0].orchestrator.state')" "running"
 assert_eq "...its agents are listed, each with its worktree" "$(proj '.projects[0].agents | map([.name, .worktree] | join("@")) | join(",")')" "impl@$WT"
 assert_contains "...the plain status names it" "$(hub status app)" "running"
 # status reads each team root's levels once per project (the home and the worktree: two), not once for the orchestrator and again for the agents
-CB="$T_TMP/ctxbin"; rm -rf "$CB"; mkdir -p "$CB"; cp -R "$HM_REPO_ROOT/bin/." "$CB/"; t_plugin_beside "$CB"; mv "$CB/hm-context" "$CB/hm-context.real"
-printf '#!/bin/bash\necho "$HM_PROJECT" >> "%s/ctx.calls"\nexec "%s/hm-context.real" "$@"\n' "$T_TMP" "$CB" > "$CB/hm-context"; chmod +x "$CB/hm-context"
-: > "$T_TMP/ctx.calls"; (cd "$H" && "$CB/hm-hub" status app --json >/dev/null)
-assert_eq "hm-context ran once for each team root in one status call" "$(sort "$T_TMP/ctx.calls" | uniq -c | awk '{print $1}' | tr '\n' ' ')" "1 1 "
+CB="$T_TMP/ctxbin"; rm -rf "$CB"; mkdir -p "$CB"; cp -R "$HH_REPO_ROOT/bin/." "$CB/"; t_plugin_beside "$CB"; mv "$CB/hh-context" "$CB/hh-context.real"
+printf '#!/bin/bash\necho "$HH_PROJECT" >> "%s/ctx.calls"\nexec "%s/hh-context.real" "$@"\n' "$T_TMP" "$CB" > "$CB/hh-context"; chmod +x "$CB/hh-context"
+: > "$T_TMP/ctx.calls"; (cd "$H" && "$CB/hh-hub" status app --json >/dev/null)
+assert_eq "hh-context ran once for each team root in one status call" "$(sort "$T_TMP/ctx.calls" | uniq -c | awk '{print $1}' | tr '\n' ' ')" "1 1 "
 assert_eq "...for the home and the worktree" "$(wc -l < "$T_TMP/ctx.calls" | tr -d ' ')" "2"
 # an orchestrator whose tokens exceed the window that is only assumed shows as unknown, never as a percent over 100
 jq -nc '{type:"assistant", isSidechain:false, message:{model:"claude-sonnet-5-5", usage:{input_tokens:300000, cache_read_input_tokens:0, cache_creation_input_tokens:0, output_tokens:0}}}' > "$T_TMP/big.jsonl"
@@ -52,18 +52,18 @@ assert_eq "...and is not listed among the agents" "$(proj '.projects[0].agents |
 rm "$H/app/$T_STATE/team.json"
 assert_eq "a team in a worktree of another project's home is not this project's" "$(hub status other --json | jq -r '.projects[0].orchestrator.state')" "none"
 hub dialog app impl >/dev/null 2>"$T_TMP/d.err"; rc=$?
-case "$(cat "$T_TMP/d.err")" in *"no agent named"*) bad "an agent in a worktree's team is not found by dialog" ;; *) ok "an agent in a worktree's team is found by hm-hub dialog (exit $rc)" ;; esac
+case "$(cat "$T_TMP/d.err")" in *"no agent named"*) bad "an agent in a worktree's team is not found by dialog" ;; *) ok "an agent in a worktree's team is found by hh-hub dialog (exit $rc)" ;; esac
 hub dialog app nobody >/dev/null 2>"$T_TMP/d.err"; assert_status "...and one on no team is not" $? 2
 kill "$CP" 2>/dev/null; sleep 0.3
 assert_eq "its Claude gone: stopped" "$(proj '.projects[0].orchestrator.state')" "stopped"
 
 # ---- wake resumes from the root the orchestrator was found in ----
-jq -nc --arg t "$HM_REPO_ROOT/tests/fixtures/transcript.jsonl" '{session_id:"sess-wt", transcript_path:$t}' > "$WT/$T_STATE/team/orchestrator/session.json"
+jq -nc --arg t "$HH_REPO_ROOT/tests/fixtures/transcript.jsonl" '{session_id:"sess-wt", transcript_path:$t}' > "$WT/$T_STATE/team/orchestrator/session.json"
 wp=$(hub wake app --mode auto --still 2 --max-wait 15 2>"$T_TMP/wake.err"); assert_status "wake of a worktree orchestrator" $? 0
-screen=$(hm_tmux capture-pane -p -J -S - -t "$wp")
+screen=$(hh_tmux capture-pane -p -J -S - -t "$wp")
 assert_contains "...resumes the session recorded in the worktree" "$screen" "ARGV: sess-wt"
-assert_eq "...in the worktree it was found in" "$(hm_tmux display-message -p -t "$wp" '#{pane_current_path}')" "$WT"
-hm_tmux kill-pane -t "$wp"; rm -f "$P/panes/app.json"
+assert_eq "...in the worktree it was found in" "$(hh_tmux display-message -p -t "$wp" '#{pane_current_path}')" "$WT"
+hh_tmux kill-pane -t "$wp"; rm -f "$P/panes/app.json"
 
 # ---- a session named after the project, in the home, is its orchestrator ----
 rm -rf "$WT/$T_STATE/team.json"
@@ -123,7 +123,7 @@ rm -f "$CLAUDE_CONFIG_DIR/projects/$(key "$HOME_RES")/dddd4444-0000-0000-0000-00
 # status polls: a project's transcripts are read again only when the newest 20 of a root have changed (name, time or size)
 CJ="$T_TMP/countjq"; mkdir -p "$CJ"
 printf '#!/bin/sh\ncase "$*" in *customTitle*|*".cwd // empty"*) echo x >> "%s/jq.calls" ;; esac\nexec /usr/bin/jq "$@"\n' "$T_TMP" > "$CJ/jq"; chmod +x "$CJ/jq"
-reads() { : > "$T_TMP/jq.calls"; (cd "$H" && PATH="$CJ:$PATH" hm-hub status res --json >/dev/null); wc -l < "$T_TMP/jq.calls" | tr -d ' '; }
+reads() { : > "$T_TMP/jq.calls"; (cd "$H" && PATH="$CJ:$PATH" hh-hub status res --json >/dev/null); wc -l < "$T_TMP/jq.calls" | tr -d ' '; }
 assert_eq "the first status reads the transcripts" "$([ "$(reads)" -gt 0 ] && echo yes || echo no)" "yes"
 assert_eq "the second reads none: nothing changed" "$(reads)" "0"
 assert_eq "...and still says resumable, from what it kept" "$(rs '.projects[0].orchestrator.session_id')" "bbbb2222-0000-0000-0000-000000000002"
@@ -141,18 +141,18 @@ assert_eq "a kept line with a bad id is not printed: the transcripts are read ag
 printf '%s\t%s\t%s\n' "$RFP" bbbb2222-0000-0000-0000-000000000002 'not a time' > "$RCK"
 assert_eq "a kept line with a non-numeric time is not printed either" "$(rs '.projects[0].orchestrator.session_id')" "bbbb2222-0000-0000-0000-000000000002"
 assert_eq "...and the kept line is whole again" "$(cut -f3 "$RCK" | grep -Ec '^[0-9]+$')" "1"
-rm -f "$RCK"; (cd "$H" && hm-hub status res --json 2>"$T_TMP/miss.err" >/dev/null)
+rm -f "$RCK"; (cd "$H" && hh-hub status res --json 2>"$T_TMP/miss.err" >/dev/null)
 assert_eq "a cache miss leaves stderr empty" "$(wc -c < "$T_TMP/miss.err" | tr -d ' ')" "0"
 # wake
 wp=$(umask 077; hub wake res --mode auto --still 2 --max-wait 15 2>"$T_TMP/w.err"); assert_status "wake resumes it" $? 0
-screen=$(hm_tmux capture-pane -p -J -S - -t "$wp")
+screen=$(hh_tmux capture-pane -p -J -S - -t "$wp")
 assert_contains "...the session has the caller's umask (077), not the hub's 022" "$screen" "UMASK: 0077"
 assert_contains "...by session id" "$screen" "ARGV: bbbb2222-0000-0000-0000-000000000002"
 assert_contains "...named <project>-orchestrator" "$screen" "ARGV: res-orchestrator"
-assert_contains "...the wake line carries --agent orchestrator" "$screen" "hm-spawn --self --agent orchestrator"
-assert_eq "...in the root whose transcript it was" "$(hm_tmux display-message -p -t "$wp" '#{pane_current_path}')" "$HOME_RES"
+assert_contains "...the wake line carries --agent orchestrator" "$screen" "hh-spawn --self --agent orchestrator"
+assert_eq "...in the root whose transcript it was" "$(hh_tmux display-message -p -t "$wp" '#{pane_current_path}')" "$HOME_RES"
 hub wake res --still 2 --max-wait 15 >/dev/null 2>&1; assert_status "a second wake while the first is coming up is refused" $? 4
-hm_tmux kill-pane -t "$wp"; rm -f "$P/panes/res.json"
+hh_tmux kill-pane -t "$wp"; rm -f "$P/panes/res.json"
 hp2=$(jq -nc --argjson p 1 '$p' >/dev/null; live res-orchestrator "$H/elsewhere")
 jq -nc --argjson p "$hp2" --arg s "bbbb2222-0000-0000-0000-000000000002" --arg c "$H/elsewhere" '{pid:$p, name:"zzz", cwd:$c, sessionId:$s, kind:"interactive"}' > "$CLAUDE_CONFIG_DIR/sessions/$hp2.json"
 hub wake res --still 2 --max-wait 15 >/dev/null 2>"$T_TMP/w.err"; assert_status "a live Claude already holding that conversation refuses the wake" $? 4
@@ -164,15 +164,15 @@ mk two; hub add two --home two >/dev/null
 T2="$H/two-wt"; git -C "$H/two" worktree add -q "$T2" -b two-team; T2=$(cd "$T2" && pwd -P); mkdir -p "$T2/$T_STATE/team/orchestrator" "$H/two/$T_STATE/team/orchestrator"
 T3="$H/two-wt3"; git -C "$H/two" worktree add -q "$T3" -b two-team3; T3=$(cd "$T3" && pwd -P); mkdir -p "$T3/$T_STATE"
 DEAD=$( ( exec -a claude sleep 0.1 ) >/dev/null 2>&1 & echo $! ); sleep 0.4
-jq -nc --arg k "$HM_TMUX_SOCKET" --arg kp "$kp" --arg p "${ki%%$'\t'*}" --arg c "$DEAD" \
+jq -nc --arg k "$HH_TMUX_SOCKET" --arg kp "$kp" --arg p "${ki%%$'\t'*}" --arg c "$DEAD" \
   '{agents:[{name:"orchestrator", pane:$kp, socket:$k, pane_pid:$p, pane_started:"Mon Jan  1 00:00:00 2001", claude_pid:$c, claude_started:"Mon Jan  1 00:00:00 2001", name_full:"two-orchestrator"}]}' > "$H/two/$T_STATE/team.json"
-jq -nc --arg t "$HM_REPO_ROOT/tests/fixtures/transcript.jsonl" '{session_id:"sess-home-old", transcript_path:$t}' > "$H/two/$T_STATE/team/orchestrator/session.json"
+jq -nc --arg t "$HH_REPO_ROOT/tests/fixtures/transcript.jsonl" '{session_id:"sess-home-old", transcript_path:$t}' > "$H/two/$T_STATE/team/orchestrator/session.json"
 TP=$(live two-orchestrator "$T2")
 rm -f "$CLAUDE_CONFIG_DIR/sessions/$TP.json"   # Claude Code records nothing of it: only team.json says it runs
-jq -nc --arg k "$HM_TMUX_SOCKET" --arg kp "$kp" --arg p "${ki%%$'\t'*}" --arg s "${ki#*$'\t'}" --arg c "$TP" --arg cs "$(hm_lstart "$TP")" \
+jq -nc --arg k "$HH_TMUX_SOCKET" --arg kp "$kp" --arg p "${ki%%$'\t'*}" --arg s "${ki#*$'\t'}" --arg c "$TP" --arg cs "$(hh_lstart "$TP")" \
   '{agents:[{name:"orchestrator", pane:$kp, socket:$k, pane_pid:$p, pane_started:$s, claude_pid:$c, claude_started:$cs, name_full:"two-orchestrator"},
             {name:"impl", pane:$kp, socket:$k, pane_pid:$p, pane_started:$s}]}' > "$T2/$T_STATE/team.json"
-jq -nc --arg k "$HM_TMUX_SOCKET" --arg kp "$kp" --arg p "${ki%%$'\t'*}" --arg s "${ki#*$'\t'}" \
+jq -nc --arg k "$HH_TMUX_SOCKET" --arg kp "$kp" --arg p "${ki%%$'\t'*}" --arg s "${ki#*$'\t'}" \
   '{agents:[{name:"orchestrator", pane:$kp, socket:$k, pane_pid:$p, pane_started:$s}]}' > "$T3/$T_STATE/team.json"
 ts() { hub status two --json | jq -r "$1"; }
 assert_eq "a live orchestrator in a worktree wins over a stale one in the home: running" "$(ts '.projects[0].orchestrator.state')" "running"
@@ -185,10 +185,10 @@ kill "$TP" 2>/dev/null
 # ---- an agent name used in two team roots of one project: told apart by the root ----
 mk dup; hub add dup --home dup >/dev/null
 DW="$H/dup-wt"; git -C "$H/dup" worktree add -q "$DW" -b dup-team; DW=$(cd "$DW" && pwd -P); mkdir -p "$DW/$T_STATE" "$H/dup/$T_STATE"
-pb=$(hm_tmux new-window -d -P -F '#{pane_id}' -t keep: -n twin 'sleep 600'); pbi=$(hm_pane_identity "$HM_TMUX_SOCKET" "$pb")
+pb=$(hh_tmux new-window -d -P -F '#{pane_id}' -t keep: -n twin 'sleep 600'); pbi=$(hh_pane_identity "$HH_TMUX_SOCKET" "$pb")
 for pair in "$H/dup:$kp:${ki%%$'\t'*}:${ki#*$'\t'}" "$DW:$pb:${pbi%%$'\t'*}:${pbi#*$'\t'}"; do
   IFS=: read -r droot dpane dpp dps <<< "$pair"
-  jq -nc --arg k "$HM_TMUX_SOCKET" --arg p "$dpane" --arg pp "$dpp" --arg ps "$dps" '{agents:[{name:"impl", pane:$p, socket:$k, pane_pid:$pp, pane_started:$ps}]}' > "$droot/$T_STATE/team.json"
+  jq -nc --arg k "$HH_TMUX_SOCKET" --arg p "$dpane" --arg pp "$dpp" --arg ps "$dps" '{agents:[{name:"impl", pane:$p, socket:$k, pane_pid:$pp, pane_started:$ps}]}' > "$droot/$T_STATE/team.json"
 done
 ds() { hub status dup --json | jq -r "$1"; }
 assert_eq "the name is listed once per root, each with its root" "$(ds '.projects[0].agents | map(.worktree) | sort | join(",")')" "$(printf '%s\n%s' "$H/dup" "$DW" | sort | tr '\n' ',' | sed 's/,$//')"
@@ -202,20 +202,20 @@ assert_contains "a dialog for name@root reads that root's pane" "$(cat "$T_TMP/d
 hub dialog dup "impl@$H/dup" >/dev/null 2>"$T_TMP/d2.err"
 assert_contains "...and the other root's pane for the other" "$(cat "$T_TMP/d2.err")" "pane $kp"
 hub dialog dup "impl@$H/nowhere" >/dev/null 2>"$T_TMP/d3.err"; assert_status "a root the name is not in is not found" $? 2
-hm_tmux kill-pane -t "$pb" 2>/dev/null; sleep 0.5
+hh_tmux kill-pane -t "$pb" 2>/dev/null; sleep 0.5
 assert_contains "the plain status names the root of a stopped one of two same-named agents" "$(hub status dup)" "impl@$DW stopped"
 
-# ---- hm-hub run reaches an orchestrator registered only in a worktree: its pane is read from that root's team.json ----
+# ---- hh-hub run reaches an orchestrator registered only in a worktree: its pane is read from that root's team.json ----
 mk wr; hub add wr --home wr >/dev/null
 WR="$H/wr-wt"; git -C "$H/wr" worktree add -q "$WR" -b wr-team; WR=$(cd "$WR" && pwd -P); mkdir -p "$WR/$T_STATE/team/orchestrator"
 SB="$T_TMP/b.sock"
-WRPANE=$(env -u HIVEHOUSE_HOME tmux -S "$SB" new-session -d -x 200 -y 56 -P -F '#{pane_id}' -s wrb -c "$WR" -e "HM_FAKE_CLAUDE=idle" 'exec claude --name wr-orchestrator') || WRPANE=""
+WRPANE=$(env -u HIVEHOUSE_HOME tmux -S "$SB" new-session -d -x 200 -y 56 -P -F '#{pane_id}' -s wrb -c "$WR" -e "HH_FAKE_CLAUDE=idle" 'exec claude --name wr-orchestrator') || WRPANE=""
 t_track "$(tmux -S "$SB" display -p '#{pid}')"
 ( exec -a claude sleep 300 ) >/dev/null 2>&1 & WRC=$!; disown "$WRC"; t_track "$WRC"; sleep 0.3
-wi=$(hm_pane_identity "$SB" "$WRPANE")
-jq -nc --arg k "$SB" --arg p "$WRPANE" --arg pp "${wi%%$'\t'*}" --arg ps "${wi#*$'\t'}" --arg c "$WRC" --arg cs "$(hm_lstart "$WRC")" \
+wi=$(hh_pane_identity "$SB" "$WRPANE")
+jq -nc --arg k "$SB" --arg p "$WRPANE" --arg pp "${wi%%$'\t'*}" --arg ps "${wi#*$'\t'}" --arg c "$WRC" --arg cs "$(hh_lstart "$WRC")" \
   '{agents:[{name:"orchestrator", pane:$p, socket:$k, pane_pid:$pp, pane_started:$ps, claude_pid:$c, claude_started:$cs, name_full:"wr-orchestrator"}]}' > "$WR/$T_STATE/team.json"
-jq -nc --arg t "$HM_REPO_ROOT/tests/fixtures/transcript.jsonl" '{session_id:"sess-wr", transcript_path:$t}' > "$WR/$T_STATE/team/orchestrator/session.json"
+jq -nc --arg t "$HH_REPO_ROOT/tests/fixtures/transcript.jsonl" '{session_id:"sess-wr", transcript_path:$t}' > "$WR/$T_STATE/team/orchestrator/session.json"
 wt1=$(hub task wr --text "Work the queue"); wt1=${wt1%%$'\t'*}
 rp=$(hub run wr overnight "$wt1" --still 2 --max-wait 15 2>"$T_TMP/r.err"); assert_status "run overnight for an orchestrator registered in a worktree" $? 0
 assert_eq "...typed into its pane, on its own server" "$rp" "$WRPANE"

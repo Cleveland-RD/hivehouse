@@ -7,57 +7,57 @@
 #   secret   <host> <remote root> <relative path under .hivehouse/tmp>
 #   start-agent <host> <remote root> <agent> --model m --effort e --mode m [--worktree abs --branch b --base b]
 # Remote paths, list entries and secret paths use only ASCII letters, digits and ._/@+_- (rsync's remote shell splits on a space or ;); anything else is refused (exit 4).
-# Every ssh, scp and rsync goes through hm_ssh, hm_scp, hm_rsync below, which call the tool by name: tests put shims first
+# Every ssh, scp and rsync goes through hh_ssh, hh_scp, hh_rsync below, which call the tool by name: tests put shims first
 # on PATH, so no test uses a network. After `check`, remote hivehouse executables are called by the absolute install path
 # it recorded, so no PATH lookup can run another program there. Exit: 0 ok, 1 findings (mismatch, conflict, version, space), 2 no project, 3 .hivehouse tracked,
 # 4 refused, 5 host unreachable, 64 usage.
 set -u
-HM_BIN=${0%/*}; [ "$HM_BIN" != "$0" ] || HM_BIN=.   # parameter expansion, never dirname: under -p a function is ignored, an executable on PATH is not
-. "$HM_BIN/hm-lib.sh"
-hm_refuse_away hm-remote-sync
-USAGE="usage: hm-remote-sync check <host> --min-gb n --plugin-version v | branches <host> <root> [branch...] | files <host> <root> <list> | memory <host> <local dir> <remote dir> | secret <host> <root> <relative path> | start-agent <host> <root> <agent> --model m --effort e --mode m [--worktree abs --branch b --base b]"
-[ $# -ge 2 ] || hm_die 64 "$USAGE"
+HH_BIN=${0%/*}; [ "$HH_BIN" != "$0" ] || HH_BIN=.   # parameter expansion, never dirname: under -p a function is ignored, an executable on PATH is not
+. "$HH_BIN/hh-lib.sh"
+hh_refuse_away hh-remote-sync
+USAGE="usage: hh-remote-sync check <host> --min-gb n --plugin-version v | branches <host> <root> [branch...] | files <host> <root> <list> | memory <host> <local dir> <remote dir> | secret <host> <root> <relative path> | start-agent <host> <root> <agent> --model m --effort e --mode m [--worktree abs --branch b --base b]"
+[ $# -ge 2 ] || hh_die 64 "$USAGE"
 sub="$1"; host="$2"; shift 2
-case "$sub" in check|branches|files|memory|secret|start-agent) ;; *) hm_die 64 "$USAGE" ;; esac
+case "$sub" in check|branches|files|memory|secret|start-agent) ;; *) hh_die 64 "$USAGE" ;; esac
 
 # ---- validation ----------------------------------------------------------------------------------------------------
 has_ctrl() { printf '%s' "$1" | LC_ALL=C grep -q '[[:cntrl:]]'; }
-safe_chars() { case "$1" in *[!${HM_LOWER}${HM_UPPER}${HM_DIGITS}._/@+_-]*) return 1 ;; esac; }   # rsync's remote shell splits on a space or ;, so a remote path is limited to this alphabet
+safe_chars() { case "$1" in *[!${HH_LOWER}${HH_UPPER}${HH_DIGITS}._/@+_-]*) return 1 ;; esac; }   # rsync's remote shell splits on a space or ;, so a remote path is limited to this alphabet
 abs_ok() { case "$1" in /*) ;; *) return 1 ;; esac; safe_chars "$1" || return 1; has_ctrl "$1" && return 1; case "/$1/" in */../*|*/./*) return 1 ;; esac; return 0; }
 rel_ok() { [ -n "$1" ] || return 1; case "$1" in /*|-*) return 1 ;; esac; safe_chars "$1" || return 1; has_ctrl "$1" && return 1; case "/$1/" in */../*|*/./*|*//*) return 1 ;; esac; return 0; }
-hm_is_host_name "$host" || hm_die 4 "bad host name: $host"
-if [ -n "${HM_REMOTE_HOSTS:-}" ]; then
-  case ",$(printf '%s' "$HM_REMOTE_HOSTS" | tr -d ' ')," in *",$host,"*) ;; *) hm_die 4 "$host is not one of the known remote hosts" ;; esac
+hh_is_host_name "$host" || hh_die 4 "bad host name: $host"
+if [ -n "${HH_REMOTE_HOSTS:-}" ]; then
+  case ",$(printf '%s' "$HH_REMOTE_HOSTS" | tr -d ' ')," in *",$host,"*) ;; *) hh_die 4 "$host is not one of the known remote hosts" ;; esac
 fi
 
-ROOT=$(hm_project_root) || exit $?
-hm_ensure_state || exit $?
-export HM_PROJECT="$ROOT"
-STATE="$ROOT/$HM_STATE_DIR"; REC="$STATE/remote/$host.json"
+ROOT=$(hh_project_root) || exit $?
+hh_ensure_state || exit $?
+export HH_PROJECT="$ROOT"
+STATE="$ROOT/$HH_STATE_DIR"; REC="$STATE/remote/$host.json"
 
 # ---- the only places ssh, scp and rsync are called -------------------------------------------------------------------
-hm_ssh()   { ssh -o BatchMode=yes -o ConnectTimeout=10 -- "$host" "$@"; }
-hm_scp()   { scp -o BatchMode=yes -o ConnectTimeout=10 -- "$@"; }
-hm_rsync() { rsync -a -e 'ssh -o BatchMode=yes -o ConnectTimeout=10' "$@"; }
-rrun() { hm_ssh "$(printf '%q ' "$@")"; }                 # rrun <cmd> <args...>: each word quoted for the remote shell
+hh_ssh()   { ssh -o BatchMode=yes -o ConnectTimeout=10 -- "$host" "$@"; }
+hh_scp()   { scp -o BatchMode=yes -o ConnectTimeout=10 -- "$@"; }
+hh_rsync() { rsync -a -e 'ssh -o BatchMode=yes -o ConnectTimeout=10' "$@"; }
+rrun() { hh_ssh "$(printf '%q ' "$@")"; }                 # rrun <cmd> <args...>: each word quoted for the remote shell
 clean() { LC_ALL=C tr -cd '[:print:]\n' | cut -c1-200; }   # text that came from the remote is printed without control characters
-unreachable() { hm_die 5 "cannot reach $host"; }
-reach() { hm_ssh true >/dev/null 2>&1 || unreachable; }
+unreachable() { hh_die 5 "cannot reach $host"; }
+reach() { hh_ssh true >/dev/null 2>&1 || unreachable; }
 sha_local() { shasum -a 256 < "$1" | cut -d' ' -f1; }
 sha_remote() { rrun sh -c 'shasum -a 256 < "$1"' sh "$1" 2>/dev/null | cut -d' ' -f1; }   # empty when the file is absent
 install_path() {  # the remote plugin's install path from the record `check` wrote; refuses without one
-  local p; [ -f "$REC" ] || hm_die 4 "no check record for $host: run hm-remote-sync check first"
-  p=$(jq -r '.installPath // empty' "$REC" 2>/dev/null); abs_ok "$p" || hm_die 4 "the check record for $host has no usable install path"
+  local p; [ -f "$REC" ] || hh_die 4 "no check record for $host: run hh-remote-sync check first"
+  p=$(jq -r '.installPath // empty' "$REC" 2>/dev/null); abs_ok "$p" || hh_die 4 "the check record for $host has no usable install path"
   printf '%s\n' "$p"
 }
 need_remote_root() {  # need_remote_root <path>: absolute, and an existing directory over there
-  abs_ok "$1" || hm_die 4 "the remote root must be an absolute path without . or ..: $1"
-  rrun test -d "$1" || { [ $? -eq 255 ] && unreachable; hm_die 4 "no such directory on $host: $1"; }
+  abs_ok "$1" || hh_die 4 "the remote root must be an absolute path without . or ..: $1"
+  rrun test -d "$1" || { [ $? -eq 255 ] && unreachable; hh_die 4 "no such directory on $host: $1"; }
 }
 
 local_parent_ok() {  # local_parent_ok <relative path>: its directory, resolved, lies under the resolved project root (a symlinked directory out of the repo is refused)
   local root; root=$(cd "$ROOT" && pwd -P)
-  case "$(cd "$ROOT/$(dirname "$1")" 2>/dev/null && pwd -P)/" in "$root"/*) ;; *) hm_die 4 "$1 is under a directory that leaves the repo" ;; esac
+  case "$(cd "$ROOT/$(dirname "$1")" 2>/dev/null && pwd -P)/" in "$root"/*) ;; *) hh_die 4 "$1 is under a directory that leaves the repo" ;; esac
 }
 rsafe_dir() {  # rsafe_dir <remote root> <relative dir or .>: walks the directory on the remote, creating what is missing, and refuses a
   # symlink or a non-directory at any step; prints the resolved directory, which must lie under the resolved root (R1)
@@ -71,9 +71,9 @@ rsafe_dir() {  # rsafe_dir <remote root> <relative dir or .>: walks the director
     case "$real" in "$root"|"$root"/*) ;; *) exit 3 ;; esac
     printf "%s\n" "$real"' sh "$1" "$2" 2>/dev/null); rc=$?
   [ "$rc" -ne 255 ] || unreachable
-  [ "$rc" -eq 0 ] || hm_die 4 "$2 under $1 on $host is a symlink out of the root, not a directory or cannot be made (exit $rc)"
+  [ "$rc" -eq 0 ] || hh_die 4 "$2 under $1 on $host is a symlink out of the root, not a directory or cannot be made (exit $rc)"
   out=$(printf '%s\n' "$out" | clean | head -1)
-  abs_ok "$out" || hm_die 4 "$host did not answer with a usable resolved path for $2 under $1"
+  abs_ok "$out" || hh_die 4 "$host did not answer with a usable resolved path for $2 under $1"
   printf '%s\n' "$out"
 }
 
@@ -81,15 +81,15 @@ case "$sub" in
 # ---- check ---------------------------------------------------------------------------------------------------------
 check)
   mingb=""; want=""
-  while [ $# -gt 0 ]; do case "$1" in --min-gb) mingb="${2:-}"; shift 2 ;; --plugin-version) want="${2:-}"; shift 2 ;; *) hm_die 64 "$USAGE" ;; esac; done
-  case "$mingb" in ''|*[!0-9]*) hm_die 4 "--min-gb must be a whole number: $mingb" ;; esac
-  [ -n "$want" ] || hm_die 64 "$USAGE"
+  while [ $# -gt 0 ]; do case "$1" in --min-gb) mingb="${2:-}"; shift 2 ;; --plugin-version) want="${2:-}"; shift 2 ;; *) hh_die 64 "$USAGE" ;; esac; done
+  case "$mingb" in ''|*[!0-9]*) hh_die 4 "--min-gb must be a whole number: $mingb" ;; esac
+  [ -n "$want" ] || hh_die 64 "$USAGE"
   reach
   bad=0; say() { printf '%s\n' "$*"; }; flag() { say "FINDING: $*"; bad=1; }
   kb=$(rrun sh -c 'df -Pk "$HOME" | tail -1' | awk '{print $4}')
   case "$kb" in ''|*[!0-9]*) flag "the free space on $host could not be read"; gb=0 ;; *) gb=$(( kb / 1024 / 1024 )); say "free: ${gb} GB on $host"; [ "$gb" -ge "$mingb" ] || flag "free disk ${gb} GB is below $mingb GB" ;; esac   # digits only: the remote's text never reaches bash arithmetic
   cv=$(rrun claude --version 2>/dev/null | clean | head -1); say "claude: ${cv:-none}"; [ -n "$cv" ] || flag "claude is not installed on $host"
-  pname=$(hm_plugin_name) || exit $?
+  pname=$(hh_plugin_name) || exit $?
   plug=$(rrun claude plugin list --json 2>/dev/null | jq -c --arg p "$pname@" '[.[] | select((.id // "") | startswith($p))][0] // empty' 2>/dev/null)
   ver=$(printf '%s' "$plug" | jq -r '.version // empty' 2>/dev/null | clean); ip=$(printf '%s' "$plug" | jq -r '.installPath // empty' 2>/dev/null)
   say "plugin: ${ver:-not installed}"
@@ -98,35 +98,35 @@ check)
   for t in jq tmux git; do rrun sh -c 'command -v "$1" >/dev/null' sh "$t" || flag "$t is missing on $host"; done
   if abs_ok "$ip"; then
     mkdir -p "$STATE/remote"
-    jq -n --arg h "$host" --arg p "$ip" --arg v "$ver" --arg c "$cv" --argjson g "$gb" --arg at "$(hm_now)" \
+    jq -n --arg h "$host" --arg p "$ip" --arg v "$ver" --arg c "$cv" --argjson g "$gb" --arg at "$(hh_now)" \
       '{host:$h, installPath:$p, version:$v, claude:$c, freeGb:$g, checked:$at}' > "$REC.tmp$$" && mv "$REC.tmp$$" "$REC"
   fi
   exit "$bad" ;;
 
 # ---- branches ------------------------------------------------------------------------------------------------------
 branches)
-  [ $# -ge 1 ] || hm_die 64 "$USAGE"
+  [ $# -ge 1 ] || hh_die 64 "$USAGE"
   rroot="$1"; shift
   list=("$@")
   if [ ${#list[@]} -eq 0 ]; then
-    cur=$(git -C "$ROOT" symbolic-ref -q --short HEAD) || hm_die 4 "no branch given and HEAD is detached"
+    cur=$(git -C "$ROOT" symbolic-ref -q --short HEAD) || hh_die 4 "no branch given and HEAD is detached"
     list=("$cur")
   fi
   for b in "${list[@]}"; do
-    case "$b" in ''|-*|*:*) hm_die 4 "bad branch name: $b" ;; esac
-    git check-ref-format "refs/heads/${b}" || hm_die 4 "not a valid branch name: $b"
-    git -C "$ROOT" rev-parse --verify -q "refs/heads/${b}" >/dev/null || hm_die 4 "no such local branch: $b"
+    case "$b" in ''|-*|*:*) hh_die 4 "bad branch name: $b" ;; esac
+    git check-ref-format "refs/heads/${b}" || hh_die 4 "not a valid branch name: $b"
+    git -C "$ROOT" rev-parse --verify -q "refs/heads/${b}" >/dev/null || hh_die 4 "no such local branch: $b"
   done
   reach; need_remote_root "$rroot"
-  rrun git -C "$rroot" rev-parse --git-dir >/dev/null 2>&1 || hm_die 4 "$rroot is not a git repository on $host"
+  rrun git -C "$rroot" rev-parse --git-dir >/dev/null 2>&1 || hh_die 4 "$rroot is not a git repository on $host"
   mkdir -p "$STATE/tmp"; tmpd=$(mktemp -d "$STATE/tmp/bundle.XXXXXX") || exit 1
-  bdir=$(rsafe_dir "$rroot" "$HM_STATE_DIR/tmp") || exit $?
-  rbundle="$bdir/hm-$$.bundle"
+  bdir=$(rsafe_dir "$rroot" "$HH_STATE_DIR/tmp") || exit $?
+  rbundle="$bdir/hh-$$.bundle"
   cleanup() { rm -rf "$tmpd"; rrun rm -f "$rbundle" >/dev/null 2>&1; }; trap cleanup EXIT
   refs=(); for b in "${list[@]}"; do refs+=("refs/heads/${b}"); done
-  git -C "$ROOT" bundle create "$tmpd/b.bundle" "${refs[@]}" >/dev/null 2>&1 || hm_die 4 "could not bundle: ${list[*]}"
-  git -C "$ROOT" bundle verify "$tmpd/b.bundle" >/dev/null 2>&1 || hm_die 4 "the bundle did not verify"
-  hm_scp "$tmpd/b.bundle" "$host:$rbundle" >/dev/null 2>&1 || unreachable
+  git -C "$ROOT" bundle create "$tmpd/b.bundle" "${refs[@]}" >/dev/null 2>&1 || hh_die 4 "could not bundle: ${list[*]}"
+  git -C "$ROOT" bundle verify "$tmpd/b.bundle" >/dev/null 2>&1 || hh_die 4 "the bundle did not verify"
+  hh_scp "$tmpd/b.bundle" "$host:$rbundle" >/dev/null 2>&1 || unreachable
   bad=0
   for b in "${list[@]}"; do
     # the only forced refspec: onto refs/remotes/local/*, the namespace this tool owns on the remote (a branch name with a colon is refused above)
@@ -139,24 +139,24 @@ branches)
 
 # ---- files ---------------------------------------------------------------------------------------------------------
 files)
-  [ $# -eq 2 ] || hm_die 64 "$USAGE"
+  [ $# -eq 2 ] || hh_die 64 "$USAGE"
   rroot="$1"; lf="$2"
-  [ -f "$lf" ] || hm_die 4 "no such list file: $lf"
+  [ -f "$lf" ] || hh_die 4 "no such list file: $lf"
   entries=(); while IFS= read -r e || [ -n "$e" ]; do
     [ -n "$e" ] || continue
-    rel_ok "$e" || hm_die 4 "list entry refused (must be relative, no .., not starting with -): $e"
-    [ ! -L "$ROOT/$e" ] || hm_die 4 "list entry is a symlink: $e"
+    rel_ok "$e" || hh_die 4 "list entry refused (must be relative, no .., not starting with -): $e"
+    [ ! -L "$ROOT/$e" ] || hh_die 4 "list entry is a symlink: $e"
     local_parent_ok "$e"
-    [ -f "$ROOT/$e" ] || hm_die 4 "list entry is not a file here: $e"
+    [ -f "$ROOT/$e" ] || hh_die 4 "list entry is not a file here: $e"
     entries+=("$e")
   done < "$lf"
-  [ ${#entries[@]} -gt 0 ] || hm_die 4 "the list is empty"
+  [ ${#entries[@]} -gt 0 ] || hh_die 4 "the list is empty"
   reach; need_remote_root "$rroot"
   for d in $(printf '%s\n' "${entries[@]}" | while IFS= read -r e; do dirname "$e"; done | sort -u); do rsafe_dir "$rroot" "$d" >/dev/null || exit $?; done
   printf '%s\n' "${entries[@]}" > "$STATE/remote.files.$$"
-  hm_rsync --files-from="$STATE/remote.files.$$" -- "$ROOT/" "$host:$rroot/" >/dev/null 2>&1; rc=$?
+  hh_rsync --files-from="$STATE/remote.files.$$" -- "$ROOT/" "$host:$rroot/" >/dev/null 2>&1; rc=$?
   rm -f "$STATE/remote.files.$$"
-  [ "$rc" -eq 0 ] || hm_die 5 "rsync to $host failed (exit $rc)"
+  [ "$rc" -eq 0 ] || hh_die 5 "rsync to $host failed (exit $rc)"
   bad=0
   for e in "${entries[@]}"; do
     a=$(sha_local "$ROOT/$e"); b=$(sha_remote "$rroot/$e")
@@ -166,13 +166,13 @@ files)
 
 # ---- memory --------------------------------------------------------------------------------------------------------
 memory)
-  [ $# -eq 2 ] || hm_die 64 "$USAGE"
+  [ $# -eq 2 ] || hh_die 64 "$USAGE"
   ldir="$1"; rdir="$2"
-  [ -d "$ldir" ] || hm_die 4 "no such local directory: $ldir"
-  abs_ok "$rdir" || hm_die 4 "the remote memory directory must be absolute without . or ..: $rdir"
+  [ -d "$ldir" ] || hh_die 4 "no such local directory: $ldir"
+  abs_ok "$rdir" || hh_die 4 "the remote memory directory must be absolute without . or ..: $rdir"
   names=(); for f in "$ldir"/*.md; do
     [ -f "$f" ] || continue; n=$(basename "$f")
-    case "$n" in *[!${HM_LOWER}${HM_UPPER}${HM_DIGITS}._-]*|-*) hm_die 4 "memory file name refused: $n" ;; esac
+    case "$n" in *[!${HH_LOWER}${HH_UPPER}${HH_DIGITS}._-]*|-*) hh_die 4 "memory file name refused: $n" ;; esac
     names+=("$n")
   done
   reach; rrun mkdir -p "$rdir" || unreachable
@@ -181,7 +181,7 @@ memory)
     a=$(sha_local "$ldir/$n"); b=$(sha_remote "$rdir/$n")
     rrun test -L "$rdir/$n"; lrc=$?; [ "$lrc" -ne 255 ] || unreachable
     if [ "$lrc" -eq 0 ]; then echo "conflict $n (a symlink there); the remote file was not overwritten"; bad=1   # absent is never read through a link
-    elif [ -z "$b" ]; then hm_scp "$ldir/$n" "$host:$rdir/$n" >/dev/null 2>&1 || unreachable; echo "copied $n"
+    elif [ -z "$b" ]; then hh_scp "$ldir/$n" "$host:$rdir/$n" >/dev/null 2>&1 || unreachable; echo "copied $n"
     elif [ "$a" = "$b" ]; then echo "same $n"
     else echo "conflict $n (here ${a:0:12}, there ${b:0:12}); the remote file was not overwritten"; bad=1; fi
   done
@@ -189,18 +189,18 @@ memory)
 
 # ---- secret --------------------------------------------------------------------------------------------------------
 secret)
-  [ $# -eq 2 ] || hm_die 64 "$USAGE"
+  [ $# -eq 2 ] || hh_die 64 "$USAGE"
   rroot="$1"; rel="$2"
-  rel_ok "$rel" || hm_die 4 "path refused (relative, no .., not starting with -): $rel"
-  case "$rel" in "$HM_STATE_DIR/tmp/"*) ;; *) hm_die 4 "a secret goes under $HM_STATE_DIR/tmp/ only: the remote manifest refuses a file entry elsewhere in the project" ;; esac
-  [ ! -L "$ROOT/$rel" ] || hm_die 4 "the secret is a symlink: $rel"
-  [ -f "$ROOT/$rel" ] || hm_die 4 "no such file here: $rel"
+  rel_ok "$rel" || hh_die 4 "path refused (relative, no .., not starting with -): $rel"
+  case "$rel" in "$HH_STATE_DIR/tmp/"*) ;; *) hh_die 4 "a secret goes under $HH_STATE_DIR/tmp/ only: the remote manifest refuses a file entry elsewhere in the project" ;; esac
+  [ ! -L "$ROOT/$rel" ] || hh_die 4 "the secret is a symlink: $rel"
+  [ -f "$ROOT/$rel" ] || hh_die 4 "no such file here: $rel"
   local_parent_ok "$rel"
   ip=$(install_path) || exit $?
   reach; need_remote_root "$rroot"
   base=$(basename "$rel"); ddir=$(rsafe_dir "$rroot" "$(dirname "$rel")") || exit $?
   rabs=$(rsafe_dir "$rroot" .) || exit $?; dest="$ddir/$base"
-  rrun test -L "$dest" && hm_die 4 "the secret's destination on $host is a symlink: $rel"
+  rrun test -L "$dest" && hh_die 4 "the secret's destination on $host is a symlink: $rel"
   keys() { sed -n 's/^[[:space:]]*\(export[[:space:]]\{1,\}\)\{0,1\}\([A-Za-z_][A-Za-z0-9_]*\)=\(.*\)$/\2 \3/p'; }   # "NAME value" lines; values stay in this pipeline
   have=$(sha_remote "$dest"); mine=$(sha_local "$ROOT/$rel")
   if [ -n "$have" ] && [ "$have" != "$mine" ]; then
@@ -219,61 +219,61 @@ secret)
     rrun chmod 600 "$dest" || unreachable
     echo "unchanged: $rel is already on $host"
   else
-    tmp="$ddir/.$base.hm.$$"
+    tmp="$ddir/.$base.hh.$$"
     # the content travels on stdin into a file created under umask 077 in the destination directory, so it is never
     # wider than 600 at any moment, then moved into place; scp would create it at the remote umask
     # no-clobber: a file that appeared at the destination since the check above is left as it is (exit 9)
-    hm_ssh "umask 077; cat > $(printf '%q' "$tmp") && { if test -e $(printf '%q' "$dest") || test -L $(printf '%q' "$dest"); then rm -f $(printf '%q' "$tmp"); exit 9; fi; mv -n $(printf '%q' "$tmp") $(printf '%q' "$dest"); if test -e $(printf '%q' "$tmp"); then rm -f $(printf '%q' "$tmp"); exit 9; fi; chmod 600 $(printf '%q' "$dest"); }" < "$ROOT/$rel" >/dev/null 2>&1; wrc=$?
-    [ "$wrc" -ne 9 ] || hm_die 1 "a file appeared at $rel on $host while it was being copied: it was not overwritten"
-    [ "$wrc" -eq 0 ] || { rrun rm -f "$tmp" >/dev/null 2>&1; hm_die 5 "could not write the secret on $host"; }
-    [ "$(sha_remote "$dest")" = "$mine" ] || hm_die 1 "the copy on $host does not match"
+    hh_ssh "umask 077; cat > $(printf '%q' "$tmp") && { if test -e $(printf '%q' "$dest") || test -L $(printf '%q' "$dest"); then rm -f $(printf '%q' "$tmp"); exit 9; fi; mv -n $(printf '%q' "$tmp") $(printf '%q' "$dest"); if test -e $(printf '%q' "$tmp"); then rm -f $(printf '%q' "$tmp"); exit 9; fi; chmod 600 $(printf '%q' "$dest"); }" < "$ROOT/$rel" >/dev/null 2>&1; wrc=$?
+    [ "$wrc" -ne 9 ] || hh_die 1 "a file appeared at $rel on $host while it was being copied: it was not overwritten"
+    [ "$wrc" -eq 0 ] || { rrun rm -f "$tmp" >/dev/null 2>&1; hh_die 5 "could not write the secret on $host"; }
+    [ "$(sha_remote "$dest")" = "$mine" ] || hh_die 1 "the copy on $host does not match"
     echo "copied: $rel to $host (mode 600)"
   fi
-  mode=$(rrun ls -ln "$dest" 2>/dev/null | cut -c1-10); [ "$mode" = "-rw-------" ] || hm_die 1 "the copy on $host has mode $mode, not 600"
-  if rrun env "HM_PROJECT=$rroot" "$ip/bin/hm-manifest" list --kind file 2>/dev/null | jq -e --arg p "$rabs/$rel" 'select(.path == $p)' >/dev/null 2>&1; then
+  mode=$(rrun ls -ln "$dest" 2>/dev/null | cut -c1-10); [ "$mode" = "-rw-------" ] || hh_die 1 "the copy on $host has mode $mode, not 600"
+  if rrun env "HH_PROJECT=$rroot" "$ip/bin/hh-manifest" list --kind file 2>/dev/null | jq -e --arg p "$rabs/$rel" 'select(.path == $p)' >/dev/null 2>&1; then
     echo "already on the remote manifest: $rabs/$rel"
   else
-    rrun env "HM_PROJECT=$rroot" "$ip/bin/hm-manifest" add file "path=$rabs/$rel" >/dev/null 2>&1 || hm_die 1 "the remote manifest refused the entry"
+    rrun env "HH_PROJECT=$rroot" "$ip/bin/hh-manifest" add file "path=$rabs/$rel" >/dev/null 2>&1 || hh_die 1 "the remote manifest refused the entry"
     echo "recorded on the remote manifest: $rabs/$rel"
   fi
   exit 0 ;;
 
 # ---- start-agent ---------------------------------------------------------------------------------------------------
-# The remote's own hm-spawn, by the install path `check` recorded, in the mode the caller resolved. Never bypassPermissions: the plan
-# keeps bypass to away mode, where the owner's delegate file and marker decide, and the remote hm-spawn refuses it too. The role and
+# The remote's own hh-spawn, by the install path `check` recorded, in the mode the caller resolved. Never bypassPermissions: the plan
+# keeps bypass to away mode, where the owner's delegate file and marker decide, and the remote hh-spawn refuses it too. The role and
 # rules are the remote copies, under the remote root (send them with `files`). The model's [ ] would be a glob in some shells: every
 # argument goes through printf %q, and the whole is run by the remote's login shell with a PATH that has tmux and node in front.
 start-agent)
-  [ $# -ge 2 ] || hm_die 64 "$USAGE"
+  [ $# -ge 2 ] || hh_die 64 "$USAGE"
   rroot="$1"; agent="$2"; shift 2
   model=""; effort=""; mode=""; wt=""; branch=""; base=""
   while [ $# -gt 0 ]; do
-    [ $# -ge 2 ] || hm_die 64 "$USAGE"
-    case "$1" in --model) model="$2" ;; --effort) effort="$2" ;; --mode) mode="$2" ;; --worktree) wt="$2" ;; --branch) branch="$2" ;; --base) base="$2" ;; *) hm_die 64 "$USAGE" ;; esac
+    [ $# -ge 2 ] || hh_die 64 "$USAGE"
+    case "$1" in --model) model="$2" ;; --effort) effort="$2" ;; --mode) mode="$2" ;; --worktree) wt="$2" ;; --branch) branch="$2" ;; --base) base="$2" ;; *) hh_die 64 "$USAGE" ;; esac
     shift 2
   done
-  [ -n "$model" ] && [ -n "$effort" ] && [ -n "$mode" ] || hm_die 64 "$USAGE"
-  [ "$mode" != bypassPermissions ] || hm_die 4 "hm-remote-sync start-agent never starts bypassPermissions: bypass belongs to away mode (the owner's delegate file), and the remote hm-spawn refuses it too; start the agent in the resolved mode and answer its prompts"
-  case " $HM_PERMISSION_MODES " in *" $mode "*) ;; *) hm_die 4 "not a permission mode start-agent passes on: $mode" ;; esac
-  abs_ok "$rroot" || hm_die 4 "the remote root must be an absolute path without . or ..: $rroot"
-  hm_is_agent_name "$agent" || hm_die 4 "bad agent name: $agent"
-  hm_is_model_name "$model" || hm_die 4 "bad model: $model"
-  hm_is_model_name "$effort" || hm_die 4 "bad effort: $effort"
+  [ -n "$model" ] && [ -n "$effort" ] && [ -n "$mode" ] || hh_die 64 "$USAGE"
+  [ "$mode" != bypassPermissions ] || hh_die 4 "hh-remote-sync start-agent never starts bypassPermissions: bypass belongs to away mode (the owner's delegate file), and the remote hh-spawn refuses it too; start the agent in the resolved mode and answer its prompts"
+  case " $HH_PERMISSION_MODES " in *" $mode "*) ;; *) hh_die 4 "not a permission mode start-agent passes on: $mode" ;; esac
+  abs_ok "$rroot" || hh_die 4 "the remote root must be an absolute path without . or ..: $rroot"
+  hh_is_agent_name "$agent" || hh_die 4 "bad agent name: $agent"
+  hh_is_model_name "$model" || hh_die 4 "bad model: $model"
+  hh_is_model_name "$effort" || hh_die 4 "bad effort: $effort"
   if [ -n "$wt$branch$base" ]; then
-    [ -n "$wt" ] && [ -n "$branch" ] && [ -n "$base" ] || hm_die 64 "--worktree needs --branch and --base"
-    abs_ok "$wt" || hm_die 4 "--worktree must be an absolute path without . or ..: $wt"
-    hm_is_branch_name "$branch" || hm_die 4 "bad branch name: $branch"
-    hm_is_branch_name "$base" || hm_die 4 "bad base: $base"
+    [ -n "$wt" ] && [ -n "$branch" ] && [ -n "$base" ] || hh_die 64 "--worktree needs --branch and --base"
+    abs_ok "$wt" || hh_die 4 "--worktree must be an absolute path without . or ..: $wt"
+    hh_is_branch_name "$branch" || hh_die 4 "bad branch name: $branch"
+    hh_is_branch_name "$base" || hh_die 4 "bad base: $base"
   fi
   ip=$(install_path) || exit $?
   reach; need_remote_root "$rroot"
-  role="$rroot/$HM_STATE_DIR/team/$agent/role.md"; rules="$rroot/$HM_STATE_DIR/team/$agent/RULES.md"
-  for f in "$role" "$rules"; do rrun test -f "$f" || { [ $? -eq 255 ] && unreachable; hm_die 4 "$f is not on $host: send it with hm-remote-sync files first"; }; done
+  role="$rroot/$HH_STATE_DIR/team/$agent/role.md"; rules="$rroot/$HH_STATE_DIR/team/$agent/RULES.md"
+  for f in "$role" "$rules"; do rrun test -f "$f" || { [ $? -eq 255 ] && unreachable; hh_die 4 "$f is not on $host: send it with hh-remote-sync files first"; }; done
   args=(--agent "$agent" --role "$role" --rules "$rules" --model "$model" --effort "$effort" --mode "$mode")
   [ -z "$wt" ] || args+=(--worktree "$wt" --branch "$branch" --base "$base")
   RPATH='/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin'
-  inner="export PATH=$RPATH:\$PATH; exec env HM_PROJECT=$(printf '%q' "$rroot") $(printf '%q ' "$ip/bin/hm-spawn" "${args[@]}")"
-  out=$(hm_ssh "\"\$SHELL\" -lc $(printf '%q' "$inner")" 2>&1); rc=$?
+  inner="export PATH=$RPATH:\$PATH; exec env HH_PROJECT=$(printf '%q' "$rroot") $(printf '%q ' "$ip/bin/hh-spawn" "${args[@]}")"
+  out=$(hh_ssh "\"\$SHELL\" -lc $(printf '%q' "$inner")" 2>&1); rc=$?
   [ "$rc" -ne 255 ] || unreachable
   printf '%s\n' "$out" | clean
   [ "$rc" -eq 0 ] || exit "$rc"
@@ -281,8 +281,8 @@ start-agent)
   pane=$(printf '%s\n' "$out" | grep -E '^%[0-9]+$' | tail -1)
   if [ -n "$pane" ]; then
     so="set-option -w -t $(printf '%q' "$pane") remain-on-exit on"   # an if, not ${VAR:+-S "$VAR"}: zsh keeps that as one word
-    inner="export PATH=$RPATH:\$PATH; if [ -n \"\$HM_TMUX_SOCKET\" ]; then tmux -S \"\$HM_TMUX_SOCKET\" $so; else tmux $so; fi"
-    hm_ssh "\"\$SHELL\" -lc $(printf '%q' "$inner")" >/dev/null 2>&1 || echo "hm-remote-sync: could not set remain-on-exit for $pane on $host: a start that dies will close its window" >&2
+    inner="export PATH=$RPATH:\$PATH; if [ -n \"\$HH_TMUX_SOCKET\" ]; then tmux -S \"\$HH_TMUX_SOCKET\" $so; else tmux $so; fi"
+    hh_ssh "\"\$SHELL\" -lc $(printf '%q' "$inner")" >/dev/null 2>&1 || echo "hh-remote-sync: could not set remain-on-exit for $pane on $host: a start that dies will close its window" >&2
   fi
   exit 0 ;;
 esac

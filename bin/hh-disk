@@ -1,17 +1,17 @@
 #!/usr/bin/env bash
 set -u
-. "$(dirname "$0")/hm-lib.sh"
+. "$(dirname "$0")/hh-lib.sh"
 path="$HOME"; min=0; hook=0
 while [ $# -gt 0 ]; do case "$1" in
   --path) path="$2"; shift 2 ;; --min-gb) min="$2"; shift 2 ;; --hook) hook=1; shift ;;
-  *) hm_die 64 "usage: hm-disk [--path d] [--min-gb n] [--hook]" ;; esac; done
-[ -d "$path" ] || hm_die 4 "not a directory: $path"
-case "$min" in ''|*[!0-9.]*|*.*.*) hm_die 4 "--min-gb must be a non-negative number: $min" ;; esac
+  *) hh_die 64 "usage: hh-disk [--path d] [--min-gb n] [--hook]" ;; esac; done
+[ -d "$path" ] || hh_die 4 "not a directory: $path"
+case "$min" in ''|*[!0-9.]*|*.*.*) hh_die 4 "--min-gb must be a non-negative number: $min" ;; esac
 kb=$(df -Pk "$path" | awk 'NR==2 {print $4}'); gb=$((kb / 1024 / 1024))
 low=0; [ "$gb" -lt "${min%.*}" ] && low=1
 if [ "$hook" = 1 ]; then
-  plugin=$(hm_plugin_name) || exit $?
-  [ "$low" = 1 ] && jq -nc --arg m "Free disk is ${gb} GB (below ${min} GB). Run /$plugin:cleanup or hm-cleanup --disk before heavy work." \
+  plugin=$(hh_plugin_name) || exit $?
+  [ "$low" = 1 ] && jq -nc --arg m "Free disk is ${gb} GB (below ${min} GB). Run /$plugin:cleanup or hh-cleanup --disk before heavy work." \
     '{hookSpecificOutput:{hookEventName:"SessionStart",additionalContext:$m}}'
   exit 0
 fi

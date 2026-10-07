@@ -1,0 +1,249 @@
+#!/bin/bash -p
+# Start an agent in tmux with its role, rules and (optionally) its own worktree; or, with --self, register the calling
+# pane as the orchestrator. Takes no command to run: it always starts `claude`. Never answers a dialog.
+# Exit: 2 no project or no tmux pane, 3 .hivehouse tracked, 4 refused value, 5 a dialog needs a person, 1 never idle,
+# 64 usage.
+set -u
+# Privileged mode: no BASH_ENV, no functions from the environment, and a fixed bash (hh_check_mode below grants bypass). Siblings are
+# found through this folder, never PATH.
+HH_BIN=${0%/*}; [ "$HH_BIN" != "$0" ] || HH_BIN=.
+. "$HH_BIN/hh-lib.sh"
+USAGE="usage: hh-spawn --agent <n> --role <file> --rules <file> --model <m> --effort <e> --mode <m> [--worktree <abs> --branch <b> --base <b>] [--session <s>] [--window <tokens>] [--still <s>] [--max-wait <s>]
+       hh-spawn --self --agent <n> [--name <orchestrator session name>] [--hub <hub session name> | --no-hub] [--window <tokens>]
+       hh-spawn --respawn <n> [--mode <a stricter mode>] [--resume] [--still <s>] [--max-wait <s>]"
+# The only commands an agent may run without asking (A16): nothing here runs an arbitrary command, writes a chosen path
+# (no git: --output=<path> writes anywhere; Claude Code already runs the read-only forms unprompted) or edits the
+# manifest (a pre-approved `hh-manifest add` would let cleanup remove a path, pane or pid nobody named).
+ALLOWED='Bash(hh-slot status) Bash(hh-slot release *) Bash(hh-context *) Bash(hh-gate-verify *) Bash(hh-settings resolve *) Bash(hh-disk *)'
+
+agent=""; role=""; rules=""; model=""; effort=""; mode=""; wt=""; branch=""; base=""; session=""; window=200000
+still=5; maxwait=90; self=0; others=0; oname=""; respawn=""; settings=0; wgiven=0; hub=""; nohub=0; resume=0; modeset=0
+while [ $# -gt 0 ]; do
+  [ $# -ge 2 ] || [ "$1" = --self ] || [ "$1" = --no-hub ] || [ "$1" = --resume ] || hh_die 64 "$USAGE"
+  case "$1" in
+    --self) self=1; shift; continue ;;
+    --no-hub) nohub=1; shift; continue ;;
+    --resume) resume=1; shift; continue ;;
+    --agent) agent="$2" ;; --window) window="$2"; wgiven=1 ;; --name) oname="$2" ;; --respawn) respawn="$2" ;; --hub) hub="$2" ;;
+    --role) role="$2"; others=1; settings=1 ;; --rules) rules="$2"; others=1; settings=1 ;; --model) model="$2"; others=1; settings=1 ;;
+    --effort) effort="$2"; others=1; settings=1 ;; --mode) mode="$2"; modeset=1; others=1 ;; --worktree) wt="$2"; others=1; settings=1 ;;
+    --branch) branch="$2"; others=1; settings=1 ;; --base) base="$2"; others=1; settings=1 ;; --session) session="$2"; others=1; settings=1 ;;
+    --still) still="$2"; others=1 ;; --max-wait) maxwait="$2"; others=1 ;;
+    *) hh_die 64 "$USAGE" ;;
+  esac
+  shift 2
+done
+[ "$resume" = 0 ] || [ -n "$respawn" ] || hh_die 64 "--resume is for --respawn only"
+# --respawn: an agent that stopped (a restart took its pane) is started again from its own record, exactly as spawned:
+# model, effort, mode, worktree, branch and window from team.json, the worktree's base from the manifest, role and rules
+# from the copies in its team dir. Its handoff is kept, so the pickup line sends it back to its START HERE block. Only an
+# agent proven stopped is respawned; the --self orchestrator registers again with --self instead.
+if [ -n "$respawn" ]; then
+  [ "$self" = 0 ] && [ "$settings" = 0 ] && [ -z "$agent" ] && [ -z "$oname" ] && [ -z "$hub" ] && [ "$nohub" = 0 ] && [ "$wgiven" = 0 ] \
+    || hh_die 64 "--respawn takes only --still, --max-wait, --resume and a stricter --mode: everything else comes from the agent's record"
+  hh_is_agent_name "$respawn" || hh_die 4 "bad agent name: $respawn"
+  ROOT=$(hh_project_root) || exit $?
+  hh_ensure_state || exit $?
+  export HH_PROJECT="$ROOT"
+  rec() { jq -r --arg a "$respawn" --arg k "$1" '[.agents[]? | select(.name == $a)][0] // empty | .[$k] // empty | tostring' "$ROOT/$HH_STATE_DIR/team.json" 2>/dev/null; }
+  [ -n "$(rec name)" ] || hh_die 2 "no agent named $respawn in this project's team"
+  [ -z "$(rec claude_pid)" ] || hh_die 4 "$respawn is the orchestrator: it registers again in its own session with hh-spawn --self --agent $respawn"
+  hh_team_agent_is "$ROOT" "$respawn"; case $? in
+    0) hh_die 4 "$respawn is running as recorded; nothing to respawn" ;;
+    2) hh_die 4 "cannot tell whether $respawn is running (its process is alive but no tmux answers for its pane); not respawned" ;;
+    3) hh_die 4 "$respawn was recorded with no identity, so nothing proves it stopped; not respawned" ;;
+  esac
+  # --mode may only tighten what was recorded (a restart out of bypass, say): a looser or equal mode, or one hivehouse does not know, is refused
+  recmode=$(rec mode)
+  if [ "$modeset" = 1 ]; then
+    new=$(hh_mode_rank "$mode") && old=$(hh_mode_rank "$recmode") && [ "$new" -lt "$old" ] \
+      || hh_die 4 "--mode must be a stricter mode than the recorded $recmode (plan, dontAsk, default, acceptEdits, auto, in that order): $mode"
+  else mode=$recmode; fi
+  agent="$respawn"; model=$(rec model); effort=$(rec effort); wt=$(rec worktree); branch=$(rec branch)
+  [ -z "$(rec window)" ] || window=$(rec window)
+  role="$ROOT/$HH_STATE_DIR/team/$agent/role.md"; rules="$ROOT/$HH_STATE_DIR/team/$agent/RULES.md"
+  [ -z "$wt" ] || base=$("$HH_BIN/hh-manifest" list --kind worktree | jq -r --arg p "$wt" 'select(.path == $p) | .base // empty' | head -1)
+fi
+[ -n "$agent" ] || hh_die 64 "$USAGE"
+hh_is_agent_name "$agent" || hh_die 4 "bad agent name: $agent"
+hh_is_number "$window" && [ "$window" -gt 0 ] || hh_die 4 "--window must be a positive number: $window"
+hh_is_number "$still" && hh_is_number "$maxwait" || hh_die 4 "--still and --max-wait must be numbers"
+
+if [ "$self" = 1 ]; then
+  [ "$others" = 0 ] || hh_die 64 "--self takes only --agent, --name, --hub and --window"
+  [ -z "$oname" ] || hh_is_session_name "$oname" || hh_die 4 "--name must be one line of letters, digits, space, - _ . ( ), at most 64: $oname"
+  # the owner's hub, when the owner talks to this orchestrator through it: every pickup line names it (hh_pickup_line)
+  [ -z "$hub" ] || hh_is_session_name "$hub" || hh_die 4 "--hub must be one line of letters, digits, space, - _ . ( ), at most 64: $hub"
+  [ -z "$hub" ] || [ "$nohub" = 0 ] || hh_die 64 "--hub and --no-hub together"
+  [ -n "${TMUX_PANE:-}" ] || hh_die 2 "--self must run inside the tmux pane to register"
+  ROOT=$(hh_project_root) || exit $?
+  hh_ensure_state || exit $?
+  export HH_PROJECT="$ROOT"
+  pane="$TMUX_PANE"
+  "$HH_BIN/hh-manifest" list --kind tmux | jq -e --arg a "$agent" 'select(.agent == $a)' >/dev/null \
+    && hh_die 4 "$agent belongs to a pane hivehouse spawned; --self would re-point it at this one"
+  socket=$(hh_tmux display-message -p -t "$pane" '#{socket_path}') || exit $?
+  mode="" ; model=""; effort=""; session=""; branch=""; wt=""
+else
+  [ -z "$oname" ] || hh_die 64 "--name is for --self only"
+  [ -z "$hub" ] && [ "$nohub" = 0 ] || hh_die 64 "--hub and --no-hub are for --self only"
+  for v in role rules model effort mode; do [ -n "${!v}" ] || hh_die 64 "$USAGE"; done
+  [ -f "$role" ] && [ -f "$rules" ] || hh_die 4 "--role and --rules must be files"
+  hh_is_model_name "$model" || hh_die 4 "bad model (a value starting with - would be read as an option): $model"
+  hh_is_model_name "$effort" || hh_die 4 "bad effort (a value starting with - would be read as an option): $effort"
+  if [ -n "$wt" ]; then
+    [ -n "$branch" ] && [ -n "$base" ] || hh_die 64 "--worktree needs --branch and --base"
+    case "$wt" in /*) ;; *) hh_die 4 "--worktree must be an absolute path" ;; esac
+    for b in "$branch" "$base"; do hh_is_branch_name "$b" || hh_die 4 "bad branch name: $b"; done
+  fi
+  ROOT=$(hh_project_root) || exit $?
+  hh_check_mode "$mode" hh-spawn "$ROOT"   # bypassPermissions only while the owner is away, for a marked caller (needs the project's root)
+  hh_ensure_state || exit $?
+  export HH_PROJECT="$ROOT"
+fi
+STATE="$ROOT/$HH_STATE_DIR"; project=$(basename "$ROOT")
+
+identify() {  # identify <pane> <socket>: the pane's identity, and for --self the Claude process that is registering it
+  local ident
+  ident=$(hh_pane_identity "$2" "$1") || { echo "hh-spawn: cannot read pane $1 on $2, so it is not registered" >&2; return 1; }   # a file without identity is never written
+  PANE_PID=${ident%%$'\t'*}; PANE_STARTED=${ident#*$'\t'}; CLAUDE_PID=""; CLAUDE_STARTED=""
+  # --self: the pane's process is the owner's shell, which outlives this Claude, so the Claude process is recorded too. A spawned
+  # agent's pane lives only as long as the command it runs, so its pane identity is the whole of it.
+  if [ "$self" = 1 ]; then
+    CLAUDE_PID=$(hh_claude_ancestor) || { echo "hh-spawn: --self must run inside the Claude session it registers" >&2; return 1; }
+    CLAUDE_STARTED=$(hh_lstart "$CLAUDE_PID")
+  fi
+}
+register() {  # register <pane> <socket>: the registry maps a pane back to its project and agent
+  local dir key
+  identify "$1" "$2" || return 1
+  dir=$(hh_registry_dir); mkdir -p "$dir"; key=$(hh_pane_key "$2" "$1")
+  jq -n --arg project "$ROOT" --arg agent "$agent" --arg pane "$1" --arg socket "$2" --arg now "$(hh_now)" \
+    --arg ppid "$PANE_PID" --arg pstarted "$PANE_STARTED" --arg cpid "$CLAUDE_PID" --arg cstarted "$CLAUDE_STARTED" \
+    '{project:$project, agent:$agent, pane:$pane, socket:$socket, created:$now, pane_pid:$ppid, pane_started:$pstarted}
+     + (if $cpid != "" then {claude_pid:$cpid, claude_started:$cstarted} else {} end)' > "$dir/$key.json.tmp$$" \
+    && mv "$dir/$key.json.tmp$$" "$dir/$key.json"
+}
+upsert_team() {  # upsert_team <json object for the agent>: one entry per agent name
+  local f="$STATE/team.json" cur='{"agents":[]}'
+  [ -f "$f" ] && cur=$(cat "$f")
+  printf '%s' "$cur" | jq --argjson a "$1" '.agents = ([.agents[]? | select(.name != $a.name)] + [$a])' > "$f.tmp$$" \
+    && mv "$f.tmp$$" "$f"
+}
+
+if [ "$self" = 1 ]; then
+  # The calling pane is the owner's own: it is registered and recorded in team.json, never on the manifest, because
+  # hh-cleanup kills every pane the manifest names.
+  # registering again (after a restart, say) keeps the hub this orchestrator was registered with, unless told --no-hub
+  if [ -z "$hub" ] && [ "$nohub" = 0 ]; then
+    hub=$(hh_self_entry "$ROOT" | jq -r --arg a "$agent" 'select(.name == $a) | .hub // empty' 2>/dev/null)
+    hh_is_session_name "$hub" || hub=""
+  fi
+  register "$pane" "$socket" || exit $?
+  # The window: the one given, else the one Claude Code reported for this very session (hh-statusline's context.json, when there is one
+  # and it was read in this session), else none. It is never guessed here: hh-context assumes one for a reading, and says so.
+  if [ "$wgiven" = 0 ]; then
+    window=""; msid=$(hh_session_record "$CLAUDE_PID" .sessionId)
+    if [ -n "$msid" ] && [ "$(hh_json_get "$STATE/team/$agent/context.json" .session_id)" = "$msid" ]; then
+      mw=$(hh_json_get "$STATE/team/$agent/context.json" .window); case "$mw" in ''|*[!0-9]*|0) ;; *) window=$mw ;; esac
+    fi
+  fi
+  # an orchestrator the hub launched in bypass was given an MCP file beside its pane record: it lives with the team from here. When the
+  # delegate file no longer says so (it expired before this registration) the file may hold server secrets and is removed from the hub's folder.
+  if hh_delegate_for_project "$ROOT"; then
+    amf="$HH_DG_HUB/$HH_HUB_DIR/panes/$HH_DG_PROJECT-mcp.json"
+    if [ -f "$amf" ]; then
+      { mkdir -p "$STATE/team/$agent" && mv "$amf" "$STATE/team/$agent/away-mcp.json"; } \
+        || { rm -f "$amf"; echo "hh-spawn: could not move the hub's MCP file for $HH_DG_PROJECT into $STATE/team/$agent (removed it); the orchestrator has none" >&2; }
+    fi
+  elif [ -n "${HH_AWAY_HUB:-}" ] && [ -d "$HH_AWAY_HUB/$HH_HUB_DIR" ]; then
+    amn=$(jq -r --arg h "$HH_AWAY_HUB" --arg r "$ROOT" '.projects[]? | select((.home | if startswith("/") then . else $h + "/" + . end) == $r) | .name' "$HH_AWAY_HUB/$HH_HUB_DIR/projects.json" 2>/dev/null | head -1)
+    ! hh_is_agent_name "$amn" || rm -f "$HH_AWAY_HUB/$HH_HUB_DIR/panes/$amn-mcp.json"
+  fi
+  # the session's own name, as agents are told to report to it (hh_orchestrator_name reads it live; this is its fallback)
+  [ -n "$oname" ] || { oname=$(hh_session_record "$CLAUDE_PID" .name); hh_is_session_name "$oname" || oname=""; }
+  upsert_team "$(jq -nc --arg n "$agent" --arg p "$pane" --arg s "$socket" --arg w "$window" --arg pp "$PANE_PID" --arg ps "$PANE_STARTED" --arg cp "$CLAUDE_PID" --arg cs "$CLAUDE_STARTED" --arg nf "$oname" --arg hub "$hub" \
+    '{name:$n, pane:$p, socket:$s, pane_pid:$pp, pane_started:$ps} + (if $w != "" then {window:($w | tonumber)} else {} end) + (if $cp != "" then {claude_pid:$cp, claude_started:$cs} else {} end) + (if $nf != "" then {name_full:$nf} else {} end) + (if $hub != "" then {hub:$hub} else {} end)')"
+  # Its SessionStart hook ran before this registration existed, so it wrote nothing: the session is recorded here, from Claude
+  # Code's own record of this process. The hook writes it again after a /clear.
+  sid=$(hh_session_record "$CLAUDE_PID" .sessionId)
+  if tp=$(hh_session_transcript "$sid"); then
+    hh_write_session "$ROOT" "$agent" "$sid" "$tp" self || echo "$HH_PREFIX: could not record $agent's session; hh-context reads ? until its next /clear" >&2
+  else   # a record of another session (an earlier orchestrator's) would be read as this one's
+    [ "$(hh_json_get "$STATE/team/$agent/session.json" .session_id)" = "$sid" ] || rm -f "$STATE/team/$agent/session.json"
+    echo "$HH_PREFIX: no single transcript found for $agent's session; hh-context reads ? until its next /clear" >&2
+  fi
+  echo "$pane"; exit 0
+fi
+
+cwd="$ROOT"
+if [ -n "$wt" ]; then
+  if [ -e "$wt" ]; then
+    "$HH_BIN/hh-manifest" list --kind worktree | jq -e --arg p "$wt" 'select(.path == $p)' >/dev/null \
+      || hh_die 4 "$wt exists and hivehouse did not create it"
+  else
+    git -C "$ROOT" worktree add -q -b "$branch" "$wt" "$base" || hh_die 4 "git worktree add failed for $wt"
+    "$HH_BIN/hh-manifest" add worktree path="$wt" base="$base" >/dev/null || exit $?
+  fi
+  cwd="$wt"
+  # Claude Code judges a worktree by its main repository's entry, not the worktree's: an untrusted one stops the agent at the trust dialog
+  hh_claude_trusts "$wt" || echo "hh-spawn: $agent will stop at Claude Code's folder-trust dialog: a worktree is trusted through its main repository's entry ($HH_TRUST_KEY in $(hh_claude_json)), which has no hasTrustDialogAccepted yet. Start claude once in $HH_TRUST_KEY and accept it; until then the agent waits there." >&2
+fi
+mkdir -p "$STATE/team/$agent" "$STATE/handoffs"
+# a respawn's role and rules are these very copies
+[ "$role" -ef "$STATE/team/$agent/role.md" ] || cp "$role" "$STATE/team/$agent/role.md"
+[ "$rules" -ef "$STATE/team/$agent/RULES.md" ] || cp "$rules" "$STATE/team/$agent/RULES.md"
+if [ ! -f "$STATE/handoffs/$agent.md" ]; then
+  printf '# %s handoff\n\n## START HERE\n\nI am %s-%s. Report only to %s. Read %s/team/%s/ (my role and the rules) first, then wait for its first message before any work.\n' \
+    "$agent" "$project" "$agent" "$(hh_orchestrator_name "$ROOT")" "$HH_STATE_DIR" "$agent" > "$STATE/handoffs/$agent.md"
+fi
+
+# No --session: an agent goes beside the pane that spawns it (the orchestrator's own tmux session), when that pane is on the server
+# the agent is spawned on; outside tmux, or on another server, it goes to the project's own session as before.
+if [ -z "$session" ] && [ -n "${TMUX_PANE:-}" ] && [ -n "${TMUX:-}" ]; then
+  here=$(hh_tmux display-message -p -t "$TMUX_PANE" '#{socket_path}'$'\t''#{session_name}' 2>/dev/null) || here=""
+  [ -n "$here" ] && [ "${here%%$'\t'*}" = "${TMUX%%,*}" ] && session="${here#*$'\t'}"
+fi
+session=${session:-hh-$(hh_project_key "$ROOT")}
+# exec: the pane's own process must BE claude (the hook's one rule for a spawned agent), not a shell that happens to exec its last
+# command; a shell that does not (fish, a startup file that sets a trap, `cmd; :`) would otherwise stay as the pane's process
+# The agent's statusLine is hh-statusline, which keeps Claude Code's own window reading for hh-context and then runs the owner's
+# statusLine, resolved here once (its other keys, padding and the like, are kept as the owner set them).
+owner_sl=$(hh_owner_statusline "$cwd")
+if [ -n "$owner_sl" ]; then printf '%s\n' "$owner_sl" > "$STATE/team/$agent/statusline.json"; else rm -f "$STATE/team/$agent/statusline.json"; fi
+rm -f "$STATE/team/$agent/context.json"
+settings=$(jq -nc --argjson o "${owner_sl:-null}" --arg bin "$(cd "$HH_BIN" && pwd -P)/hh-statusline" --arg dir "$STATE/team/$agent" \
+  '{statusLine: (($o // {}) + {type: "command", command: ([$bin, $dir] | map(@sh) | join(" "))})}') || exit $?
+# --resume: the agent's own recorded session, when it is still there and no live Claude already holds it (the owner resumed it by hand:
+# a second process on one conversation would fork it); otherwise today's respawn from the handoff
+resume_id=""
+if [ "$resume" = 1 ]; then
+  sid=$(hh_json_get "$STATE/team/$agent/session.json" .session_id)
+  hh_session_transcript "$sid" >/dev/null && ! hh_session_holder "$sid" >/dev/null && resume_id=$sid
+fi
+extra=(); [ -z "$resume_id" ] || extra=(--resume "$resume_id")
+# bypass: the marker and the hook's variables, and only the MCP servers the owner allowed; any other mode gets none of it (and no stale file)
+HH_BP_ENVS=(); HH_BP_ARGS=()
+if [ "$mode" = bypassPermissions ]; then hh_bypass_launch "$ROOT" "$STATE/team/$agent/away-mcp.json" || hh_die 4 "cannot prepare the away MCP file for $agent"
+else rm -f "$STATE/team/$agent/away-mcp.json"; fi
+cmd="exec $(printf '%q ' claude ${extra[@]+"${extra[@]}"} --name "$project-$agent" --model "$model" --effort "$effort" --permission-mode "$mode" --allowedTools "$ALLOWED" --settings "$settings" ${HH_BP_ARGS[@]+"${HH_BP_ARGS[@]}"})"
+envs=(-e "HH_AGENT=$agent" -e "HH_PROJECT=$ROOT" -e "HIVEHOUSE_HOME=$(hh_home)" ${HH_BP_ENVS[@]+"${HH_BP_ENVS[@]}"})
+[ -n "${HH_TMUX_SOCKET:-}" ] && envs+=(-e "HH_TMUX_SOCKET=$HH_TMUX_SOCKET")
+pane=$(hh_open_window "$session" "$agent" "$cwd" "$cmd" "${envs[@]}") || exit $?
+socket=$(hh_tmux display-message -p -t "$pane" '#{socket_path}') || exit $?
+"$HH_BIN/hh-manifest" add tmux socket="$socket" pane="$pane" agent="$agent" >/dev/null || exit $?   # first: what is on the manifest can be cleaned up
+register "$pane" "$socket" || exit $?
+upsert_team "$(jq -nc --arg n "$agent" --arg p "$pane" --arg s "$socket" --arg m "$model" --arg e "$effort" --arg mode "$mode" \
+  --arg wt "$wt" --arg b "$branch" --arg sess "$session" --argjson w "$window" --arg pp "$PANE_PID" --arg ps "$PANE_STARTED" \
+  '{name:$n, pane:$p, socket:$s, model:$m, effort:$e, mode:$mode, worktree:$wt, branch:$b, session:$sess, window:$w, pane_pid:$pp, pane_started:$ps}')"
+
+wait_idle "$pane" "$still" "$maxwait"; rc=$?
+case "$rc" in
+  0) ;;
+  3) echo "$HH_PREFIX: a dialog is waiting in pane $pane ($agent): answer it yourself; nothing was typed" >&2; exit 5 ;;
+  *) echo "$HH_PREFIX: pane $pane ($agent) never went idle within ${maxwait}s; nothing was sent" >&2; exit 1 ;;
+esac
+if [ -n "$resume_id" ]; then line=$(hh_resume_line "$ROOT" "$agent"); else line=$(hh_pickup_line "$project" "$ROOT" "$agent"); fi
+hh_tmux send-keys -t "$pane" -l "$line"
+hh_tmux send-keys -t "$pane" Enter
+echo "$pane"

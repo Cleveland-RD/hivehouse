@@ -1,20 +1,20 @@
 #!/bin/bash -p
-# Tighten-only project settings. `hm-settings resolve <key> <owner value>` prints the effective value: the project's
+# Tighten-only project settings. `hh-settings resolve <key> <owner value>` prints the effective value: the project's
 # .hivehouse/settings.json may make a safety value stricter than the owner's, never looser. permission_mode alone can come back as
-# bypassPermissions, and only for a marked caller (hm_away_caller) while the owner's delegate file is valid for this project and the
+# bypassPermissions, and only for a marked caller (hh_away_caller) while the owner's delegate file is valid for this project and the
 # owner's own value is auto and the project did not tighten it. Takes no command to run.
 # Exit: 2 no project, 3 .hivehouse tracked by git, 4 refused value or key, 64 usage.
 set -u
 # Privileged mode: no BASH_ENV, no functions from the environment, and a fixed bash (the away check below decides bypass).
-HM_BIN=${0%/*}; [ "$HM_BIN" != "$0" ] || HM_BIN=.
-. "$HM_BIN/hm-lib.sh"
+HH_BIN=${0%/*}; [ "$HH_BIN" != "$0" ] || HH_BIN=.
+. "$HH_BIN/hh-lib.sh"
 KEYS="permission_mode overnight_ceiling_usd allow_attribution files_per_commit"
-[ $# -eq 3 ] && [ "$1" = resolve ] || hm_die 64 "usage: hm-settings resolve <key> <owner value>"
+[ $# -eq 3 ] && [ "$1" = resolve ] || hh_die 64 "usage: hh-settings resolve <key> <owner value>"
 key="$2"; owner="$3"
-case " $KEYS " in *" $key "*) ;; *) hm_die 4 "unknown setting: $key" ;; esac
+case " $KEYS " in *" $key "*) ;; *) hh_die 4 "unknown setting: $key" ;; esac
 
-mode_rank() {  # hm_mode_rank, but bypassPermissions is never a local value (a project or the owner may not name it)
-  [ "$1" != bypassPermissions ] && hm_mode_rank "$1"
+mode_rank() {  # hh_mode_rank, but bypassPermissions is never a local value (a project or the owner may not name it)
+  [ "$1" != bypassPermissions ] && hh_mode_rank "$1"
 }
 is_num()  { printf '%s' "$1" | grep -Eq '^[0-9]+(\.[0-9]+)?$'; }
 is_int()  { printf '%s' "$1" | grep -Eq '^[1-9][0-9]*$'; }
@@ -35,40 +35,40 @@ stricter() {  # stricter <project> <owner>: 0 when the project value is strictly
   esac
 }
 
-valid "$owner" || hm_die 4 "owner value for $key is not allowed here: $owner"
+valid "$owner" || hh_die 4 "owner value for $key is not allowed here: $owner"
 
-root=$(hm_project_root) || exit $?
+root=$(hh_project_root) || exit $?
 # every team root of a project (its home, and each worktree with a team) takes its settings from the home: a worktree's own file is never read
-home=$(hm_project_home "$root") || exit $?
-if [ -n "$(git -C "$home" ls-files -- "$HM_STATE_DIR")" ]; then
-  hm_die 3 "files under $HM_STATE_DIR/ are tracked by git; untrack them before using hivehouse here"
+home=$(hh_project_home "$root") || exit $?
+if [ -n "$(git -C "$home" ls-files -- "$HH_STATE_DIR")" ]; then
+  hh_die 3 "files under $HH_STATE_DIR/ are tracked by git; untrack them before using hivehouse here"
 fi
-file="$home/$HM_STATE_DIR/settings.json"
+file="$home/$HH_STATE_DIR/settings.json"
 emit() {  # emit <value>: print it; permission_mode left at the owner's auto becomes bypassPermissions for a marked caller while the owner is away
-  if [ "$key" = permission_mode ] && [ "$1" = auto ] && [ "$owner" = auto ] && hm_delegate_for_project "$root"; then
-    hm_away_caller
+  if [ "$key" = permission_mode ] && [ "$1" = auto ] && [ "$owner" = auto ] && hh_delegate_for_project "$root"; then
+    hh_away_caller
     case $? in
       0) printf 'bypassPermissions\n'; return ;;
-      2) echo "$HM_PREFIX: this session's launch environment cannot be read, so the away marker cannot be checked; no bypass: using $1" >&2 ;;
+      2) echo "$HH_PREFIX: this session's launch environment cannot be read, so the away marker cannot be checked; no bypass: using $1" >&2 ;;
     esac
   fi
   printf '%s\n' "$1"
 }
 if [ ! -f "$file" ]; then emit "$owner"; exit 0; fi
 
-jq -e 'type == "object"' "$file" >/dev/null 2>&1 || hm_die 4 "$file is not a JSON object"
+jq -e 'type == "object"' "$file" >/dev/null 2>&1 || hh_die 4 "$file is not a JSON object"
 for k in $(jq -r 'keys[]' "$file"); do
-  case " $KEYS " in *" $k "*) ;; *) hm_die 4 "unknown setting in $file: $k" ;; esac
+  case " $KEYS " in *" $k "*) ;; *) hh_die 4 "unknown setting in $file: $k" ;; esac
 done
 [ "$(jq -r --arg k "$key" 'has($k)' "$file")" = true ] || { emit "$owner"; exit 0; }
 proj=$(jq -r --arg k "$key" '.[$k] | tostring' "$file") || exit 4
 if [ "$key" = permission_mode ] && [ "$proj" = bypassPermissions ]; then
-  echo "$HM_PREFIX: project $key bypassPermissions is never effective; using the owner's $owner" >&2
+  echo "$HH_PREFIX: project $key bypassPermissions is never effective; using the owner's $owner" >&2
   emit "$owner"; exit 0
 fi
-valid "$proj" || hm_die 4 "project value for $key is not allowed: $proj"
+valid "$proj" || hh_die 4 "project value for $key is not allowed: $proj"
 if stricter "$proj" "$owner"; then printf '%s\n' "$proj"
 else
-  [ "$proj" = "$owner" ] || echo "$HM_PREFIX: project $key $proj is looser than the owner's $owner; using the owner's" >&2
+  [ "$proj" = "$owner" ] || echo "$HH_PREFIX: project $key $proj is looser than the owner's $owner; using the owner's" >&2
   emit "$owner"
 fi

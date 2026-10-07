@@ -1,28 +1,28 @@
 #!/usr/bin/env bash
-# The modes of the hub's records. hm-hub runs with umask 022 and takes group and others' write off .hivehouse-hub/, so a hub made under
-# umask 002 (775 / 664, the default where every user has their own group) is not left in a state the delegate check refuses. `hm-hub away`
+# The modes of the hub's records. hh-hub runs with umask 022 and takes group and others' write off .hivehouse-hub/, so a hub made under
+# umask 002 (775 / 664, the default where every user has their own group) is not left in a state the delegate check refuses. `hh-hub away`
 # checks the hub's records and each project home first, and prints no sudo line for a hub that would be refused unseen.
 . "$(dirname "$0")/lib.sh"
-. "$HM_REPO_ROOT/bin/hm-lib.sh"
+. "$HH_REPO_ROOT/bin/hh-lib.sh"
 t_setup
 H="$T_TMP/work"; mkdir -p "$H"; H=$(cd "$H" && pwd -P); P="$H/$T_HUB"
-hub() { (cd "$H" && hm-hub "$@"); }
+hub() { (cd "$H" && hh-hub "$@"); }
 mk() { local d="$H/$1"; mkdir -p "$d"; git -C "$d" init -q -b main; git -C "$d" config user.email t@t; git -C "$d" config user.name t
        echo x > "$d/README"; git -C "$d" add README; git -C "$d" commit -qm init; }
 mode() { /usr/bin/stat -f '%Lp' "$1" 2>/dev/null || /usr/bin/stat -c '%a' "$1"; }
-mkdir -p "$T_TMP/cl"; printf '#!/usr/bin/env bash\ncd "%s" && hm-hub self "$@"\n' "$H" > "$T_TMP/cl/claude"
+mkdir -p "$T_TMP/cl"; printf '#!/usr/bin/env bash\ncd "%s" && hh-hub self "$@"\n' "$H" > "$T_TMP/cl/claude"
 chmod 755 "$H"; mk alpha; mk beta
 
 # ---- under umask 002 the hub is still made at 755 and 644 ----
-( umask 002; cd "$H" && hm-hub init >/dev/null ); assert_status "init under umask 002" $? 0
+( umask 002; cd "$H" && hh-hub init >/dev/null ); assert_status "init under umask 002" $? 0
 assert_eq "...the folder is 755" "$(mode "$P")" "755"
 assert_eq "...projects.json is 644" "$(mode "$P/projects.json")" "644"
 assert_eq "...a folder inside it too" "$(mode "$P/memory")" "755"
-( umask 002; cd "$H" && hm-hub add alpha --home alpha >/dev/null ); assert_status "add under umask 002" $? 0
+( umask 002; cd "$H" && hh-hub add alpha --home alpha >/dev/null ); assert_status "add under umask 002" $? 0
 assert_eq "...projects.json stays 644 after the rewrite" "$(mode "$P/projects.json")" "644"
 ( umask 002; bash "$T_TMP/cl/claude" --name hub >/dev/null ); assert_status "self under umask 002" $? 0
 assert_eq "...hub.json is 644" "$(mode "$P/hub.json")" "644"
-( umask 002; cd "$H" && hm-hub remove alpha >/dev/null; hm-hub add alpha --home alpha >/dev/null )
+( umask 002; cd "$H" && hh-hub remove alpha >/dev/null; hh-hub add alpha --home alpha >/dev/null )
 assert_eq "...and after remove and add" "$(mode "$P/projects.json")" "644"
 
 # ---- a hub made group-writable beforehand is put right by the next add ----
@@ -38,8 +38,8 @@ assert_eq "...and a file inside holds/" "$(mode "$P/holds/alpha")" "644"
 assert_eq "...decisions/" "$(mode "$P/decisions/x.md")" "644"
 assert_eq "...hub.json too" "$(mode "$P/hub.json")" "644"
 
-# ---- what hm-hub writes between seals is at most 644 too: umask 022 ----
-( umask 002; cd "$H" && hm-hub task alpha --text x >/dev/null ); assert_status "a task under umask 002" $? 0
+# ---- what hh-hub writes between seals is at most 644 too: umask 022 ----
+( umask 002; cd "$H" && hh-hub task alpha --text x >/dev/null ); assert_status "a task under umask 002" $? 0
 assert_eq "...its task file is 644" "$(mode "$P/tasks/alpha-1.md")" "644"
 assert_eq "...and the ledger" "$(mode "$P/tasks.jsonl")" "644"
 
@@ -106,7 +106,7 @@ assert_eq "...decisions/" "$(mode "$P/decisions")" "755"
 # with no root-owned jq the delegate check cannot read anything, so away says that, before it seals or prints a line
 NJ=$(t_jq_bin nojq "/nonexistent/jq")
 chmod -R g+w "$P/holds"
-out=$(cd "$H" && "$NJ/hm-hub" away --until +1h 2>"$T_TMP/nj.err"); rc=$?
+out=$(cd "$H" && "$NJ/hh-hub" away --until +1h 2>"$T_TMP/nj.err"); rc=$?
 assert_status "away with no root-owned jq is refused" $rc 4
 assert_contains "...naming the real cause" "$(cat "$T_TMP/nj.err")" "no root-owned jq"
 case "$out" in *sudo*) bad "a sudo line was printed with no root-owned jq" ;; *) ok "...and no sudo line" ;; esac

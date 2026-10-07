@@ -51,18 +51,18 @@ from memory. Verify every hash, path and count against the source before writing
 
 ### The pickup line
 
-After a clear, the orchestrator sends this (`hm-spawn` and `hm-rotate` send it for you):
+After a clear, the orchestrator sends this (`hh-spawn` and `hh-rotate` send it for you):
 
 `You are <project>-<agent>. Read <root>/.hivehouse/handoffs/<agent>.md from the top: its START HERE block is your prompt, and <root>/.hivehouse/team/<agent>/ holds your role and the rules. Report to <orchestrator>. Wait for its first message before any work.`
 
 <orchestrator> is the orchestrator session's own name, read when the line is sent (so a rename is followed), or
 <project>-orchestrator when it cannot be read.
 
-The orchestrator's own line, after `hm-self-rotate`, is shorter: it reports to nobody and waits for nobody.
+The orchestrator's own line, after `hh-self-rotate`, is shorter: it reports to nobody and waits for nobody.
 
 `You are <orchestrator>. Read <root>/.hivehouse/handoffs/<agent>.md from the top: its START HERE block is your prompt.`
 
-When the owner uses the i-have-adhd output style (`hm-adhd` finds it), the line adds `Read <its SKILL.md> and follow it
+When the owner uses the i-have-adhd output style (`hh-adhd` finds it), the line adds `Read <its SKILL.md> and follow it
 for every message to the owner.`
 
 ### At the rotation threshold
@@ -75,10 +75,10 @@ When the orchestrator (or your own check) says the context is at `${user_config.
 
 ### How the orchestrator rotates
 
-- For an agent: read every session's level with `hm-context --all`; at the threshold ask for the update; on "done" run
-  `hm-rotate <agent>`. It waits until the pane is idle, sends `/clear`, checks it landed, sends the pickup line, and
+- For an agent: read every session's level with `hh-context --all`; at the threshold ask for the update; on "done" run
+  `hh-rotate <agent>`. It waits until the pane is idle, sends `/clear`, checks it landed, sends the pickup line, and
   logs the levels before and after in `.hivehouse/rotate.log`.
-- For itself: update its own block, then `hm-self-rotate <orchestrator agent name>` as the last act of the turn. It
+- For itself: update its own block, then `hh-self-rotate <orchestrator agent name>` as the last act of the turn. It
   detaches, waits until the orchestrator is idle, and does the same.
 - After a rotation, the agent re-reads any file before editing it; a remembered file may be stale.
 

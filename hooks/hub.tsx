@@ -4,16 +4,16 @@ import type { EngineInterface, Register } from 'claude-code'
 import type { HubAgent, HubDialog, HubProject, HubTask, HubView } from '../types'
 import { HUB_DIR, PANE, PLUGIN, PREFIX } from './names'
 
-// The owner's hub (bin/hm-hub, skills/hub): in the session started in the hub's own folder, and only there, a screen of
+// The owner's hub (bin/hh-hub, skills/hub): in the session started in the hub's own folder, and only there, a screen of
 // what waits on the owner and of every project's orchestrator, and a guard that keeps the hub off the projects' files.
-// Everything shown is read from hm-hub; the only things done here are the Resume and Continue presses, which run
-// `hm-hub wake` and `hm-hub continue`.
+// Everything shown is read from hh-hub; the only things done here are the Resume and Continue presses, which run
+// `hh-hub wake` and `hh-hub continue`.
 // The command that opens the screen. Never a skill's name: Claude Code refuses a command named as one of the plugin's own
 // skills (/hub is the skill, /hivehouse:hub), and tests/test_hub_screen.sh holds it to that.
 const COMMAND = 'hub-screen'
 const EVERY_MS = 20_000
-const WAKE_TIMEOUT_MS = 150_000 // hm-hub waits up to 90 s for a started session to be idle
-const ANSWER_TIMEOUT_MS = 30_000 // hm-hub answer sends its keys and then watches a few seconds
+const WAKE_TIMEOUT_MS = 150_000 // hh-hub waits up to 90 s for a started session to be idle
+const ANSWER_TIMEOUT_MS = 30_000 // hh-hub answer sends its keys and then watches a few seconds
 
 const EMPTY: HubView = { root: '', hubName: '', projects: [], tasks: [], dialogs: {}, away: null, awayRefused: null, lastAway: null, updatedAt: 0, error: '' }
 // The atoms' plugin must be a string literal in this file (the engine reads the source to list what a module reads and writes), so
@@ -24,7 +24,7 @@ const acting = atom({ plugin: 'hivehouse', key: 'hubResuming' } as const, '')
 // the start of the away period whose decisions the owner has marked seen (a newer away starts unseen)
 const seenAway = atom({ plugin: 'hivehouse', key: 'hubSeenAway' } as const, '')
 
-// The session is the hub when its own folder holds .hivehouse-hub/ (a folder, not a link): hm-session-hook's rule.
+// The session is the hub when its own folder holds .hivehouse-hub/ (a folder, not a link): hh-session-hook's rule.
 let hubRootOnce: Promise<string | null> | null = null
 function hubRoot($: EngineInterface): Promise<string | null> {
   hubRootOnce ??= (async () => {
@@ -39,17 +39,17 @@ function hubRoot($: EngineInterface): Promise<string | null> {
   return hubRootOnce
 }
 
-const hmHub = ($: EngineInterface) => `${$.plugin.root}/bin/hm-hub`
+const hhHub = ($: EngineInterface) => `${$.plugin.root}/bin/hh-hub`
 
 async function refresh($: EngineInterface): Promise<void> {
   const root = await hubRoot($)
   if (!root) return
   try {
     const [status, tasks] = await Promise.all([
-      $.process.run([hmHub($), 'status', '--json'], { cwd: root, timeoutMs: 30_000 }),
-      $.process.run([hmHub($), 'tasks', '--json'], { cwd: root, timeoutMs: 30_000 }),
+      $.process.run([hhHub($), 'status', '--json'], { cwd: root, timeoutMs: 30_000 }),
+      $.process.run([hhHub($), 'tasks', '--json'], { cwd: root, timeoutMs: 30_000 }),
     ])
-    if (status.exitCode !== 0) throw new Error(lastLine(status.stderr) || `hm-hub status exited ${status.exitCode}`)
+    if (status.exitCode !== 0) throw new Error(lastLine(status.stderr) || `hh-hub status exited ${status.exitCode}`)
     const s = JSON.parse(status.stdout) as { hub?: { root?: string; name?: string; away?: { until: number; since?: string }; away_refused?: string; last_away?: { since: string; until: number } }; projects?: HubProject[] }
     const t = tasks.exitCode === 0 ? (JSON.parse(tasks.stdout) as HubTask[]) : []
     const projects = s.projects ?? []
@@ -64,7 +64,7 @@ async function refresh($: EngineInterface): Promise<void> {
       lastAway: s.hub?.last_away ?? null,
       updatedAt: await $.clock.now(),
       // the projects still draw when only the ledger could not be read, and the screen says so
-      error: tasks.exitCode === 0 ? '' : `tasks not read: ${lastLine(tasks.stderr) || `hm-hub tasks exited ${tasks.exitCode}`}`,
+      error: tasks.exitCode === 0 ? '' : `tasks not read: ${lastLine(tasks.stderr) || `hh-hub tasks exited ${tasks.exitCode}`}`,
     }
     await update($, view, () => next)
   } catch (err) {
@@ -73,8 +73,8 @@ async function refresh($: EngineInterface): Promise<void> {
   }
 }
 
-// The dialogs on the screens hm-hub reports a question on: each session's text and options, as `hm-hub dialog` reads them
-// (the screen's buttons answer with the fingerprint shown here). A dialog hm-hub cannot read is left out: the screen then
+// The dialogs on the screens hh-hub reports a question on: each session's text and options, as `hh-hub dialog` reads them
+// (the screen's buttons answer with the fingerprint shown here). A dialog hh-hub cannot read is left out: the screen then
 // says to answer it in the pane.
 async function readDialogs($: EngineInterface, root: string, projects: HubProject[]): Promise<Record<string, HubDialog>> {
   const asks: { key: string; args: string[] }[] = []
@@ -87,7 +87,7 @@ async function readDialogs($: EngineInterface, root: string, projects: HubProjec
   await Promise.all(
     asks.map(async ask => {
       try {
-        const r = await $.process.run([hmHub($), ...ask.args], { cwd: root, timeoutMs: 30_000 })
+        const r = await $.process.run([hhHub($), ...ask.args], { cwd: root, timeoutMs: 30_000 })
         if (r.exitCode === 0) out[ask.key] = JSON.parse(r.stdout) as HubDialog
       } catch {
         // unreadable: the screen says to answer it in the pane
@@ -97,7 +97,7 @@ async function readDialogs($: EngineInterface, root: string, projects: HubProjec
   return out
 }
 
-// One poller per module, which reads hm-hub only while the screen is open and shown (Claude Code's own record of this
+// One poller per module, which reads hh-hub only while the screen is open and shown (Claude Code's own record of this
 // plugin's panes, so a pane the owner closed or tabbed away from costs nothing until it is back).
 let poller: { cancel: () => void } | null = null
 function startPolling($: EngineInterface): void {
@@ -115,14 +115,14 @@ function lastLine(text: string): string {
   return last.startsWith(`${PREFIX}: `) ? last.slice(PREFIX.length + 2) : last
 }
 
-// A press is the owner's own word for that one action: Resume wakes a stopped orchestrator (hm-hub wake), Continue sends
-// a started one its first line once the owner has answered the question on its screen (hm-hub continue).
+// A press is the owner's own word for that one action: Resume wakes a stopped orchestrator (hh-hub wake), Continue sends
+// a started one its first line once the owner has answered the question on its screen (hh-hub continue).
 async function act($: EngineInterface, project: string, args: string[], done: string): Promise<void> {
   const root = await hubRoot($)
   if (!root || (await read($, acting))) return
   await update($, acting, () => project)
   try {
-    const r = await $.process.run([hmHub($), ...args], { cwd: root, timeoutMs: WAKE_TIMEOUT_MS })
+    const r = await $.process.run([hhHub($), ...args], { cwd: root, timeoutMs: WAKE_TIMEOUT_MS })
     $.ui.toast(r.exitCode === 0 ? `${project}: ${done} (pane ${r.stdout.trim()})` : `${project}: ${lastLine(r.stderr)}`)
   } finally {
     await update($, acting, () => '')
@@ -130,7 +130,7 @@ async function act($: EngineInterface, project: string, args: string[], done: st
   }
 }
 
-// A press on a dialog's option is the owner's own word for that one answer: hm-hub answer checks the screen is still the one
+// A press on a dialog's option is the owner's own word for that one answer: hh-hub answer checks the screen is still the one
 // shown (its fingerprint) and sends the one key. A refusal (the dialog changed) is told, and the screen reads again.
 async function answerDialog($: EngineInterface, project: string, agent: string, choice: string, seen: string): Promise<void> {
   const root = await hubRoot($)
@@ -138,7 +138,7 @@ async function answerDialog($: EngineInterface, project: string, agent: string, 
   const who = agent ? `${project} · ${agent}` : project
   await update($, acting, () => (agent ? `${project}/${agent}` : project))
   try {
-    const r = await $.process.run([hmHub($), 'answer', project, ...(agent ? [agent] : []), '--choice', choice, '--seen', seen], { cwd: root, timeoutMs: ANSWER_TIMEOUT_MS })
+    const r = await $.process.run([hhHub($), 'answer', project, ...(agent ? [agent] : []), '--choice', choice, '--seen', seen], { cwd: root, timeoutMs: ANSWER_TIMEOUT_MS })
     if (r.exitCode === 0) {
       let option = choice
       let gone = true
@@ -161,10 +161,10 @@ async function answerDialog($: EngineInterface, project: string, agent: string, 
 // only a slash command name a session) and greeted. Only a fresh session Claude Code records as unnamed: a name the owner
 // gave is theirs, a resumed or reloaded session has had turns, and a session with no record, or with nobody at its prompt
 // (`claude -p`, the SDK), is left as it is.
-// The name this hub's folder starts from (`hm-hub name`, default hub): the one the owner is told to /rename to.
+// The name this hub's folder starts from (`hh-hub name`, default hub): the one the owner is told to /rename to.
 async function chosenName($: EngineInterface, root: string): Promise<string> {
   try {
-    const r = await $.process.run([hmHub($), 'name'], { cwd: root, timeoutMs: 10_000 })
+    const r = await $.process.run([hhHub($), 'name'], { cwd: root, timeoutMs: 10_000 })
     const n = r.stdout.trim()
     return r.exitCode === 0 && n ? n : 'hub'
   } catch {
@@ -175,9 +175,9 @@ async function chosenName($: EngineInterface, root: string): Promise<string> {
 async function nameAndGreet($: EngineInterface, root: string): Promise<void> {
   try {
     if ((await $.session.turns()) > 0) return
-    const r = await $.process.run([hmHub($), 'naming', '--session', await $.session.id()], { cwd: root, timeoutMs: 30_000 })
+    const r = await $.process.run([hhHub($), 'naming', '--session', await $.session.id()], { cwd: root, timeoutMs: 30_000 })
     if (r.exitCode !== 0) {
-      $.ui.toast(`hub: no name chosen (${lastLine(r.stderr) || `hm-hub naming exited ${r.exitCode}`}); type /rename ${await chosenName($, root)}`)
+      $.ui.toast(`hub: no name chosen (${lastLine(r.stderr) || `hh-hub naming exited ${r.exitCode}`}); type /rename ${await chosenName($, root)}`)
       return
     }
     const n = JSON.parse(r.stdout) as { found?: boolean; source?: string; free?: string }
@@ -504,10 +504,10 @@ export const register: Register = (on, options) => {
     const rule = <Text color="gray">{'─'.repeat(inner)}</Text>
     const resumeArgs = (p: string) => ['wake', p, ...(mode ? ['--mode', mode] : [])]
 
-    // What waits on the owner: tasks hm-hub marks so, and questions on screens nobody watches.
+    // What waits on the owner: tasks hh-hub marks so, and questions on screens nobody watches.
     type Need = { key: string; glyph: string; color: string; who: string; words: string; when: string; action?: JSX.Element; dialog?: JSX.Element | null }
     // A dialog's text, and one button per option the hub may answer with. An option that needs the owner's own text, and a
-    // dialog hm-hub could not read, are answered in the pane.
+    // dialog hh-hub could not read, are answered in the pane.
     const dialogBlock = (key: string, project: string, agent: string): JSX.Element | null => {
       const d = v.dialogs[key]
       if (!d) return null
@@ -614,7 +614,7 @@ export const register: Register = (on, options) => {
       const agents = p.agents ?? []
       const up = agents.filter(a => a.state === 'running').length
       const away = agents.filter(a => a.state !== 'running')
-      // what Resume brings back: the orchestrator, and each agent hm-spawn --respawn takes (one proven stopped)
+      // what Resume brings back: the orchestrator, and each agent hh-spawn --respawn takes (one proven stopped)
       const back = 1 + agents.filter(a => a.state === 'stopped').length
       const doneToday = v.tasks.filter(t => t.project === p.name && t.state === 'done' && sameDay(t.updated, now)).length
       // a task the hub sent into an overnight run or a cleanup stays open and waits on nobody: say it is running
@@ -805,7 +805,7 @@ function agentColor(a: HubAgent): string {
   return a.state === 'running' ? 'green' : a.state === 'stopped' ? 'yellow' : 'red'
 }
 
-// What a waiting task asks of the owner. hm-hub decides which states wait (needs_owner); this only words them, and a
+// What a waiting task asks of the owner. hh-hub decides which states wait (needs_owner); this only words them, and a
 // state it does not know is shown by its own name.
 function waitLook(state: string): { glyph: string; words: string; color: string } {
   const looks: Record<string, { glyph: string; words: string; color: string }> = {

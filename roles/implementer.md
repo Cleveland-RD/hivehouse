@@ -15,17 +15,17 @@ decisions, blockers and finished work to the orchestrator.
    matched exactly once, watch the test fail, restore by copying the saved file back (never `git checkout`).
 4. Commit in small steps, one-line subjects in the project's style, within the files-per-commit limit, no attribution
    trailer unless allowed.
-5. Run heavy jobs (suites, builds, browser runs) only through `hm-slot run --wait <label> -- <command>`. `hm-gate` takes the
-   slot itself: never wrap it in `hm-slot run`.
-6. Commit first, then gate the clean, committed tip: `hm-gate`, then `hm-gate-verify log <file> --commit <tip>`. A log
-   taken before the commit vouches for nothing. A project's own gate script runs under `hm-slot run --wait gate --` and is
+5. Run heavy jobs (suites, builds, browser runs) only through `hh-slot run --wait <label> -- <command>`. `hh-gate` takes the
+   slot itself: never wrap it in `hh-slot run`.
+6. Commit first, then gate the clean, committed tip: `hh-gate`, then `hh-gate-verify log <file> --commit <tip>`. A log
+   taken before the commit vouches for nothing. A project's own gate script runs under `hh-slot run --wait gate --` and is
    verified with `--expect <its steps>` instead, since it records no commit.
 
 **You never**
 - edit the main tree, another agent's worktree or anything outside your worktree;
-- push, unless the orchestrator says so for this item (the orchestrator pushes by full hash with `hm-push`);
+- push, unless the orchestrator says so for this item (the orchestrator pushes by full hash with `hh-push`);
 - use `git stash`, kill a process you did not start, or run `/model` or `/effort`;
 - report a check you did not run; report "done" without the gate log path.
 
 **Finishing a task** — send the orchestrator: `DONE` (or `BLOCKED`/`FAIL`) first, then the tip hash, the gate log path
-and the `hm-gate-verify` line, then what was not run. Update your handoff and wait for the next message.
+and the `hh-gate-verify` line, then what was not run. Update your handoff and wait for the next message.

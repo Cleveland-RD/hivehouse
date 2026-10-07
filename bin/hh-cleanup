@@ -8,34 +8,34 @@
 #   --dry-run prints the same lines and changes nothing
 # Exit: 2 no project, 3 .hivehouse tracked, 64 usage, 75 another cleanup is running here.
 set -u
-HM_BIN=${0%/*}; [ "$HM_BIN" != "$0" ] || HM_BIN=.   # parameter expansion, never dirname: under -p a function is ignored, an executable on PATH is not
-. "$HM_BIN/hm-lib.sh"
-. "$HM_BIN/hm-paths.sh"
-USAGE="usage: hm-cleanup --disk | --finish [--dry-run]"
+HH_BIN=${0%/*}; [ "$HH_BIN" != "$0" ] || HH_BIN=.   # parameter expansion, never dirname: under -p a function is ignored, an executable on PATH is not
+. "$HH_BIN/hh-lib.sh"
+. "$HH_BIN/hh-paths.sh"
+USAGE="usage: hh-cleanup --disk | --finish [--dry-run]"
 mode=""; dry=0
 while [ $# -gt 0 ]; do
   case "$1" in
-    --disk|--finish) [ -z "$mode" ] || hm_die 64 "$USAGE"; mode="${1#--}" ;;
+    --disk|--finish) [ -z "$mode" ] || hh_die 64 "$USAGE"; mode="${1#--}" ;;
     --dry-run) dry=1 ;;
-    *) hm_die 64 "$USAGE" ;;
+    *) hh_die 64 "$USAGE" ;;
   esac
   shift
 done
-[ -n "$mode" ] || hm_die 64 "$USAGE"
-[ "$mode" != finish ] || hm_refuse_away "hm-cleanup --finish"
-hm_ensure_state || exit $?
-ROOT=$(hm_project_root) || exit $?
-STATE="$ROOT/$HM_STATE_DIR"; FILE="$STATE/manifest.jsonl"; LOCK="$STATE/cleanup.lock"
-export HM_PROJECT="$ROOT"   # hm-manifest drop finds this project whatever the cwd
-MANIFEST="$(dirname "$0")/hm-manifest"
+[ -n "$mode" ] || hh_die 64 "$USAGE"
+[ "$mode" != finish ] || hh_refuse_away "hh-cleanup --finish"
+hh_ensure_state || exit $?
+ROOT=$(hh_project_root) || exit $?
+STATE="$ROOT/$HH_STATE_DIR"; FILE="$STATE/manifest.jsonl"; LOCK="$STATE/cleanup.lock"
+export HH_PROJECT="$ROOT"   # hh-manifest drop finds this project whatever the cwd
+MANIFEST="$(dirname "$0")/hh-manifest"
 if [ "$dry" = 0 ]; then
-  hm_lock_try "$LOCK" "$(hm_holder_json $$)" || hm_die 75 "another hm-cleanup is running in $ROOT"
-  trap 'hm_lock_release "$LOCK" $$' EXIT
+  hh_lock_try "$LOCK" "$(hh_holder_json $$)" || hh_die 75 "another hh-cleanup is running in $ROOT"
+  trap 'hh_lock_release "$LOCK" $$' EXIT
 fi
 
 say()  { printf '%s %s %s by=%s (%s)\n' "$1" "$2" "$3" "$4" "$5"; }   # say <verb> <kind> <what> <by> <reason>
 drop() { [ "$dry" = 1 ] || "$MANIFEST" drop "$1" >/dev/null; }
-free_gb() { "$(dirname "$0")/hm-disk" --path "$ROOT" | sed 's/^free_gb=\([0-9]*\).*/\1/'; }
+free_gb() { "$(dirname "$0")/hh-disk" --path "$ROOT" | sed 's/^free_gb=\([0-9]*\).*/\1/'; }
 is_temp() {  # is_temp <resolved path>: under a temporary place, by prefix after resolving (A5)
   local q
   for q in "${TMPDIR:-}" /tmp /private/tmp "$STATE/tmp"; do
@@ -54,7 +54,7 @@ group_signallable() {  # group_signallable <pgid>: not ours, and no member is Cl
   local m
   [ -n "$1" ] && [ "$1" -gt 1 ] && [ "$1" != "$OWN_PGID" ] || return 1
   for m in $(ps -A -o pid=,pgid= | awk -v g="$1" '$2 == g { print $1 }'); do
-    hm_is_claude "$m" && return 1
+    hh_is_claude "$m" && return 1
     case "$CALLERS" in *" $m "*) return 1 ;; esac
   done
   return 0
@@ -63,10 +63,10 @@ group_signallable() {  # group_signallable <pgid>: not ours, and no member is Cl
 do_path() {  # file and dir entries
   local id="$1" kind="$2" path="$3" by="$4" rp why dest
   if [ ! -e "$path" ] && [ ! -L "$path" ]; then drop "$id"; say removed "$kind" "$path" "$by" "already gone"; return; fi
-  rp=$(hm_resolve_path "$path") || { say skipped "$kind" "$path" "$by" "$rp"; return; }
+  rp=$(hh_resolve_path "$path") || { say skipped "$kind" "$path" "$by" "$rp"; return; }
   [ "$rp" = "$path" ] || { say skipped "$kind" "$path" "$by" "resolves elsewhere now: $rp"; return; }
-  why=$(hm_check_path_safe "$rp" "$ROOT") || { say skipped "$kind" "$path" "$by" "$why"; return; }
-  why=$(hm_check_path_outside "$rp" "$ROOT" "$FILE") || { say skipped "$kind" "$path" "$by" "$why"; return; }
+  why=$(hh_check_path_safe "$rp" "$ROOT") || { say skipped "$kind" "$path" "$by" "$why"; return; }
+  why=$(hh_check_path_outside "$rp" "$ROOT" "$FILE") || { say skipped "$kind" "$path" "$by" "$why"; return; }
   if is_temp "$rp"; then
     if [ "$dry" = 0 ] && ! rm -rf -- "$rp"; then say skipped "$kind" "$path" "$by" "could not remove all of it"; return; fi
     drop "$id"; say removed "$kind" "$path" "$by" "temporary"
@@ -84,19 +84,19 @@ do_path() {  # file and dir entries
 do_process() {
   local id="$1" pid="$2" started="$3" command="$4" pgid="$5" by="$6" target how i
   [ "$mode" = finish ] || { say kept process "$pid" "$by" "--finish stops it"; return; }
-  hm_alive "$pid" || { drop "$id"; say removed process "$pid" "$by" "already stopped"; return; }
-  if ! hm_lstart_is "$pid" "$started" || [ "$(ps -o command= -p "$pid")" != "$command" ]; then
+  hh_alive "$pid" || { drop "$id"; say removed process "$pid" "$by" "already stopped"; return; }
+  if ! hh_lstart_is "$pid" "$started" || [ "$(ps -o command= -p "$pid")" != "$command" ]; then
     say skipped process "$pid" "$by" "identity changed"; return
   fi
-  hm_is_claude "$pid" && { say skipped process "$pid" "$by" "a Claude process"; return; }
+  hh_is_claude "$pid" && { say skipped process "$pid" "$by" "a Claude process"; return; }
   case "$CALLERS" in *" $pid "*) say skipped process "$pid" "$by" "this cleanup or its caller"; return ;; esac
   target="$pid"; how="stopped"
   if [ "$(ps -o pgid= -p "$pid" | tr -d ' ')" = "$pgid" ] && group_signallable "$pgid"; then target="-$pgid"; how="stopped with its group $pgid"; fi
   if [ "$dry" = 0 ]; then
     kill -TERM -- "$target" 2>/dev/null
-    i=0; while hm_alive "$pid" && [ "$i" -lt 50 ]; do sleep 0.1; i=$((i + 1)); done
-    if hm_alive "$pid"; then kill -KILL -- "$target" 2>/dev/null; how="$how, by KILL"; sleep 0.2; fi
-    hm_alive "$pid" && { say skipped process "$pid" "$by" "would not stop"; return; }
+    i=0; while hh_alive "$pid" && [ "$i" -lt 50 ]; do sleep 0.1; i=$((i + 1)); done
+    if hh_alive "$pid"; then kill -KILL -- "$target" 2>/dev/null; how="$how, by KILL"; sleep 0.2; fi
+    hh_alive "$pid" && { say skipped process "$pid" "$by" "would not stop"; return; }
   fi
   drop "$id"; say removed process "$pid" "$by" "$how"
 }
@@ -104,7 +104,7 @@ do_process() {
 do_tmux() {
   local id="$1" socket="$2" pane="$3" ppid="$4" pstarted="$5" by="$6" own
   [ "$mode" = finish ] || { say kept tmux "$pane" "$by" "--finish kills it"; return; }
-  hm_pane_is "$socket" "$pane" "$ppid" "$pstarted"
+  hh_pane_is "$socket" "$pane" "$ppid" "$pstarted"
   case $? in
     2) drop "$id"; say removed tmux "$pane" "$by" "pane already gone"; return ;;
     1) say skipped tmux "$pane" "$by" "pane is not the one recorded"; return ;;
@@ -115,7 +115,7 @@ do_tmux() {
   fi
   if [ "$dry" = 0 ]; then
     tmux -S "$socket" kill-pane -t "$pane" 2>/dev/null || { say skipped tmux "$pane" "$by" "kill-pane failed"; return; }
-    rm -f "$(hm_registry_dir)/$(hm_pane_key "$socket" "$pane").json"
+    rm -f "$(hh_registry_dir)/$(hh_pane_key "$socket" "$pane").json"
   fi
   drop "$id"; say removed tmux "$pane" "$by" "killed"
 }
@@ -124,9 +124,9 @@ do_worktree() {
   local id="$1" path="$2" base="$3" by="$4" rp why listed=0 w head
   [ "$mode" = finish ] || { say kept worktree "$path" "$by" "--finish removes it when merged and clean"; return; }
   [ -e "$path" ] || { drop "$id"; say removed worktree "$path" "$by" "already gone"; return; }
-  rp=$(hm_resolve_path "$path") || { say skipped worktree "$path" "$by" "$rp"; return; }
+  rp=$(hh_resolve_path "$path") || { say skipped worktree "$path" "$by" "$rp"; return; }
   [ "$rp" = "$path" ] || { say skipped worktree "$path" "$by" "resolves elsewhere now: $rp"; return; }
-  why=$(hm_check_path_safe "$rp" "$ROOT") || { say skipped worktree "$path" "$by" "$why"; return; }
+  why=$(hh_check_path_safe "$rp" "$ROOT") || { say skipped worktree "$path" "$by" "$why"; return; }
   while IFS= read -r w; do
     w=$(cd "$w" 2>/dev/null && pwd -P) || continue
     [ "$w" = "$rp" ] && listed=1
@@ -155,7 +155,7 @@ while IFS= read -r e <&3; do   # fd 3, so nothing an entry runs can read the lis
     process)  do_process "$id" "$(g pid)" "$(g started)" "$(g command)" "$(g pgid)" "$by" ;;
     tmux)     do_tmux "$id" "$(g socket)" "$(g pane)" "$(g pane_pid)" "$(g pane_started)" "$by" ;;
     worktree) do_worktree "$id" "$(g path)" "$(g base)" "$by" ;;
-    remote)   say kept remote "$(g host):$(g path)" "$by" "remote cleanup arrives with hm-remote-sync" ;;
+    remote)   say kept remote "$(g host):$(g path)" "$by" "remote cleanup arrives with hh-remote-sync" ;;
     *)        say skipped "${kind:-?}" "$id" "$by" "unknown kind" ;;
   esac
 done 3<<EOF

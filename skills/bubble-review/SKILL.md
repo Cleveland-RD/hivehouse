@@ -2,7 +2,7 @@
 name: bubble-review
 description: Review a change at a stated depth (glance, delta, standard, full bubble) from a scratch copy, and give a PASS or FAIL verdict with REQUIRED, SHOULD and NOTE findings across nine bubble categories. Use when asked to review a diff, branch or tip.
 when_to_use: When asked to review, "find bubbles", "any bubbles?", or to judge a builder's tip before landing.
-allowed-tools: Bash(hm-gate-verify *) Bash(hm-slot status) Bash(hm-slot release *) Bash(hm-settings resolve *) Read Grep Glob
+allowed-tools: Bash(hh-gate-verify *) Bash(hh-slot status) Bash(hh-slot release *) Bash(hh-settings resolve *) Read Grep Glob
 ---
 
 # hivehouse: bubble-review
@@ -11,8 +11,8 @@ Read `${CLAUDE_PLUGIN_ROOT}/rules/RULES.md` and `${CLAUDE_PLUGIN_ROOT}/roles/rev
 in a diff that fits one of the nine categories in `${CLAUDE_SKILL_DIR}/categories.md`; read that file before a standard
 or full review. You are read-only: you change no code in any worktree.
 
-Call every `hm-*` executable and every `git` command on its own, never inside a compound command. No git rule is
-pre-approved, so each `git` call asks. Test runs go through `hm-slot run`, which is not pre-approved and will ask; that
+Call every `hh-*` executable and every `git` command on its own, never inside a compound command. No git rule is
+pre-approved, so each `git` call asks. Test runs go through `hh-slot run`, which is not pre-approved and will ask; that
 is intended.
 
 ## Depth
@@ -34,12 +34,12 @@ If no depth is stated, ask; if you cannot ask, take standard and say so.
    and function changed and whether it is the right place.
 2. **Scratch copy.** Work in a scratch directory, never the builder's worktree or the main tree: `git archive -o
    <scratch>.tar <tip>`, then `tar -x -f <scratch>.tar -C <scratch>` (two commands, no pipe). Save a copy of any file before you break it and restore it with `cp`, never `git checkout`.
-3. **Gate log.** For a log `hm-gate` wrote: `hm-gate-verify log <file> --commit <tip>`. For a project's own headerless log:
-   `hm-gate-verify log <file> --expect <steps>` instead, never with `--commit` (that is always RED), and say in the
+3. **Gate log.** For a log `hh-gate` wrote: `hh-gate-verify log <file> --commit <tip>`. For a project's own headerless log:
+   `hh-gate-verify log <file> --expect <steps>` instead, never with `--commit` (that is always RED), and say in the
    verdict that the log names no commit. Then the commit rules with
-   `hm-gate-verify commits <base>..<tip> --max-files <n> --style <style> --attribution <allow|deny>`, each value from
-   `hm-settings resolve`, so a project cannot loosen the owner's.
-4. **Changed tests only,** through `hm-slot run --wait <label> -- <command>`. Do not run the whole suite unless asked.
+   `hh-gate-verify commits <base>..<tip> --max-files <n> --style <style> --attribution <allow|deny>`, each value from
+   `hh-settings resolve`, so a project cannot loosen the owner's.
+4. **Changed tests only,** through `hh-slot run --wait <label> -- <command>`. Do not run the whole suite unless asked.
 5. **Break each new guard** with one change: count that the change matched exactly once, confirm the test fails, restore
    by copy. A break that matched twice or not at all is not evidence.
 6. **Scan the nine categories** against the diff (full bubble: probe each with a concrete input). Look also at

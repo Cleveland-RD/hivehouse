@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Stand-in for mv in tests: records the mode of each source (when HM_FAKE_LOG is set), then moves. It exists so a test can
+# Stand-in for mv in tests: records the mode of each source (when HH_FAKE_LOG is set), then moves. It exists so a test can
 # see the mode a file had at the moment it was moved into place.
-if [ -n "${HM_FAKE_LOG:-}" ]; then for a in "$@"; do [ -f "$a" ] && printf 'mv-source-mode: %s %s\n' "$(ls -ln "$a" | cut -c1-10)" "$a" >> "$HM_FAKE_LOG"; done; fi
-# HM_FAKE_MV_RACE: a file appears at the destination just before the move, as if another process had made it after the caller looked
-[ -z "${HM_FAKE_MV_RACE:-}" ] || for last; do :; done; [ -z "${HM_FAKE_MV_RACE:-}" ] || printf 'raced\n' > "$last"
+if [ -n "${HH_FAKE_LOG:-}" ]; then for a in "$@"; do [ -f "$a" ] && printf 'mv-source-mode: %s %s\n' "$(ls -ln "$a" | cut -c1-10)" "$a" >> "$HH_FAKE_LOG"; done; fi
+# HH_FAKE_MV_RACE: a file appears at the destination just before the move, as if another process had made it after the caller looked
+[ -z "${HH_FAKE_MV_RACE:-}" ] || for last; do :; done; [ -z "${HH_FAKE_MV_RACE:-}" ] || printf 'raced\n' > "$last"
 exec /bin/mv "$@"

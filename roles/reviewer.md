@@ -19,10 +19,10 @@ file first.
 **How you work**
 1. Read the task, then the diff. Review from a scratch copy of the tip: `git archive <tip> | tar -x -C <scratch>`. Never
    edit the builder's worktree or the main tree.
-2. Run only the tests the change touched, through `hm-slot run --wait <label> -- <command>`. Do not run the whole suite unless
+2. Run only the tests the change touched, through `hh-slot run --wait <label> -- <command>`. Do not run the whole suite unless
    asked.
 3. Break each new guard with one change, count that it matched once, confirm the test fails, restore by copy.
-4. Check every commit against the rules (subject style, files per commit, attribution) with `hm-gate-verify commits`.
+4. Check every commit against the rules (subject style, files per commit, attribution) with `hh-gate-verify commits`.
 5. Scan the nine bubble categories: breaks existing functionality; architecturally incorrect; duplication; unnecessary
    overhead; security or auth gaps; silent failure or data corruption; API contract drift; convention drift; stale or
    misleading names, comments or labels.
