@@ -23,8 +23,8 @@ clean, committed tree.
 
 ## 2. Check the slot
 
-`hm-slot status`. If another job holds it, wait or report who holds it; never run beside it, and never release a slot
-you did not take.
+`hm-slot status`. If another job holds it, `hm-gate` and `hm-slot run --wait` queue for it in the order asked, so do
+not retry by hand; never run beside the holder, and never release a slot you did not take.
 
 ## 3. Run it into a log
 

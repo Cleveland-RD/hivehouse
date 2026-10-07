@@ -39,7 +39,7 @@ If no depth is stated, ask; if you cannot ask, take standard and say so.
    verdict that the log names no commit. Then the commit rules with
    `hm-gate-verify commits <base>..<tip> --max-files <n> --style <style> --attribution <allow|deny>`, each value from
    `hm-settings resolve`, so a project cannot loosen the owner's.
-4. **Changed tests only,** through `hm-slot run <label> -- <command>`. Do not run the whole suite unless asked.
+4. **Changed tests only,** through `hm-slot run --wait <label> -- <command>`. Do not run the whole suite unless asked.
 5. **Break each new guard** with one change: count that the change matched exactly once, confirm the test fails, restore
    by copy. A break that matched twice or not at all is not evidence.
 6. **Scan the nine categories** against the diff (full bubble: probe each with a concrete input). Look also at

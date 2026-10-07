@@ -132,8 +132,8 @@ A new agent waits for its first message. Send it its brief with `SendMessage`, f
 - Agents message each other directly for technical questions; decisions and finished work come to you; only you talk to
   the owner. Answers to the owner are short and plain. End every message to the owner with either
   "Nothing needed from you." or one short sentence saying what you need from them.
-- One heavy job at a time: `hm-slot run <label> -- <command>` for every suite, build and browser run; `hm-gate` takes
-  the slot itself and is never wrapped in it. Check `hm-slot status` first.
+- One heavy job at a time: `hm-slot run --wait <label> -- <command>` for every suite, build and browser run (`--wait` queues in the order asked;
+  never retry by hand); `hm-gate` takes the slot itself and is never wrapped in it. Check `hm-slot status` first.
 - Add a dated line to your handoff for each event (decision, landing, rotation, blocker).
 - A paid step needs the owner's word for that run; announce the cost first.
 
