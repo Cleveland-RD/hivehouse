@@ -121,7 +121,7 @@ add_team() {  # add_team <project home>: its orchestrator and its agents, <proje
   done < <("$HM_JQ" -r '.agents[]? | [.name, .pane_pid, .pane_started] | map(. // "" | tostring) | join("\u001f")' "$home/.hivemind/team.json" 2>/dev/null)
 }
 msg_check() {
-  local to ref pid i n live role proj p h
+  local to ref pid i n live role proj p h t
   to=$(printf '%s' "$input" | "$HM_JQ" -er '.tool_input.to' 2>/dev/null) || deny "its SendMessage target cannot be read"
   case "$to" in main) return 0 ;; esac
   # who the session is, and whom it may message
@@ -134,7 +134,7 @@ msg_check() {
       [ -n "$h" ] || continue
       case "$h" in /*) ;; *) h="$HUB/$h" ;; esac
       p=$(cd -P "$h" 2>/dev/null && pwd -P) || continue
-      add_orchestrator "$p"
+      while IFS= read -r t <&3; do add_orchestrator "$t"; done 3< <(hm_team_roots "$p")   # the home and each worktree team of it: read without git
     done < <("$HM_JQ" -r '.projects[]?.home // empty' "$HUB/.hivemind-hub/projects.json" 2>/dev/null)
   else
     add_team "$proj"

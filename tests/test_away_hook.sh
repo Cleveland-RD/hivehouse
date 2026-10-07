@@ -301,6 +301,23 @@ tool_denied "hub to a stranger" "$(msg stranger)"
 tool_denied "hub to a bridge address" "$(msg bridge:x)"
 r=$(printf '%s' "$(msg proj-orchestrator)" | HM_AWAY_BYPASS=1 HM_PROJECT="$hub" HM_AWAY_HUB="$hub" HM_AWAY_MCP_ALLOW= "$HOOK" 2>&1 >/dev/null); assert_status "HM_PROJECT equal to the hub's folder is the hub" $? 0
 r=$(printf '%s' "$(msg proj-implementer)" | HM_AWAY_BYPASS=1 HM_PROJECT="$hub" HM_AWAY_HUB="$hub" HM_AWAY_MCP_ALLOW= "$HOOK" 2>&1 >/dev/null); assert_status "...and has no agents to message" $? 2
+# a team registered in a worktree of a listed home: the hub can message its orchestrator, and only that
+wtp="$T_TMP/proj-wt"; git -C "$proj" worktree add -q "$wtp" -b wtteam; wtp=$(cd "$wtp" && pwd -P); mkdir -p "$wtp/.hivemind"
+spawn wt-orchestrator; WP=$SP; WS=$SS
+jq -nc --arg op "$WP" --arg os "$WS" '{agents:[{name:"orchestrator",claude_pid:$op,claude_started:$os,name_full:"wt-orchestrator",pane_pid:"1",pane_started:"x"}]}' > "$wtp/.hivemind/team.json"
+tool_allowed "hub to the orchestrator of a team in a worktree of a listed home, by name" "$(msg wt-orchestrator)"
+tool_allowed "...and by uds" "$(msg "uds:/tmp/cc-socks/$WP.sock")"
+tool_denied "...a stranger is still refused" "$(msg stranger)"
+spawn wt2-orchestrator; XWP=$SP; XWS=$SS
+unl="$T_TMP/unlisted"; git -C "$other" worktree add -q "$unl" -b unl >/dev/null 2>&1; rm -rf "$unl/.hivemind"; mkdir -p "$unl/.hivemind"
+jq -nc --arg op "$XWP" --arg os "$XWS" '{agents:[{name:"orchestrator",claude_pid:$op,claude_started:$os,name_full:"wt2-orchestrator",pane_pid:"1",pane_started:"x"}]}' > "$unl/.hivemind/team.json"
+tool_allowed "a worktree of the other listed project counts the same" "$(msg wt2-orchestrator)"
+unl2="$T_TMP/not-a-root"; mkdir -p "$unl2/.hivemind"; spawn nr-orchestrator; NRP=$SP; NRS=$SS
+jq -nc --arg op "$NRP" --arg os "$NRS" '{agents:[{name:"orchestrator",claude_pid:$op,claude_started:$os,name_full:"nr-orchestrator",pane_pid:"1",pane_started:"x"}]}' > "$unl2/.hivemind/team.json"
+tool_denied "a folder that is no worktree of a listed home is not a team root" "$(msg nr-orchestrator)"
+ROLE=proj
+tool_denied "an agent of the project does not reach the worktree team's orchestrator" "$(msg wt-orchestrator)"
+ROLE=hub
 echo "-- a project that is not readable"
 r=$(printf '%s' "$(msg hub1)" | HM_AWAY_BYPASS=1 HM_PROJECT="$hub/" HM_AWAY_HUB="$hub" HM_AWAY_MCP_ALLOW= "$HOOK" 2>&1 >/dev/null); assert_status "the hub's own folder written with a trailing slash is still the hub" $? 0
 r=$(printf '%s' "$(msg main)" | HM_AWAY_BYPASS=1 HM_PROJECT="$T_TMP/gone" HM_AWAY_HUB="$hub" HM_AWAY_MCP_ALLOW= "$HOOK" 2>&1 >/dev/null); assert_status "main still passes, the check is by target" $? 0
