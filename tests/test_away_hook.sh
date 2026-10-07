@@ -296,6 +296,22 @@ ROLE=hub
 tool_allowed "hub to a project's orchestrator" "$(msg proj-orchestrator)"
 tool_allowed "hub to another listed project's orchestrator" "$(msg other-orchestrator)"
 tool_allowed "hub to an orchestrator by uds" "$(msg "uds:/tmp/cc-socks/$OP.sock")"
+# the root-owned jq may sit at a path the hook's fixed PATH does not hold (/usr/local/bin, /opt/homebrew/bin): the library functions the hook
+# calls then use that jq, not a bare one. Here the fixed PATH holds every program of /bin and /usr/bin except jq, and jq is reached by path alone.
+REALJQ=""; for c in /usr/bin/jq /usr/local/bin/jq /opt/homebrew/bin/jq; do hm_path_trusted "$c" file 0 loose && REALJQ=$c && break; done
+if [ -n "$REALJQ" ]; then
+  NP="$T_TMP/nojq-path"; mkdir -p "$NP"; for f in /bin/* /usr/bin/*; do [ -x "$f" ] && [ "${f##*/}" != jq ] && ln -sf "$f" "$NP/${f##*/}" 2>/dev/null; done
+  NJ=$(t_jq_bin nojq "$REALJQ")
+  [ "$(grep -c '^PATH=/usr/bin:/bin:/usr/sbin:/sbin   # first of all' "$NJ/hm-away-hook")" = 1 ] && ok "the hook's PATH line is found once" || bad "the hook's PATH line did not match once"
+  sed -i '' "s|^PATH=/usr/bin:/bin:/usr/sbin:/sbin   # first of all|PATH='$NP'   # first of all|" "$NJ/hm-away-hook"
+  [ -z "$(env -i PATH="$NP" /bin/sh -c 'command -v jq')" ] && ok "...and the fixed PATH of this fixture holds no jq" || bad "the fixture PATH holds a jq"
+  SAVE_HOOK="$HOOK"; HOOK="$NJ/hm-away-hook"
+  tool_allowed "hub to a project's orchestrator with the root-owned jq off the fixed PATH" "$(msg proj-orchestrator)"
+  tool_allowed "hub to an orchestrator by uds, the same" "$(msg "uds:/tmp/cc-socks/$OP.sock")"
+  ROLE=proj; tool_allowed "an agent to its own orchestrator, the same" "$(msg proj-orchestrator)"; ROLE=hub
+  tool_denied "...and a stranger is still refused" "$(msg stranger)"
+  HOOK="$SAVE_HOOK"
+else echo "  SKIP no root-owned jq on this machine"; fi
 tool_denied "hub to a project's agent" "$(msg proj-implementer)"
 tool_denied "hub to a stranger" "$(msg stranger)"
 tool_denied "hub to a bridge address" "$(msg bridge:x)"

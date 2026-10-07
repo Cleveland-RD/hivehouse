@@ -451,7 +451,7 @@ hm_is_session_name() {  # hm_is_session_name <name>: 0 when it is one
 # that is not JSON is no answer, never an error.
 hm_session_record() {  # hm_session_record <pid> <jq path>
   case "$1" in ''|*[!0-9]*) return 0 ;; esac
-  jq -j --arg p "$1" "select((.pid | tostring) == \$p) | $2 // empty" "$(hm_claude_dir)/sessions/$1.json" 2>/dev/null
+  "${HM_JQ:-jq}" -j --arg p "$1" "select((.pid | tostring) == \$p) | $2 // empty" "$(hm_claude_dir)/sessions/$1.json" 2>/dev/null
 }
 # A live Claude process already holding a conversation, from Claude Code's own session records: prints its pid, or fails when none
 # is. Records of dead processes, of processes that are not Claude, and files that are not JSON are no answer.
@@ -548,7 +548,7 @@ hm_is_typed_path() {  # hm_is_typed_path <path>: 0 when it is one
   [ "${#1}" -le 256 ]
 }
 hm_self_entry() {  # hm_self_entry <project root>: the team.json entry hm-spawn --self wrote (only it records a Claude process), or nothing
-  jq -c '[.agents[]? | select((.claude_pid // "") != "")][0] // empty' "$1/.hivemind/team.json" 2>/dev/null
+  "${HM_JQ:-jq}" -c '[.agents[]? | select((.claude_pid // "") != "")][0] // empty' "$1/.hivemind/team.json" 2>/dev/null
 }
 # The name agents report to: the --self orchestrator's session name as Claude Code has it now (a /rename after --self is
 # followed), else the name recorded at --self, else <project>-orchestrator. One helper for every text that names it.

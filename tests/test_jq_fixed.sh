@@ -40,7 +40,7 @@ else echo "  SKIP no root-owned file under a group-writable folder to use as a c
 body() {  # body <function>: its code in hm-lib.sh, comments dropped
   awk -v f="$1" '$0 ~ "^"f"\\(\\) \\{" {p=1} p {print} p && /^}/ {p=0}' "$HM_REPO_ROOT/bin/hm-lib.sh" | sed 's/#.*//; s/"[^"]*"//g'   # comments and quoted text (messages) are no call
 }
-for f in hm_delegate_mine hm_delegate_for_project hm_hub_records_trusted hm_write_away_mcp hm_check_mode hm_bypass_launch hm_team_roots hm_repo_home; do
+for f in hm_delegate_mine hm_delegate_for_project hm_hub_records_trusted hm_write_away_mcp hm_check_mode hm_bypass_launch hm_team_roots hm_repo_home hm_self_entry hm_session_record; do
   [ -n "$(body $f)" ] || { bad "$f was not found in hm-lib.sh"; continue; }
   assert_eq "no bare jq in $f" "$(body $f | grep -cE '(^|[^A-Za-z_$"-])jq[[:space:]]')" "0"
 done
