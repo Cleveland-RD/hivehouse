@@ -189,10 +189,13 @@ hm_holder_json() {  # hm_holder_json <pid> [extra json object] -> the holder rec
 # record matches it exactly. Otherwise the record is judged by its language-free numbers (hm_lstart_fp): the holder when they equal
 # the pid's own, stale (pid reuse) when they differ. A record with no fingerprint (junk, empty) is busy: not knowing is never a reason
 # to take a live holder's lock. Words are not compared: en_GB, it_IT and pt_PT print the same shape in different languages.
-hm_lock_stale() {
-  local h="$1/holder.json" pid ls lc age r fp cfp any=0
+hm_lock_stale() { hm_record_gone "$1/holder.json" "$1"; }
+# hm_record_gone <record file> <path whose age judges a record with no pid>: 0 when the process the record names is gone (the
+# rules above), 1 when it is there or cannot be told; a record with no pid is gone once the path is older than 10 s.
+hm_record_gone() {
+  local h="$1" pid ls lc age r fp cfp any=0
   pid=$(hm_json_get "$h" .pid); ls=$(hm_json_get "$h" .lstart); lc=$(hm_json_get "$h" .lstart_c)
-  if [ -z "$pid" ]; then age=$(hm_dir_age "$1") || return 1; [ "$age" -gt 10 ]; return; fi
+  if [ -z "$pid" ]; then age=$(hm_dir_age "$2") || return 1; [ "$age" -gt 10 ]; return; fi
   hm_alive "$pid" || return 0
   hm_lstart_is "$pid" "$lc" && return 1
   hm_lstart_is "$pid" "$ls" && return 1
@@ -230,6 +233,23 @@ hm_lock_release() {  # hm_lock_release <lock> <pid>: removes the lock only when 
   hp=$(hm_json_get "$1/holder.json" .pid); hl=$(hm_json_get "$1/holder.json" .lstart); hc=$(hm_json_get "$1/holder.json" .lstart_c)
   [ -n "$hp" ] && [ "$hp" = "$2" ] && { hm_lstart_is "$2" "$hc" || hm_lstart_is "$2" "$hl"; } || return 1
   rm -rf "$1"
+}
+
+# ---- the slot's queue. A caller that waits files queue/<epoch seconds, 10 digits>-<pid>.json (a holder record) and takes the slot
+# only as the oldest live ticket; tickets of one second are served by pid, as a number.
+hm_queue_order() {  # hm_queue_order <queue dir>: the ticket names, oldest first
+  local n
+  for n in $(/bin/ls -1 "$1" 2>/dev/null); do
+    case "$n" in [0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]-*.json) ;; *) continue ;; esac
+    case "${n%.json}" in *[!0-9-]*) continue ;; esac
+    printf '%s\n' "$n"
+  done | /usr/bin/sort -t- -k1,1 -k2,2n
+}
+hm_queue_live() {  # hm_queue_live <queue dir>: the live tickets, oldest first; a ticket whose process is gone is removed here
+  local n
+  for n in $(hm_queue_order "$1"); do
+    if hm_record_gone "$1/$n" "$1/$n"; then rm -f "$1/$n"; else printf '%s\n' "$n"; fi
+  done
 }
 
 # ---- idle detection ------------------------------------------------------------------------------------------------
@@ -600,6 +620,42 @@ hm_path_trusted() {  # hm_path_trusted <path> <file|dir> <uid> <strict|loose>: n
   if [ "$u" != "$3" ] && { [ "$4" != loose ] || [ "$u" != 0 ]; }; then HM_DELEGATE_WHY="$1 is owned by uid $u"; return 1; fi
   m=${m: -3}; g=${m:1:1}; o=${m:2:1}
   if [ $((g & 2)) -ne 0 ] || [ $((o & 2)) -ne 0 ]; then HM_DELEGATE_WHY="$1 is writable by group or others (mode $m)"; return 1; fi
+  return 0
+}
+hm_stat4() {  # hm_stat4 <path>: the path's own mode as four octal digits (setgid and sticky kept), or fails. macOS %Lp drops them
+  local m
+  if /usr/bin/stat --version >/dev/null 2>&1; then m=$(/usr/bin/stat -c '%a' -- "$1" 2>/dev/null)
+  else m=$(/usr/bin/stat -f '%Mp%Lp' "$1" 2>/dev/null); fi
+  case "$m" in ''|*[!0-7]*) return 1 ;; esac
+  while [ "${#m}" -lt 4 ]; do m="0$m"; done
+  printf '%s\n' "$m"
+}
+# ---- the machine's one slot (bin/hm-slot). One folder for every user, made once by an administrator (hm-slot setup prints
+# the lines): slot/ and slot/queue/, owned by root, mode exactly 2775, under folders only root can write. Used only when all of
+# that holds; HM_SLOT_LOCAL=1 opts out and nothing in the environment can name another folder. The two one-line functions are
+# the tests' seams: a scratch copy of bin/ rewrites them to a fixture and to this user's uid.
+hm_machine_slot_dir() { if [ -d /System/Library ]; then echo '/Library/Application Support/hivemind/slot'; else echo '/var/lib/hivemind/slot'; fi; }
+hm_machine_slot_owner() { echo 0; }
+# hm_machine_slot_ok <dir>: 0 when the folder may be used; otherwise 1 with the reason in HM_SLOT_WHY
+hm_machine_slot_ok() {
+  local d="$1" owner p i=0 f st u m t
+  owner=$(hm_machine_slot_owner)
+  [ -d "$d" ] || { HM_SLOT_WHY="$d does not exist"; return 1; }
+  for f in "$d" "$d/queue"; do
+    st=$(hm_stat3 "$f") || { HM_SLOT_WHY="$f cannot be read"; return 1; }
+    read -r u m t <<< "$st"
+    case "$t" in *[Ss]ymbolic*) HM_SLOT_WHY="$f is a link"; return 1 ;; esac
+    case "$t" in *[Dd]irectory*) ;; *) HM_SLOT_WHY="$f is not a folder"; return 1 ;; esac
+    [ "$u" = "$owner" ] || { HM_SLOT_WHY="$f is owned by uid $u, not $owner"; return 1; }
+    m=$(hm_stat4 "$f") || { HM_SLOT_WHY="$f cannot be read"; return 1; }
+    [ "$m" = 2775 ] || { HM_SLOT_WHY="$f has mode $m, not 2775"; return 1; }
+  done
+  p=${d%/*}; [ -n "$p" ] || p=/
+  while :; do
+    hm_path_trusted "$p" dir "$owner" loose || { HM_SLOT_WHY="$HM_DELEGATE_WHY"; return 1; }
+    [ "$p" = / ] && break
+    p=${p%/*}; [ -n "$p" ] || p=/; i=$((i + 1)); [ "$i" -lt 64 ] || { HM_SLOT_WHY="the path is too deep"; return 1; }
+  done
   return 0
 }
 hm_delegate_read() {  # hm_delegate_read <path> <uid> [<now>]: prints "<hub><TAB><until><TAB><mcp>" when the file is valid; 1 when it is not

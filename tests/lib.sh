@@ -83,6 +83,7 @@ t_setup() {
   export HM_TMUX_SOCKET="$T_TMP/tmux.sock"
   # Claude Code's settings are the run's own, never the machine's: the user's, through CLAUDE_CONFIG_DIR, and managed
   export CLAUDE_CONFIG_DIR="$T_TMP/claude-config" HM_MANAGED_SETTINGS="$T_TMP/managed-settings.json"; mkdir -p "$CLAUDE_CONFIG_DIR"
+  export HM_SLOT_LOCAL=1   # no test meets the machine's real slot folder
   unset HM_PROJECT HM_AGENT TMUX TMUX_PANE
   trap t_teardown EXIT
   trap 'exit 130' INT; trap 'exit 143' TERM; trap 'exit 129' HUP   # exit runs the EXIT trap, so a signal tears down too
@@ -109,6 +110,19 @@ t_delegate_bin() {
   n=$(grep -c '^hm_delegate_now() { hm_delegate_read "$(hm_delegate_path)" 0; }$' "$d/hm-lib.sh")
   [ "$n" = 1 ] || { echo "t_delegate_bin: the production line matched $n times" >&2; return 1; }
   awk -v f="$1" -v u="$(id -u)" '/^hm_delegate_now\(\) \{ hm_delegate_read / { print "hm_delegate_now() { hm_delegate_read \"" f "\" " u "; }"; next } { print }' "$d/hm-lib.sh" > "$d/hm-lib.sh.new" && mv "$d/hm-lib.sh.new" "$d/hm-lib.sh"
+  printf '%s\n' "$d"
+}
+# t_slot_bin <machine slot folder> [<owner uid>]: a scratch copy of bin/ in which the two one-line functions that name the machine's
+# slot folder and the uid that must own it name a fixture and this user (or <owner uid>) instead. Each line is replaced only if
+# it is found exactly once; production has no override of its own. Prints the copy's folder.
+t_slot_bin() {
+  local d n; d=$(mktemp -d "$T_TMP/slot-bin.XXXXXX") || return 1
+  rm -rf "$d"; mkdir -p "$d"; cp -R "$HM_REPO_ROOT/bin/." "$d/"
+  for n in 'hm_machine_slot_dir() { if ' 'hm_machine_slot_owner() { echo 0; }'; do
+    [ "$(grep -c -F -- "$n" "$d/hm-lib.sh")" = 1 ] || { echo "t_slot_bin: the production line '$n' did not match once" >&2; return 1; }
+  done
+  awk -v f="$1" -v u="${2:-$(id -u)}" '/^hm_machine_slot_dir\(\) \{ if / { print "hm_machine_slot_dir() { echo \047" f "\047; }"; next }
+    /^hm_machine_slot_owner\(\) \{ echo 0; \}$/ { print "hm_machine_slot_owner() { echo " u "; }"; next } { print }' "$d/hm-lib.sh" > "$d/hm-lib.sh.new" && mv "$d/hm-lib.sh.new" "$d/hm-lib.sh"
   printf '%s\n' "$d"
 }
 # t_env_probe <NAME=value>: starts a process launched with that variable and prints its pid. macOS shows no environment for
