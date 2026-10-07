@@ -360,9 +360,17 @@ r=$(rec --json); assert_eq "...once: the next beat does not restart or respawn i
 hpane "$WF"; WH_PID=$HPID; WH_START=$HSTART
 jq --arg k "$HM_TMUX_SOCKET" --arg p "$HPANE" --arg pp "$HPID" --arg ps "$HSTART" '.agents += [{name:"whung", pane:$p, socket:$k, pane_pid:$pp, pane_started:$ps}]' \
   "$EW/.hivemind/team.json" > "$T_TMP/tj" && mv "$T_TMP/tj" "$EW/.hivemind/team.json"
-r=$(rec --json); ago eps/whung 1000; r=$(rec --json)
+r=$(rec --json); ago "eps/$EW:whung" 1000; r=$(rec --json)
 assert_eq "a frozen agent of a worktree team: named for a restart" "$(restarts "$r")" "whung"
 live "$WH_PID" "$WH_START" && bad "the hung worktree agent is still running" || ok "...and its Claude was stopped"
+# the same agent name in two team roots of one project is two agents: each is judged on its own state
+hpane "$WF"; HD1=$HPID; HS1=$HSTART; HP1=$HPANE; hpane "$WF"; HD2=$HPID; HS2=$HSTART; HP2=$HPANE
+jq --arg k "$HM_TMUX_SOCKET" --arg p "$HP1" --arg pp "$HD1" --arg ps "$HS1" '.agents += [{name:"hdup", pane:$p, socket:$k, pane_pid:$pp, pane_started:$ps}]' "$H/eps/.hivemind/team.json" > "$T_TMP/tj" && mv "$T_TMP/tj" "$H/eps/.hivemind/team.json"
+jq --arg k "$HM_TMUX_SOCKET" --arg p "$HP2" --arg pp "$HD2" --arg ps "$HS2" '.agents += [{name:"hdup", pane:$p, socket:$k, pane_pid:$pp, pane_started:$ps}]' "$EW/.hivemind/team.json" > "$T_TMP/tj" && mv "$T_TMP/tj" "$EW/.hivemind/team.json"
+r=$(rec --json); ago "eps/hdup" 1000; ago "eps/$EW:hdup" 1000; r=$(rec --json)
+assert_eq "a hung agent name in two roots: both are stopped, each by its own record" "$(restarts "$r")" "hdup,hdup"
+live "$HD1" "$HS1" && bad "the home's hdup is still running" || ok "...the home's was stopped"
+live "$HD2" "$HS2" && bad "the worktree's hdup is still running" || ok "...and the worktree's"
 # a timer that moved is not hung (A27): the state says 5s was seen 16 minutes ago, the screen now says 6s
 hagent beta moving "$WF"; MV_PID=$HPID; MV_START=$HSTART
 rec --json >/dev/null; ago beta/moving 960; jq '.["beta/moving"].secs = 5' "$HS" > "$T_TMP/hs" && mv "$T_TMP/hs" "$HS"

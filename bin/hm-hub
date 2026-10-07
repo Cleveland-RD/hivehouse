@@ -383,7 +383,7 @@ session_target() {
   jq -r --arg a "$2" '[.agents[]? | select(.name == $a)][0] // empty | [.socket, .pane, (.claude_pid // .pane_pid), (.claude_started // .pane_started)]
     | map(. // "" | tostring) | join("\u001f")' "$1/.hivemind/team.json" 2>/dev/null
 }
-# hung_try <project> <kind orchestrator|agent> <agent> <task> <socket> <pane> <pid> <started>: recover's look at one running session
+# hung_try <project> <kind orchestrator|agent> <agent> <task> <socket> <pane> <pid> <started> [<state key>]: recover's look at one running session
 # (Phase 4.3, A10). Hung needs positive evidence: Claude Code's working line recognised, with its elapsed time unchanged for 15 minutes
 # (hung-state.json holds what each beat saw: the same process, the same time, and since when). Any other screen is unknown: never hung,
 # nothing kept. A hung session is stopped (hm_stop_hung) within the cap of 3 restarts of one session in 24 hours, and recover has
@@ -392,8 +392,8 @@ session_target() {
 # follows is one of them); a stop that did not take is blocked once and not tried again for 24 hours. Sets HUNG_STOPPED=1 when it
 # stopped one. It works on recover's variables: now, since, starts, max, rjf, hstates, newhs, newrec, actions, blocked.
 hung_try() {
-  local n="$1" kind="$2" a="$3" task="$4" socket="$5" pane="$6" pid="$7" started="$8" key secs hsince tries seen mins why rc
-  HUNG_STOPPED=0; key="$n/$a"
+  local n="$1" kind="$2" a="$3" task="$4" socket="$5" pane="$6" pid="$7" started="$8" hk="${9:-$3}" key secs hsince tries seen mins why rc
+  HUNG_STOPPED=0; key="$n/$hk"
   [ -n "$pid" ] && [ -n "$started" ] || return 0
   secs=$(hm_pane_text "$pane" "$socket" | hm_pane_working_seconds) || return 0
   hsince=$(printf '%s' "$hstates" | jq -r --arg k "$key" --arg p "$pid" --arg s "$started" --argjson c "$secs" \
@@ -1173,14 +1173,15 @@ recover)
     while IFS= read -r tr <&3; do   # every team root of the project, the home first
     for a in $(jq -r '.agents[]?.name' "$tr/.hivemind/team.json" 2>/dev/null); do
       hm_is_agent_name "$a" && ! is_orchestrator_entry "$tr" "$a" || continue
+      ak=$a; [ "$tr" = "${O_ROOTS[0]}" ] || ak="$tr:$a"   # an agent is its team root and its name; the home's keep the bare name
       hm_team_agent_is "$tr" "$a"; case $? in 0) st=running ;; 1) st=stopped ;; *) st=unknown ;; esac
       if [ "$st" = running ]; then
         IFS=$'\x1f' read -r tsock tpane tpid tstart <<< "$(session_target "$tr" "$a")"
-        hung_try "$n" agent "$a" "$task" "$tsock" "$tpane" "$tpid" "$tstart"
+        hung_try "$n" agent "$a" "$task" "$tsock" "$tpane" "$tpid" "$tstart" "$ak"
         [ "$HUNG_STOPPED" = 0 ] || st=restarted   # not "stopped since the last beat": its restart is already an action
       fi
-      nowag=$(printf '%s' "$nowag" | jq -c --arg a "$a" --arg s "$st" '. + {($a): $s}')
-      if [ "$st" = stopped ] && [ "$(printf '%s' "$prevag" | jq -r --arg a "$a" '.[$a] // empty')" = running ]; then
+      nowag=$(printf '%s' "$nowag" | jq -c --arg a "$ak" --arg s "$st" '. + {($a): $s}')
+      if [ "$st" = stopped ] && [ "$(printf '%s' "$prevag" | jq -r --arg a "$ak" '.[$a] // empty')" = running ]; then
         newly=$(printf '%s' "$newly" | jq -c --arg a "$a" '. + [$a]')
       fi
     done
