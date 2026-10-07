@@ -144,8 +144,9 @@ assert_eq "...and the kept line is whole again" "$(cut -f3 "$RCK" | grep -Ec '^[
 rm -f "$RCK"; (cd "$H" && hm-hub status res --json 2>"$T_TMP/miss.err" >/dev/null)
 assert_eq "a cache miss leaves stderr empty" "$(wc -c < "$T_TMP/miss.err" | tr -d ' ')" "0"
 # wake
-wp=$(hub wake res --mode auto --still 2 --max-wait 15 2>"$T_TMP/w.err"); assert_status "wake resumes it" $? 0
+wp=$(umask 077; hub wake res --mode auto --still 2 --max-wait 15 2>"$T_TMP/w.err"); assert_status "wake resumes it" $? 0
 screen=$(hm_tmux capture-pane -p -J -S - -t "$wp")
+assert_contains "...the session has the caller's umask (077), not the hub's 022" "$screen" "UMASK: 0077"
 assert_contains "...by session id" "$screen" "ARGV: bbbb2222-0000-0000-0000-000000000002"
 assert_contains "...named <project>-orchestrator" "$screen" "ARGV: res-orchestrator"
 assert_contains "...the wake line carries --agent orchestrator" "$screen" "hm-spawn --self --agent orchestrator"

@@ -19,6 +19,7 @@ set -u
 # Everything this writes under .hivemind-hub/ is at most 755 for a folder and 644 for a file, whatever the caller's umask was (umask 002, the
 # default where each user has their own group, would make 775 and 664, which the delegate check refuses). seal_hub puts right what an
 # earlier umask made.
+HM_CALLER_UMASK=$(umask)   # a pane the hub starts gets the caller's umask back: 022 is for the hub's own records, not an agent's files
 umask 022
 # Privileged mode (-p) skips BASH_ENV and takes no functions from the environment, and the fixed /bin/bash cannot be swapped
 # through PATH: the owner's away file is judged by code nothing in the environment can change. Nothing here finds its sibling
@@ -335,10 +336,10 @@ launch() {
   mcpf="$root/.hivemind-hub/panes/$name-mcp.json"
   if [ "$MODE" = bypassPermissions ]; then mkdir -p "$root/.hivemind-hub/panes"; hm_bypass_launch "$cwd" "$mcpf" || { rm -f "$mcpf"; hm_die 4 "cannot prepare the away MCP file for $name"; }
   else rm -f "$mcpf"; fi   # an earlier bypass start's file may hold server secrets and is not this launch's
-  c="exec $(printf '%q ' claude "$@" ${HM_BP_ARGS[@]+"${HM_BP_ARGS[@]}"})"
+  c="umask $HM_CALLER_UMASK; exec $(printf '%q ' claude "$@" ${HM_BP_ARGS[@]+"${HM_BP_ARGS[@]}"})"   # the pane's files are the caller's, not the hub's records
   envs=(-e "HIVEMIND_HOME=$(hm_home)" -e "HM_PROJECT=$cwd" ${HM_BP_ENVS[@]+"${HM_BP_ENVS[@]}"})
   [ -n "${HM_TMUX_SOCKET:-}" ] && envs+=(-e "HM_TMUX_SOCKET=$HM_TMUX_SOCKET")
-  pane=$(hm_open_window "$name" orchestrator "$cwd" "$c" "${envs[@]}") || { rc=$?; rm -f "$mcpf"; exit $rc; }
+  pane=$(umask "$HM_CALLER_UMASK"; hm_open_window "$name" orchestrator "$cwd" "$c" "${envs[@]}") || { rc=$?; rm -f "$mcpf"; exit $rc; }
   socket=$(hm_tmux display-message -p -t "$pane" '#{socket_path}') || exit $?
   ident=$(hm_pane_identity "$socket" "$pane") || hm_die 4 "cannot read the new pane $pane"
   mkdir -p "$root/.hivemind-hub/panes"
