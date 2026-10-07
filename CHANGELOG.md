@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.0
+
+- **Away mode for each user.** The delegate file is now one file per user, `<base>/delegate.d/<uid>` (`/Library/Application Support/hivemind` on macOS, `/etc/hivemind` on Linux), named by the user's real id, so several people on one machine can each be away on their own. The hub it names, its `.hivemind-hub/`, `projects.json` and `hub.json`, and each project home that gets bypass must belong to that user and not be writable by group or others.
+- **A 0.3.0 delegate file stops working.** Run `hm-hub away` again: it prints the new lines, and says that the old shared file is no longer read and prints the line that removes it (`hm-hub back` does too).
+- `hm-hub` runs with `umask 022` and takes group and others' write off `.hivemind-hub/`. `hm-hub away` checks the hub's records and each project home first, and prints the reason and a `chmod go-w` line instead of `sudo` lines for an away that would be refused. `hm-hub status` shows `away_refused` and why.
+
 ## 0.3.0
 
 - The owner can do everything from the hub, so never has to go to a project's own tmux window.
