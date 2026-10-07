@@ -966,6 +966,7 @@ away)
   [ "$epoch" -le $((now + 604800)) ] || hm_die 4 "away is at most 7 days: the hub's heartbeat does not outlive that"
   # the hub's records and each project home are checked as the delegate check will check them, before anything is printed: an away that
   # would be refused unseen is not worth the owner's sudo. The group-writable ones this user owns are fixed by a line needing no sudo.
+  [ -n "$HM_JQ" ] || hm_die 4 "no root-owned jq was found (/usr/bin/jq, /usr/local/bin/jq or /opt/homebrew/bin/jq): away mode reads its records with one, so it cannot be switched on here"
   me=$(hm_real_uid); hm_is_number "$me" || hm_die 4 "this user's id cannot be read"
   bad=""; hm_hub_records_trusted "$root" "$me" || bad=$HM_BAD_LIST
   while IFS=$'\t' read -r name home; do

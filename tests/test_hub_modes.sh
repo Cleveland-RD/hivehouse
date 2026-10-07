@@ -88,4 +88,13 @@ assert_contains "...with sudo lines" "$out" "sudo tee -- "
 assert_eq "...and puts the records it does not check right: tasks.jsonl" "$(mode "$P/tasks.jsonl")" "644"
 assert_eq "...holds/" "$(mode "$P/holds")" "755"
 assert_eq "...decisions/" "$(mode "$P/decisions")" "755"
+# with no root-owned jq the delegate check cannot read anything, so away says that, before it seals or prints a line
+NJ=$(t_jq_bin nojq "/nonexistent/jq")
+chmod -R g+w "$P/holds"
+out=$(cd "$H" && "$NJ/hm-hub" away --until +1h 2>"$T_TMP/nj.err"); rc=$?
+assert_status "away with no root-owned jq is refused" $rc 4
+assert_contains "...naming the real cause" "$(cat "$T_TMP/nj.err")" "no root-owned jq"
+case "$out" in *sudo*) bad "a sudo line was printed with no root-owned jq" ;; *) ok "...and no sudo line" ;; esac
+assert_eq "...and nothing was sealed first" "$(mode "$P/holds")" "775"
+case "$(cat "$T_TMP/nj.err")" in *"command not found"*) bad "a shell error leaked: $(cat "$T_TMP/nj.err")" ;; *) ok "...with no shell error beside it" ;; esac
 t_done
