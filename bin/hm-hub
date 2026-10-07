@@ -1183,7 +1183,7 @@ recover)
       fi
       continue
     fi
-    if [ "$O_STATE" = stopped ] && [ -n "$task" ]; then
+    if { [ "$O_STATE" = stopped ] || [ "$O_STATE" = resumable ]; } && [ -n "$task" ]; then   # resumable: no record, but a transcript; wake resumes it
       tries=$(jq -s --arg i "$n" --argjson s "$since" '[.[] | select(.epoch > $s and .action == "wake" and .item == $i)] | length' "$rjf")
       seenblock=$(jq -s --arg i "$n" --argjson s "$since" '[.[] | select(.epoch > $s and .action == "blocked-wake" and .item == $i)] | length' "$rjf")
       if [ "$tries" -ge 3 ]; then

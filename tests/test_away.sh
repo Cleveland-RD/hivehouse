@@ -424,5 +424,13 @@ assert_eq "...logged against the session" "$(jq -s '[.[] | select(.action == "re
 assert_eq "...its wake took the last session of the day: the stopped orchestrator after it is not woken in the same beat" "$(act "$r" | tr ',' '\n' | grep -c wake:gamma)" "0"
 assert_contains "...it is blocked on the daily cap" "$(printf '%s' "$r" | jq -r '[.blocked[] | select(.project == "gamma")][0].reason')" "daily cap of 1"
 hub hold alpha --off >/dev/null
+# an orchestrator that ended unregistered but has a transcript (resumable) with an open task is woken like a stopped one
+mk zeta; hub add zeta --home zeta >/dev/null; tz=$(idof "$(hub task zeta --text "Work")")
+ZK="$CLAUDE_CONFIG_DIR/projects/$(printf '%s' "$H/zeta" | tr '/._& ' '-----')"; mkdir -p "$ZK"
+{ jq -nc --arg c "$H/zeta" '{type:"attachment", cwd:$c, sessionId:"zzzz1111-0000-0000-0000-000000000001"}'
+  jq -nc --arg t "zeta-orchestrator" '{type:"custom-title", customTitle:$t, sessionId:"zzzz1111-0000-0000-0000-000000000001"}'; } > "$ZK/zzzz1111-0000-0000-0000-000000000001.jsonl"
+assert_eq "(zeta is resumable)" "$(hub status zeta --json | jq -r '.projects[0].orchestrator.state')" "resumable"
+: > "$rj"; r=$(rec --json)
+assert_eq "recover wakes a resumable orchestrator with an open task" "$(act "$r" | tr ',' '\n' | grep -c wake:zeta)" "1"
 assert_eq "...hivemind ran no sudo anywhere" "$(cat "$HM_SUDO_LOG")" ""
 t_done
