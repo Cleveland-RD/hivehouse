@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# The file to read for a role, the rules or the brief template: the project's custom/ file, else the user's, else the plugin's (the
+# resolver is hh_custom_file in hh-lib.sh; every skill asks it here). Prints the absolute path; notes (which level, or why a custom file was
+# ignored) go to stderr. Reads nothing but paths; takes no command to run.
+#   hh-resolve role <name> | rules | brief
+# Exit: 2 no such file at any level, 4 a bad role name, 64 usage.
+set -u
+. "$(dirname "$0")/hh-lib.sh"
+USAGE="usage: hh-resolve role <name> | rules | brief"
+case "${1:-}" in
+  role)
+    [ $# -eq 2 ] || hh_die 64 "$USAGE"
+    case "$2" in [${HH_LOWER}]*) ;; *) hh_die 4 "a role name starts with a lowercase letter: $2" ;; esac
+    case "$2" in *[!${HH_LOWER}${HH_DIGITS}_-]*) hh_die 4 "a role name is lowercase letters, digits, - and _: $2" ;; esac
+    rel="roles/$2.md" ;;
+  rules) [ $# -eq 1 ] || hh_die 64 "$USAGE"; rel="rules/RULES.md" ;;
+  brief) [ $# -eq 1 ] || hh_die 64 "$USAGE"; rel="rules/brief-template.md" ;;
+  *) hh_die 64 "$USAGE" ;;
+esac
+hh_custom_file "$rel"; rc=$?
+[ "$rc" -eq 0 ] || hh_die "$rc" "no such file at any level (project, user, plugin): $rel"

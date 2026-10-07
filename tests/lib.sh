@@ -21,6 +21,7 @@ export PATH="$HH_REPO_ROOT/tests/bin:$HH_REPO_ROOT/bin:$(t_path_without_foreign_
 T_STATE='.hivehouse'                       # a project's state folder
 T_HUB='.hivehouse-hub'                     # the hub's folder
 T_HOMEDIR='.hivehouse'                     # the per-user home, under $HOME
+T_CUSTOM='custom'                           # the override folder, under a project's state folder and under the per-user home
 T_MAC_BASE='/Library/Application Support/hivehouse'   # the delegate files' folder, and the machine slot's, on macOS
 T_LINUX_BASE='/etc/hivehouse'              # the delegate files' folder on Linux
 T_LINUX_SLOT='/var/lib/hivehouse/slot'     # the machine slot on Linux

@@ -24,7 +24,7 @@ assert_eq "types/index.d.ts keys the atoms by the plugin's name" "$(sed -n 's/^ 
 assert_eq "hooks/hub.tsx declares 3 atoms" "$(grep -c "atom({ plugin: '" hooks/hub.tsx)" "3"
 assert_eq "...each in the plugin's name" "$(grep -o "atom({ plugin: '[^']*'" hooks/hub.tsx | sort -u)" "atom({ plugin: '$T_PLUGIN'"
 # the constants are where the grep says they are, once each
-for c in HH_PREFIX HH_STATE_DIR HH_HUB_DIR HH_HOME_DIR HH_MAC_BASE HH_LINUX_BASE HH_LINUX_SLOT HH_DELEGATE_TAG HH_DELEGATE_VERSIONS HH_DELEGATE_WRITE; do
+for c in HH_PREFIX HH_STATE_DIR HH_HUB_DIR HH_HOME_DIR HH_MAC_BASE HH_LINUX_BASE HH_LINUX_SLOT HH_DELEGATE_TAG HH_DELEGATE_VERSIONS HH_DELEGATE_WRITE HH_CUSTOM_DIR; do
   assert_eq "bin/hh-lib.sh defines $c once" "$(grep -c "^$c=" bin/hh-lib.sh)" "1"
 done
 for c in PLUGIN PREFIX HUB_DIR PANE; do

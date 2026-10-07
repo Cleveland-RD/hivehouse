@@ -14,6 +14,7 @@ HH_LINUX_SLOT='/var/lib/hivehouse/slot'   # the machine slot on Linux
 HH_DELEGATE_TAG='hivehouse-delegate'  # the delegate file's first word; the first line is the tag, a space and a version
 HH_DELEGATE_VERSIONS=' 1 2 '          # the versions hh_delegate_read accepts (1: hub, until, mcp; 2: adds hosts and allow)
 HH_DELEGATE_WRITE=2                   # the version hh-hub away writes
+HH_CUSTOM_DIR='custom'                    # the user's overrides of the plugin's roles, rules and brief template: under a project's state folder and under the per-user home
 hh_plugin_name() {  # use as x=$(hh_plugin_name) || exit $?. The plugin's name, read with built-ins from .claude-plugin/plugin.json (its top-level "name" line)
   local f l n="" pre='  "name": "'; f="$(dirname "${BASH_SOURCE[0]}")/../.claude-plugin/plugin.json"
   while IFS= read -r l; do
@@ -89,6 +90,39 @@ hh_project_key() {  # basename plus a short hash of the full path: app and app-i
   local p="$1"; printf '%s-%s\n' "$(basename "$p")" "$(printf '%s' "$p" | shasum | cut -c1-6)"
 }
 hh_state() { local root; root=$(hh_project_root) || exit $?; printf '%s/%s\n' "$root" "$HH_STATE_DIR"; }
+# ---- custom/: the user's own roles, rules and brief template, which an update of the plugin never replaces ---------------------------
+# hh_custom_file <rel>: prints the file to read for the plugin's <rel> (roles/<name>.md, rules/RULES.md or rules/brief-template.md):
+# the project's <state dir>/custom/<rel>, else the user's <home>/custom/<rel>, else the plugin's own. THE one place this is decided; every
+# skill asks it through hh-resolve. A custom file is used only when it, its folder and custom/ are the user's own, not links and not
+# writable by group or others (hh_path_trusted, as the delegate file's); otherwise a note names the file and why, and the next level
+# answers. A note also says which level a used file came from. Exit 2 when no level has the file.
+hh_custom_safe() {  # hh_custom_safe <custom dir> <rel> <uid>: 0 when every part of the path below the state folder is safe; HH_DELEGATE_WHY says what is not
+  local base="$1" rel="$2" uid="$3"
+  hh_path_trusted "$base" dir "$uid" strict || return 1
+  hh_path_trusted "$base/${rel%/*}" dir "$uid" strict || return 1
+  hh_path_trusted "$base/$rel" file "$uid" strict
+}
+hh_custom_file() {
+  local rel="$1" plugin level base f root uid
+  case "$rel" in roles/[${HH_LOWER}]*.md|rules/RULES.md|rules/brief-template.md) ;; *) return 4 ;; esac
+  case "$rel" in *[!${HH_LOWER}${HH_UPPER}${HH_DIGITS}._/-]*|*..*) return 4 ;; esac
+  plugin=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P) || return 2
+  uid=$(hh_real_uid) || return 2
+  for level in project user; do
+    if [ "$level" = project ]; then root=$(hh_project_root 2>/dev/null) || continue; base="$root/$HH_STATE_DIR/$HH_CUSTOM_DIR"
+    else base="$(hh_home)/$HH_CUSTOM_DIR"; fi
+    f="$base/$rel"
+    { [ -e "$f" ] || [ -L "$f" ]; } || continue
+    if hh_custom_safe "$base" "$rel" "$uid"; then
+      echo "$HH_PREFIX: using the $level's custom file $f" >&2
+      printf '%s\n' "$f"; return 0
+    fi
+    echo "$HH_PREFIX: ignoring the $level's custom file $f: $HH_DELEGATE_WHY" >&2
+  done
+  f="$plugin/$rel"
+  [ -f "$f" ] || return 2
+  printf '%s\n' "$f"
+}
 hh_ensure_state() {  # creates $HH_STATE_DIR/, excludes it through info/exclude, refuses if any of it is tracked
   local root common excl
   root=$(hh_project_root) || exit $?
