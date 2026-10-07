@@ -2,7 +2,19 @@
 # Shared test helpers. Every test runs in its own scratch dirs and its own tmux server.
 set -u
 HM_REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
-export PATH="$HM_REPO_ROOT/tests/bin:$HM_REPO_ROOT/bin:$PATH"   # the fake claude first, so no test can start a real one
+# PATH: the fake claude first, so no test can start a real one; then this repo's bin; then the caller's PATH without any other plugin's
+# bin/ (an entry whose parent holds .claude-plugin/plugin.json), so a suite started from a session that has another generation of
+# these tools on its PATH can never reach them by a name this repo's bin does not shadow (the 7 Oct leak). By identity, not by name.
+t_path_without_foreign_plugins() {
+  local e r out="" IFS=:
+  for e in $PATH; do
+    [ -n "$e" ] || continue
+    if [ -f "$e/../.claude-plugin/plugin.json" ]; then r=$(cd "$e" 2>/dev/null && pwd -P); [ "$r" = "$HM_REPO_ROOT/bin" ] || continue; fi
+    out="${out:+$out:}$e"
+  done
+  printf '%s\n' "$out"
+}
+export PATH="$HM_REPO_ROOT/tests/bin:$HM_REPO_ROOT/bin:$(t_path_without_foreign_plugins)"
 # The names, stated here for every test and spelled in no other test (tests/test_names.sh holds it to that). They are written out,
 # not read from bin/, so that a name changed there alone fails the tests. The plugin's name is read from plugin.json, the one
 # place it lives.
@@ -88,7 +100,20 @@ t_sweep_stale() {  # a run killed outright ran no teardown: the next t_setup fin
   done
   return 0
 }
+# The run's environment is an allowlist: everything else the caller exported is unset, so no variable of any plugin or tool (this one's
+# own, an earlier generation's, a Git or Claude Code one) reaches a test, whatever prefix it has. What is kept: the user and shell
+# basics, a locale, the timezone, the PATH built above, and the opt-in switch of the one test that signals real processes.
+t_allowlist_env() {
+  local v
+  for v in $(compgen -e); do
+    case "$v" in
+      HOME|PATH|USER|LOGNAME|SHELL|TERM|TMPDIR|TZ|LANG|LC_*|PWD|OLDPWD|SHLVL|_|HM_CLEANUP_TEST) ;;
+      *) unset "$v" ;;
+    esac
+  done
+}
 t_setup() {
+  t_allowlist_env
   t_sweep_stale
   T_TMP="$(mktemp -d "${TMPDIR:-/tmp}/hmtest.XXXXXX")"; T_TMP="$(cd "$T_TMP" && pwd -P)"
   printf '%s\t%s\n' "$$" "$(t_lstart $$)" > "$T_TMP/run.owner"
@@ -97,7 +122,6 @@ t_setup() {
   # Claude Code's settings are the run's own, never the machine's: the user's, through CLAUDE_CONFIG_DIR, and managed
   export CLAUDE_CONFIG_DIR="$T_TMP/claude-config" HM_MANAGED_SETTINGS="$T_TMP/managed-settings.json"; mkdir -p "$CLAUDE_CONFIG_DIR"
   export HM_SLOT_LOCAL=1   # no test meets the machine's real slot folder
-  unset HM_PROJECT HM_AGENT TMUX TMUX_PANE
   trap t_teardown EXIT
   trap 'exit 130' INT; trap 'exit 143' TERM; trap 'exit 129' HUP   # exit runs the EXIT trap, so a signal tears down too
 }
