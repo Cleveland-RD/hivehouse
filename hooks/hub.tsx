@@ -79,7 +79,7 @@ async function readDialogs($: EngineInterface, root: string, projects: HubProjec
   for (const p of projects) {
     const o = p.orchestrator
     if (o?.question || o?.starting?.question) asks.push({ key: p.name, args: ['dialog', p.name] })
-    for (const a of (p.agents ?? []).filter(a => a.question)) asks.push({ key: `${p.name}/${a.name}`, args: ['dialog', p.name, a.name] })
+    for (const a of (p.agents ?? []).filter(a => a.question)) asks.push({ key: `${p.name}/${agentRef(a)}`, args: ['dialog', p.name, agentRef(a)] })
   }
   const out: Record<string, HubDialog> = {}
   await Promise.all(
@@ -559,7 +559,7 @@ export const register: Register = (on, options) => {
       const o = p.orchestrator ?? { state: 'none' }
       if (o.question) needs.push({ key: `q-${p.name}`, glyph: '?', color: 'yellow', who: p.name, words: 'its orchestrator has a question on its screen', when: '', dialog: dialogBlock(p.name, p.name, '') })
       for (const a of (p.agents ?? []).filter(a => a.question)) {
-        needs.push({ key: `q-${p.name}-${a.name}`, glyph: '?', color: 'yellow', who: `${p.name} · ${a.name}`, words: 'a question on its screen', when: '', dialog: dialogBlock(`${p.name}/${a.name}`, p.name, a.name) })
+        needs.push({ key: `q-${p.name}-${agentRef(a)}`, glyph: '?', color: 'yellow', who: `${p.name} · ${agentRef(a)}`, words: 'a question on its screen', when: '', dialog: dialogBlock(`${p.name}/${agentRef(a)}`, p.name, agentRef(a)) })
       }
       const s = o.starting
       if (s && !s.typed && !s.sending) {
@@ -646,7 +646,7 @@ export const register: Register = (on, options) => {
               <Box flexDirection="row">
                 {agents.map(a => (
                   // a space after each: two hollow dots side by side read as one wide sign
-                  <Text key={`a-${p.name}-${a.name}`} color={agentColor(a)}>
+                  <Text key={`a-${p.name}-${agentRef(a)}`} color={agentColor(a)}>
                     {`${a.state === 'running' ? '●' : a.state === 'stopped' ? '○' : '?'} `}
                   </Text>
                 ))}
@@ -654,7 +654,7 @@ export const register: Register = (on, options) => {
               </Box>
             ),
             ...(away.length > 0
-              ? [<Text key={`away-${p.name}`} color="yellow">{away.map(a => `${a.name} ${a.state}`).join(', ')}</Text>]
+              ? [<Text key={`away-${p.name}`} color="yellow">{away.map(a => `${agentRef(a)} ${a.state}`).join(', ')}</Text>]
               : []),
           )}
           {row(
@@ -794,6 +794,10 @@ function orchestratorLook(p: HubProject): { dot: string; word: string; color: st
   return looks[o.state] ?? looks.unknown
 }
 
+// An agent is its team root and its name: the hub's status gives a name used in two team roots as <name>@<team root>.
+function agentRef(a: HubAgent): string {
+  return a.ref ?? a.name
+}
 function agentColor(a: HubAgent): string {
   return a.state === 'running' ? 'green' : a.state === 'stopped' ? 'yellow' : 'red'
 }

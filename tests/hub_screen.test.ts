@@ -85,6 +85,8 @@ const TASKS = [
 // What `hm-hub dialog` reads on a screen with a question: a permission dialog on the agent rev's, a menu with no digits on
 // the first screen of a start (four), and, for the tests to change, what `hm-hub answer` replies
 const FP = 'a'.repeat(40)
+// agents a test adds to the app project: a name used in two team roots comes with a ref, <name>@<team root>
+const EXTRA_AGENTS: Array<{ name: string; state: string; question: boolean; worktree: string; ref: string }> = []
 const DIALOGS: Record<string, unknown> = {
   'app rev': {
     project: 'app', session: 'rev', pane: '%3', kind: 'numbered', esc: true, cursor: 1, fingerprint: FP,
@@ -146,7 +148,8 @@ function world(on: On, runs: string[][], opened: string[] = [], commands: string
     if (sub === 'status') {
       const base = AWAY.on ? { ...STATUS.hub, away: { until: NOW / 1000 + 5 * 3600, since: AWAY.since } } : AWAY.ended ? { ...STATUS.hub, last_away: { since: AWAY.since, until: NOW / 1000 - 3600 } } : STATUS.hub
       const hub = AWAY.refused ? { ...base, away_refused: AWAY.refused } : base
-      return ran(0, JSON.stringify({ ...STATUS, hub }))
+      const projects = EXTRA_AGENTS.length ? STATUS.projects.map(p => (p.name === 'app' ? { ...p, agents: [...p.agents, ...EXTRA_AGENTS] } : p)) : STATUS.projects
+      return ran(0, JSON.stringify({ ...STATUS, projects, hub }))
     }
     if (sub === 'tasks') return ran(0, JSON.stringify(TASKS))
     if (sub === 'wake' || sub === 'continue') return ran(0, '%7\n')
@@ -472,6 +475,31 @@ test('the screen reads hm-hub only while it is open, and once per tick', async (
   expect(reopened).toBe(first + 2)
   await clock.advance(20_000)
   expect(reads()).toBe(reopened + 1)
+})
+
+test('an agent name used in two team roots is told apart by its root: two keys, and the answer names the root', async ($, on) => {
+  const runs: string[][] = []
+  const clock = mock.clock(on, { now: NOW })
+  mock.env(on, { HOME: '/home' })
+  for (const w of ['/wtA', '/wtB']) {
+    EXTRA_AGENTS.push({ name: 'twin', state: 'running', question: true, worktree: w, ref: `twin@${w}` })
+    DIALOGS[`app twin@${w}`] = { ...(DIALOGS['app rev'] as object), session: 'twin', pane: w === '/wtA' ? '%21' : '%22' }
+  }
+  try {
+    world(on, runs)
+    await $.session.start({ cwd: ROOT, surface: 'terminal', isInteractive: true })
+    await clock.settle()
+    const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+    expect(runs.filter(r => r[1] === 'dialog').map(r => r[3])).toEqual(expect.arrayContaining(['twin@/wtA', 'twin@/wtB']))
+    expect(await ui.find({ key: 'answer-app/twin@/wtA-1' })).toBeDefined()
+    expect(await ui.find({ key: 'answer-app/twin@/wtB-1' })).toBeDefined()
+    await ui.press({ key: 'answer-app/twin@/wtB-1' })
+    expect(runs.find(r => r[1] === 'answer')?.slice(1)).toEqual(['answer', 'app', 'twin@/wtB', '--choice', '1', '--seen', FP])
+  } finally {
+    EXTRA_AGENTS.length = 0
+    delete DIALOGS['app twin@/wtA']
+    delete DIALOGS['app twin@/wtB']
+  }
 })
 
 test('a command Claude Code refuses does not keep the screen shut', async ($, on) => {

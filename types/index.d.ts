@@ -9,7 +9,7 @@ export type HubAgentState = 'running' | 'stopped' | 'unknown' | 'unrecorded'
 
 // question: a dialog waits on its screen, which nobody watches
 // context_unknown: its tokens (context_tokens) exceed a window that was only assumed, so there is no percent
-export type HubAgent = { name: string; state: HubAgentState; question?: boolean; context?: number; context_assumed?: boolean; context_unknown?: boolean; context_tokens?: number; worktree?: string }
+export type HubAgent = { name: string; state: HubAgentState; question?: boolean; context?: number; context_assumed?: boolean; context_unknown?: boolean; context_tokens?: number; worktree?: string; ref?: string }
 
 export type HubOrchestrator = {
   state: HubOrchestratorState
