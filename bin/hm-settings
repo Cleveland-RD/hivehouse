@@ -40,7 +40,7 @@ valid "$owner" || hm_die 4 "owner value for $key is not allowed here: $owner"
 root=$(hm_project_root) || exit $?
 # every team root of a project (its home, and each worktree with a team) takes its settings from the home: a worktree's own file is never read
 home=$(hm_project_home "$root") || exit $?
-if [ -n "$(git -C "$home" ls-files -- $HM_STATE_DIR)" ]; then
+if [ -n "$(git -C "$home" ls-files -- "$HM_STATE_DIR")" ]; then
   hm_die 3 "files under $HM_STATE_DIR/ are tracked by git; untrack them before using hivemind here"
 fi
 file="$home/$HM_STATE_DIR/settings.json"

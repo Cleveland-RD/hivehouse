@@ -11,7 +11,7 @@ set -u
 . "$(dirname "$0")/hm-lib.sh"
 ROOT=$(hm_project_root) || exit $?
 STATE="$ROOT/$HM_STATE_DIR"
-if [ -n "$(git -C "$ROOT" ls-files -- $HM_STATE_DIR)" ]; then
+if [ -n "$(git -C "$ROOT" ls-files -- "$HM_STATE_DIR")" ]; then
   hm_die 3 "files under $HM_STATE_DIR/ are tracked by git; untrack them before using hivemind here"
 fi
 pct() {  # pct <agent> [window]

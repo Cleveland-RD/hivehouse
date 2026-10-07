@@ -91,7 +91,7 @@ hm_ensure_state() {  # creates $HM_STATE_DIR/, excludes it through info/exclude,
   local root common excl
   root=$(hm_project_root) || exit $?
   common=$(git -C "$root" rev-parse --path-format=absolute --git-common-dir) || exit $?
-  if [ -n "$(git -C "$root" ls-files -- $HM_STATE_DIR)" ]; then
+  if [ -n "$(git -C "$root" ls-files -- "$HM_STATE_DIR")" ]; then
     hm_die 3 "files under $HM_STATE_DIR/ are tracked by git; untrack them before using hivemind here"
   fi
   mkdir -p "$root/$HM_STATE_DIR" "$common/info"
@@ -419,7 +419,7 @@ hm_owner_statusline() {  # hm_owner_statusline <session cwd>
 hm_write_session() {  # hm_write_session <project root> <agent> <session id> <transcript path> <source>
   local dir="$1/$HM_STATE_DIR/team/$2"
   hm_is_agent_name "$2" && [ -n "$3" ] || return 1
-  [ -z "$(git -C "$1" ls-files -- $HM_STATE_DIR 2>/dev/null)" ] || return 1
+  [ -z "$(git -C "$1" ls-files -- "$HM_STATE_DIR" 2>/dev/null)" ] || return 1
   mkdir -p "$dir" 2>/dev/null || return 1
   jq -nc --arg s "$3" --arg t "$4" --arg src "$5" --arg at "$(hm_now)" '{session_id:$s, transcript_path:$t, source:$src, at:$at}' \
     > "$dir/session.json.tmp$$" 2>/dev/null && mv "$dir/session.json.tmp$$" "$dir/session.json" || { rm -f "$dir/session.json.tmp$$"; return 1; }

@@ -54,7 +54,7 @@ protected_one() {  # protected_one <canonical path>: 0 when Claude Code's settin
       P_WHY="the hub's records ($HM_HUB_DIR) can be changed only by the hub's own session, never by an agent's or an orchestrator's"; return 0 ;; esac
   fi
   # a team.json names every agent's process: hivemind's own scripts write it from their code, never a session's tools (the hub's too)
-  case "$p" in */$HM_STATE_DIR/team.json) P_WHY="a team's team.json is written by hivemind's own scripts, never through a session's tools"; return 0 ;; esac
+  case "$p" in */"$HM_STATE_DIR"/team.json) P_WHY="a team's team.json is written by hivemind's own scripts, never through a session's tools"; return 0 ;; esac
   return 1
 }
 protected() {  # protected <path> <cwd>: the path itself, and where its links lead (a write goes to the target); a link loop counts

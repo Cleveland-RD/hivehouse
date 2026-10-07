@@ -120,7 +120,7 @@ branches)
   reach; need_remote_root "$rroot"
   rrun git -C "$rroot" rev-parse --git-dir >/dev/null 2>&1 || hm_die 4 "$rroot is not a git repository on $host"
   mkdir -p "$STATE/tmp"; tmpd=$(mktemp -d "$STATE/tmp/bundle.XXXXXX") || exit 1
-  bdir=$(rsafe_dir "$rroot" $HM_STATE_DIR/tmp) || exit $?
+  bdir=$(rsafe_dir "$rroot" "$HM_STATE_DIR/tmp") || exit $?
   rbundle="$bdir/hm-$$.bundle"
   cleanup() { rm -rf "$tmpd"; rrun rm -f "$rbundle" >/dev/null 2>&1; }; trap cleanup EXIT
   refs=(); for b in "${list[@]}"; do refs+=("refs/heads/${b}"); done
@@ -192,7 +192,7 @@ secret)
   [ $# -eq 2 ] || hm_die 64 "$USAGE"
   rroot="$1"; rel="$2"
   rel_ok "$rel" || hm_die 4 "path refused (relative, no .., not starting with -): $rel"
-  case "$rel" in $HM_STATE_DIR/tmp/*) ;; *) hm_die 4 "a secret goes under $HM_STATE_DIR/tmp/ only: the remote manifest refuses a file entry elsewhere in the project" ;; esac
+  case "$rel" in "$HM_STATE_DIR/tmp/"*) ;; *) hm_die 4 "a secret goes under $HM_STATE_DIR/tmp/ only: the remote manifest refuses a file entry elsewhere in the project" ;; esac
   [ ! -L "$ROOT/$rel" ] || hm_die 4 "the secret is a symlink: $rel"
   [ -f "$ROOT/$rel" ] || hm_die 4 "no such file here: $rel"
   local_parent_ok "$rel"

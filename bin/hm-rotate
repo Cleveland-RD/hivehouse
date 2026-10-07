@@ -17,7 +17,7 @@ done
 for n in "$still" "$max" "$settle"; do case "$n" in ''|*[!0-9]*) hm_die 64 "--still, --max and --settle are numbers" ;; esac; done
 ROOT=$(hm_project_root) || exit $?
 STATE="$ROOT/$HM_STATE_DIR"
-if [ -n "$(git -C "$ROOT" ls-files -- $HM_STATE_DIR)" ]; then
+if [ -n "$(git -C "$ROOT" ls-files -- "$HM_STATE_DIR")" ]; then
   hm_die 3 "files under $HM_STATE_DIR/ are tracked by git; untrack them before using hivemind here"
 fi
 pane=$(jq -r --arg a "$agent" '[.agents[]? | select(.name == $a) | .pane][0] // empty' "$STATE/team.json" 2>/dev/null)
