@@ -273,6 +273,13 @@ test('the guard reads quotes inside $( ) and here-strings and partly quoted here
   await passes('a quoted delimiter with a space: the body is quoted text', 'cat <<"E O F"\n$(git push)\nE O F')
   await passes('a quoted delimiter with a space: the body, by its end line', 'cat <<"E O F"\nnote: git push later\nE O F')
   await refused('an unquoted opener after a quote closed on the same line is still one', 'echo "a" <<EOF\n$(git push)\nEOF')
+  // a # that starts a word begins a comment, which holds no opener; a # inside a word does not
+  await refused('an opener in a # comment is text', 'echo hi # <<EOF y\ngit push')
+  await refused('an opener in a # comment right after a ;', 'echo hi; #<<EOF y\ngit push')
+  await refused('an opener in a # comment, the delimiter quoted', 'echo hi # <<"EOF" y\ngit push')
+  await refused('a # inside a word is no comment: the heredoc opens and its $( ) body runs', 'echo a#b <<EOF y\n$(git push)\nEOF')
+  await passes('a # inside a word is no comment: the heredoc body is text', 'echo a#b <<EOF y\nnote: git push later\nEOF')
+  await passes('$# is no comment: the heredoc body is text', 'echo $# <<EOF y\nnote: git push later\nEOF')
   // a here-string is no heredoc: the lines after it are commands
   await refused('a here-string <<<"x" then a command', 'cat <<<"hello"\ngit commit -m y')
   await refused("a here-string <<<'x' then a command", "cat <<<'hello'\ngit commit -m y")

@@ -376,6 +376,8 @@ function openerIn(line: string, open: string): { opens: { word: string; quoted: 
       const k = line.indexOf('))', i + 2)
       if (k < 0) return { opens: null, open: q }
       i = k + 1
+    } else if (c === '#' && (i === 0 || /[\s;&|()]/.test(line.charAt(i - 1)))) {
+      return { opens: null, open: '' }   // a # that starts a word is a comment: it runs to the end of the line and holds no opener
     } else if (c === '<' && line.charAt(i + 1) === '<') {
       // a here-string (<<<) is no heredoc: its third < is no delimiter, and the pair is skipped
       let k = i + 2
