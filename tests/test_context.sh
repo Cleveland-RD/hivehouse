@@ -24,6 +24,23 @@ assert_eq "a zero window read is no window" "$(hm-context impl)" "50 (window ass
 echo 'not json' > .hivemind/team/impl/context.json
 assert_eq "an unreadable context.json is no window" "$(hm-context impl)" "50 (window assumed 200000)"
 rm .hivemind/team/impl/context.json
+# a reading over the window that is only assumed is not a percent: Claude Code's window may be larger (a 1M session read 158-188)
+jq -nc '{type:"assistant", isSidechain:false, message:{model:"claude-sonnet-5-5", usage:{input_tokens:300000, cache_read_input_tokens:0, cache_creation_input_tokens:0, output_tokens:0}}}' > "$T_TMP/big.jsonl"
+jq -nc --arg t "$T_TMP/big.jsonl" '{session_id:"s",transcript_path:$t}' > .hivemind/team/impl/session.json
+echo '{"agents":[{"name":"impl","model":"sonnet"}]}' > .hivemind/team.json
+assert_eq "tokens over the assumed window print as tokens, never a percent" "$(hm-context impl)" "300000 tokens (window unknown)"
+assert_eq "...in --all too" "$(hm-context --all | head -1)" "impl 300000 tokens (window unknown)"
+echo '{"agents":[{"name":"impl","model":"sonnet","window":200000}]}' > .hivemind/team.json
+assert_eq "...also against a window team.json recorded (a default, not a measure)" "$(hm-context impl)" "300000 tokens (window unknown)"
+echo '{"agents":[{"name":"impl","model":"sonnet","window":1000000}]}' > .hivemind/team.json
+assert_eq "a recorded window that holds the tokens: a percent, still marked a guess" "$(hm-context impl)" "30 (window assumed 1000000)"
+assert_eq "an explicit --window is the caller's own word" "$(hm-context impl --window 1000000)" "30"
+echo '{"window":1000000,"used_percentage":30,"session_id":"s","at":"t"}' > .hivemind/team/impl/context.json
+echo '{"agents":[{"name":"impl","model":"sonnet"}]}' > .hivemind/team.json
+assert_eq "a measured window holds them too" "$(hm-context impl)" "30"
+rm .hivemind/team/impl/context.json
+jq -nc --arg t "$HM_REPO_ROOT/tests/fixtures/transcript.jsonl" '{session_id:"s",transcript_path:$t}' > .hivemind/team/impl/session.json
+echo '{"agents":[{"name":"impl","model":"sonnet"},{"name":"rev","model":"opus","window":1000000}]}' > .hivemind/team.json
 hm-context nobody 2>/dev/null; assert_status "unknown agent" $? 2
 hm-context rev 2>/dev/null; assert_status "an agent with no session record" $? 2
 hm-context impl --window abc 2>/dev/null; assert_status "a bad window is refused" $? 4

@@ -4,7 +4,8 @@
 # tracked, 4 bad window, 64 usage. The window is Claude Code's own (context.json, which hm-statusline keeps for a spawned
 # agent), when it was read for the agent's current session; else --window; else the agent's `window` in team.json (written
 # at spawn), default 200000. It is never inferred from a model name. A window that was not measured or given is a guess,
-# and the reading says so: "45 (window assumed 200000)". An agent that is no longer running as recorded (after a restart,
+# and the reading says so: "45 (window assumed 200000)", or, when the tokens exceed that guess, "250000 tokens (window unknown)": never a percent
+# over 100. An agent that is no longer running as recorded (after a restart,
 # say) keeps its last level and is marked: "45 (not running)"; one that cannot be told about is not.
 set -u
 . "$(dirname "$0")/hm-lib.sh"
@@ -31,6 +32,8 @@ pct() {  # pct <agent> [window]
   [ -n "$win" ] && { echo $(( used * 100 / win )); return 0; }
   win=$(jq -r --arg a "$a" '[.agents[]? | select(.name == $a) | .window][0] // empty' "$STATE/team.json" 2>/dev/null)
   case "$win" in ''|*[!0-9]*|0) win=200000 ;; esac
+  # tokens over a window that was only assumed are no percent: Claude Code's own window may be larger (a 1M session read 158-188)
+  [ "$used" -le "$win" ] || { echo "$used tokens (window unknown)"; return 0; }
   echo "$(( used * 100 / win )) (window assumed $win)"
 }
 mark() { hm_team_agent_is "$ROOT" "$1"; [ $? -eq 1 ] && printf ' (not running)'; return 0; }   # mark <agent>

@@ -37,6 +37,7 @@ verify() {
 verify
 level() {  # "50%", or "50% (window assumed 200000)" when hm-context had to guess the window
   local v; v=$("$(dirname "$0")/hm-context" "$agent" 2>/dev/null) || { echo '?'; return; }
+  case "$v" in *"(window unknown)") echo "$v"; return ;; esac   # "250000 tokens (window unknown)" is no percent
   echo "${v%% *}%${v#"${v%% *}"}"
 }
 shows_clear() {  # the prompt box's input line still holds /clear (the last non-blank line of the pane is the footer)
