@@ -196,7 +196,7 @@ live_orchestrator() {  # live_orchestrator <hub root> <project> <home> <recorded
     IFS=$'\x1f' read -r pid name cwd tm <<< "$e"
     hm_is_number "$pid" && [ "$pid" != "$hubpid" ] && [ "$pid" != "$skip" ] && hm_alive "$pid" && hm_is_claude "$pid" || continue
     if [ "$name" = "$2-orchestrator" ] || { [ -n "$4" ] && [ "$name" = "$4" ]; } \
-       || { [ "$cwd" = "$3" ] && case "$name" in *orchestrator*) true ;; *) false ;; esac; }; then
+       || { [ "$cwd" = "$3" ] && { [ "$name" = "$2" ] || case "$name" in *orchestrator*) true ;; *) false ;; esac; }; }; then
       hm_is_session_name "$name" || name="?"
       raw=$tm; case "$raw" in *[[:space:]]*) raw="" ;; esac
       tm="%${tm##*%}"; case "$tm" in %*[!0-9]*|%) tm="" ;; esac
@@ -224,16 +224,19 @@ unreg_pane_ok() {
 # unregistered: a live session outside hivemind, with O_PID and O_PANE), and O_QUESTION (true when a dialog waits on the
 # screen of a running orchestrator's pane).
 orch_state() {
-  local entry l
-  O_AGENT=""; O_NAME=""; O_SID=""; O_STATE=none; O_PID=""; O_PANE=""; O_TMUX=""; O_QUESTION=false
-  entry=$(hm_self_entry "$3")
+  local entry="" l r
+  O_AGENT=""; O_NAME=""; O_SID=""; O_STATE=none; O_PID=""; O_PANE=""; O_TMUX=""; O_QUESTION=false; O_ROOT=$3
+  # the first team root (the home, then each worktree with a team) that holds the --self orchestrator's entry; one registered in two counts once
+  while IFS= read -r r; do
+    entry=$(hm_self_entry "$r"); [ -z "$entry" ] || { O_ROOT=$r; break; }
+  done < <(hm_team_roots "$3")
   if [ -n "$entry" ]; then
     O_AGENT=$(printf '%s' "$entry" | jq -r '.name // empty')
     if hm_is_agent_name "$O_AGENT"; then
-      O_NAME=$(hm_orchestrator_name "$3" 2>/dev/null)
-      O_SID=$(hm_json_get "$3/.hivemind/team/$O_AGENT/session.json" .session_id)
+      O_NAME=$(hm_orchestrator_name "$O_ROOT" 2>/dev/null)
+      O_SID=$(hm_json_get "$O_ROOT/.hivemind/team/$O_AGENT/session.json" .session_id)
       case "$O_SID" in *[!${HM_LOWER}${HM_UPPER}${HM_DIGITS}-]*) O_SID="" ;; esac
-      hm_team_agent_is "$3" "$O_AGENT"; case $? in 0) O_STATE=running ;; 1) O_STATE=stopped ;; *) O_STATE=unknown ;; esac
+      hm_team_agent_is "$O_ROOT" "$O_AGENT"; case $? in 0) O_STATE=running ;; 1) O_STATE=stopped ;; *) O_STATE=unknown ;; esac
       if [ "$O_STATE" = running ] && hm_pane_question "$(printf '%s' "$entry" | jq -r '.socket // empty')" "$(printf '%s' "$entry" | jq -r '.pane // empty')"; then
         O_QUESTION=true
       fi
@@ -410,11 +413,11 @@ hung_try() {
 # registered from (a start's first dialog), else the pane of one running outside hivemind. An agent must be on the team
 # (exit 2) and running (exit 4). Needs HOME_DIR, so call it after need_project.
 dialog_target() {
-  local root="$1" name="$2" want="$3" entry
+  local root="$1" name="$2" want="$3" entry tr r
   T_SOCKET=""; T_PANE=""; T_SESSION=""
   orch_state "$root" "$name" "$HOME_DIR"
   if [ -z "$want" ] || [ "$want" = "$O_AGENT" ]; then
-    entry=$(hm_self_entry "$HOME_DIR")
+    entry=$(hm_self_entry "$O_ROOT")
     if [ "$O_STATE" = running ] && [ -n "$entry" ]; then
       T_SOCKET=$(printf '%s' "$entry" | jq -r '.socket // empty'); T_PANE=$(printf '%s' "$entry" | jq -r '.pane // empty'); T_SESSION="$O_NAME"
     elif pending "$root" "$name"; then
@@ -426,9 +429,13 @@ dialog_target() {
     [ -n "$T_PANE" ] || hm_die 4 "$name has no orchestrator screen to read ($O_STATE)"
   else
     hm_is_agent_name "$want" || hm_die 4 "an agent name is lower-case letters, digits, '_' and '-': $want"
-    entry=$(jq -c --arg a "$want" '[.agents[]? | select(.name == $a)][0] // empty' "$HOME_DIR/.hivemind/team.json" 2>/dev/null)
+    entry=""; tr=""
+    while IFS= read -r r <&3; do   # the agent may sit in a worktree's team
+      entry=$(jq -c --arg a "$want" '[.agents[]? | select(.name == $a)][0] // empty' "$r/.hivemind/team.json" 2>/dev/null)
+      [ -z "$entry" ] || { tr=$r; break; }
+    done 3< <(hm_team_roots "$HOME_DIR")
     [ -n "$entry" ] || hm_die 2 "no agent named $want on $name's team"
-    hm_team_agent_is "$HOME_DIR" "$want"; [ $? -eq 0 ] || hm_die 4 "$want is not running: there is no screen to read"
+    hm_team_agent_is "$tr" "$want"; [ $? -eq 0 ] || hm_die 4 "$want is not running: there is no screen to read"
     T_SOCKET=$(printf '%s' "$entry" | jq -r '.socket // empty'); T_PANE=$(printf '%s' "$entry" | jq -r '.pane // empty'); T_SESSION="$want"
     [ -n "$T_PANE" ] || hm_die 4 "$want has no pane recorded"
   fi
@@ -619,8 +626,12 @@ status)
       repos=$(printf '%s' "$repos" | jq -c --arg r "$r" --arg k "${k%% *}" --arg b "$br" --arg c "$ch" '. + [{folder:$r, kind:$k} + (if $b != "" then {branch:$b, changed:($c | tonumber)} else {} end)]')
     done < <(printf '%s' "$p" | jq -r '.repos[]')
     orch_state "$root" "$n" "$home"
-    # each session's context level as hm-context reads it: "<agent> <level>[ (window assumed N)][ (not running)]"
-    levels=$(HM_PROJECT="$home" "$HM_BIN/hm-context" --all 2>/dev/null) || levels=""
+    # each session's context level as hm-context reads it, per team root: "<agent> <level>[ (window assumed N)][ (not running)]"
+    olv='{}'
+    if [ -n "$O_AGENT" ] && [ "$O_STATE" != unregistered ]; then
+      levels=$(HM_PROJECT="$O_ROOT" "$HM_BIN/hm-context" --all 2>/dev/null) || levels=""
+      olv=$(level "$O_AGENT")
+    fi
     starting='null'
     if [ "$O_STATE" != running ] && pending "$root" "$n"; then
       q=false; hm_pane_question "$(hm_json_get "$root/.hivemind-hub/panes/$n.json" .socket)" "$(hm_json_get "$root/.hivemind-hub/panes/$n.json" .pane)" && q=true
@@ -628,19 +639,22 @@ status)
       starting=$(jq -c --argjson q "$q" --argjson sg "$sg" '{pane, kind, at, typed: (.typed // false), sending: $sg, question: $q} + (if .task then {task} else {} end)' "$root/.hivemind-hub/panes/$n.json")
     fi
     agents='[]'
-    for a in $(jq -r '.agents[]?.name' "$home/.hivemind/team.json" 2>/dev/null); do
-      hm_is_agent_name "$a" && [ "$a" != "$O_AGENT" ] || continue
-      hm_team_agent_is "$home" "$a"; case $? in 0) st=running ;; 1) st=stopped ;; 2) st=unknown ;; *) st=unrecorded ;; esac
-      q=false
-      [ "$st" != running ] || ! hm_pane_question "$(jq -r --arg a "$a" '[.agents[] | select(.name == $a)][0].socket // empty' "$home/.hivemind/team.json")" \
-        "$(jq -r --arg a "$a" '[.agents[] | select(.name == $a)][0].pane // empty' "$home/.hivemind/team.json")" || q=true
-      agents=$(printf '%s' "$agents" | jq -c --arg a "$a" --arg s "$st" --argjson q "$q" --argjson l "$(level "$a")" '. + [{name:$a, state:$s, question:$q} + $l]')
-    done
+    while IFS= read -r tr <&3; do   # the agents of every team root, each with its worktree
+      levels=$(HM_PROJECT="$tr" "$HM_BIN/hm-context" --all 2>/dev/null) || levels=""
+      for a in $(jq -r '.agents[]?.name' "$tr/.hivemind/team.json" 2>/dev/null); do
+        hm_is_agent_name "$a" && [ "$a" != "$O_AGENT" ] || continue
+        hm_team_agent_is "$tr" "$a"; case $? in 0) st=running ;; 1) st=stopped ;; 2) st=unknown ;; *) st=unrecorded ;; esac
+        q=false
+        [ "$st" != running ] || ! hm_pane_question "$(jq -r --arg a "$a" '[.agents[] | select(.name == $a)][0].socket // empty' "$tr/.hivemind/team.json")" \
+          "$(jq -r --arg a "$a" '[.agents[] | select(.name == $a)][0].pane // empty' "$tr/.hivemind/team.json")" || q=true
+        agents=$(printf '%s' "$agents" | jq -c --arg a "$a" --arg s "$st" --arg w "$tr" --argjson q "$q" --argjson l "$(level "$a")" '. + [{name:$a, state:$s, worktree:$w, question:$q} + $l]')
+      done
+    done 3< <(hm_team_roots "$home")
     open=$(printf '%s' "$opens" | jq -r --arg p "$n" '.[$p] // 0')
     held=false; [ ! -f "$root/.hivemind-hub/holds/$n" ] || held=true
     out=$(printf '%s' "$out" | jq -c --arg n "$n" --arg h "$home" --argjson r "$repos" --argjson ag "$agents" --argjson st "$starting" \
       --argjson held "$held" --arg os "$O_STATE" --arg on "$O_NAME" --arg sid "$O_SID" --argjson ot "$open" --argjson oq "$O_QUESTION" --arg opid "$O_PID" --arg opane "$O_PANE" \
-      --argjson ol "$( [ -n "$O_AGENT" ] && [ "$O_STATE" != unregistered ] && level "$O_AGENT" || echo '{}')" \
+      --argjson ol "$olv" \
       '. + [{name:$n, home:$h, repos:$r, orchestrator:({state:$os, question:$oq} + (if $on != "" then {name:$on} else {} end) + (if $sid != "" then {session_id:$sid} else {} end)
             + (if $opid != "" then {pid:($opid | tonumber)} else {} end) + (if $opane != "" then {pane:$opane} else {} end)
             + $ol + (if $st != null then {starting:$st} else {} end)), agents:$ag, open_tasks:$ot, held:$held}]')
@@ -736,7 +750,7 @@ wake)
   project_mode "$HOME_DIR"
   hm_is_session_name "$O_NAME" || hm_die 4 "$name's orchestrator name is not one hivemind will type"
   args=(--resume "$O_SID" --name "$O_NAME"); [ -z "$MODE" ] || args+=(--permission-mode "$MODE")
-  launch "$root" "$name" wake "$HOME_DIR" \
+  launch "$root" "$name" wake "$O_ROOT" \
     "You are $O_NAME, resumed by $hn after a restart. Register again with hm-spawn --self --agent $O_AGENT --hub $hn, run hm-context --all, and run hm-spawn --respawn <agent> for each agent it marks (not running). Then send $hn one line, first word BACK: which agents are back and what you were doing." \
     "" "${args[@]}" ;;
 
@@ -792,7 +806,7 @@ run)
   esac
   tf="$root/.hivemind-hub/tasks/$id.md"
   hm_is_typed_path "$tf" || hm_die 4 "the task's path is not one hivemind will type: $tf"
-  entry=$(hm_self_entry "$HOME_DIR")
+  entry=$(hm_self_entry "$O_ROOT")
   rsocket=$(printf '%s' "$entry" | jq -r '.socket // empty'); rpane=$(printf '%s' "$entry" | jq -r '.pane // empty')
   [ -n "$rpane" ] || hm_die 4 "$name's orchestrator has no pane recorded"
   if [ "$skill" = overnight ]; then rline=$(overnight_line "$id" "$tf" "$hn"); else rline="/hivemind:cleanup$disk"; fi
@@ -1100,11 +1114,12 @@ recover)
     task=$(printf '%s' "$work" | jq -r --arg p "$n" '[.[] | select(.p == $p)][0].id // empty')
     prevag=$(printf '%s' "$states" | jq -c --arg p "$n" '.[$p] // {}')
     nowag='{}'; newly='[]'
-    for a in $(jq -r '.agents[]?.name' "$HOME_DIR/.hivemind/team.json" 2>/dev/null); do
+    while IFS= read -r tr <&3; do   # every team root of the project, the home first
+    for a in $(jq -r '.agents[]?.name' "$tr/.hivemind/team.json" 2>/dev/null); do
       hm_is_agent_name "$a" && [ "$a" != "$O_AGENT" ] || continue
-      hm_team_agent_is "$HOME_DIR" "$a"; case $? in 0) st=running ;; 1) st=stopped ;; *) st=unknown ;; esac
+      hm_team_agent_is "$tr" "$a"; case $? in 0) st=running ;; 1) st=stopped ;; *) st=unknown ;; esac
       if [ "$st" = running ]; then
-        IFS=$'\x1f' read -r tsock tpane tpid tstart <<< "$(session_target "$HOME_DIR" "$a")"
+        IFS=$'\x1f' read -r tsock tpane tpid tstart <<< "$(session_target "$tr" "$a")"
         hung_try "$n" agent "$a" "$task" "$tsock" "$tpane" "$tpid" "$tstart"
         [ "$HUNG_STOPPED" = 0 ] || st=restarted   # not "stopped since the last beat": its restart is already an action
       fi
@@ -1113,9 +1128,10 @@ recover)
         newly=$(printf '%s' "$newly" | jq -c --arg a "$a" '. + [$a]')
       fi
     done
+    done 3< <(hm_team_roots "$HOME_DIR")
     states=$(printf '%s' "$states" | jq -c --arg p "$n" --argjson v "$nowag" '. + {($p): $v}')
     if [ "$O_STATE" = running ] && [ -n "$O_AGENT" ]; then
-      IFS=$'\x1f' read -r tsock tpane tpid tstart <<< "$(session_target "$HOME_DIR" "$O_AGENT")"
+      IFS=$'\x1f' read -r tsock tpane tpid tstart <<< "$(session_target "$O_ROOT" "$O_AGENT")"
       hung_try "$n" orchestrator "$O_AGENT" "$task" "$tsock" "$tpane" "$tpid" "$tstart"
       [ "$HUNG_STOPPED" = 0 ] || continue   # stopped: the wake action is its restart
     fi
