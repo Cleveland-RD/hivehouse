@@ -134,6 +134,30 @@ assert_contains "...for the owner reason" "$HM_DELEGATE_WHY" "/usr is owned by u
 assert_eq "...a refused project sets nothing" "$HM_DG_HUB$HM_DG_PROJECT" ""
 hm_delegate_for_project "$HP/mine"; assert_status "...while the caller's own project still is accepted" $? 0
 
+# a worktree of a listed home is a team root, and gets bypass on the same terms: the caller's own, not a link, not writable by group or others
+mkhub; rm -rf "$HP/repo" "$HP/wt" "$HP/wtg" "$HP/wtx"; mkdir -p "$HP/repo"; chmod 755 "$HP/repo"
+git -C "$HP/repo" init -q -b main; git -C "$HP/repo" config user.email t@t; git -C "$HP/repo" config user.name t; echo x > "$HP/repo/f"; git -C "$HP/repo" add f; git -C "$HP/repo" commit -qm i
+git -C "$HP/repo" worktree add -q "$HP/wt" -b wt; git -C "$HP/repo" worktree add -q "$HP/wtg" -b wtg; git -C "$HP/repo" worktree add -q "$HP/wtx" -b wtx
+for w in wt wtg wtx; do mkdir -p "$HP/$w/.hivemind"; echo '{}' > "$HP/$w/.hivemind/team.json"; chmod 755 "$HP/$w"; done
+printf '{"projects":[{"name":"repo","home":"%s","repos":[]}]}\n' "$HP/repo" > "$HB/.hivemind-hub/projects.json"
+hm_delegate_for_project "$HP/repo"; assert_status "a listed home is accepted (a git repository)" $? 0
+hm_delegate_for_project "$HP/wt"; assert_status "a worktree of a listed home with a team is accepted" $? 0
+assert_eq "...as that project" "$HM_DG_PROJECT" "repo"
+chmod 775 "$HP/wtg"; hm_delegate_for_project "$HP/wtg"; assert_status "a group-writable worktree root is refused" $? 1
+assert_contains "...for its own reason" "$HM_DELEGATE_WHY" "$HP/wtg is writable by group or others"
+cp "$HP/wtx/.git" "$T_TMP/wtx.git.saved"; echo "gitdir: $HP/repo/.git/worktrees/wt" > "$HP/wtx/.git"
+hm_delegate_for_project "$HP/wtx"; assert_status "a worktree whose .git file does not point back is refused" $? 1
+cp "$T_TMP/wtx.git.saved" "$HP/wtx/.git"
+other="$T_TMP/dg/other"; rm -rf "$other"; mkdir -p "$other"; chmod 755 "$other"; git -C "$other" init -q -b main; git -C "$other" config user.email t@t; git -C "$other" config user.name t; echo x > "$other/f"; git -C "$other" add f; git -C "$other" commit -qm i
+git -C "$other" worktree add -q "$T_TMP/dg/otherwt" -b ow; mkdir -p "$T_TMP/dg/otherwt/.hivemind"; echo '{}' > "$T_TMP/dg/otherwt/.hivemind/team.json"; chmod 755 "$T_TMP/dg/otherwt"
+hm_delegate_for_project "$T_TMP/dg/otherwt"; assert_status "a worktree of a repository that is not listed is refused" $? 1
+hm_delegate_for_project "$HP/wt"; assert_status "...while the listed one still is accepted" $? 0
+mv "$HP/wt/.hivemind/team.json" "$T_TMP/team.saved"; hm_delegate_for_project "$HP/wt"; assert_status "a worktree with no team.json is no team root" $? 1
+mv "$T_TMP/team.saved" "$HP/wt/.hivemind/team.json"
+chmod 775 "$HP/repo"; hm_delegate_for_project "$HP/wt"; assert_status "a group-writable home refuses its worktrees too" $? 1
+assert_contains "...for the home" "$HM_DELEGATE_WHY" "$HP/repo is writable by group or others"
+chmod 755 "$HP/repo"
+
 # ---- the launch environment of a process (the marker's check, A42) ----
 pp=$(t_env_probe HM_PROBE_TEST=1) || pp=""
 [ -n "$pp" ] || { ( HM_PROBE_TEST=1 bash -c 'exec -a claude sleep 30' ) & pp=$!; }   # a platform binary: readable on Linux only

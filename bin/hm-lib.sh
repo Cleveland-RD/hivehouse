@@ -850,8 +850,8 @@ hm_claude_trusts() {
 # (hm_away_caller). The owner's own unmarked sessions and a plain shell never get it. Nothing here is read from an argument or a
 # setting the caller can write.
 HM_DG_HUB=""; HM_DG_UNTIL=""; HM_DG_MCP=""; HM_DG_PROJECT=""
-hm_delegate_for_project() {  # hm_delegate_for_project <project root>: 0 when delegate is valid and that project is one of its hub's; sets HM_DG_*
-  local hub r name home abs
+hm_delegate_for_project() {  # hm_delegate_for_project <project root>: 0 when delegate is valid and that root is a listed home or one of its team roots; sets HM_DG_*
+  local hub r name home abs t
   HM_DG_PROJECT=""
   hm_delegate_mine || return 1
   hub=$HM_DG_HUB
@@ -859,12 +859,13 @@ hm_delegate_for_project() {  # hm_delegate_for_project <project root>: 0 when de
   while IFS=$'\t' read -r name home; do
     case "$home" in /*) abs=$home ;; *) abs="$hub/$home" ;; esac
     abs=$(cd "$abs" 2>/dev/null && pwd -P) || continue
-    if [ "$abs" = "$r" ]; then
-      # the home must be the caller's too: bypass sessions run as this user, and in another user's folder (or one the group can write) they would
-      # load that folder's CLAUDE.md, .claude/settings.json hooks and .mcp.json
-      hm_path_trusted "$abs" dir "$HM_DG_UID" strict || break
+    while IFS= read -r t; do
+      [ "$t" = "$r" ] || continue
+      # the home and the team root must be the caller's: bypass sessions run as this user, and in another user's folder (or one the group can
+      # write) they would load that folder's CLAUDE.md, .claude/settings.json hooks and .mcp.json. A worktree can sit anywhere.
+      hm_path_trusted "$abs" dir "$HM_DG_UID" strict && hm_path_trusted "$t" dir "$HM_DG_UID" strict || break 2
       HM_DG_PROJECT=$name; return 0
-    fi
+    done < <(hm_team_roots "$abs")
   done < <("$HM_JQ" -r '.projects[]? | [.name, .home] | @tsv' "$hub/.hivemind-hub/projects.json" 2>/dev/null)
   HM_DG_HUB=""; HM_DG_UNTIL=""; HM_DG_MCP=""
   return 1
