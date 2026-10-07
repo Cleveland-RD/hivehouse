@@ -598,8 +598,14 @@ hm_pane_dialog() {  # hm_pane_dialog <socket, or empty for hivemind's own server
 #   hivemind-delegate 1 / hub=<absolute path> / until=<epoch seconds> / mcp=<comma-separated servers or tools, may be empty>
 # with `until` in the future and at most 7 days ahead (a CronCreate heartbeat does not outlive that). HM_DELEGATE_WHY is set
 # to the first check that failed.
-hm_delegate_path() {  # the fixed path: under /Library on macOS (/etc is a link there), /etc on Linux
-  if [ -d /System/Library ]; then echo '/Library/Application Support/hivemind/delegate'; else echo '/etc/hivemind/delegate'; fi   # macOS has /System; $OSTYPE would come through the environment
+# the process's real uid, read by /usr/bin/id: bash 3.2 takes UID and EUID from the environment, even under -p. One exact line, which a test rewrites.
+hm_real_uid() { /usr/bin/id -u; }
+# the folder of the delegate files, under /Library on macOS (/etc is a link there), /etc on Linux: macOS has /System, and $OSTYPE would come through the environment
+hm_delegate_base() { if [ -d /System/Library ]; then echo '/Library/Application Support/hivemind'; else echo /etc/hivemind; fi; }
+hm_delegate_path() {  # one file per user: <base>/delegate.d/<uid>; no path when the uid is not digits
+  local u; u=$(hm_real_uid) || return 1
+  case "$u" in ''|*[!0-9]*) return 1 ;; esac
+  printf '%s/delegate.d/%s\n' "$(hm_delegate_base)" "$u"
 }
 # Nothing here is found through PATH: every outside command is called by absolute path, and the rest is built-ins, so a fake
 # `date` or a function from BASH_ENV or the environment cannot revive an expired file (the executables that ask start with
@@ -660,7 +666,7 @@ hm_machine_slot_ok() {
 }
 hm_delegate_read() {  # hm_delegate_read <path> <uid> [<now>]: prints "<hub><TAB><until><TAB><mcp>" when the file is valid; 1 when it is not
   local f="$1" want="$2" now="${3:-}" d p hub until mcp i l1="" l2="" l3="" l4="" l5=""
-  HM_DELEGATE_WHY=""
+  HM_DELEGATE_WHY=""; HM_DR_HUB=""; HM_DR_UNTIL=""; HM_DR_MCP=""
   [ -n "$now" ] || now=$(/bin/date +%s)
   case "$f" in /*) ;; *) HM_DELEGATE_WHY="the path is not absolute"; return 1 ;; esac
   hm_is_number "$want" && hm_is_number "$now" || { HM_DELEGATE_WHY="bad uid or time"; return 1; }
@@ -686,9 +692,19 @@ hm_delegate_read() {  # hm_delegate_read <path> <uid> [<now>]: prints "<hub><TAB
   case "$mcp" in *[!${HM_LOWER}${HM_UPPER}${HM_DIGITS}_,.:-]*) HM_DELEGATE_WHY="the mcp list has a character outside letters, digits and _ , . : -"; return 1 ;; esac
   [ "$until" -gt "$now" ] || { HM_DELEGATE_WHY="the file has expired"; return 1; }
   [ "$until" -le $((now + 604800)) ] || { HM_DELEGATE_WHY="until is more than 7 days ahead"; return 1; }
+  HM_DR_HUB=$hub; HM_DR_UNTIL=$until; HM_DR_MCP=$mcp
   printf '%s\t%s\t%s\n' "$hub" "$until" "$mcp"
 }
 hm_delegate_now() { hm_delegate_read "$(hm_delegate_path)" 0; }
+# hm_delegate_mine: 0 when this user's delegate file is valid; sets HM_DG_HUB (resolved), HM_DG_UNTIL, HM_DG_MCP, else HM_DELEGATE_WHY. It
+# runs in the caller's shell, never inside $(...): the output of hm_delegate_now is dropped and its HM_DR_* variables are read instead.
+# It is the only caller of hm_delegate_now.
+hm_delegate_mine() {
+  HM_DG_HUB=""; HM_DG_UNTIL=""; HM_DG_MCP=""
+  hm_delegate_now >/dev/null || return 1
+  HM_DG_HUB=$(cd "$HM_DR_HUB" 2>/dev/null && pwd -P) || { HM_DG_HUB=""; HM_DELEGATE_WHY="the hub folder $HM_DR_HUB cannot be entered"; return 1; }
+  HM_DG_UNTIL=$HM_DR_UNTIL; HM_DG_MCP=$HM_DR_MCP
+}
 # hm_env_has <pid> <NAME=value>: 0 the process was launched with it; 1 its environment is visible and lacks it; 2 no
 # environment is visible at all (the caller says so and does not pretend to have checked). Linux reads /proc/<pid>/environ,
 # which is exact. macOS `ps -E` prints the arguments and the environment on one line: the process's own arguments are
@@ -741,17 +757,17 @@ hm_claude_trusts() {
 # setting the caller can write.
 HM_DG_HUB=""; HM_DG_UNTIL=""; HM_DG_MCP=""; HM_DG_PROJECT=""
 hm_delegate_for_project() {  # hm_delegate_for_project <project root>: 0 when delegate is valid and that project is one of its hub's; sets HM_DG_*
-  local out rest hub r name home abs
-  HM_DG_HUB=""; HM_DG_UNTIL=""; HM_DG_MCP=""; HM_DG_PROJECT=""
-  out=$(hm_delegate_now) || return 1
-  hub=${out%%$'\t'*}; rest=${out#*$'\t'}
-  hub=$(cd "$hub" 2>/dev/null && pwd -P) || return 1
-  r=$(cd "$1" 2>/dev/null && pwd -P) || return 1
+  local hub r name home abs
+  HM_DG_PROJECT=""
+  hm_delegate_mine || return 1
+  hub=$HM_DG_HUB
+  r=$(cd "$1" 2>/dev/null && pwd -P) || { HM_DG_HUB=""; HM_DG_UNTIL=""; HM_DG_MCP=""; return 1; }
   while IFS=$'\t' read -r name home; do
     case "$home" in /*) abs=$home ;; *) abs="$hub/$home" ;; esac
     abs=$(cd "$abs" 2>/dev/null && pwd -P) || continue
-    if [ "$abs" = "$r" ]; then HM_DG_HUB=$hub; HM_DG_UNTIL=${rest%%$'\t'*}; HM_DG_MCP=${rest#*$'\t'}; HM_DG_PROJECT=$name; return 0; fi
+    if [ "$abs" = "$r" ]; then HM_DG_PROJECT=$name; return 0; fi
   done < <(jq -r '.projects[]? | [.name, .home] | @tsv' "$hub/.hivemind-hub/projects.json" 2>/dev/null)
+  HM_DG_HUB=""; HM_DG_UNTIL=""; HM_DG_MCP=""
   return 1
 }
 hm_away_caller() {  # 0 the caller's Claude carries the away marker; 1 it does not (or there is no Claude: a plain shell); 2 its environment cannot be read

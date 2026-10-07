@@ -80,11 +80,10 @@ hub_root_cwd() {  # the work folder holding .hivemind-hub/, found from the cwd a
 # delegate_for_hub <hub root>: 0 when the owner's delegate file is valid and names this hub; AWAY_UNTIL is its epoch
 AWAY_UNTIL=""
 delegate_for_hub() {
-  local out hub; AWAY_UNTIL=""
-  out=$(hm_delegate_now) || return 1
-  hub=${out%%$'\t'*}; hub=$(cd "$hub" 2>/dev/null && pwd -P) || return 1
-  [ "$hub" = "$1" ] || return 1
-  out=${out#*$'\t'}; AWAY_UNTIL=${out%%$'\t'*}
+  AWAY_UNTIL=""
+  hm_delegate_mine || return 1
+  [ "$HM_DG_HUB" = "$1" ] || return 1
+  AWAY_UNTIL=$HM_DG_UNTIL
 }
 epoch_local() { date -r "$1" '+%Y-%m-%d %H:%M' 2>/dev/null || date -d "@$1" '+%Y-%m-%d %H:%M'; }   # epoch_local <epoch>
 epoch_iso() { date -u -r "$1" '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null || date -u -d "@$1" '+%Y-%m-%dT%H:%M:%SZ'; }
@@ -419,6 +418,12 @@ dialog_target() {
 }
 type_line() { hm_tmux_on "${3:-}" send-keys -t "$1" -l "$2"; hm_tmux_on "${3:-}" send-keys -t "$1" Enter; }   # type_line <pane> <fixed line> [socket]
 overnight_line() { printf '/hivemind:overnight Task %s: read %s. It came from the owner through %s.' "$1" "$2" "$3"; }   # overnight_line <task id> <task file> <hub name>
+
+old_shared() {  # old_shared <delegate base>: when the 0.3.0 shared file is still there, says it is no longer read and prints the line that removes it
+  [ -e "$1/delegate" ] || [ -L "$1/delegate" ] || return 0
+  echo "# $1/delegate is no longer read (it is the 0.3.0 shared file). Remove it:"
+  printf 'sudo rm -f -- %q\n' "$1/delegate"
+}
 
 case "$cmd" in
 init)
@@ -862,7 +867,9 @@ away)
   hm_is_number "$epoch" || hm_die 64 "--until is an epoch, +<n>m|h|d, or YYYY-MM-DD[ HH:MM] (local time): $until"
   [ "$epoch" -gt "$now" ] || hm_die 4 "--until is not in the future"
   [ "$epoch" -le $((now + 604800)) ] || hm_die 4 "away is at most 7 days: the hub's heartbeat does not outlive that"
-  file=$(hm_delegate_path); dir=${file%/*}; grp=root; [ ! -d /System/Library ] || grp=wheel
+  file=$(hm_delegate_path) || hm_die 4 "this user's id cannot be read, so there is no delegate file to name"
+  dir=${file%/*}; base=${dir%/*}; grp=root; [ ! -d /System/Library ] || grp=wheel
+  hm_is_typed_path "$file" || hm_die 4 "the delegate file's path is not one hivemind will print into a command: $file"
   mcp="$root/.hivemind-hub/away-mcp.json"
   cdir=$(hm_claude_dir); cj=$(hm_claude_json)
   hm_write_away_mcp "$mcp" "$allow" "$root" || hm_die 1 "cannot write $mcp"
@@ -871,11 +878,13 @@ away)
   sid=$(hm_json_get "$root/.hivemind-hub/hub.json" .session_id)
   case "$sid" in ''|*[!${HM_LOWER}${HM_UPPER}${HM_DIGITS}-]*) sid="" ;; esac
   echo "# Away until $(epoch_local "$epoch") (at most 7 days). Paste these lines in a terminal: hivemind never runs sudo, and what runs as root is only this."
+  echo "# This file is for $(/usr/bin/id -un) (uid $(/usr/bin/id -u)): one file for each user, so another user on this machine is not away. The uid is written into the lines, so an administrator can paste these lines from another account."
   printf 'sudo mkdir -p -- %q\n' "$dir"
   printf "printf '%%s\\\\n' %q %q %q %q | sudo tee -- %q > /dev/null\n" 'hivemind-delegate 1' "hub=$root" "until=$epoch" "mcp=$allow" "$file"
-  printf 'sudo chown root:%s -- %q %q\n' "$grp" "$dir" "$file"
-  printf 'sudo chmod 0755 -- %q\n' "$dir"
+  printf 'sudo chown root:%s -- %q %q %q\n' "$grp" "$base" "$dir" "$file"
+  printf 'sudo chmod 0755 -- %q %q\n' "$base" "$dir"
   printf 'sudo chmod 0644 -- %q\n' "$file"
+  old_shared "$base"
   echo "# Then exit the running hub (so two do not share the folder) and start it again with these lines: marked, in bypass, with only its allowed MCP servers."
   printf 'cd %q\n' "$root"
   if [ -n "$sid" ]; then
@@ -911,11 +920,13 @@ back)
   [ $# -eq 0 ] || hm_die 64 "$USAGE"
   root=$(hub_root_cwd) || exit $?
   hm_is_typed_path "$root" || hm_die 4 "the hub's folder is not a path hivemind will print into a command: $root"
-  file=$(hm_delegate_path)
+  file=$(hm_delegate_path) || hm_die 4 "this user's id cannot be read, so there is no delegate file to name"
+  hm_is_typed_path "$file" || hm_die 4 "the delegate file's path is not one hivemind will print into a command: $file"
   sid=$(hm_json_get "$root/.hivemind-hub/hub.json" .session_id)
   case "$sid" in ''|*[!${HM_LOWER}${HM_UPPER}${HM_DIGITS}-]*) sid="" ;; esac
   echo "# Away ends when this file is gone. Paste the line in a terminal:"
   printf 'sudo rm -f -- %q\n' "$file"
+  old_shared "${file%/*/*}"
   echo "# Then exit the hub and start it again without bypass, so each action it takes asks you again:"
   printf 'cd %q\n' "$root"
   if [ -n "$sid" ]; then printf 'claude --resume %q\n' "$sid"; else echo 'claude --name hub /hivemind:hub'; fi ;;

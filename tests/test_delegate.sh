@@ -20,10 +20,21 @@ if ! ok_; then
 fi
 
 # ---- the path and the one production line ----
-if [ -d /System/Library ]; then assert_eq "the macOS path is under /Library (/etc is a link there)" "$(hm_delegate_path)" "/Library/Application Support/hivemind/delegate"
-else assert_eq "the Linux path" "$(hm_delegate_path)" "/etc/hivemind/delegate"; fi
+REALUID=$(/usr/bin/id -u)
+if [ -d /System/Library ]; then BASE='/Library/Application Support/hivemind'; else BASE=/etc/hivemind; fi
+assert_eq "the path is <base>/delegate.d/<uid>, under /Library on macOS (/etc is a link there)" "$(hm_delegate_path)" "$BASE/delegate.d/$REALUID"
 assert_eq "...chosen without $OSTYPE, which comes through the environment" "$(OSTYPE=linux-gnu hm_delegate_path)" "$(hm_delegate_path)"
-assert_eq "production reads the fixed path as root, and nothing else" "$(grep -c '^hm_delegate_now() { hm_delegate_read "$(hm_delegate_path)" 0; }$' "$HM_REPO_ROOT/bin/hm-lib.sh")" "1"
+# bash 3.2 (macOS /bin/bash) takes UID and EUID from the environment, even under -p: a path built from $UID would name root's file
+assert_eq "...from the process's real uid, not UID, EUID, USER, LOGNAME or HOME" "$(env UID=0 EUID=0 USER=root LOGNAME=root HOME=/var/root /bin/bash -p -c ". '$HM_REPO_ROOT/bin/hm-lib.sh'; hm_delegate_path")" "$BASE/delegate.d/$REALUID"
+assert_eq "...hm_real_uid is one exact line, which a test can rewrite" "$(grep -c '^hm_real_uid() { /usr/bin/id -u; }$' "$HM_REPO_ROOT/bin/hm-lib.sh")" "1"
+hm_real_uid() { echo; }; assert_eq "...an uid that is not digits gives no path (fail closed)" "$(hm_delegate_path)" ""
+hm_real_uid() { echo 12x; }; assert_eq "......with letters in it too" "$(hm_delegate_path)" ""
+hm_real_uid() { return 1; }; assert_eq "......and when id fails" "$(hm_delegate_path)" ""
+hm_real_uid() { /usr/bin/id -u; }
+assert_eq "no bin/ script uses UID or EUID" "$(grep -rnE '\$\{?E?UID' "$HM_REPO_ROOT/bin" | wc -l | tr -d ' ')" "0"
+assert_eq "production reads the delegate file at its fixed path as root, in one exact line" "$(grep -c '^hm_delegate_now() { hm_delegate_read "$(hm_delegate_path)" 0; }$' "$HM_REPO_ROOT/bin/hm-lib.sh")" "1"
+assert_eq "...and hm_delegate_mine is its only caller in bin/" "$(grep -rn 'hm_delegate_now' "$HM_REPO_ROOT/bin" | grep -v 'hm_delegate_now() {' | grep -v '^[^:]*:[0-9]*:#' | sed 's/:[0-9]*:.*//' | sort | uniq -c | tr -s ' ' | tr '\n' ' ')" " 1 $HM_REPO_ROOT/bin/hm-lib.sh "
+assert_eq "...inside hm_delegate_mine itself" "$(awk '/^hm_delegate_mine\(\) \{/{f=1} f&&/hm_delegate_now/{c++} f&&/^\}/{f=0} END{print c+0}' "$HM_REPO_ROOT/bin/hm-lib.sh")" "1"
 
 # ---- a valid file ----
 out=$(hm_delegate_read "$F" "$ME" "$NOW"); assert_status "a file as the root user would make it" $? 0

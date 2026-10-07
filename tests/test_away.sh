@@ -13,7 +13,7 @@ mk() { local d="$H/$1"; mkdir -p "$d"; git -C "$d" init -q -b main; git -C "$d" 
        echo x > "$d/README"; git -C "$d" add README; git -C "$d" commit -qm init; }
 hub() { (cd "$H" && hm-hub "$@"); }
 idof() { printf '%s' "${1%%$'\t'*}"; }
-ME=$(id -u); NOW=$(date +%s)
+ME=$(id -u); REALUID=$(/usr/bin/id -u); NOW=$(date +%s)
 DD="$T_TMP/dg/area"; DF="$DD/delegate"
 mkdel() {  # mkdel [hub] [until] [mcp list]: the owner's delegate file, as root would have made it
   mkdir -p "$DD"; chmod 755 "$DD" "$T_TMP/dg"
@@ -57,13 +57,17 @@ out=$(hub away --until +2h 2>"$T_TMP/away.err"); assert_status "away" $? 0
 assert_eq "...hivemind ran no sudo" "$(cat "$HM_SUDO_LOG")" ""
 assert_eq "...only mkdir, tee, chown and chmod are named after sudo" "$(printf '%s\n' "$out" | grep -o 'sudo [a-z]*' | sort -u | tr '\n' ' ')" "sudo chmod sudo chown sudo mkdir sudo tee "
 case "$(uname -s)" in
-  Darwin) assert_contains "...the folder, quoted for the shell" "$out" 'sudo mkdir -p -- /Library/Application\ Support/hivemind'
-          assert_contains "...the file made by tee" "$out" '| sudo tee -- /Library/Application\ Support/hivemind/delegate > /dev/null'
-          assert_contains "...owned by root" "$out" 'sudo chown root:wheel -- ' ;;
-  *)      assert_contains "...the folder" "$out" 'sudo mkdir -p -- /etc/hivemind'
-          assert_contains "...the file made by tee" "$out" '| sudo tee -- /etc/hivemind/delegate > /dev/null'
-          assert_contains "...owned by root" "$out" 'sudo chown root:root -- ' ;;
+  Darwin) assert_contains "...the folder, quoted for the shell" "$out" 'sudo mkdir -p -- /Library/Application\ Support/hivemind/delegate.d'
+          assert_contains "...the user's own file made by tee" "$out" "| sudo tee -- /Library/Application\\ Support/hivemind/delegate.d/$REALUID > /dev/null"
+          assert_contains "...owned by root, with the folders above it" "$out" "sudo chown root:wheel -- /Library/Application\\ Support/hivemind /Library/Application\\ Support/hivemind/delegate.d /Library/Application\\ Support/hivemind/delegate.d/$REALUID"
+          assert_contains "...the folders at 0755" "$out" 'sudo chmod 0755 -- /Library/Application\ Support/hivemind /Library/Application\ Support/hivemind/delegate.d' ;;
+  *)      assert_contains "...the folder" "$out" 'sudo mkdir -p -- /etc/hivemind/delegate.d'
+          assert_contains "...the user's own file made by tee" "$out" "| sudo tee -- /etc/hivemind/delegate.d/$REALUID > /dev/null"
+          assert_contains "...owned by root, with the folders above it" "$out" "sudo chown root:root -- /etc/hivemind /etc/hivemind/delegate.d /etc/hivemind/delegate.d/$REALUID"
+          assert_contains "...the folders at 0755" "$out" 'sudo chmod 0755 -- /etc/hivemind /etc/hivemind/delegate.d' ;;
 esac
+assert_contains "...a comment names the user and the uid" "$out" "# This file is for $(/usr/bin/id -un) (uid $REALUID)"
+assert_contains "...and says an administrator can paste the lines from another account" "$out" "an administrator can paste these lines from another account"
 assert_contains "...mode 0644" "$out" 'sudo chmod 0644 -- '
 assert_contains "...the content names this hub" "$out" "hub=$H"
 assert_contains "...and its MCP list (empty here) as the fourth line" "$out" "mcp= | sudo tee"
@@ -102,8 +106,23 @@ assert_contains "...one that is not found is said so" "$out" "Not found (not loa
 assert_contains "...and the list is the delegate file's fourth line" "$out" "mcp=docs\\,nothere | sudo tee"
 out=$(hub back); assert_status "back" $? 0
 assert_contains "...prints the line that removes the file" "$out" "sudo rm -f -- "
+assert_contains "......the user's own, under delegate.d" "$out" "/delegate.d/$REALUID"
 case "$out" in *HM_AWAY_BYPASS*|*bypassPermissions*) bad "the restart line after away is marked or in bypass" ;; *) ok "...and a restart line with no marker and no bypass" ;; esac
 assert_contains "...which resumes the hub" "$out" "claude --resume sess-hub-1"
+# the 0.3.0 file, <base>/delegate: no longer read, so both commands say so and print the line that removes it
+OB="$T_TMP/oldbase"; mkdir -p "$OB"
+OBIN=$(t_base_bin oldbin "$OB") || bad "t_base_bin"
+out=$(cd "$H" && "$OBIN/hm-hub" away --until +1h); assert_status "away with no old shared file" $? 0
+case "$out" in *"$OB/delegate"$'\n'*|*"$OB/delegate "*) bad "away names an old shared file that is not there" ;; *) ok "...names no old shared file" ;; esac
+out=$(cd "$H" && "$OBIN/hm-hub" back); case "$out" in *"$OB/delegate"$'\n'*) bad "back names an old shared file that is not there" ;; *) ok "back names no old shared file either" ;; esac
+printf 'hivemind-delegate 1\n' > "$OB/delegate"
+out=$(cd "$H" && "$OBIN/hm-hub" away --until +1h); assert_status "away with the 0.3.0 shared file present" $? 0
+assert_contains "...says it is no longer read" "$out" "$OB/delegate is no longer read"
+assert_contains "...and prints the line that removes it" "$out" "sudo rm -f -- $OB/delegate"
+out=$(cd "$H" && "$OBIN/hm-hub" back); assert_contains "back says it too" "$out" "$OB/delegate is no longer read"
+assert_contains "...with the line that removes it" "$out" "sudo rm -f -- $OB/delegate"
+assert_contains "...and the user's own file's line" "$out" "sudo rm -f -- $OB/delegate.d/$REALUID"
+rm -f "$OB/delegate"
 assert_eq "...and still no sudo ran" "$(cat "$HM_SUDO_LOG")" ""
 
 # ---- status shows away, from the file ----

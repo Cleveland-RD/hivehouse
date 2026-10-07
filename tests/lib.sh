@@ -125,6 +125,16 @@ t_slot_bin() {
     /^hm_machine_slot_owner\(\) \{ echo 0; \}$/ { print "hm_machine_slot_owner() { echo " u "; }"; next } { print }' "$d/hm-lib.sh" > "$d/hm-lib.sh.new" && mv "$d/hm-lib.sh.new" "$d/hm-lib.sh"
   printf '%s\n' "$d"
 }
+# t_base_bin <folder name> <base>: a scratch copy of bin/ in which the one line that names the folder of the delegate files gives <base>
+# instead, so the lines `hm-hub away` and `back` print can be tested against a folder the test controls. Found exactly once. Prints the copy.
+t_base_bin() {
+  local d="$T_TMP/$1" n
+  rm -rf "$d"; mkdir -p "$d"; cp -R "$HM_REPO_ROOT/bin/." "$d/"
+  n=$(grep -c '^hm_delegate_base() { if ' "$d/hm-lib.sh")
+  [ "$n" = 1 ] || { echo "t_base_bin: the production line matched $n times" >&2; return 1; }
+  awk -v b="$2" '/^hm_delegate_base\(\) \{ if / { print "hm_delegate_base() { echo \"" b "\"; }"; next } { print }' "$d/hm-lib.sh" > "$d/hm-lib.sh.new" && mv "$d/hm-lib.sh.new" "$d/hm-lib.sh"
+  printf '%s\n' "$d"
+}
 # t_env_probe <NAME=value>: starts a process launched with that variable and prints its pid. macOS shows no environment for
 # Apple platform binaries (sleep, bash) in ps -E, so a non-platform one (node) is used; prints nothing, and fails, when only
 # platform binaries are found.
