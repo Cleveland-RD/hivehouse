@@ -1,5 +1,35 @@
 # Changelog
 
+## 0.5.0
+
+- **hivemind is now hivehouse.** A new user installs hivehouse and never meets the old name. This release knows only the new names: it reads nothing under an old name, so a machine that ran hivemind moves once, by hand (the plugin, then each folder below).
+
+  | What | Was | Is |
+  |---|---|---|
+  | Plugin and marketplace | `hivemind` | `hivehouse` |
+  | Install | `hivemind@hivemind` | `hivehouse@hivehouse` |
+  | Commands | `/hivemind:<skill>` | `/hivehouse:<skill>` (skill names unchanged) |
+  | Executables | `bin/hm-*` | `bin/hh-*` |
+  | Library functions | `hm_*` | `hh_*` |
+  | Environment | `HM_*`, `HIVEMIND_HOME` | `HH_*`, `HIVEHOUSE_HOME` |
+  | Hub protocol words | `HM-CLARIFY`, `HM-PLAN` | `HH-CLARIFY`, `HH-PLAN` |
+  | Project state folder | `.hivemind/` | `.hivehouse/` |
+  | Hub folder | `.hivemind-hub/` | `.hivehouse-hub/` |
+  | Per-user home and slot | `~/.hivemind` | `~/.hivehouse` |
+  | Delegate folder | `/Library/Application Support/hivemind`, `/etc/hivemind` | `/Library/Application Support/hivehouse`, `/etc/hivehouse` |
+  | Delegate file's first line | `hivemind-delegate 1` | `hivehouse-delegate 1` |
+  | Machine slot | `/Library/Application Support/hivemind/slot`, `/var/lib/hivemind/slot` | `/Library/Application Support/hivehouse/slot`, `/var/lib/hivehouse/slot` |
+  | Hub screen pane | `hivemind-hub` | `hivehouse-hub` |
+  | Message prefix | `hivemind: ` | `hivehouse: ` |
+  | Repository | `Cleveland-RD/hivemind` | `Cleveland-RD/hivehouse` |
+
+- **The hub screen's remembered state resets once.** Claude Code keeps a screen's state under the plugin's name, and the name must be the plugin's own, so what the screen remembered under `hivemind` (the view, a press in progress, the away period whose decisions you have seen) is not carried over.
+- **Each name is spelled in one place.** The folder, path, prefix and delegate names are constants at the top of `bin/hh-lib.sh` (and `hooks/names.ts` for the hub screen); the plugin's name is read from `.claude-plugin/plugin.json` by `hh_plugin_name`, which every typed `/<plugin>:<skill>` command, the session hook's skill line and the remote-sync plugin check use. `tests/test_names.sh` holds the rest of the tree to it.
+- **The 0.3.0 shared-file notice is gone.** `hh-hub away` and `back` no longer look for the old `<folder>/delegate` file or print the line that removes it: under the new folder it cannot exist.
+- **The test suite is isolated from the session that starts it.** It keeps only an allowlist of environment variables and drops every other plugin's `bin/` from its `PATH`, so a suite started from a session that has another version of these tools can never reach them or their state. `tests/test_isolation.sh` proves it against a made-up foreign plugin and a canary.
+- **A name used in two team roots is told apart by its root** (0.4.1). `hh-hub status`, `dialog`, `recover` and the screen's Resume, Continue and answer key an agent by its team root and its name, so two agents of one name in two worktrees of a project no longer answer for each other.
+- **A name that matches two sessions** (0.4.1): `rules/RULES.md` says to send to the row on this machine, the one with a tmux pane, and never to stop and ask which.
+
 ## 0.4.0
 
 - **Away mode for each user.** The delegate file is now one file per user, `<base>/delegate.d/<uid>` (`/Library/Application Support/hivemind` on macOS, `/etc/hivemind` on Linux), named by the user's real id, so several people on one machine can each be away on their own. The hub it names, its `.hivemind-hub/`, `projects.json` and `hub.json`, and each project home that gets bypass must belong to that user and not be writable by group or others.
