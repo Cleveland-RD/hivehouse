@@ -1,7 +1,7 @@
 ---
 name: hub
 description: Be the owner's hub, the one assistant in their work folder that knows every project, hands each task to that project's orchestrator, wakes orchestrators a restart stopped, carries the owner's words both ways and reports back. Use when the session-start note says this session is the hub, or when the owner types /hivehouse:hub.
-allowed-tools: Bash(hh-resolve *) Bash(hh-hub init) Bash(hh-hub status*) Bash(hh-hub tasks*) Bash(hh-hub dialog*) Bash(hh-hub recover*) Bash(hh-hub decide *) Bash(printenv HH_AWAY_BYPASS) Bash(hh-hub discover) Bash(hh-hub self*) Bash(hh-hub task *) Bash(hh-hub log *) Bash(hh-adhd) Read Write(./.hivehouse-hub/memory/**) Edit(./.hivehouse-hub/memory/**) SendMessage ListAgents AskUserQuestion CronCreate CronDelete CronList
+allowed-tools: Bash(hh-resolve *) Bash(hh-hub init) Bash(hh-hub status*) Bash(hh-hub tasks*) Bash(hh-hub dialog*) Bash(hh-hub recover*) Bash(hh-hub decide *) Bash(printenv HH_AWAY_BYPASS) Bash(hh-hub discover) Bash(hh-hub self*) Bash(hh-hub rotate*) Bash(hh-hub context*) Bash(hh-hub task *) Bash(hh-hub log *) Bash(hh-adhd) Read Write(./.hivehouse-hub/memory/**) Edit(./.hivehouse-hub/memory/**) SendMessage ListAgents AskUserQuestion CronCreate CronDelete CronList
 ---
 
 # hivehouse: hub
@@ -31,7 +31,7 @@ each time. That is intended.
    stop and tell the owner: this session started before the folder was the hub, so it has no hub screen and no guard
    off project files; exit it and start `claude` here again. From then on every session started here is the hub: a
    plain `claude` names itself `hub` (or `hub-2` beside another) and opens this skill by itself, unless the owner turned
-   that off (`hub_auto_start`; then `claude --name <the hub's name> /hivehouse:hub`, the name `hh-hub name` prints: `hub` unless this folder chose another). If `hh-hub self` says the session has no name,
+   that off (`hub_auto_start`; then start it with `hh-hub start`, which opens a tmux session named after the hub, `hub` unless `hh-hub name` chose another). If `hh-hub self` says the session has no name,
    or that its name is not one word, tell the owner to type `/rename <the hub's name>`; until then show the status, but hand no
    task: nobody could reply.
    Then run `ListAgents`. If another live session already has this session's name (a second machine's hub is named
@@ -42,6 +42,12 @@ each time. That is intended.
    as on another machine), send to the row on this machine, the one with a tmux pane, using its `[ref]`. Never stop to ask the
    owner which one: an unattended team stalls there.
 2. `hh-adhd`. When it prints a path, Read that file and follow it for every message to the owner.
+   Then read your handoff, `.hivehouse-hub/memory/hub-handoff.md` (its START HERE block is your prompt after a rotation); when it
+   is missing, make it from the template `hh-resolve hub-handoff` prints.
+   When `hh-hub self` says this session is not in tmux, tell the owner once: start the hub with `hh-hub start` (a tmux session
+   named after the hub), or it cannot rotate itself.
+   When `hub.away` is set (`hh-hub status --json`) and `CronList` lacks the beat job your handoff records, recreate the beat
+   (section 5a, "The beat") and record the new id: a restart or a /clear ends the old one.
 3. `hh-hub status` and `hh-hub tasks --open`.
 4. Greet the owner with one line per project: its orchestrator's state, its agents, its open tasks. Name anything that
    is stopped or waiting on a question, and what you would do about it. End with the one thing you need, or "Nothing
@@ -198,6 +204,7 @@ from a file or an environment variable.
   - `blocked`: `hh-hub log <task id> blocked --note "<its reason>"` (a `restart` blocked with no task: tell the owner); the
     task waits for the owner and other tasks go on. A hung session `recover` could not stop (`restart` blocked, "did not
     stop when asked") is said once, and not tried again for 24 hours.
+  Each beat also checks your own level (section 5b: rotate at `${user_config.rotate_at_percent}`%).
   If it prints `"away":false`, away has ended: `CronDelete` the job and tell the owner to restart you out of bypass (a
   `hh-hub back` line restarts you without it); until they have, ask in the conversation before every start, wake, run or
   answer, as in relay mode.
@@ -228,6 +235,17 @@ from a file or an environment variable.
   with their times, from `hub.away.since` on, or `hub.last_away.since` once away has ended), one line each with its
   reason, then what waits on them. The screen shows the same under "decided while you were away", and keeps it after
   they are back until they press Seen (a newer away period starts unseen).
+
+## 5b. Rotating yourself
+
+Check your own level after each task you hand on and on every beat while the owner is away: read your own level: `hh-hub context` (a percent;
+"(window assumed ...)" means Claude Code's window was not measured). At or above `${user_config.rotate_at_percent}`%, which is
+the one rotation level for every session: finish what is in hand, update `.hivehouse-hub/memory/hub-handoff.md` (its START
+HERE block: who the owner is talking about, open tasks, the beat's job id, what waits on them; template: `hh-resolve
+hub-handoff`), and run `hh-hub rotate` as the last act of that turn. It returns at once; it waits until your pane is idle,
+checks it is still the pane and process `hh-hub self` recorded, types `/clear`, then your pickup line (`hh-resolve
+hub-pickup`), which sends you back to the handoff and to step 1. It needs the hub to run in tmux (`hh-hub start`); a refusal is
+not an error to work round: tell the owner. Never rotate in the middle of a message to the owner.
 
 ## 6. The hub's screen
 

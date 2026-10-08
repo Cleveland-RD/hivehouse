@@ -67,8 +67,15 @@ assert_contains "a custom pickup line is typed, its words filled in" "$(screen h
 printf 'two\nlines {name}\n' > "$H/$T_STATE/$T_CUSTOM/rules/hub-pickup.md"
 (cd "$H" && HH_PROJECT="$H" hh-hub rotate --still 2 --settle 1 --max 30 >/dev/null 2>&1)
 rotated 2
+assert_not "a custom pickup of two lines is never typed" "$(screen hub)" "GOT: two"
 assert_contains "a custom pickup of two lines is refused, the plugin's is used" "$(screen hub)" "GOT: /$T_PLUGIN:hub You are hub."
 rm -f "$H/$T_STATE/$T_CUSTOM/rules/hub-pickup.md"
+
+# the shared rotation checks the identity before it types /clear, not only after the wait
+vno() { return 1; }; pk() { echo x; }
+startfake hubself
+hh_rotate_pane "$(jq -r .pane "$P/hub.json")" "$HH_TMUX_SOCKET" 2 6 1 vno pk; assert_status "an identity that fails before the clear exits 6" $? 6
+assert_not "...and nothing was typed" "$(screen hub)" "/clear"
 
 # only on idle: a busy pane is never typed into
 startfake busy
@@ -109,5 +116,18 @@ jq -nc '{type:"assistant", isSidechain:false, message:{model:"claude-sonnet-5-5"
 assert_eq "context is a percent of the window it is given" "$(hub context --window 400000 2>/dev/null)" "25"
 assert_eq "...and says when the window is only assumed" "$(hub context 2>/dev/null)" "50 (window assumed 200000)"
 hub context --window x >/dev/null 2>&1; assert_status "a window that is no number" $? 4
+
+# ---- the hub skill: handoff, when to rotate, the beat after a restart ----
+SK=$(cat "$HH_REPO_ROOT/skills/hub/SKILL.md")
+assert_contains "the skill may run rotate and context" "$(head -5 "$HH_REPO_ROOT/skills/hub/SKILL.md" | grep '^allowed-tools')" "Bash(hh-hub rotate*) Bash(hh-hub context*)"
+assert_contains "it keeps the handoff in the hub's memory" "$SK" "$T_HUB/memory/hub-handoff.md"
+assert_contains "...from the template hh-resolve finds" "$SK" "hh-resolve hub-handoff"
+assert_contains "it checks its own level after each task it hands on and on every beat" "$SK" "after each task you hand on and on every beat"
+assert_contains "...at the plugin's one rotation level" "$SK" 'user_config.rotate_at_percent'
+assert_contains "...updates the handoff, then rotates as its last act" "$SK" "hh-hub rotate"
+assert_contains "the beat is recreated at every start when away and CronList lacks the job" "$SK" "CronList"
+assert_contains "...which says so in the start steps" "$(sed -n '/^## 1\. At every start/,/^## 2\./p' "$HH_REPO_ROOT/skills/hub/SKILL.md")" "recreate"
+assert_contains "the start line the owner is given is hh-hub start" "$(sed -n '/^## 1\. At every start/,/^## 2\./p' "$HH_REPO_ROOT/skills/hub/SKILL.md")" "hh-hub start"
+case "$SK" in *"rotate_at_percent"*"rotate_at_percent"*) ok "...the level is read from the one option" ;; *) bad "the skill names rotate_at_percent fewer than twice" ;; esac
 
 t_done
