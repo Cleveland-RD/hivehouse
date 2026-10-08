@@ -16,7 +16,7 @@ Ask Claude to customise anything: roles, rules, skills' behaviour, options. The 
 - **Roles and rules for a team you spawn by hand.** `hh-spawn --role <file> --rules <file>` takes any two files: point them at your own copies.
 - **Options.** The plugin options below, set in Claude Code's plugin settings.
 - **Project safety settings.** `<project>/.hivehouse/settings.json` may tighten `permission_mode`, `overnight_ceiling_usd`, `allow_attribution` and `files_per_commit`, never loosen them.
-- **What away mode allows.** `hh-hub away --until <time> [--mcp-allow <list>] [--remote-allow <hosts>] [--tools <list>]` prints the lines that write the delegate file (`--allow` is reserved and refuses; see [Customising what away mode allows](away-mode.md#customising-what-away-mode-allows)). When you ask Claude to loosen away mode, it prints those lines for you to paste and never edit anything to get round it.
+- **What away mode allows.** `hh-hub away --until <time> [--mcp-allow <list>] [--remote-allow <hosts>] [--tools <list>] [--peers <session names>]` prints the lines that write the delegate file (`--allow` is reserved and refuses; see [Customising what away mode allows](away-mode.md#customising-what-away-mode-allows)). When you ask Claude to loosen away mode, it prints those lines for you to paste and never edit anything to get round it.
 
 **Every plugin option** (`.claude-plugin/plugin.json`, `userConfig`)
 
