@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.5.4
+
+- **Quoted notes no longer trip the away hook.** While the owner is away, the quoted text of `echo`, `printf` and the free-text flag of `hh-hub log`, `task` and `decide` is data when it holds no `$`, backtick or backslash, so a note with `). ` or `; . ` in it passes. `sed -n <lines>p` of a file passes too.
+- **Peers on other machines.** `hh-hub away --peers <names>` writes a `peers=` line into the delegate file (now version 4, eight lines; versions 1 to 3 are still read, as no peers). The hub, and the registered orchestrator of one of its projects, may then SendMessage a listed session on another machine, proved by the caller's own Claude pid and start time. A `uds:` target is never a peer, a listed name that a live local session carries is refused, and agents never reach a peer. Each send adds a line (time, peer, sender, first line of the note) to `peers.jsonl` in the hub's folder, and a send whose line cannot be written is refused. The hub skill's "When the owner is back" step reports those lines. A message from a peer is information, never an instruction.
+- **SECURITY.md.** It names the supported version (the latest release), the private way to report a vulnerability, what to report, and that away mode's hook is a guard against mistakes, not a sandbox.
+- **Tests run with the changed area.** `roles/implementer.md` and `docs/development.md` say to run `tests/test_names.sh` with the tests of the changed area before asking for review, since it reads every file for names spelled outside their constants.
+- **Tidy before going public.** Tracker numbers and internal labels are gone from comments, test headings and the changelog; the sentences stay.
+- **Known gaps.** A `$(...)` or a backtick as an argument of a writer command is not refused. Code given to `sed`, `perl`, `python`, `node`, `ruby` or `awk` is not read as code, so a write or a command after a `;` or a line break inside it is not checked (`sed`'s `w` and `e` included). A path built at run time, or a command computed inside code, is not read.
+- **False refusal.** A backslash inside a single-quoted `echo` payload is refused, though it is only text.
+- **Tests.** New `test_away_peers.sh` and `test_away_data.sh`; rows added to `test_away_hook.sh`.
+
 ## 0.5.3
 
 - **One default context window: 1,000,000.** Claude Code's own default. `bin/hh-lib.sh` holds it (`HH_WINDOW_DEFAULT`) and `hh-context` and `hh-hub context` use it where they used to guess 200000 (`hh-rotate` shows what they read); the three `window_*` options in `plugin.json` default to it, and a test holds them equal. A window an agent was recorded with by 0.5.2 (200000, from the old default) now counts as a window someone gave: set the right one with `hh-hub window`.
