@@ -91,7 +91,7 @@ hh_project_key() {  # basename plus a short hash of the full path: app and app-i
 }
 hh_state() { local root; root=$(hh_project_root) || exit $?; printf '%s/%s\n' "$root" "$HH_STATE_DIR"; }
 # ---- custom/: the user's own roles, rules and brief template, which an update of the plugin never replaces ---------------------------
-# hh_custom_file <rel>: prints the file to read for the plugin's <rel> (roles/<name>.md, rules/RULES.md or rules/brief-template.md):
+# hh_custom_file <rel>: prints the file to read for the plugin's <rel> (roles/<name>.md, rules/RULES.md, rules/brief-template.md, and the hub's rules/hub-pickup.md and rules/hub-handoff.md):
 # the project's <state dir>/custom/<rel>, else the user's <home>/custom/<rel>, else the plugin's own. THE one place this is decided; every
 # skill asks it through hh-resolve. A custom file is used only when it, its folder and custom/ are the user's own, not links and not
 # writable by group or others (hh_path_trusted, as the delegate file's); otherwise a note names the file and why, and the next level
@@ -104,7 +104,7 @@ hh_custom_safe() {  # hh_custom_safe <custom dir> <rel> <uid>: 0 when every part
 }
 hh_custom_file() {
   local rel="$1" plugin level base f root uid
-  case "$rel" in roles/[${HH_LOWER}]*.md|rules/RULES.md|rules/brief-template.md) ;; *) return 4 ;; esac
+  case "$rel" in roles/[${HH_LOWER}]*.md|rules/RULES.md|rules/brief-template.md|rules/hub-pickup.md|rules/hub-handoff.md) ;; *) return 4 ;; esac
   case "$rel" in *[!${HH_LOWER}${HH_UPPER}${HH_DIGITS}._/-]*|*..*) return 4 ;; esac
   plugin=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P) || return 2
   uid=$(hh_real_uid) || return 2
@@ -431,6 +431,34 @@ wait_idle() {
   done
   [ "$rc" -eq 3 ] && return 3
   return 1
+}
+
+# THE one rotation of a pane, for hh-rotate (an agent) and hh-hub rotate (the hub): wait until the pane is idle, check it is still the
+# one that was recorded, type /clear, wait, then the pickup line. Nothing is typed into a pane that is busy, shows a dialog, or is
+# no longer the recorded one (a pane id is handed out again by a restarted tmux server, and an owner's shell outlives its Claude);
+# the identity is checked again before every send, since the wait for an idle pane can last minutes.
+#   hh_rotate_pane <pane> <socket, or empty> <still s> <max s> <settle s> <verify cmd> <pickup cmd>
+# <verify cmd> returns 0 while the pane is still the recorded one (it says so itself when not); <pickup cmd> prints the line to send,
+# asked after the clear. Returns 0 rotated; 1 never idle (nothing sent); 5 a dialog (nothing sent); 6 not the recorded pane (nothing
+# sent); 7 cleared but never idle again (pickup line not sent).
+hh_rotate_pane() {
+  local pane="$1" sock="$2" still="$3" max="$4" settle="$5" verify="$6" pickup="$7" rc
+  wait_idle "$pane" "$still" "$max" "$sock"; rc=$?
+  case "$rc" in 0) ;; 3) return 5 ;; *) return 1 ;; esac
+  "$verify" || return 6
+  hh_tmux_on "$sock" send-keys -t "$pane" -l '/clear'; hh_tmux_on "$sock" send-keys -t "$pane" Enter
+  sleep "$settle"
+  # the UI left /clear on the input line (the last non-blank line of the pane is the footer): clear it and type it again, once
+  if hh_pane_text "$pane" "$sock" | hh_pane_prompt_line | grep -Eq '^(│| )*(>|❯) */clear[[:space:]]*$'; then
+    "$verify" || return 6
+    hh_tmux_on "$sock" send-keys -t "$pane" C-u
+    hh_tmux_on "$sock" send-keys -t "$pane" -l '/clear'; hh_tmux_on "$sock" send-keys -t "$pane" Enter
+    sleep "$settle"
+  fi
+  wait_idle "$pane" 2 "$max" "$sock" || return 7
+  "$verify" || return 6
+  hh_tmux_on "$sock" send-keys -t "$pane" -l "$("$pickup")"
+  hh_tmux_on "$sock" send-keys -t "$pane" Enter
 }
 
 # The owner's statusLine as Claude Code picks it for a session started in <dir>: managed settings, then the project's
