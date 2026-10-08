@@ -199,7 +199,7 @@ assert_eq "...with a date() from BASH_ENV" "$(BASH_ENV="$T_TMP/benv.sh" dhub sta
 assert_eq "...with an exported function date" "$( ( date() { echo "$((NOW - 100000))"; }; export -f date; dhub status --json ) | is_away)" "false"
 assert_eq "...with a fake bash first on PATH" "$( (cd "$H" && PATH="$fk:$PATH" "$DB/hh-hub" status --json) | is_away)" "false"
 # (a sibling script such as hh-context may still use the bash on PATH: it decides nothing about the away file)
-{ [ ! -e "$T_TMP/fakebash.ran" ] || ! grep -q 'hh-hub' "$T_TMP/fakebash.ran"; } && ok "...hh-hub itself was never run by it" || bad "hh-hub ran under the bash found on PATH"
+{ [ ! -e "$T_TMP/fakebash.ran" ] || ! grep -Eq '(^|/)hh-hub( |$)' "$T_TMP/fakebash.ran"; } && ok "...hh-hub itself was never run by it" || bad "hh-hub ran under the bash found on PATH"
 assert_eq "hh-hub starts as /bin/bash -p, which skips BASH_ENV and imports no functions" "$(head -1 "$HH_REPO_ROOT/bin/hh-hub")" "#!/bin/bash -p"
 mkdel
 
