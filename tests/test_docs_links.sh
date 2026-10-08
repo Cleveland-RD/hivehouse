@@ -23,4 +23,9 @@ done
 for f in "$R/README.md" "$R"/docs/*.md; do
   assert_eq "${f#"$R"/}: no em or en dash" "$(grep -c $'\xe2\x80\x94\|\xe2\x80\x93' "$f")" 0
 done
+# small public-copy facts
+assert_contains "the README says the userConfig notice needs no action" "$(cat "$R/README.md")" "needs no action"
+assert_eq "docs/away-mode.md says no sudo line is written by --allow" "$(grep -c 'and `--allow` write them' "$R/docs/away-mode.md")" "0"
+assert_eq "...and that --allow never applies to the remote list is gone" "$(grep -c '`--allow` never applies' "$R/docs/away-mode.md")" "0"
+for d in docs/plans/ docs/specs/; do assert_eq ".gitignore lists $d" "$(grep -cx "$d" "$R/.gitignore")" "1"; done
 t_done

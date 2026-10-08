@@ -48,7 +48,8 @@ Where a step says **ask**, ask the person and wait: never decide it for them.
    It must print the version in `.claude-plugin/plugin.json` and `"enabled": true`.
 3. **Settings.** The plugin's settings are its `userConfig` in `.claude-plugin/plugin.json` (models, efforts, permission
    mode, files per commit, rotation level, overnight ceiling, `hub_auto_start`); each has a default, so nothing must be
-   set. **Ask** whether the person wants any changed; Claude Code's `/plugin` menu changes them.
+   set. **Ask** whether the person wants any changed; Claude Code's `/plugin` menu changes them. Claude Code may say
+   "N userConfig options not yet set" after the install: that needs no action, the defaults are in use.
 4. **The hub (optional).** **Ask** whether they want one, and which folder is their work folder: the one that holds
    their projects, never a project itself. On their yes, set it up there:
    `cd <folder> && <installPath>/bin/hh-hub init`, with the `installPath` that `claude plugin list --json` shows for

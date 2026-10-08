@@ -2,3 +2,5 @@
 .DS_Store
 evals/results/
 .claude-plugin/types/
+docs/plans/
+docs/specs/
