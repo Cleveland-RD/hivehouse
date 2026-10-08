@@ -18,13 +18,13 @@ assert_contains "the log names the agent and the percents (unknown here)" "$(log
 # the percent comes from hh-context when a session is recorded
 jq -nc --arg t "$HH_REPO_ROOT/tests/fixtures/transcript.jsonl" '{session_id:"s",transcript_path:$t}' > $T_STATE/team/impl/session.json
 hh-rotate impl --still 2 --settle 1 >/dev/null
-assert_contains "the log carries the level, and says the window was a guess" "$(log | tail -1)" "rotated impl 50% (window assumed 200000) -> 50% (window assumed 200000)"
+assert_contains "the log carries the level, and says the window was a guess" "$(log | tail -1)" "rotated impl 10% (window assumed 1000000) -> 10% (window assumed 1000000)"
 # a reading over the assumed window is tokens, not a percent: the log must not print "300000%"
-jq -nc '{type:"assistant", isSidechain:false, message:{model:"claude-sonnet-5-5", usage:{input_tokens:300000, cache_read_input_tokens:0, cache_creation_input_tokens:0, output_tokens:0}}}' > "$T_TMP/big.jsonl"
+jq -nc '{type:"assistant", isSidechain:false, message:{model:"claude-sonnet-5-5", usage:{input_tokens:1500000, cache_read_input_tokens:0, cache_creation_input_tokens:0, output_tokens:0}}}' > "$T_TMP/big.jsonl"
 cp $T_STATE/team/impl/session.json "$T_TMP/impl-session.json"
 jq -nc --arg t "$T_TMP/big.jsonl" '{session_id:"s",transcript_path:$t}' > $T_STATE/team/impl/session.json
 hh-rotate impl --still 2 --settle 1 >/dev/null
-assert_contains "a level over the assumed window is logged as tokens, not a percent" "$(log | tail -1)" "rotated impl 300000 tokens (window unknown) -> 300000 tokens (window unknown)"
+assert_contains "a level over the assumed window is logged as tokens, not a percent" "$(log | tail -1)" "rotated impl 1500000 tokens (window unknown) -> 1500000 tokens (window unknown)"
 cp "$T_TMP/impl-session.json" $T_STATE/team/impl/session.json
 hh-rotate nobody 2>/dev/null; assert_status "an unknown agent" $? 2
 hh-rotate 2>/dev/null; assert_status "usage" $? 64

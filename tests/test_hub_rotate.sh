@@ -135,7 +135,7 @@ hub context >/dev/null 2>&1; assert_status "context with no transcript" $? 2
 mkdir -p "$CLAUDE_CONFIG_DIR/projects/p"
 jq -nc '{type:"assistant", isSidechain:false, message:{model:"claude-sonnet-5-5", usage:{input_tokens:100000, cache_read_input_tokens:0, cache_creation_input_tokens:0, output_tokens:0}}}' > "$CLAUDE_CONFIG_DIR/projects/p/$sid.jsonl"
 assert_eq "context is a percent of the window it is given" "$(hub context --window 400000 2>/dev/null)" "25"
-assert_eq "...and says when the window is only assumed" "$(hub context 2>/dev/null)" "50 (window assumed 200000)"
+assert_eq "...and says when the window is only assumed" "$(hub context 2>/dev/null)" "10 (window assumed 1000000)"
 hub context --window x >/dev/null 2>&1; assert_status "a window that is no number" $? 4
 # S4: the window the hub recorded for itself (hh-hub self --window), as hh-spawn --self records an orchestrator's
 mkdir -p "$T_TMP/cl2"; printf '#!/usr/bin/env bash\ncd "%s" && hh-hub self "$@"\n' "$H" > "$T_TMP/cl2/claude"

@@ -42,7 +42,7 @@ assert_eq "...and says nothing" "$out" ""
 [ ! -e "$other/$T_STATE" ] && ok "...and writes nothing" || bad "an unregistered pane wrote into the project"
 
 # an agent at the level: told once to update its handoff and say ROTATE READY to its orchestrator
-jq -nc '{agents:[{name:"implementer",pane:"%1"}]}' > /dev/null; mkdir -p "$r/$T_STATE"; jq -nc '{agents:[{name:"implementer",pane:"%1"}]}' > "$r/$T_STATE/team.json"
+jq -nc '{agents:[{name:"implementer",pane:"%1"}]}' > /dev/null; mkdir -p "$r/$T_STATE"; jq -nc '{agents:[{name:"implementer",pane:"%1",window:200000}]}' > "$r/$T_STATE/team.json"
 session "$r" implementer sA "$FIX"; reg "$r" implementer
 SID=sA
 out=$(stop "$r"); assert_status "an agent at the level" $? 0
@@ -70,7 +70,7 @@ reg "$r" implementer; out=$(stop "$r"); assert_eq "...not told twice for that se
 
 # the orchestrator (registered with --self, so its entry records a Claude) is told to rotate itself
 mkdir -p "$T_TMP/o"; o=$(t_repo orch); mkdir -p "$o/$T_STATE"
-jq -nc '{agents:[{name:"orchestrator",pane:"%1",claude_pid:"1",claude_started:"x"}]}' > "$o/$T_STATE/team.json"
+jq -nc '{agents:[{name:"orchestrator",pane:"%1",claude_pid:"1",claude_started:"x",window:200000}]}' > "$o/$T_STATE/team.json"
 session "$o" orchestrator sO "$FIX"; reg "$o" orchestrator
 SID=sO; out=$(stop "$o"); assert_eq "the orchestrator is blocked" "$(printf '%s' "$out" | jq -r .decision)" "block"
 assert_contains "...told to run hh-self-rotate with its name, as its last act" "$(printf '%s' "$out" | jq -r .reason)" "hh-self-rotate orchestrator"

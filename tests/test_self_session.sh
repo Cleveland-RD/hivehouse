@@ -31,8 +31,8 @@ assert_eq "...with the one transcript of that name" "$(jq -r .transcript_path $s
 assert_eq "...from --self" "$(jq -r .source $sj)" "self"
 assert_eq "...and nothing on stderr" "$(cat "$T_TMP/a.out.err")" ""
 assert_eq "--self with no --window and no reading records no window" "$(jq -r '.agents[] | select(.name == "orchestrator") | has("window")' $T_STATE/team.json)" "false"
-assert_eq "hh-context now reads the orchestrator" "$(hh-context orchestrator)" "50 (window assumed 200000)"
-assert_eq "...and so does --all" "$(hh-context --all)" "orchestrator 50 (window assumed 200000)"
+assert_eq "hh-context now reads the orchestrator" "$(hh-context orchestrator)" "10 (window assumed 1000000)"
+assert_eq "...and so does --all" "$(hh-context --all)" "orchestrator 10 (window assumed 1000000)"
 # a later /clear: the hook writes it again, as for any agent
 cp "$HH_REPO_ROOT/tests/fixtures/transcript.jsonl" "$T_TMP/after.jsonl"
 touch "$T_TMP/a.out.go"; sleep 2
