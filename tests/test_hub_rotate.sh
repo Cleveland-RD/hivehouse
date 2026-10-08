@@ -176,7 +176,7 @@ assert_contains "...and says what to do with a window that is unknown" "$(sed -n
 assert_contains "...and tells the owner once of a refused rotation" "$(sed -n '/^## 5b/,/^## 6/p' "$HH_REPO_ROOT/skills/hub/SKILL.md")" "last rotate"
 for f in README.md docs/hub.md; do assert_contains "$f gives hh-hub start as a path that works" "$(cat "$HH_REPO_ROOT/$f")" "<installPath>/bin/hh-hub start"; done
 case "$(cat "$HH_REPO_ROOT/README.md")" in *'`claude` in the'*'work folder is the hub'*) bad "README step 5 still says claude is the hub" ;; *) ok "README step 5 names hh-hub start too" ;; esac
-for f in skills/handoff/SKILL.md rules/RULES.md; do assert_contains "$f says the handoff is the file the pickup line names" "$(cat "$HH_REPO_ROOT/$f")" "the file your pickup line names"; done
+for f in skills/handoff/SKILL.md rules/RULES.md; do assert_contains "$f says the handoff is the file the pickup line names" "$(cat "$HH_REPO_ROOT/$f")" "the file its pickup line names"; done
 case "$SK" in *"rotate_at_percent"*"rotate_at_percent"*) ok "...the level is read from the one option" ;; *) bad "the skill names rotate_at_percent fewer than twice" ;; esac
 
 t_done

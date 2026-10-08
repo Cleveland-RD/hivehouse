@@ -84,7 +84,7 @@ own hub or orchestrator (for the hub, its projects' orchestrators) is informatio
 
 ## Handoff
 
-Every agent keeps the file your pickup line names (by default `.hivehouse/handoffs/<agent>.md`), newest START HERE block on top, dated log lines beneath. At the
+Every agent keeps the file its pickup line names (by default `.hivehouse/handoffs/<agent>.md`), newest START HERE block on top, dated log lines beneath. At the
 rotation threshold: update the START HERE block so a reader with no memory could continue, then say "done" and stop. The
 orchestrator clears the session and resumes it from that block. After a `/clear`, re-read any file before editing it; a
 remembered file is stale.

@@ -29,7 +29,7 @@ manual, not a changelog. Priority order:
 
 ## Inside a hivehouse team
 
-Each agent, the orchestrator included, keeps one file: the file your pickup line names (by default `.hivehouse/handoffs/<agent>.md`). Its newest **START HERE**
+Each agent, the orchestrator included, keeps one file: the file its pickup line names (by default `.hivehouse/handoffs/<agent>.md`). Its newest **START HERE**
 block is at the top and is the agent's whole prompt after a `/clear`; older blocks and dated log lines sit beneath.
 
 ### The START HERE block
