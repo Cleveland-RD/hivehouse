@@ -25,6 +25,11 @@ session() {  # session <project> <agent> <session id> <transcript>: what the Ses
 FIX="$HH_REPO_ROOT/tests/fixtures/transcript.jsonl"   # reads 50 (window assumed 200000)
 echo "$T_STATE" >/dev/null
 
+# outside tmux the hook is out before it reads the library: a copy with no library beside it exits 0 and says nothing
+mkdir -p "$T_TMP/alone"; cp "$HH_REPO_ROOT/bin/hh-stop-hook" "$T_TMP/alone/"
+out=$(printf '{"session_id":"s1"}' | TMUX= TMUX_PANE= bash "$T_TMP/alone/hh-stop-hook" 2>&1); assert_status "outside tmux: no library is read" $? 0
+assert_eq "...and nothing is said" "$out" ""
+
 # the hook is wired
 assert_eq "hooks.json wires one Stop hook" "$(jq -r '.hooks.Stop | length' "$HH_REPO_ROOT/hooks/hooks.json")" "1"
 assert_contains "...to bin/hh-stop-hook" "$(jq -r '.hooks.Stop[0].hooks[0].command' "$HH_REPO_ROOT/hooks/hooks.json")" "bin/hh-stop-hook"
@@ -43,6 +48,7 @@ SID=sA
 out=$(stop "$r"); assert_status "an agent at the level" $? 0
 assert_eq "...is blocked once" "$(printf '%s' "$out" | jq -r .decision)" "block"
 assert_contains "...told its level" "$(printf '%s' "$out" | jq -r .reason)" "50%"
+assert_contains "...and that the window is an assumed one" "$(printf '%s' "$out" | jq -r .reason)" "50% of an assumed 200000-token window"
 assert_contains "...to update its handoff" "$(printf '%s' "$out" | jq -r .reason)" "START HERE"
 assert_contains "...and say ROTATE READY to its orchestrator" "$(printf '%s' "$out" | jq -r .reason)" "ROTATE READY"
 assert_contains "...named as hivehouse names it" "$(printf '%s' "$out" | jq -r .reason)" "$(hh_orchestrator_name "$r")"
@@ -57,7 +63,10 @@ SID=sB; out=$(stop "$r"); assert_eq "a new session at the level is told" "$(prin
 session "$r" implementer sC "$T_TMP/none.jsonl"; reg "$r" implementer; SID=sC; out=$(stop "$r"); assert_eq "a level that cannot be read: nothing" "$out" ""
 rm -f "$r/$T_STATE/team/implementer/session.json"; reg "$r" implementer; SID=sD; out=$(stop "$r"); assert_eq "no session recorded: nothing" "$out" ""
 jq -nc '{type:"assistant", isSidechain:false, message:{model:"claude-sonnet-5-5", usage:{input_tokens:300000, cache_read_input_tokens:0, cache_creation_input_tokens:0, output_tokens:0}}}' > "$T_TMP/big.jsonl"
-session "$r" implementer sE "$T_TMP/big.jsonl"; reg "$r" implementer; SID=sE; out=$(stop "$r"); assert_eq "tokens over a window that was only assumed are no percent: nothing" "$out" ""
+session "$r" implementer sE "$T_TMP/big.jsonl"; reg "$r" implementer; SID=sE; out=$(stop "$r"); assert_eq "tokens over a window that was only assumed are no percent: told, once" "$(printf '%s' "$out" | jq -r .decision)" "block"
+assert_contains "...saying the window cannot be read" "$(printf '%s' "$out" | jq -r .reason)" "300000 tokens"
+assert_contains "...and that it is past the window hivehouse can measure" "$(printf '%s' "$out" | jq -r .reason)" "window unknown"
+reg "$r" implementer; out=$(stop "$r"); assert_eq "...not told twice for that session" "$out" ""
 
 # the orchestrator (registered with --self, so its entry records a Claude) is told to rotate itself
 mkdir -p "$T_TMP/o"; o=$(t_repo orch); mkdir -p "$o/$T_STATE"

@@ -4,8 +4,8 @@
 # orchestrator. The level is read by hh-context, the same reading everything else uses. Silent and harmless anywhere else: every path exits 0,
 # and an unregistered session (no tmux, no registry file) is out before anything is read. It never blocks a stop it already continued.
 set -u
+[ -n "${TMUX:-}" ] && [ -n "${TMUX_PANE:-}" ] || { cat >/dev/null; exit 0; }   # before the library is read: most sessions are not in tmux
 . "$(dirname "$0")/hh-lib.sh"
-[ -n "${TMUX:-}" ] && [ -n "${TMUX_PANE:-}" ] || { cat >/dev/null; exit 0; }
 input=$(cat)
 hh_hook_session || exit 0
 [ "$(printf '%s' "$input" | jq -r '.stop_hook_active // false' 2>/dev/null)" != true ] || exit 0
@@ -16,15 +16,23 @@ dir="$HK_PROJECT/$HH_STATE_DIR/team/$HK_AGENT"; marker="$dir/rotate-asked.json"
 [ "$(hh_json_get "$dir/session.json" .session_id)" = "$sid" ] || exit 0
 v=$(HH_PROJECT="$HK_PROJECT" "$(dirname "$0")/hh-context" "$HK_AGENT" 2>/dev/null) || exit 0
 level=${v%% *}; hh_is_number "$level" || exit 0
-case "$v" in *tokens*) exit 0 ;; esac   # "250000 tokens (window unknown)" is no percent
-if [ "$level" -lt "$at" ]; then rm -f "$marker"; exit 0; fi   # below the level again: the next crossing is told
+# "250000 tokens (window unknown)": over the window hivehouse assumed, so there is no percent, and a level that cannot be read is not one
+# below the limit: the session is told, once, like any other crossing
+unknown=0; case "$v" in *"(window unknown)"*) unknown=1 ;; esac
+if [ "$unknown" = 0 ] && [ "$level" -lt "$at" ]; then rm -f "$marker"; exit 0; fi   # below the level again: the next crossing is told
 [ "$(hh_json_get "$marker" .session_id)" != "$sid" ] || exit 0   # this crossing was told already
 [ -z "$(git -C "$HK_PROJECT" ls-files -- "$HH_STATE_DIR" 2>/dev/null)" ] || exit 0
 jq -nc --arg s "$sid" --arg at "$(hh_now)" --argjson l "$level" '{session_id:$s, level:$l, at:$at}' > "$marker.tmp$$" 2>/dev/null && mv "$marker.tmp$$" "$marker" || { rm -f "$marker.tmp$$"; exit 0; }
-if [ -n "$(hh_self_entry "$HK_PROJECT" | jq -r --arg a "$HK_AGENT" 'select(.name == $a) | .name' 2>/dev/null)" ]; then
-  reason="Your context is at ${level}%, at or above the rotation level (${at}%). Finish or park the task in hand, update the START HERE block of your handoff, and run hh-self-rotate $HK_AGENT as the last act of this turn."
+if [ "$unknown" = 1 ]; then where="Your context holds ${level} tokens, past the window hivehouse can measure (window unknown), so it counts as at or above the rotation level (${at}%)."
 else
-  reason="Your context is at ${level}%, at or above the rotation level (${at}%). Finish or park the task in hand, update the START HERE block of your handoff, then send $(hh_orchestrator_name "$HK_PROJECT") the words ROTATE READY and stop: it clears you next."
+  where="Your context is at ${level}%"
+  case "$v" in *"(window assumed "*) w=${v#*"(window assumed "}; where="$where of an assumed ${w%)}-token window" ;; esac
+  where="$where, at or above the rotation level (${at}%)."
+fi
+if [ -n "$(hh_self_entry "$HK_PROJECT" | jq -r --arg a "$HK_AGENT" 'select(.name == $a) | .name' 2>/dev/null)" ]; then
+  reason="$where Finish or park the task in hand, update the START HERE block of your handoff, and run hh-self-rotate $HK_AGENT as the last act of this turn."
+else
+  reason="$where Finish or park the task in hand, update the START HERE block of your handoff, then send $(hh_orchestrator_name "$HK_PROJECT") the words ROTATE READY and stop: it clears you next."
 fi
 jq -nc --arg r "$reason" '{decision:"block", reason:$r}'
 exit 0
