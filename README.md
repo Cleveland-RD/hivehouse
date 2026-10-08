@@ -1,6 +1,6 @@
 # hivehouse
 
-A Claude Code plugin that runs a software task with a team of Claude sessions in tmux: an orchestrator, the agents the task needs, reviews and gates before anything lands, and unattended overnight runs. A hub session in your work folder hands each task to its project's orchestrator and carries your words both ways.
+A Claude Code plugin that runs a software task with a team of Claude sessions in tmux: an orchestrator, the agents the task needs, reviews and gates before anything lands, context rotation, unattended overnight runs, and cleanup afterwards. A hub session in your work folder hands each task to its project's orchestrator and carries your words both ways.
 
 Skills are instructions; every mechanical action is a tested bash executable in `bin/`.
 

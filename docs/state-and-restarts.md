@@ -3,7 +3,7 @@
 ## State
 
 - `<project>/.hivehouse/`: handoffs, team, manifest, settings, trash; excluded through the repo's `info/exclude`, never tracked.
-- `${HIVEHOUSE_HOME:-~/.hivehouse}`: per user: the registry of running teams, and the heavy-job slot unless the machine has one (below).
+- `${HIVEHOUSE_HOME:-~/.hivehouse}` (per user): the registry of running teams, and the heavy-job slot unless the machine has one (below).
 - `<project>/.hivehouse/custom/` and `${HIVEHOUSE_HOME:-~/.hivehouse}/custom/`: your own roles, rules and brief template, which an update of the plugin never replaces ([Customise hivehouse](customise.md#customise-hivehouse)).
 - The machine's heavy-job slot: one for every user, so two people's jobs queue instead of starving each other. An
   administrator makes it once, from lines `hh-slot setup` prints (`hh-slot setup <group>` on Linux): `slot/` and
