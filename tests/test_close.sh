@@ -45,6 +45,14 @@ hh-spawn --close wtagent >/dev/null 2>&1; assert_status "an agent with a worktre
 git -C "$r" rev-parse --verify -q feat-wt >/dev/null && ok "...and its branch" || bad "the branch was removed"
 assert_eq "...its worktree is still on the manifest (cleanup owns it)" "$(hh-manifest list --kind worktree | jq -r 'select(.path == "'"$T_TMP/proj-wt"'") | .path' | wc -l | tr -d ' ')" "1"
 
+# another project's registry file for an agent of the same name is not touched
+other=$(t_repo other)
+jq -nc --arg p "$other" '{project:$p, agent:"live", pane:"%77", socket:"/nonexistent", pane_pid:"1", pane_started:"x"}' > "$(hh_registry_dir)/other-project-live.json"
+hh_tmux kill-pane -t "$(paneof live)"; sleep 1
+hh-spawn --close live >/dev/null 2>&1; assert_status "an agent of the same name as another project's is closed" $? 0
+[ -f "$(hh_registry_dir)/other-project-live.json" ] && ok "...and the other project's registry file for its own is left alone" || bad "--close removed another project's registry file"
+rm -f "$(hh_registry_dir)/other-project-live.json"
+
 # the orchestrator is never closed, and a record with no identity proves nothing
 jq '.agents += [{name:"orchestrator",pane:"%1",pane_pid:"1",pane_started:"x",claude_pid:"1",claude_started:"x"}, {name:"noid",pane:"%9"}]' $T_STATE/team.json > $T_TMP/t.json && mv $T_TMP/t.json $T_STATE/team.json
 hh-spawn --close orchestrator >/dev/null 2>"$T_TMP/e"; assert_status "the orchestrator is refused" $? 4
