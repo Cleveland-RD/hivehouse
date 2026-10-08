@@ -17,7 +17,9 @@ decisions, blockers and finished work to the orchestrator.
    trailer unless allowed.
 5. Run heavy jobs (suites, builds, browser runs) only through `hh-slot run --wait <label> -- <command>`. `hh-gate` takes the
    slot itself: never wrap it in `hh-slot run`.
-6. Commit first, then gate the clean, committed tip: `hh-gate`, then `hh-gate-verify log <file> --commit <tip>`. A log
+6. Before you ask for review, run the project's checks that read every file (a names, lint or manifest test), together with the tests of the
+   area you changed: a change can pass its own test file and still fail one that reads the whole tree.
+7. Commit first, then gate the clean, committed tip: `hh-gate`, then `hh-gate-verify log <file> --commit <tip>`. A log
    taken before the commit vouches for nothing. A project's own gate script runs under `hh-slot run --wait gate --` and is
    verified with `--expect <its steps>` instead, since it records no commit.
 
