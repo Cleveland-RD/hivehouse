@@ -28,7 +28,7 @@ assert_contains "the pitch: it keeps pushes, deploys and spending for the owner"
 grep -qE '^#+ Customising what away mode allows' "$HH_REPO_ROOT/README.md" && ok "the delegate section has Customising what away mode allows" || bad "the delegate section has Customising what away mode allows"
 away=$(awk '/^#+ Customising what away mode allows/{f=1;next} /^#+ /{f=0} f' "$HH_REPO_ROOT/README.md" | tr '\n' ' ' | sed 's/  */ /g')
 for w in '--remote-allow' '--allow' 'sudo' 'by hand' 'settings'; do assert_contains "Customising what away mode allows mentions $w" "$away" "$w"; done
-assert_contains "the delegate file's version 2 is described" "$RD" "Line 1 is \`hivehouse-delegate 2\`"
+assert_contains "the delegate file's version 2 is described" "$RD" "Line 1 is \`$T_DELEGATE_LINE2\`"
 assert_contains "...with its two allowance lines" "$RD" "\`hosts=<list>\`"
 assert_contains "...and version 1 is still read" "$RD" "is still read, with no hosts and no allowed words"
 assert_contains "...and a file is exactly the lines of its version" "$RD" "exactly the lines of its version (four for version 1, six for version 2)"
