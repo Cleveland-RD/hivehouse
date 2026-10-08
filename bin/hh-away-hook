@@ -87,7 +87,7 @@ PROJ_REAL=$(cd -P "$HH_PROJECT" 2>/dev/null && pwd -P) || PROJ_REAL=""   # a pro
 allow=${HH_AWAY_MCP_ALLOW-}
 
 mcp_check() {
-  local e
+  local e es
   IFS=, read -ra es <<< "$allow"
   for e in ${es[@]+"${es[@]}"}; do
     e=${e// /}; [ -n "$e" ] || continue
@@ -103,7 +103,7 @@ mcp_check() {
 # is the tools= line of the root-owned delegate file, read the way ssh_gate reads hosts=: never from the session's env, which it could not have set
 # for itself anyway. A file that is missing, invalid, or names another hub grants none. (CronCreate and ScheduleWakeup are not in the matcher at all.)
 tool_check() {
-  local e
+  local e es
   hh_delegate_mine && [ "$HH_DG_HUB" = "$HUB" ] || deny "$tool is not allowed while the owner is away (no valid delegate file for this hub; the owner chooses extra tools with hh-hub away --tools)"
   IFS=, read -ra es <<< "$HH_DG_TOOLS"
   for e in ${es[@]+"${es[@]}"}; do [ "$tool" = "$e" ] && return 0; done

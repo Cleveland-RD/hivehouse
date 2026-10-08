@@ -33,6 +33,7 @@ for w in '--remote-allow' '--allow' 'sudo' 'by hand' 'settings'; do assert_conta
 assert_contains "the delegate file's version 3 is described" "$RD" "Line 1 is \`$T_DELEGATE_LINE3\`"
 assert_contains "...with its allowance lines" "$RD" "\`hosts=<list>\`"
 assert_contains "...and the tools line" "$RD" "\`tools=<list>\`"
+assert_contains "the switching-on usage line names --tools" "$(grep '^\*\*Switching it on and off.\*\*' "$HH_REPO_ROOT/docs/away-mode.md")" "[--tools <list>]"
 assert_contains "...and version 1 is still read" "$RD" "is still read, with no hosts"
 assert_contains "...and a file is exactly the lines of its version" "$RD" "exactly the lines of its version (four for version 1, six for version 2, seven for version 3)"
 assert_eq "...and no longer says the file is exactly four lines" "$(printf '%s' "$RD" | grep -c 'exactly those four lines')" 0

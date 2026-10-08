@@ -7,7 +7,7 @@ t_setup
 proj=$(t_repo proj); hub="$T_TMP/hub"; mkdir -p "$hub/$T_HUB" "$proj/$T_STATE"
 other=$(t_repo other); mkdir -p "$other/$T_STATE"
 # Stand-ins for Claude sessions: an interpreter running a script named claude (what hh_is_claude reads as one).
-mkdir -p "$T_TMP/cl"; printf '#!/usr/bin/env bash\nfor i in $(seq 120); do sleep 1; done\n' > "$T_TMP/cl/claude"
+mkdir -p "$T_TMP/cl"; printf '#!/usr/bin/env bash\nfor i in $(seq 600); do sleep 1; done\n' > "$T_TMP/cl/claude"
 SP=""; SS=""
 spawn() {  # spawn <session name or empty>: sets SP (pid) and SS (start time); records the session as Claude Code does
   bash "$T_TMP/cl/claude" & SP=$!; t_track "$SP"; sleep 0.2; SS=$(hh_lstart "$SP")
@@ -641,6 +641,7 @@ denied "ssh-keygen -R edits known_hosts" "ssh-keygen -R night.example.org"
 denied "...also with the options first" "ssh-keygen -q -R night.example.org"
 denied "ssh-keygen -f into ~/.ssh" "ssh-keygen -t ed25519 -f ~/.ssh/id_x"
 allowed "ssh-keygen -l of a key in the project is a read" "ssh-keygen -l -f $proj/key.pub"
+assert_eq "mcp_check and tool_check keep their list in a local es" "$(grep -cE '^  local .*[ ]es([ ]|$)' "$HH_REPO_ROOT/bin/hh-away-hook")" 2
 echo "-- KI-25: the extra tools pass only when the owner's delegate file lists them (hh-hub away --tools)"
 TOOLS="Workflow WebFetch DesignSync ArtifactCheck PushNotification"
 tcall() { jq -nc --arg t "$1" '{tool_name:$t,cwd:"/",tool_input:{}}'; }
