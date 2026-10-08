@@ -55,7 +55,7 @@ set_project '{"allow_attributon":false}'; hh-settings resolve allow_attribution 
 set_project '{not json'; hh-settings resolve files_per_commit 5 >/dev/null 2>&1; assert_status "bad json refused" $? 4
 hh-settings resolve >/dev/null 2>&1; assert_status "usage" $? 64
 
-# KI-36: a skill's ${user_config.X} can reach a session unfilled; `option` turns that into plugin.json's default, a saved value passes unchanged
+# a skill's ${user_config.X} can reach a session unfilled; `option` turns that into plugin.json's default, a saved value passes unchanged
 PL="$HH_REPO_ROOT/.claude-plugin/plugin.json"
 opt() { hh-settings option "$@" 2>/dev/null; }
 def() { jq -r --arg k "$1" '.userConfig[$k].default | tostring' "$PL"; }

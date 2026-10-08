@@ -20,7 +20,7 @@ r2=$(t_repo proj2); r3=$(t_repo proj3)
 wait $bg
 sleep 30 & p=$!; hh-slot acquire server --pid $p; assert_contains "acquired for pid" "$(hh-slot status)" "\"pid\":$p"
 assert_contains "acquired holder has a start time" "$(hh-slot status)" '"lstart":"'
-# A22: release needs the holder's own pid
+# release needs the holder's own pid
 hh-slot release --pid $$ 2>/dev/null; assert_status "release with the wrong pid is refused" $? 4
 [ -d "$LOCK" ] && ok "the lock is left in place" || bad "the lock is left in place"
 hh-slot release --pid $p --label other 2>/dev/null; assert_status "release with the wrong label is refused" $? 4
@@ -45,7 +45,7 @@ rm -rf "$LOCK"
 # kill -9 of hh-slot run frees the slot (its child may still run): documented behaviour
 hh-slot run nine -- sleep 3 & k=$!; sleep 0.5; kill -9 $k; wait $k 2>/dev/null
 assert_eq "kill -9 of run frees the slot" "$(hh-slot status)" "free"
-# A2/A17: exactly one winner, 20 rounds each
+# exactly one winner, 20 rounds each
 race() {  # race <n contenders> <stale|fresh> : prints the number of contenders that ran their command
   local n="$1" mode="$2" f="$T_TMP/won" i s
   rm -f "$f" "$T_TMP/won.1"; rm -rf "$LOCK" "$LOCK.takeover"

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# hh-spawn --respawn <n> --mode <m> (only a stricter mode than the recorded one, A11) and --respawn <n> --resume (the agent's
+# hh-spawn --respawn <n> --mode <m> (only a stricter mode than the recorded one) and --respawn <n> --resume (the agent's
 # recorded session is resumed and it is typed the short restart line, not the pickup line; no recorded session: today's respawn).
 . "$(dirname "$0")/lib.sh"
 . "$HH_REPO_ROOT/bin/hh-lib.sh"

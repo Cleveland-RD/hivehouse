@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# A1: every executable that needs a project, run outside any repository with no HH_PROJECT, exits 2 and writes nothing.
+# every executable that needs a project, run outside any repository with no HH_PROJECT, exits 2 and writes nothing.
 # The ones that do not need a project say so here: hh-slot and hh-disk work anywhere (the slot is machine-wide), and the
 # SessionStart hook never fails a session, so it exits 0 and stays silent.
 . "$(dirname "$0")/lib.sh"

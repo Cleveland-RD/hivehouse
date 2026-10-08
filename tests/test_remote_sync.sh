@@ -223,7 +223,7 @@ for RSH in /bin/bash /bin/zsh; do
   assert_contains "...in the mode it was given" "$sl" "--mode\\ auto"
   [ -z "$pane" ] || assert_eq "...and the new window stays after its process exits, so a start that dies shows its error" "$(tmux -S "$HH_TMUX_SOCKET" show-options -w -v -t "$pane" remain-on-exit 2>&1)" "on"
 done
-# a worktree: created on its branch by the remote hh-spawn, the agent runs in it, and the folder-trust warning (KI-7) comes back
+# a worktree: created on its branch by the remote hh-spawn, the agent runs in it, and the folder-trust warning comes back
 ag=impl2; mkdir -p "$rra/$T_STATE/team/$ag"; echo role > "$rra/$T_STATE/team/$ag/role.md"; echo rules > "$rra/$T_STATE/team/$ag/RULES.md"
 rm -f "$CLAUDE_CONFIG_DIR/.claude.json"; : > "$HH_FAKE_LOG"
 out=$(SHELL=/bin/bash sync start-agent testhost "$rra" "$ag" --model m --effort medium --mode auto --worktree "$T_TMP/wt-agent" --branch feat/wt --base main 2>&1); assert_status "start-agent with a worktree" $? 0
