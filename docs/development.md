@@ -9,8 +9,7 @@ that is not available.
 
 Before asking for review, run `tests/test_names.sh` together with the tests of the area you changed. It reads every file in
 `bin/`, `hooks/` and `tests/` for a folder, path or command name spelled outside its constants, so a change that passes its
-own test file can still fail it: 0.5.3's first full suite went red on two literal folder names a branch had never tested
-against it.
+own test file can still fail it.
 
 ## Evals
 
