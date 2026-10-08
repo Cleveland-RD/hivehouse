@@ -39,14 +39,14 @@ canon() {  # canon <path> <cwd>: absolute, ~ and $HOME expanded, dot segments co
 # P_WHY is why the last path asked about is refused (set by protected_one and protected): the refusal says it.
 P_WHY="Claude Code's settings, hook and plugin files cannot be changed from an away session"
 protected_one() {  # protected_one <canonical path>: 0 when Claude Code's settings, hook files, plugins or MCP config, the hub's records or a team.json
-  local p="$1" b="${1##*/}" d="${1%/*}" c
+  local p="$1" b="${1##*/}" d="${1%/*}" c h r
   P_WHY="Claude Code's settings, hook and plugin files cannot be changed from an away session"
-  c=$(canon "$CONF" /); h=$(canon "$HOME" /)
+  fs_init; c=$PC; h=$PH
   [ "$p" = "$h/.claude.json" ] || [ "$p" = "$c/.claude.json" ] && return 0
   case "$b" in settings*.json) { [ "$d" = "$c" ] || [ "${d##*/}" = .claude ]; } && return 0 ;; esac
   case "$b" in .mcp.json|hooks.json) return 0 ;; esac
   case "$p" in "$c/plugins"|"$c/plugins/"*|"$c/hooks"|"$c/hooks/"*|*/.claude/hooks/*) return 0 ;; esac
-  [ -z "${CLAUDE_PLUGIN_ROOT:-}" ] || { r=$(canon "$CLAUDE_PLUGIN_ROOT" /); case "$p" in "$r"|"$r/"*) return 0 ;; esac; }
+  [ -z "$PR" ] || { r=$PR; case "$p" in "$r"|"$r/"*) return 0 ;; esac; }
   # the hub's records (hub.json is the identity away_hub_caller checks and the hub a SendMessage resolves by pid; projects.json lists what
   # may get bypass): only the hub's own session writes them, and any other marked session is refused
   if [ "$PROJ_REAL" != "$HUB" ]; then
@@ -57,7 +57,19 @@ protected_one() {  # protected_one <canonical path>: 0 when Claude Code's settin
   case "$p" in "$h/.ssh"|"$h/.ssh/"*) P_WHY="ssh's folder (~/.ssh: keys, known hosts, config) cannot be changed from an away session"; return 0 ;; esac
   # a team.json names every agent's process: hivehouse's own scripts write it from their code, never a session's tools (the hub's too)
   case "$p" in */"$HH_STATE_DIR"/team.json) P_WHY="a team's team.json is written by hivehouse's own scripts, never through a session's tools"; return 0 ;; esac
+  # a team's agent folders (session.json feeds the resume of a woken session; context.json and rotate-asked.json steer the Stop hook): agents only read
+  # there, hivehouse's own scripts write it, and the handoffs folder stays writable
+  case "$p" in */"$HH_STATE_DIR"/team|*/"$HH_STATE_DIR"/team/*) P_WHY="a team's agent folders (${HH_STATE_DIR}/team) are written by hivehouse's own scripts, never through a session's tools"; return 0 ;; esac
   return 1
+}
+PC=""; PH=""; PR=""; FS_ROOTS=()
+fs_init() {  # the canonical config dir, home and plugin root, and the fixed roots a rm, mv or copy may not be at or above: resolved once per call
+  [ -z "$PC" ] || return 0
+  PC=$(canon "$CONF" /); PH=$(canon "$HOME" /)
+  [ -z "${CLAUDE_PLUGIN_ROOT:-}" ] || PR=$(canon "$CLAUDE_PLUGIN_ROOT" /)
+  FS_ROOTS=("$PC" "$PH/.claude" "$PH/.claude.json" "$PH/.ssh" "$HUB/$HH_HUB_DIR")
+  [ -z "$PR" ] || FS_ROOTS+=("$PR")
+  [ -z "$PROJ_REAL" ] || FS_ROOTS+=("$PROJ_REAL/$HH_STATE_DIR" "$PROJ_REAL/.claude")
 }
 protected() {  # protected <path> <cwd>: the path itself, and where its links lead (a write goes to the target); a link loop counts
   local a l n=0
@@ -71,6 +83,90 @@ protected() {  # protected <path> <cwd>: the path itself, and where its links le
   done
   [ ! -L "$a" ] || return 0
   return 1
+}
+
+# A14: rm, mv and the destinations of cp, install and ln are held to "is or holds a protected path": the path itself (protected), a path at or
+# above a fixed protected root (rm -rf ~/.claude, mv . x), a folder named .claude or .hivehouse, and, for a copy or move of a folder, every file of
+# its tree mapped to where it lands (<dest>/<rel> and <dest>/<name of the source>/<rel>: BSD and GNU differ). A destination that is a folder, or ends
+# in a slash, also gets <dest>/<name of each source> checked.
+FS_TREE_MAX=3000
+fs_hit() {  # fs_hit <path> <cwd>: 0 when the path is, or holds, a protected path (P_WHY says why)
+  local a b r l n=0
+  protected "$1" "$2" && return 0
+  fs_init
+  a=$(canon "$1" "$2")
+  while :; do
+    b=${a##*/}
+    case "$b" in .claude|.hivehouse) P_WHY="a folder named $b holds Claude Code's or hivehouse's protected files and cannot be removed, moved or copied over from an away session"; return 0 ;; esac
+    for r in ${FS_ROOTS[@]+"${FS_ROOTS[@]}"}; do
+      if [ "$a" = "$r" ] || [ "$a" = / ]; then :; else case "$r" in "$a/"*) ;; *) continue ;; esac; fi
+      P_WHY="$a is, or holds, Claude Code's settings, plugin, ssh or hivehouse's protected files, so it cannot be removed, moved or copied over from an away session"; return 0
+    done
+    [ -L "$a" ] && [ "$n" -lt 8 ] || break
+    l=$(readlink "$a") || return 0
+    case "$l" in /*) ;; *) l="${a%/*}/$l" ;; esac
+    a=$(canon "$l" /); n=$((n + 1))
+  done
+  return 1
+}
+fs_tree() {  # fs_tree <source> <dest> <cwd> <command>: every file under a source folder, where it would land under the destination
+  local a d sb out rc f rel cnt
+  a=$(canon "$1" "$3"); [ -d "$a" ] || return 0
+  d=$(canon "$2" "$3"); sb=${a##*/}
+  out=$(find "$a" ! -type d 2>/dev/null | head -n $((FS_TREE_MAX + 1)); exit "${PIPESTATUS[0]}"); rc=$?
+  cnt=$(printf '%s' "$out" | grep -c '^' || true)
+  [ "$cnt" -le "$FS_TREE_MAX" ] || deny "$4 of a folder with more than $FS_TREE_MAX files cannot be checked while the owner is away"
+  [ "$rc" -eq 0 ] || deny "$4 of a folder the hook cannot read all of cannot be checked while the owner is away"
+  while IFS= read -r f; do
+    [ -n "$f" ] || continue
+    rel=${f#"$a"/}
+    protected_one "$d/$rel" && deny "$4 would put $rel under $2, a protected path: $P_WHY"
+    protected_one "$d/$sb/$rel" && deny "$4 would put $sb/$rel under $2, a protected path: $P_WHY"
+  done <<EOF
+$out
+EOF
+}
+fs_write_check() {  # fs_write_check <command> <cwd> <word>...: the words after rm, mv, cp, install or ln
+  local cmd=$1 cwd=$2 w ddash="" tflag="" tdir="" link="" n d dest src
+  local -a ops=() srcs=()
+  shift 2
+  for w in "$@"; do
+    if [ -n "$tflag" ]; then tdir=$w; tflag=""; continue; fi
+    if [ -z "$ddash" ]; then
+      case "$w" in
+        --) ddash=1; continue ;;
+        --target-directory=*) tdir=${w#*=}; continue ;;
+        --target-directory) tflag=1; continue ;;
+        --link|--symbolic-link) link=1; continue ;;
+        --*) continue ;;
+        -t?*) tdir=${w#-t}; continue ;;
+        -*t) tflag=1; continue ;;
+        -*) [ "$cmd" != cp ] || case "${w#-}" in *l*|*s*) link=1 ;; esac; continue ;;
+      esac
+    fi
+    ops+=("$w")
+  done
+  n=${#ops[@]}
+  if [ -n "$tdir" ]; then dest=$tdir; srcs=(${ops[@]+"${ops[@]}"})
+  elif [ "$cmd" = rm ]; then dest=""; srcs=(${ops[@]+"${ops[@]}"})
+  elif [ "$n" -ge 2 ]; then dest=${ops[$((n - 1))]}; srcs=("${ops[@]:0:$((n - 1))}")
+  else dest=""; srcs=(${ops[@]+"${ops[@]}"}); fi
+  for src in ${srcs[@]+"${srcs[@]}"}; do
+    case "$cmd" in
+      rm|mv) fs_hit "$src" "$cwd" && deny "$cmd refused: $P_WHY" ;;
+      *) if [ "$cmd" != cp ] || [ -n "$link" ]; then protected "$src" "$cwd" && deny "$cmd refused: $P_WHY"; fi ;;   # a plain cp only reads its sources
+    esac
+  done
+  [ -n "$dest" ] || return 0
+  fs_hit "$dest" "$cwd" && deny "$cmd refused: $P_WHY"
+  d=$(canon "$dest" "$cwd")
+  for src in ${srcs[@]+"${srcs[@]}"}; do
+    if [ -n "$tdir" ] || [ -d "$d" ] || [ "${dest%/}" != "$dest" ]; then
+      fs_hit "${dest%/}/$(basename "$src")" "$cwd" && deny "$cmd refused: ${dest%/}/$(basename "$src") would land on a protected path ($P_WHY)"
+    fi
+    [ "$cmd" = ln ] || fs_tree "$src" "$dest" "$cwd" "$cmd"
+  done
+  return 0
 }
 
 # --- inputs
@@ -444,15 +540,18 @@ bash_text() {  # bash_text <command text> <cwd>: the rules for a command; a scri
     ws=($seg)                                  # whitespace tokens, "name=value" kept whole
     toks=(${seg//=/ })                         # A32 tokens
     # the command word: past wrappers, their options, numbers after them and "name=value" prefixes
-    first=""; wr=""
+    first=""; wr=""; xa=""
     for tok in ${ws[@]+"${ws[@]}"}; do
       case "$tok" in *=*) [ -z "$first" ] && continue ;; esac
+      [ "$(bn "$tok")" != xargs ] || xa=1
       case "$WRAPPERS" in *" $tok "*) wr=1; continue ;; esac
       case "$tok" in -*) continue ;; esac
       if [ -n "$wr" ]; then case "$tok" in ''|*[!0-9]*) ;; *) continue ;; esac; fi
       first=$tok; break
     done
     fb=$(bn "$first")
+    # A15: xargs takes its arguments from a file or a pipe the hook cannot read first, so it passes only with a command that just reads
+    if [ -n "$xa" ]; then case " cd cat grep jq wc head tail sort uniq  " in *" $fb "*) ;; *) deny "xargs runs ${fb:-a command} with arguments the hook cannot read first, which is not allowed while the owner is away (only a reader: cat, grep, head, wc, ...)" ;; esac; fi
     for tok in ${toks[@]+"${toks[@]}"}; do
       case "$(bn "$tok")" in
         git) have_git=1 ;;
@@ -482,7 +581,7 @@ bash_text() {  # bash_text <command text> <cwd>: the rules for a command; a scri
         if [ -z "$hs" ]; then hs=$tok; else hn=$((hn + 1)); fi
       done
       case "$hs" in
-        rotate|self|context) [ "$PROJ_REAL" = "$HUB" ] || deny "hh-hub $hs belongs to the hub's own session (it types into or records the hub's pane), so no other away session may run it" ;;
+        rotate|self|context|window) [ "$PROJ_REAL" = "$HUB" ] || deny "hh-hub $hs belongs to the hub's own session (it types into or records the hub's pane), so no other away session may run it" ;;
         start) [ "$hn" -gt 0 ] || deny "hh-hub start with no arguments starts or attaches a hub, which is starting a session by hand and is not allowed from an away session (hh-hub start <project> <id> is)" ;;
       esac
     fi
@@ -545,7 +644,15 @@ bash_text() {  # bash_text <command text> <cwd>: the rules for a command; a scri
       [ -n "$kf$kro" ] || deny "ssh-keygen without -f would make a key at its default path under ~/.ssh, which cannot be changed from an away session"
     fi
     # a write into a protected file by a command that writes
-    case "$cmdw" in ssh-keygen|tee|cp|mv|rm|ln|install|dd|sed|perl|python|python3|node|ruby|truncate|touch|chmod|chown|patch|sponge|scp|sftp|rsync) has_write=1 ;; esac
+    case "$cmdw" in cp|mv|rm|ln|install)   # A14: the words after the command word
+      nx=""; seen=""; local -a fw=()
+      for tok in ${ws[@]+"${ws[@]}"}; do
+        [ -n "$seen" ] || { case "$tok" in *=*) continue ;; esac; [ "$(bn "$tok")" != "$cmdw" ] || seen=1; continue; }
+        fw+=("$tok")
+      done
+      fs_write_check "$cmdw" "$cwd" ${fw[@]+"${fw[@]}"} ;;
+    esac
+    case "$cmdw" in ssh-keygen|tee|dd|sed|perl|python|python3|node|ruby|truncate|touch|chmod|chown|patch|sponge|scp|sftp|rsync) has_write=1 ;; esac
     [ -z "$kro" ] || has_write=""
     if [ -n "$has_write" ]; then
       for tok in ${toks[@]+"${toks[@]}"}; do

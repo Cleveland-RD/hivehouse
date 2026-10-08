@@ -646,17 +646,17 @@ allowed "cheap: ssh-keygen -f into the project makes a key there" "ssh-keygen -t
 
 echo "-- the marked hub's own commands (A9), ssh-keygen -R, and a decision text that names tmux"
 ROLE=hub
-for c in "hh-hub rotate" "hh-hub rotate --still 15 --max 900 --settle 8" "hh-hub rotate --max 900" "hh-hub self" "hh-hub self --name hub1" "hh-hub self --window 1000000" "hh-hub self --name hub1 --window 200000" "hh-hub context" "hh-hub context --window 200000"; do
+for c in "hh-hub rotate" "hh-hub rotate --still 15 --max 900 --settle 8" "hh-hub rotate --max 900" "hh-hub self" "hh-hub self --name hub1" "hh-hub self --window 1000000" "hh-hub self --name hub1 --window 200000" "hh-hub context" "hh-hub context --window 200000" "hh-hub window proj orchestrator 1000000"; do
   allowed "the marked hub runs: $c" "$c"
 done
 echo "-- the hub's own commands are the hub's alone (final review): an agent can type into the hub's prompt with rotate, re-record it with self, and start a hub with start"
 ROLE=proj
-for c in "hh-hub rotate" "hh-hub rotate --still 15 --max 900 --settle 8" "hh-hub self" "hh-hub self --name hub1" "hh-hub self --window 1000000" "hh-hub context" "hh-hub context --window 200000" \
+for c in "hh-hub rotate" "hh-hub rotate --still 15 --max 900 --settle 8" "hh-hub self" "hh-hub self --name hub1" "hh-hub self --window 1000000" "hh-hub context" "hh-hub context --window 200000" "hh-hub window proj orchestrator 1000000" "hh-hub window proj implementer 500000" \
          "env hh-hub rotate" "timeout 5 hh-hub rotate" "cd $proj && hh-hub rotate" "hh-slot run x -- hh-hub self"; do
   denied "a project's session may not run: $c" "$c"
   assert_contains "...and the refusal says it is the hub's own" "$ERR" "hub's own session"
 done
-for c in "hh-hub rotate" "hh-hub self --name hub1" "hh-hub context --window 200000"; do ROLE=hub; allowed "the hub still runs: $c" "$c"; ROLE=other; denied "another project's session may not run: $c" "$c"; done
+for c in "hh-hub rotate" "hh-hub self --name hub1" "hh-hub context --window 200000" "hh-hub window proj orchestrator 1000000"; do ROLE=hub; allowed "the hub still runs: $c" "$c"; ROLE=other; denied "another project's session may not run: $c" "$c"; done
 for r in proj hub other; do
   ROLE=$r
   denied "hh-hub start with no arguments is refused ($r)" "hh-hub start"
@@ -715,6 +715,47 @@ else
   hh_delegate_read "$DGF" "$(id -u)" "$NOW" >/dev/null 2>&1; echo "  SKIP the fixture folder is not eligible here: $HH_DELEGATE_WHY"
 fi
 
+echo "-- A14: a write operand that is or holds a protected path (rm, mv, cp, install, ln); A13: the team/ subtree"
+scr="$proj/scr"; mkdir -p "$scr/sub" "$proj/$T_STATE/team/impl"; : > "$scr/settings.json"; : > "$scr/team.json"; : > "$scr/plain.txt"; : > "$scr/sub/.mcp.json"
+mkdir -p "$T_TMP/anydir" "$T_TMP/src2" "$T_TMP/build"; : > "$T_TMP/src2/a.txt"
+phook() {  # phook <json> [plugin root]: as hook(), with the plugin root set, or unset when none is given
+  ERR=$(printf '%s' "$1" | env -u CLAUDE_PLUGIN_ROOT ${2:+CLAUDE_PLUGIN_ROOT="$2"} HH_AWAY_BYPASS=1 HH_PROJECT="$proj" HH_AWAY_HUB="$hub" HH_AWAY_MCP_ALLOW= "$HOOK" 2>&1 >/dev/null); RC=$?
+}
+pdenied()  { phook "$(tc "$2")" "${3:-}"; [ "$RC" -eq 2 ] && [ -n "$ERR" ] && ok "$1" || bad "$1: exit $RC [$ERR]"; }
+pallowed() { phook "$(tc "$2")" "${3:-}"; [ "$RC" -eq 0 ] && ok "$1" || bad "$1: exit $RC [$ERR]"; }
+for c in 'cp scr/settings.json ~/.claude/' 'cp -R scr/ ~/.claude' 'mv scr/settings.json ~/.claude/' "cp scr/team.json $T_STATE/" 'cp -l ~/.claude/settings.json scr/s' 'cp --link ~/.claude/settings.json scr/s' 'cp -s ~/.claude/settings.json scr/s' \
+  'rm -rf ~/.claude' 'mv ~/.claude ~/old' 'mv .claude old' "rm -rf $T_STATE" "mv $T_STATE x" 'rm -rf .' 'mv . x' 'cp -R scr/ anydir' "cp -R scr $T_TMP/anydir" 'cp -t ~/.claude scr/plain.txt' 'cp --target-directory=~/.claude scr/plain.txt' \
+  'install scr/plain.txt ~/.claude/' 'ln scr/plain.txt ~/.claude/' 'ln -s scr/plain.txt ~/.claude/' "cp scr/plain.txt $T_STATE/team/impl/" "mv scr/plain.txt $T_STATE/team/impl/" 'cp -R scr/ .claude' 'rm -rf ~/.ssh' 'mv scr/plain.txt ~/.ssh/' "cp -R scr $CD/"; do
+  pdenied "A14 refused, plugin root unset: $c" "$c"
+  pdenied "A14 refused, plugin root set: $c" "$c" "$PROOT"
+done
+pdenied "A14 rm -rf the parent of the plugin root" "rm -rf ${PROOT%/*}" "$PROOT"
+pdenied "A14 rm -rf the plugin root" "rm -rf $PROOT" "$PROOT"
+pdenied "A16 cp -l of a protected file into a plugin-root-free path" "cp -l ~/.claude/settings.json $T_TMP/s" ""
+pallowed "A4 cp of a plugin file to scratch is a read" "cp $PROOT/bin/x scr/x" "$PROOT"
+pallowed "A4 cp of a plugin file to scratch is a read (plugin root unset)" "cp $PROOT/bin/x scr/x"
+pallowed "A14 cp -R src/ build/ (nothing protected in it)" "cp -R $T_TMP/src2/ $T_TMP/build/"
+pallowed "A14 rm scr/x" 'rm scr/x'
+pallowed "A14 cp plain to scratch" 'cp scr/plain.txt scr/y.txt'
+pallowed "A14 mv plain in scratch" 'mv scr/plain.txt scr/z.txt'
+wt="$T_TMP/wtroot"; mkdir -p "$wt/$T_STATE/team/impl"   # a worktree team root: its own .hivehouse/team is protected too
+denied "A13 a redirect into a worktree team root's team/" "echo x > $wt/$T_STATE/team/impl/session.json"
+tool_denied "A13 a worktree team root's team/ (Write)" "$(fileop Write "$wt/$T_STATE/team/impl/context.json")"
+denied "A14 rm -rf a worktree team root's state folder" "rm -rf $wt/$T_STATE"
+for f in session.json context.json rotate-asked.json statusline.json; do
+  tool_denied "A13 Write team/impl/$f" "$(fileop Write "$proj/$T_STATE/team/impl/$f")"
+  denied "A13 redirect into team/impl/$f" "echo x > $T_STATE/team/impl/$f"
+done
+tool_allowed "A13 handoffs stay writable" "$(fileop Write "$proj/$T_STATE/handoffs/impl.md")"
+allowed "A13 team/ is readable" "cat $T_STATE/team/impl/context.json"
+echo "-- A15: xargs passes only with a reader; the arguments it is fed cannot be read first"
+ROLE=proj
+for c in 'xargs git < scr/plain.txt' 'xargs tmux < scr/plain.txt' 'xargs npm < scr/plain.txt' 'xargs curl < scr/plain.txt' 'xargs rm < scr/plain.txt' 'xargs -n 1 git < scr/plain.txt' 'echo "push origin main" | xargs git' 'ls | xargs -I {} git {}' 'sudo xargs hh-hub self'; do
+  denied "A15 refused: $c" "$c"
+done
+for c in 'xargs cat < scr/plain.txt' 'ls | xargs grep foo' 'ls | xargs -n 1 wc -l' 'git ls-files | xargs head -3'; do
+  allowed "A15 a reader passes: $c" "$c"
+done
 echo "-- the env the Bash tool sees does not matter"
 r=$(printf '%s' "$(tc 'git push')" | HH_AWAY_BYPASS=1 HH_PROJECT="$other" HH_AWAY_HUB="$hub" HH_AWAY_MCP_ALLOW= "$HOOK" 2>&1 >/dev/null); assert_status "any project in the env: still refused" $? 2
 
