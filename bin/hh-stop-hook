@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+# Stop hook. A session hivehouse registered (an agent, or the --self orchestrator) that has reached the plugin's rotation level is told, once
+# for each crossing of it, to update its handoff and rotate: an orchestrator runs hh-self-rotate, an agent says ROTATE READY to its
+# orchestrator. The level is read by hh-context, the same reading everything else uses. Silent and harmless anywhere else: every path exits 0,
+# and an unregistered session (no tmux, no registry file) is out before anything is read. It never blocks a stop it already continued.
+set -u
+. "$(dirname "$0")/hh-lib.sh"
+[ -n "${TMUX:-}" ] && [ -n "${TMUX_PANE:-}" ] || { cat >/dev/null; exit 0; }
+input=$(cat)
+hh_hook_session || exit 0
+[ "$(printf '%s' "$input" | jq -r '.stop_hook_active // false' 2>/dev/null)" != true ] || exit 0
+sid=$(printf '%s' "$input" | jq -r '.session_id // empty' 2>/dev/null); [ -n "$sid" ] || exit 0
+at=${CLAUDE_PLUGIN_OPTION_ROTATE_AT_PERCENT:-50}; hh_is_number "$at" && [ "$at" -gt 0 ] || exit 0
+dir="$HK_PROJECT/$HH_STATE_DIR/team/$HK_AGENT"; marker="$dir/rotate-asked.json"
+# only the recorded session's own reading: a record of another session would be read as this one's
+[ "$(hh_json_get "$dir/session.json" .session_id)" = "$sid" ] || exit 0
+v=$(HH_PROJECT="$HK_PROJECT" "$(dirname "$0")/hh-context" "$HK_AGENT" 2>/dev/null) || exit 0
+level=${v%% *}; hh_is_number "$level" || exit 0
+case "$v" in *tokens*) exit 0 ;; esac   # "250000 tokens (window unknown)" is no percent
+if [ "$level" -lt "$at" ]; then rm -f "$marker"; exit 0; fi   # below the level again: the next crossing is told
+[ "$(hh_json_get "$marker" .session_id)" != "$sid" ] || exit 0   # this crossing was told already
+[ -z "$(git -C "$HK_PROJECT" ls-files -- "$HH_STATE_DIR" 2>/dev/null)" ] || exit 0
+jq -nc --arg s "$sid" --arg at "$(hh_now)" --argjson l "$level" '{session_id:$s, level:$l, at:$at}' > "$marker.tmp$$" 2>/dev/null && mv "$marker.tmp$$" "$marker" || { rm -f "$marker.tmp$$"; exit 0; }
+if [ -n "$(hh_self_entry "$HK_PROJECT" | jq -r --arg a "$HK_AGENT" 'select(.name == $a) | .name' 2>/dev/null)" ]; then
+  reason="Your context is at ${level}%, at or above the rotation level (${at}%). Finish or park the task in hand, update the START HERE block of your handoff, and run hh-self-rotate $HK_AGENT as the last act of this turn."
+else
+  reason="Your context is at ${level}%, at or above the rotation level (${at}%). Finish or park the task in hand, update the START HERE block of your handoff, then send $(hh_orchestrator_name "$HK_PROJECT") the words ROTATE READY and stop: it clears you next."
+fi
+jq -nc --arg r "$reason" '{decision:"block", reason:$r}'
+exit 0

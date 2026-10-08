@@ -496,6 +496,33 @@ hh_handoff_path() {  # hh_handoff_path <project root> <agent>
   case "$p" in /*) hh_is_typed_path "$p" && { printf '%s\n' "$p"; return 0; } ;; esac
   printf '%s/%s/handoffs/%s.md\n' "$1" "$HH_STATE_DIR" "$2"
 }
+# The hooks' one question: is this process the Claude hivehouse registered for the tmux pane it runs in? The project and agent come from the
+# registry hh-spawn wrote, never from the cwd. 0 with HK_PROJECT and HK_AGENT set; 1 otherwise, and nothing is said. The registry file must
+# still describe THIS pane: a restarted tmux server hands out pane ids again, and a file with no identity (an older format) proves nothing.
+# Another pane, or no identity, removes the stale file; a tmux that cannot answer proves nothing either way, so the file stays. The nearest
+# Claude above the caller must be the recorded one (--self recorded the Claude that called it, the pane's own process being the owner's
+# shell; a spawned agent's pane runs claude itself, so its pane process is the record). A recorded Claude that is gone makes the file
+# stale and it is removed. One that is alive but is not the nearest is a nested run (a `claude -p` from the agent's own Bash, which
+# inherits the pane): nothing is written and the file stays, for the session it belongs to. /clear keeps the process.
+HK_PROJECT=""; HK_AGENT=""
+hh_hook_session() {
+  local socket reg same cpid cstart anc
+  HK_PROJECT=""; HK_AGENT=""
+  [ -n "${TMUX:-}" ] && [ -n "${TMUX_PANE:-}" ] || return 1
+  socket="${TMUX%%,*}"
+  reg="$(hh_registry_dir)/$(hh_pane_key "$socket" "$TMUX_PANE").json"
+  [ -f "$reg" ] || return 1
+  HK_PROJECT=$(hh_json_get "$reg" .project); HK_AGENT=$(hh_json_get "$reg" .agent)
+  [ -n "$HK_PROJECT" ] && [ -n "$HK_AGENT" ] && [ -d "$HK_PROJECT" ] || { HK_PROJECT=""; HK_AGENT=""; return 1; }
+  hh_pane_is "$socket" "$TMUX_PANE" "$(hh_json_get "$reg" .pane_pid)" "$(hh_json_get "$reg" .pane_started)"; same=$?
+  [ "$same" -ne 2 ] || { HK_PROJECT=""; HK_AGENT=""; return 1; }
+  [ "$same" -eq 0 ] || { rm -f "$reg"; HK_PROJECT=""; HK_AGENT=""; return 1; }
+  cpid=$(hh_json_get "$reg" .claude_pid); cstart=$(hh_json_get "$reg" .claude_started)
+  [ -n "$cpid" ] || { cpid=$(hh_json_get "$reg" .pane_pid); cstart=$(hh_json_get "$reg" .pane_started); }
+  hh_claude_is "$cpid" "$cstart" || { rm -f "$reg"; HK_PROJECT=""; HK_AGENT=""; return 1; }
+  anc=$(hh_claude_ancestor) && [ "$anc" = "$cpid" ] || { HK_PROJECT=""; HK_AGENT=""; return 1; }
+  return 0
+}
 # The line that starts (hh-spawn) or restarts (hh-rotate) an agent from its handoff: one text, so they cannot drift. The
 # orchestrator itself (hh-self-rotate) reports to nobody, waits for nobody, and --self gives it no role or rules dir.
 hh_pickup_line() {  # hh_pickup_line <project name> <project root> <agent>

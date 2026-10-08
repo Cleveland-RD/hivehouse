@@ -13,28 +13,8 @@ if [ -n "$cwd" ] && [ -d "$cwd/$HH_HUB_DIR" ] && [ ! -L "$cwd/$HH_HUB_DIR" ]; th
   printf 'This session is the owner'"'"'s hivehouse hub (%s/%s). Before anything else, invoke the %s:hub skill with the Skill tool and follow it.\n' "$cwd" "$HH_HUB_DIR" "$plugin"
   exit 0
 fi
-[ -n "${TMUX:-}" ] && [ -n "${TMUX_PANE:-}" ] || exit 0
-socket="${TMUX%%,*}"
-reg="$(hh_registry_dir)/$(hh_pane_key "$socket" "$TMUX_PANE").json"
-[ -f "$reg" ] || exit 0
-project=$(hh_json_get "$reg" .project); agent=$(hh_json_get "$reg" .agent)
-[ -n "$project" ] && [ -n "$agent" ] && [ -d "$project" ] || exit 0
-# The registry file must still describe THIS pane: a restarted tmux server hands out pane ids again, and a file with no
-# identity (an older format) proves nothing. Another pane, or no identity, writes nothing and removes the stale file;
-# a tmux that cannot answer proves nothing either way, so the file stays.
-hh_pane_is "$socket" "$TMUX_PANE" "$(hh_json_get "$reg" .pane_pid)" "$(hh_json_get "$reg" .pane_started)"; same=$?
-[ "$same" -ne 2 ] || exit 0
-[ "$same" -eq 0 ] || { rm -f "$reg"; exit 0; }
-# One rule: the nearest Claude above this hook must be the recorded one. --self recorded the Claude that called it (the pane's own
-# process is the owner's shell, which outlives it); a spawned agent's pane runs claude itself, so its pane process is the record.
-# A recorded Claude that is gone makes the file stale and it is removed. One that is alive but is not this hook's nearest Claude
-# is a nested run (a `claude -p` started from the agent's own Bash, which inherits the pane): it writes nothing and the file
-# stays, for the session it belongs to. /clear keeps the process, so a rotation still passes.
-cpid=$(hh_json_get "$reg" .claude_pid); cstart=$(hh_json_get "$reg" .claude_started)
-[ -n "$cpid" ] || { cpid=$(hh_json_get "$reg" .pane_pid); cstart=$(hh_json_get "$reg" .pane_started); }
-hh_claude_is "$cpid" "$cstart" || { rm -f "$reg"; exit 0; }
-anc=$(hh_claude_ancestor) && [ "$anc" = "$cpid" ] || exit 0
+hh_hook_session || exit 0   # sets HK_PROJECT and HK_AGENT: this very pane and Claude, as hivehouse registered them
 field() { printf '%s' "$input" | jq -r --arg k "$1" '.[$k] // empty' 2>/dev/null; }
-hh_write_session "$project" "$agent" "$(field session_id)" "$(field transcript_path)" "$(field source)" || exit 0
-"$(dirname "$0")/hh-disk" --hook --min-gb "${CLAUDE_PLUGIN_OPTION_MIN_FREE_GB:-20}" --path "$project" 2>/dev/null || true
+hh_write_session "$HK_PROJECT" "$HK_AGENT" "$(field session_id)" "$(field transcript_path)" "$(field source)" || exit 0
+"$(dirname "$0")/hh-disk" --hook --min-gb "${CLAUDE_PLUGIN_OPTION_MIN_FREE_GB:-20}" --path "$HK_PROJECT" 2>/dev/null || true
 exit 0
