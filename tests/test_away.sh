@@ -71,7 +71,7 @@ assert_contains "...a comment names the user and the uid" "$out" "# This file is
 assert_contains "...and says an administrator can paste the lines from another account" "$out" "an administrator can paste these lines from another account"
 assert_contains "...mode 0644" "$out" 'sudo chmod -- 0644 '
 assert_contains "...the content names this hub" "$out" "hub=$H"
-assert_contains "...and its MCP list (empty here) as the fourth line" "$out" "mcp= hosts= allow= tools= | sudo tee"
+assert_contains "...and its MCP list (empty here) as the fourth line" "$out" "mcp= hosts= allow= tools= peers= | sudo tee"
 until_epoch=$(printf '%s\n' "$out" | sed -n 's/.*until=\([0-9]*\).*/\1/p' | head -1)
 [ "$until_epoch" -ge $((NOW + 7190)) ] && [ "$until_epoch" -le $((NOW + 7500)) ] && ok "...and the time asked for" || bad "until=$until_epoch is not about +2h"
 assert_contains "...the hub's start line is a tmux line, marked, in bypass, with only its allowed MCP servers" "$out" "tmux -S $HH_TMUX_SOCKET new-session -s hub -c $H -e HH_AWAY_BYPASS=1 -e HH_PROJECT=$H -e HH_AWAY_HUB=$H -e HH_AWAY_MCP_ALLOW='' claude --name hub --permission-mode bypassPermissions --no-chrome --strict-mcp-config --mcp-config $P/away-mcp.json /$T_PLUGIN:hub"
@@ -119,7 +119,7 @@ printf '{"mcpServers":{"docs":{"command":"docs-mcp","args":["--x"]}}}\n' > "$CLA
 out=$(hub away --until +1h --mcp-allow docs,nothere)
 assert_eq "an allowed server's definition is copied into the hub's MCP file" "$(jq -c '.mcpServers | keys' "$P/away-mcp.json")" '["docs"]'
 assert_contains "...one that is not found is said so" "$out" "Not found (not loaded): nothere"
-assert_contains "...and the list is the delegate file's fourth line" "$out" "mcp=docs\\,nothere hosts= allow= tools= | sudo tee"
+assert_contains "...and the list is the delegate file's fourth line" "$out" "mcp=docs\\,nothere hosts= allow= tools= peers= | sudo tee"
 out=$(hub back); assert_status "back" $? 0
 assert_contains "...prints the line that removes the file" "$out" "sudo rm -f -- "
 assert_contains "......the user's own, under delegate.d" "$out" "/delegate.d/$REALUID"
@@ -135,12 +135,12 @@ out=$(cd "$H" && "$OBIN/hh-hub" away --until +1h); assert_status "away under a s
 t_run_printed "$(printf '%s\n' "$out" | grep -E '^sudo |\| sudo ')"; assert_status "...and each sudo line it printed runs (options before the owner and the mode)" $? 0
 # ---- version 2: --remote-allow and --allow (0.5.1) ----
 DFILE="$OB/delegate.d/$REALUID"
-assert_eq "the plain away writes a version 3 file: tag, hub, until, mcp, empty hosts, allow and tools" "$(sed 's/until=[0-9]*/until=N/; s|^hub=.*|hub=H|' "$DFILE" | tr '\n' ' ')" "$T_DELEGATE_TAG 3 hub=H until=N mcp= hosts= allow= tools= "
+assert_eq "the plain away writes a version 4 file: tag, hub, until, mcp, empty hosts, allow, tools and peers" "$(sed 's/until=[0-9]*/until=N/; s|^hub=.*|hub=H|' "$DFILE" | tr '\n' ' ')" "$T_DELEGATE_TAG 4 hub=H until=N mcp= hosts= allow= tools= peers= "
 assert_contains "...and says no remote host is used" "$out" "No remote host"
 out=$(cd "$H" && "$OBIN/hh-hub" away --until +1h --remote-allow night.example.org,ops@10.0.0.7); assert_status "away with --remote-allow" $? 0
 t_run_printed "$(printf '%s\n' "$out" | grep -E '^sudo |\| sudo ')"; assert_status "...its sudo lines run" $? 0
 assert_eq "...the file holds hosts=, an EMPTY allow= and an EMPTY tools= as lines 5 to 7" "$(sed -n '5,7p' "$DFILE" | tr '\n' ' ')" "hosts=night.example.org,ops@10.0.0.7 allow= tools= "
-assert_eq "...in seven lines, with the tag naming version 3" "$(wc -l < "$DFILE" | tr -d ' ') $(head -1 "$DFILE")" "7 $T_DELEGATE_TAG 3"
+assert_eq "...in eight lines, with the tag naming version 4" "$(wc -l < "$DFILE" | tr -d ' ') $(head -1 "$DFILE")" "8 $T_DELEGATE_TAG 4"
 hh_delegate_read "$DFILE" "$ME" "$NOW" >/dev/null; assert_status "...and the file reads as valid" $? 0
 assert_contains "...the text names the hosts" "$out" "Remote hosts allowed while away: night.example.org,ops@10.0.0.7"
 case "$out" in *"Commands allowed"*) bad "a commands-allowed line is printed though allow= is reserved" ;; *) ok "...and no commands-allowed line (allow= is reserved)" ;; esac
@@ -154,6 +154,16 @@ assert_contains "...the text names the tools" "$out" "Extra tools allowed while 
 out=$(cd "$H" && "$OBIN/hh-hub" away --until +1h); assert_contains "no --tools: the text says none" "$out" "Extra tools allowed while away: none"
 t_run_printed "$(printf '%s\n' "$out" | grep -E '^sudo |\| sudo ')"; assert_eq "...and the file's line 7 is an empty tools=" "$(sed -n 7p "$DFILE")" "tools="
 hh_delegate_read "$DFILE" "$ME" "$NOW" >/dev/null; assert_status "...which is valid and allows none" $? 0
+# ---- version 4: --peers (0.5.4, S6) ----
+for badp in "a b" "a,,b" "far agent" "far-[x]" "far*" "a/b" "-x" ",a"; do hub away --until +1h --peers "$badp" >/dev/null 2>"$T_TMP/peer.err"; rc=$?; assert_status "--peers [$badp] is refused" $rc 4; assert_contains "...saying it is --peers" "$(cat "$T_TMP/peer.err")" "--peers"; done
+out=$(cd "$H" && "$OBIN/hh-hub" away --until +1h --peers far-orchestrator,far-agent); assert_status "away with --peers" $? 0
+t_run_printed "$(printf '%s\n' "$out" | grep -E '^sudo |\| sudo ')"; assert_status "...its sudo lines run" $? 0
+assert_eq "...the file holds the peers as line 8" "$(sed -n 8p "$DFILE")" "peers=far-orchestrator,far-agent"
+hh_delegate_read "$DFILE" "$ME" "$NOW" >/dev/null; assert_status "...and the file reads as valid" $? 0
+assert_eq "...with the list exposed" "$HH_DR_PEERS" "far-orchestrator,far-agent"
+assert_contains "...the text names the peers" "$out" "Peers the hub and its orchestrators may message while away: far-orchestrator,far-agent"
+out=$(cd "$H" && "$OBIN/hh-hub" away --until +1h); assert_contains "no --peers: the text says none" "$out" "Peers the hub and its orchestrators may message while away: none"
+t_run_printed "$(printf '%s\n' "$out" | grep -E '^sudo |\| sudo ')"; assert_eq "...and the file's line 8 is an empty peers=" "$(sed -n 8p "$DFILE")" "peers="
 for bad_tool in Bash CronCreate workflow "Workflow,Bash" "Workflow,,WebFetch" "Workflow WebFetch" 'a;b' mcp__x; do
   o=$(cd "$H" && "$OBIN/hh-hub" away --until +1h --tools "$bad_tool" 2>"$T_TMP/away.err"); rc=$?
   assert_status "--tools '$bad_tool' is refused" $rc 4
