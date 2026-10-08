@@ -17,4 +17,12 @@ assert_contains "the start skill resolves the brief template" "$(cat "$HH_REPO_R
 assert_eq "no other skill or executable names the plugin's roles or rules folder to read from" \
   "$(cd "$HH_REPO_ROOT" && grep -rnE 'CLAUDE_PLUGIN_ROOT\}?/(rules|roles)/' skills bin | grep -v 'hh-resolve' | wc -l | tr -d ' ')" 0
 
+echo "-- the hub skill's away step asks for the extra tools in one call of two questions (a question holds at most four options)"
+away=$(awk '/^- \*\*Going away\.\*\*/{f=1} f&&/^- \*\*Project safety settings/{exit} f' "$HH_REPO_ROOT/skills/hub/SKILL.md" | tr '\n' ' ' | sed 's/  */ /g')
+assert_contains "one AskUserQuestion call" "$away" "one AskUserQuestion call with two multi-select questions"
+assert_contains "the first question: Web and notices" "$away" "\"Web and notices\" (WebFetch, PushNotification)"
+assert_contains "the second question: Workflows and design" "$away" "\"Workflows and design\" (Workflow, DesignSync, ArtifactCheck)"
+assert_contains "the answer becomes --tools" "$away" "--tools <their choice, comma-separated>"
+assert_eq "no question holds five options" "$(printf '%s' "$away" | grep -c 'in one multi-select question: Workflow, WebFetch')" 0
+
 t_done

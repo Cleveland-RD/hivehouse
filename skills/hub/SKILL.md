@@ -172,8 +172,9 @@ from a file or an environment variable.
 
 - **Going away.** The owner runs `hh-hub away --until <time> --mcp-allow ${user_config.away_mcp_allow}` (and `--remote-allow <hosts>` when they want it; `--allow` is reserved and refuses) in a shell (you
   may run it for them, on their word, and show its lines word for word). Before it runs, ask the owner which extra tools the
-  away sessions may use, in one multi-select question: Workflow, WebFetch, DesignSync, ArtifactCheck, PushNotification
-  (none is a fine answer), and add `--tools <their choice, comma-separated>` when they pick any. Unlisted ones stay refused
+  away sessions may use, in one AskUserQuestion call with two multi-select questions (a question holds at most four
+  options): "Web and notices" (WebFetch, PushNotification) and "Workflows and design" (Workflow, DesignSync,
+  ArtifactCheck); none is a fine answer. Add `--tools <their choice, comma-separated>` when they pick any. Unlisted ones stay refused
   while away; CronCreate and ScheduleWakeup always pass. It prints the `sudo` lines that make the delegate
   file, which the owner pastes: hivehouse never runs sudo, and neither do you. It also prints the start line for this hub:
   marked (`HH_AWAY_BYPASS=1`), in bypass, with only its allowed MCP servers. Tell the owner to exit this session and start
