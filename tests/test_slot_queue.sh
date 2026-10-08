@@ -42,9 +42,11 @@ assert_eq "an interrupted waiter removes its ticket" "$(ls "$Q" | wc -l | tr -d 
 wait $h
 # --- a planted link at the ticket's name is not followed
 sleep 30 & p=$!; t_track $p; mkdir -p "$Q"
-hh-slot run holder -- sleep 3 & h=$!; sleep 0.5
+hh-slot run holder -- sleep 12 & h=$!; sleep 0.5
 secret="$T_TMP/secret"; echo keep > "$secret"
-for k in 0 1 2 3 4; do ln -s "$secret" "$Q/$(printf '%010d' $(( $(date +%s) + k )))-$p.json"; done   # whichever second it files in
+now=$(date +%s)
+for k in $(seq 0 119); do ln -s "$secret" "$Q/$(printf '%010d' $((now + k)))-$p.json"; done   # every second it could file in for the next two minutes
+sleep 6   # past the five seconds the test used to plant for: the name it files under is still a link
 hh-slot acquire planted --pid $p --wait 1 2>/dev/null; assert_status "a ticket name taken by a link makes the write fail" $? 1
 assert_eq "...and the file it pointed at is untouched" "$(cat "$secret")" "keep"
 wait $h; kill $p; wait $p 2>/dev/null
