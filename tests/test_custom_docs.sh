@@ -5,11 +5,12 @@
 . "$(dirname "$0")/lib.sh"
 t_setup
 echo "-- the README: the promise, the knobs, the delegate pitch, what an away agent can change"
-RD=$(tr '\n' ' ' < "$HH_REPO_ROOT/README.md" | sed 's/  */ /g')
+RD=$(cat "$HH_REPO_ROOT/README.md" "$HH_REPO_ROOT/docs/hub.md" "$HH_REPO_ROOT/docs/away-mode.md" "$HH_REPO_ROOT/docs/customise.md" | tr '\n' ' ' | sed 's/  */ /g')
 assert_contains "the promise line, word for word" "$RD" "Ask Claude to customise anything: roles, rules, skills' behaviour, options. The one exception is loosening delegate (away) mode, which takes one sudo paste from you."
-assert_eq "...at the top of the README and again in the Customise section" "$(printf '%s' "$RD" | grep -o "Ask Claude to customise anything: roles, rules, skills' behaviour, options. The one exception is loosening delegate (away) mode, which takes one sudo paste from you." | wc -l | tr -d ' ')" 2
-sec=$(awk '/^## Customise hivehouse/{f=1;next} /^## /{f=0} f' "$HH_REPO_ROOT/README.md")
-[ -n "$sec" ] && ok "the README has a Customise hivehouse section" || bad "the README has a Customise hivehouse section"
+assert_eq "...once at the top of the README" "$(tr '\n' ' ' < "$HH_REPO_ROOT/README.md" | sed 's/  */ /g' | grep -o "Ask Claude to customise anything: roles, rules, skills' behaviour, options. The one exception is loosening delegate (away) mode, which takes one sudo paste from you." | wc -l | tr -d ' ')" 1
+assert_eq "...and once in docs/customise.md" "$(tr '\n' ' ' < "$HH_REPO_ROOT/docs/customise.md" | sed 's/  */ /g' | grep -o "Ask Claude to customise anything: roles, rules, skills' behaviour, options. The one exception is loosening delegate (away) mode, which takes one sudo paste from you." | wc -l | tr -d ' ')" 1
+sec=$(awk '/^# Customise hivehouse/{f=1;next} /^## /{f=0} f' "$HH_REPO_ROOT/docs/customise.md")
+[ -n "$sec" ] && ok "docs/customise.md has a Customise hivehouse section" || bad "docs/customise.md has a Customise hivehouse section"
 for k in $(jq -r '.userConfig | keys[]' "$HH_REPO_ROOT/.claude-plugin/plugin.json"); do
   assert_contains "the Customise section lists the option $k" "$sec" "$k"
 done
@@ -26,8 +27,8 @@ pitchline=$(grep -nE '^## Delegate mode$' "$HH_REPO_ROOT/README.md" | head -1 | 
 pitch=$(awk '/^## Delegate mode$/{f=1;next} /^## /{f=0} f' "$HH_REPO_ROOT/README.md" | tr '\n' ' ' | sed 's/  */ /g')
 assert_contains "the pitch: relay mode stays the default" "$pitch" "relay mode"
 assert_contains "the pitch: it keeps pushes, deploys and spending for the owner" "$pitch" "pushes, deploys and spending"
-grep -qE '^#+ Customising what away mode allows' "$HH_REPO_ROOT/README.md" && ok "the delegate section has Customising what away mode allows" || bad "the delegate section has Customising what away mode allows"
-away=$(awk '/^#+ Customising what away mode allows/{f=1;next} /^#+ /{f=0} f' "$HH_REPO_ROOT/README.md" | tr '\n' ' ' | sed 's/  */ /g')
+grep -qE '^#+ Customising what away mode allows' "$HH_REPO_ROOT/docs/away-mode.md" && ok "the delegate section has Customising what away mode allows" || bad "the delegate section has Customising what away mode allows"
+away=$(awk '/^#+ Customising what away mode allows/{f=1;next} /^#+ /{f=0} f' "$HH_REPO_ROOT/docs/away-mode.md" | tr '\n' ' ' | sed 's/  */ /g')
 for w in '--remote-allow' '--allow' 'sudo' 'by hand' 'settings'; do assert_contains "Customising what away mode allows mentions $w" "$away" "$w"; done
 assert_contains "the delegate file's version 2 is described" "$RD" "Line 1 is \`$T_DELEGATE_LINE2\`"
 assert_contains "...with its two allowance lines" "$RD" "\`hosts=<list>\`"

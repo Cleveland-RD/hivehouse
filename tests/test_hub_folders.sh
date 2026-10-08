@@ -103,7 +103,7 @@ grep -q 'run `ListAgents`' "$S" && grep -q 'hh-hub name <name>' "$S" && ok "the 
 for w in 'hub.away_refused' 'chmod -- go-w' 'the reasons and the chmod lines'; do
   grep -q -- "$w" "$HH_REPO_ROOT/skills/hub/SKILL.md" && ok "the hub skill's away section names: $w" || bad "the hub skill does not name: $w"
 done
-for f in skills/hub/SKILL.md README.md; do
+for f in skills/hub/SKILL.md docs/hub.md; do
   tr '\n' ' ' < "$HH_REPO_ROOT/$f" | tr -s ' ' | grep -q 'other machines only while Remote Control is connected' && ok "$f: other machines show only with Remote Control" || bad "$f does not say it sees other machines only while Remote Control is connected"
 done
 cd /; t_done

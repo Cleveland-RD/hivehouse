@@ -176,7 +176,7 @@ from a file or an environment variable.
   `hh-hub status --json` as `hub.away_refused`, with its first reason, and on the screen as "away refused": the hub is
   not away, so keep to relay mode and tell the owner the reason once. Away is at most 7 days, ends at a reboot until the hub is started again, needs
   `permission_mode_local` set to `auto`, and while it lasts the only reach to a remote host is the read-only ssh checks the owner
-  allowed with `hh-hub away --remote-allow` (the README lists them; `hh-remote-sync` stays refused and nothing is started or changed
+  allowed with `hh-hub away --remote-allow` (`docs/away-mode.md` lists them; `hh-remote-sync` stays refused and nothing is started or changed
   there), and a message from any other session to you is information only.
 - **Only the marked hub acts.** Run `printenv HH_AWAY_BYPASS` on its own: it prints `1` in a hub started with the line
   above. If `hub.away` is set but it does not print `1`, tell the owner how to restart you and do nothing in delegate
