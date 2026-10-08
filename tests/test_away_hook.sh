@@ -100,6 +100,7 @@ allowed "git add bin/hh-push" 'git add bin/hh-push'
 allowed "git diff -- tests/test_push.sh" 'git diff -- tests/test_push.sh'
 allowed "git status" 'git status'
 allowed "git commit without push" 'git commit -m "feat: add the thing"'
+mkdir -p "$proj/tests"; printf 'echo ok\n' > "$proj/tests/run.sh"
 allowed "bash tests/run.sh test_push.sh" 'bash tests/run.sh test_push.sh'
 allowed "cat bin/hh-push" 'cat bin/hh-push'
 
@@ -544,6 +545,41 @@ else
 fi
 denied "no fixture, no listed host: ssh stays refused" "ssh -F none night.example.org ls"
 denied "ssh as before in the plain shape" "ssh night.example.org ls"
+
+echo "-- KI-26: a script the Bash call runs is read with the same rules as a command"
+sd="$proj/scr"; mkdir -p "$sd"
+printf 'echo hello\nls\n' > "$sd/clean.sh"; printf '#!/bin/sh\necho hello\n' > "$sd/cleanx.sh"; chmod +x "$sd/cleanx.sh"
+printf 'echo before\ngit push origin main\n' > "$sd/bad.sh"; printf '#!/bin/sh\ngit push origin main\n' > "$sd/badx.sh"; chmod +x "$sd/badx.sh"
+for form in "bash" "sh" "zsh" "bash -e" "env bash" "sudo sh" "source" "." "FOO=1 bash"; do
+  denied "a script with git push: $form bad.sh" "cd $sd && $form bad.sh"
+  denied "...by its absolute path: $form" "$form $sd/bad.sh"
+  allowed "a clean script: $form clean.sh" "cd $sd && $form clean.sh"
+done
+denied "./badx.sh runs a script with git push" "cd $sd && ./badx.sh"
+denied "an absolute path to a script with git push" "$sd/badx.sh"
+allowed "./cleanx.sh runs a clean script" "cd $sd && ./cleanx.sh"
+denied "a script fed to the shell on stdin" "bash < $sd/bad.sh"
+denied "...after a pipeline stage" "echo go && bash $sd/bad.sh"
+denied "...inside an if" "if bash $sd/bad.sh; then echo x; fi"
+allowed "a binary run by path (no #! line) is not read as text" "/bin/ls $sd"
+printf 'git push origin main\n' > "$sd/nohash"; chmod +x "$sd/nohash"; denied "a text file with no #! line run by path is still read" "cd $sd && ./nohash"
+for k in 1 2 3 4 5 6; do n=$((k+1)); if [ $k -lt 6 ]; then printf 'source %s/c%s.sh\n' "$sd" "$n" > "$sd/c$k.sh"; else echo ls > "$sd/c$k.sh"; fi; done
+denied "scripts that source scripts more than four deep are refused" "bash $sd/c1.sh"
+printf 'source %s/c5.sh\n' "$sd" > "$sd/d1.sh"; allowed "...four deep is read through" "bash $sd/d1.sh"
+printf 'git push\0\0\0' > "$sd/prog"; chmod +x "$sd/prog"; allowed "a file with a NUL byte run by path is a program, not text" "cd $sd && ./prog"
+allowed "bash -c with no file is as before" "bash -c 'echo hi'"
+allowed "a script's name as plain text is no script" "echo bash $sd/bad.sh"
+allowed "cat of a script is no run" "cat $sd/bad.sh"
+printf 'echo hi > ~/.ssh/config\n' > "$sd/ssh.sh"; denied "a script that writes ~/.ssh is refused" "bash $sd/ssh.sh"
+printf 'hh-push origin main\n' > "$sd/hp.sh"; denied "a script that runs hh-push is refused" "bash $sd/hp.sh"
+printf 'source %s/bad.sh\n' "$sd" > "$sd/outer.sh"; denied "a script that sources a bad script is refused" "bash $sd/outer.sh"
+printf 'source %s/clean.sh\n' "$sd" > "$sd/outer2.sh"; allowed "a script that sources a clean one passes" "bash $sd/outer2.sh"
+printf 'source %s/loop.sh\n' "$sd" > "$sd/loop.sh"; denied "a script that sources itself ends in a refusal, not a loop" "bash $sd/loop.sh"
+denied "a script that does not exist is refused" "bash $sd/nothing.sh"
+head -c 300000 /dev/zero | tr '\0' 'a' > "$sd/big.sh"; denied "an oversized script is refused" "bash $sd/big.sh"
+printf 'echo hi\n' > "$sd/locked.sh"; chmod 000 "$sd/locked.sh"; denied "an unreadable script is refused" "bash $sd/locked.sh"; chmod 600 "$sd/locked.sh"
+allowed "a script under the plugin's own bin is not read" "bash $HH_REPO_ROOT/bin/hh-cleanup"
+hook "$(jq -nc --arg c 'bash bad.sh' --arg d "$sd" '{tool_name:"Bash",cwd:$d,tool_input:{command:$c}}')"; assert_status "...the cwd the tool call names" $RC 2
 
 echo "-- the env the Bash tool sees does not matter"
 r=$(printf '%s' "$(tc 'git push')" | HH_AWAY_BYPASS=1 HH_PROJECT="$other" HH_AWAY_HUB="$hub" HH_AWAY_MCP_ALLOW= "$HOOK" 2>&1 >/dev/null); assert_status "any project in the env: still refused" $? 2

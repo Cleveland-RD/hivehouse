@@ -324,10 +324,60 @@ ssh_gate() {  # ssh_gate <raw command>: 1 = not an allowed ssh (the general rule
   return 0
 }
 
+# KI-26: a script a Bash call runs (`bash f`, `sh f`, `zsh f`, `. f`, `source f`, `./f`, `bash < f`) is read with the same rules as a command.
+# script_operand prints the file a segment's words run, or nothing; script_check reads it and checks its text, up to SCRIPT_MAX levels deep
+# (a script that sources itself ends in a refusal). A file under the plugin's own bin is not read, and a file run by path that holds a NUL byte
+# is a program, not a script. A file that is missing, unreadable or over SCRIPT_BYTES is refused, since its text cannot be checked.
+SCRIPT_MAX=4; SCRIPT_BYTES=262144; SCRIPT_DEPTH=0
+script_operand() {  # script_operand <word>...: prints "shell <file>" or "direct <file>" for the file the words run
+  local mode="" t skip=""
+  for t in "$@"; do
+    if [ -z "$mode" ]; then
+      case "$t" in *=*) continue ;; esac
+      case "${t##*/}" in bash|sh|zsh|dash|ksh|source) mode=shell; continue ;; esac
+      [ "$t" != . ] || { mode=shell; continue; }
+      case "$WRAPPERS" in *" $t "*) continue ;; esac
+      case "$t" in -*) continue ;; esac
+      case "$t" in */*) printf 'direct %s\n' "$t" ;; esac
+      return 0
+    fi
+    [ -z "$skip" ] || { skip=""; continue; }
+    case "$t" in
+      -o|+o|-O|+O) skip=1; continue ;;
+      --*) continue ;;
+      -*c*) return 0 ;;   # bash -c '<code>': the code is in the call's own text
+      -*|+*) continue ;;
+    esac
+    printf 'shell %s\n' "$t"; return 0
+  done
+}
+script_check() {  # script_check <mode> <file> <cwd>
+  local mode="$1" f c n text
+  f=$(canon "$2" "$3")
+  c=$(canon "$HH_BIN" /); case "$f" in "$c"/*) return 0 ;; esac
+  if [ ! -e "$f" ]; then [ "$mode" = direct ] && return 0; deny "the script $2 cannot be read, so its text cannot be checked"; fi
+  [ -f "$f" ] && [ -r "$f" ] || deny "the script $2 cannot be read, so its text cannot be checked"
+  n=$(wc -c < "$f" 2>/dev/null | tr -d ' ') || n=""
+  case "$n" in ''|*[!0-9]*) deny "the script $2 cannot be read, so its text cannot be checked" ;; esac
+  [ "$n" -le "$SCRIPT_BYTES" ] || deny "the script $2 is over $SCRIPT_BYTES bytes, too large to check while the owner is away"
+  if [ "$mode" = direct ]; then   # a program run by path (a NUL in its first bytes) is not text; a text file without #! still runs, under sh
+    [ "$(head -c 512 "$f" | tr -d '\0' | wc -c)" = "$(head -c 512 "$f" | wc -c)" ] || return 0
+  fi
+  SCRIPT_DEPTH=$((SCRIPT_DEPTH + 1))
+  [ "$SCRIPT_DEPTH" -le "$SCRIPT_MAX" ] || deny "scripts run scripts more than $SCRIPT_MAX levels deep, which cannot be checked while the owner is away"
+  text=$(cat "$f" 2>/dev/null) || deny "the script $2 cannot be read, so its text cannot be checked"
+  bash_text "$text" "$3"
+  SCRIPT_DEPTH=$((SCRIPT_DEPTH - 1))
+}
 bash_check() {
-  local cmd s seg tok toks ws i first second prev have_git="" have_push="" have_pub="" have_dock="" pkgm="" wr rt
+  local cmd
   cmd=$(printf '%s' "$input" | "$HH_JQ" -er '.tool_input.command | strings' 2>/dev/null) || deny "its command cannot be read"
   ssh_gate "$cmd" && return 0   # one ssh of plain words to a listed host, a read: the rest of this function is for everything else
+  bash_text "$cmd" "$cwd"
+}
+bash_text() {  # bash_text <command text> <cwd>: the rules for a command; a script's text is run through it again
+  local cmd="$1" cwd="$2" s seg tok toks ws i first second prev have_git="" have_push="" have_pub="" have_dock="" pkgm="" wr rt cmdw fb a b nx so
+  local -a scripts=()
   cmd=$(printf '%s\n' "$cmd" | heredoc_strip)
   s=${cmd//\'/}; s=${s//\"/}; s=${s//\\/}
   # redirect targets are looked at before the punctuation goes
@@ -375,6 +425,12 @@ bash_check() {
       scp|sftp) deny "$cmdw is not allowed while the owner is away" ;;
       claude) deny "starting Claude by hand is not allowed from an away session; hh-spawn and hh-hub start sessions" ;;
     esac
+    if [ "$cmdw" = cd ]; then   # a relative script path later in the call is read from where the call has moved to
+      nx=""; for tok in ${ws[@]+"${ws[@]}"}; do case "$tok" in cd|-*) ;; *) nx=$tok; break ;; esac; done
+      case "$nx" in ""|-) cwd=/nonexistent-cwd ;; *) cwd=$(canon "$nx" "$cwd") ;; esac
+    fi
+    so=$(script_operand ${ws[@]+"${ws[@]}"})
+    [ -z "$so" ] || scripts+=("${so%% *}"$'\x1f'"$cwd"$'\x1f'"${so#* }")
     local has_tmux="" has_start="" has_gh="" has_rsync="" has_curl="" has_wget="" has_write=""
     for i in "${!toks[@]}"; do
       tok=${toks[$i]}
@@ -426,6 +482,11 @@ EOF
   [ -z "$have_git$have_push" ] || { [ -n "$have_git" ] && [ -n "$have_push" ] && deny "git push is not allowed while the owner is away (a quoted \"push\" beside git counts: rephrase)"; }
   [ -z "$pkgm" ] || [ -z "$have_pub" ] || deny "publishing a package is not allowed while the owner is away"
   [ -z "$have_dock" ] || [ -z "$have_push" ] || deny "docker push is not allowed while the owner is away"
+  local e m d f
+  for e in ${scripts[@]+"${scripts[@]}"}; do
+    IFS=$'\x1f' read -r m d f <<< "$e"
+    script_check "$m" "$f" "$d"
+  done
   return 0
 }
 
