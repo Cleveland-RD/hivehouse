@@ -280,9 +280,11 @@ fs_unpack_check() {  # fs_unpack_check <tar|unzip|ditto> <cwd> <word>...: where 
   return 0
 }
 fs_git_check() {  # fs_git_check <cwd> <word>...: a git command that rewrites the working tree acts on the repo of -C or the cwd; that repo may not be, or hold, Claude Code's or hivehouse's own files
-  local cwd=$1 w prev="" sub="" repo=""
+  local cwd=$1 w prev="" sub="" repo="" dry="" i=0 n paths=0 pw
+  local -a rest=()
   shift
   for w in "$@"; do
+    i=$((i + 1))
     case "$prev" in
       C) repo=$(canon "$w" "${repo:-$cwd}"); prev=""; continue ;;
       skip) prev=""; continue ;;
@@ -291,10 +293,25 @@ fs_git_check() {  # fs_git_check <cwd> <word>...: a git command that rewrites th
       -C) prev=C ;;
       -c|--git-dir|--work-tree|--exec-path|--namespace) prev=skip ;;
       -*) ;;
-      *) sub=$w; break ;;
+      *) sub=$w; rest=("${@:$((i + 1))}"); break ;;
     esac
   done
   case "$sub" in rm|clean|checkout|restore|reset|stash|mv) ;; *) return 0 ;; esac
+  if [ "$sub" = clean ]; then
+    # clean deletes what the repo does not track, and the project's state folder is one of those (-x and -X reach it when it is ignored): it is held to the
+    # rm rule in full, for the repo or for each path given; -n and --dry-run only list
+    for w in ${rest[@]+"${rest[@]}"}; do
+      case "$w" in --dry-run) dry=1 ;; --*) ;; -*n*) dry=1 ;; esac
+    done
+    [ -z "$dry" ] || return 0
+    for w in ${rest[@]+"${rest[@]}"}; do
+      case "$w" in -*) continue ;; esac
+      paths=1; fs_hit "$(canon "$w" "${repo:-$cwd}")" "$cwd" && deny "git clean refused: it would delete under $w, and $P_WHY"
+    done
+    [ "$paths" = 0 ] || return 0
+    fs_hit "${repo:-$cwd}" "$cwd" && deny "git clean refused: it deletes what ${repo:-$cwd} does not track, which includes protected folders, and $P_WHY"
+    return 0
+  fi
   FS_GLOBAL=1
   fs_hit "${repo:-$cwd}" "$cwd" && { FS_GLOBAL=""; deny "git $sub refused: it rewrites the working tree of ${repo:-$cwd}, and $P_WHY"; }
   FS_GLOBAL=""

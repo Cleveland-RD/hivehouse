@@ -791,6 +791,15 @@ pdenied "A19 cp -R through a link in the destination" "cp -R $T_TMP/lk/scr/ $T_T
 pdenied "A19 cp -R through a link in the destination (name given)" "cp -R $T_TMP/lk/scr $T_TMP/lk/dest"
 PHOME=""
 assert_eq "A21 the reader list is spelled once in the hook" "$(grep -c 'cd cat grep jq wc head tail sort uniq' "$HH_REPO_ROOT/bin/hh-away-hook")" 1
+echo "-- git clean in a protected project root deletes the excluded state folder (reviewer, 8 Oct)"
+for c in 'git clean -fdx' 'git clean -fdX' 'git clean -ffdx' 'git clean --force -d -x' 'git clean -f -d -X' 'git clean -fd' 'git clean -xdf' "git clean -fdx $T_STATE" 'git clean -fd .'; do
+  pdenied "git clean refused: $c" "$c"
+  pdenied "git clean refused, plugin root set: $c" "$c" "$PROOT"
+done
+pdenied "git clean -C into the plugin root refused" "git -C $PROOT clean -fdx" "$PROOT"
+for c in 'git clean -n' 'git clean -nfdx' 'git clean --dry-run -fdx' 'git clean -fdxn' 'git clean -fd scr/' 'git clean -fdx scr/sub' 'git clean -fdx -n'; do
+  pallowed "git clean allowed: $c" "$c"
+done
 echo "-- A15: xargs passes only with a reader; the arguments it is fed cannot be read first"
 ROLE=proj
 for c in 'xargs git < scr/plain.txt' 'xargs tmux < scr/plain.txt' 'xargs npm < scr/plain.txt' 'xargs curl < scr/plain.txt' 'xargs rm < scr/plain.txt' 'xargs -n 1 git < scr/plain.txt' 'echo "push origin main" | xargs git' 'ls | xargs -I {} git {}' 'sudo xargs hh-hub self'; do
