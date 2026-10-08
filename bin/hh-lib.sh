@@ -342,6 +342,22 @@ hh_lock_release() {  # hh_lock_release <lock> <pid>: removes the lock only when 
   [ -n "$hp" ] && [ "$hp" = "$2" ] && { hh_lstart_is "$2" "$hc" || hh_lstart_is "$2" "$hl"; } || return 1
   rm -rf "$1"
 }
+# The one writer of a project's team.json (hh-spawn registers and closes agents, hh-hub window sets a window): under the file's own lock,
+# read it (an empty team when there is none), run the jq filter over it with the given jq arguments, write a temporary file, mv it in.
+# Returns jq's status, or 4 when the lock stays held by a live process (said on stderr).
+hh_team_edit() {  # hh_team_edit <project root> <jq filter> [jq arguments]...
+  local root="$1" filt="$2" f lock i=0 cur rc tmp
+  shift 2
+  f="$root/$HH_STATE_DIR/team.json"; lock="$f.lock"; tmp="$f.tmp$$"
+  until hh_lock_try "$lock" "$(hh_holder_json $$)"; do
+    i=$((i + 1)); [ "$i" -lt 50 ] || { echo "$HH_PREFIX: team.json is locked by another hivehouse command; nothing was written" >&2; return 4; }
+    sleep 0.1
+  done
+  cur='{"agents":[]}'; [ ! -f "$f" ] || cur=$(cat "$f")
+  printf '%s' "$cur" | jq "$@" "$filt" > "$tmp" && mv "$tmp" "$f"; rc=$?
+  rm -f "$tmp"; hh_lock_release "$lock" $$
+  return $rc
+}
 
 # ---- the slot's queue. A caller that waits files queue/<epoch seconds, 10 digits>-<pid>.json (a holder record) and takes the slot
 # only as the oldest live ticket; tickets of one second are served by pid, as a number.

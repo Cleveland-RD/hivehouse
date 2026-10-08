@@ -54,9 +54,7 @@ if [ -n "$close" ]; then
     3) hh_die 4 "$close was recorded with no identity, so nothing proves it stopped; not closed" ;;
   esac
   csock=$(printf '%s' "$entry" | jq -r '.socket // empty'); cpane=$(printf '%s' "$entry" | jq -r '.pane // empty')
-  tmp="$ROOT/$HH_STATE_DIR/team.json.tmp$$"
-  jq --arg a "$close" '.agents = [.agents[]? | select(.name != $a)]' "$ROOT/$HH_STATE_DIR/team.json" > "$tmp" && mv "$tmp" "$ROOT/$HH_STATE_DIR/team.json" \
-    || { rm -f "$tmp"; hh_die 1 "could not rewrite team.json"; }
+  hh_team_edit "$ROOT" '.agents = [.agents[]? | select(.name != $a)]' --arg a "$close" || hh_die 1 "could not rewrite team.json"
   for f in "$(hh_registry_dir)"/*.json; do   # this project's registry file of this agent, whatever pane it names
     [ -f "$f" ] && [ "$(hh_json_get "$f" .project)" = "$ROOT" ] && [ "$(hh_json_get "$f" .agent)" = "$close" ] && rm -f "$f"
   done
@@ -163,10 +161,7 @@ register() {  # register <pane> <socket>: the registry maps a pane back to its p
     && mv "$dir/$key.json.tmp$$" "$dir/$key.json"
 }
 upsert_team() {  # upsert_team <json object for the agent>: one entry per agent name
-  local f="$STATE/team.json" cur='{"agents":[]}'
-  [ -f "$f" ] && cur=$(cat "$f")
-  printf '%s' "$cur" | jq --argjson a "$1" '.agents = ([.agents[]? | select(.name != $a.name)] + [$a])' > "$f.tmp$$" \
-    && mv "$f.tmp$$" "$f"
+  hh_team_edit "$ROOT" '.agents = ([.agents[]? | select(.name != $a.name)] + [$a])' --argjson a "$1"
 }
 
 if [ "$self" = 1 ]; then
