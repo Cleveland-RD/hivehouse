@@ -124,7 +124,8 @@ out=$(hub back); assert_status "back" $? 0
 assert_contains "...prints the line that removes the file" "$out" "sudo rm -f -- "
 assert_contains "......the user's own, under delegate.d" "$out" "/delegate.d/$REALUID"
 case "$out" in *HH_AWAY_BYPASS=1*|*bypassPermissions*|*"-e HH_AWAY"*) bad "the restart line after away is marked or in bypass" ;; *) ok "...and a restart line with no marker and no bypass (the variables are unset for it)" ;; esac
-assert_contains "...which resumes the hub" "$out" "claude --resume sess-hub-1"
+assert_contains "...which resumes the hub, the away variables unset for it" "$out" "env -u HH_AWAY_BYPASS -u HH_AWAY_HUB -u HH_AWAY_MCP_ALLOW claude --resume sess-hub-1"
+assert_contains "...and the lines are for a terminal outside tmux" "$out" "outside tmux"
 # a scratch base: away and back print the line that removes the user's own delegate file
 OB="$T_TMP/oldbase"; mkdir -p "$OB"
 OBIN=$(t_base_bin oldbin "$OB") || bad "t_base_bin"

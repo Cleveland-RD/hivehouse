@@ -41,6 +41,9 @@ pane=$(paneof hub); i=0; while [ "$(jq -r '.pane // empty' "$P/hub.json" 2>/dev/
 out=$(hub start 2>&1); assert_status "start while the hub runs in that session" $? 0
 assert_eq "...makes no second session" "$(sessions hub)" "1"
 assert_contains "...and says how to attach" "$out" "attach -t hub"
+jq '.pane_pid = "1"' "$P/hub.json" > "$P/hub.json.n" && mv "$P/hub.json.n" "$P/hub.json"
+hub start >/dev/null 2>&1; assert_status "a recorded pane whose process is not the pane's now (an id handed out again) is no hub to reattach to" $? 4
+assert_eq "...and no second session was made" "$(sessions hub)" "1"
 hh_tmux kill-session -t =hub
 hh_tmux new-session -d -s hub 'sleep 600'
 hub start >/dev/null 2>"$T_TMP/err"; assert_status "a session of that name that is not the hub is refused" $? 4
@@ -49,7 +52,7 @@ hh_tmux kill-session -t =hub
 setfake hubself; hh_tmux new-session -d -s other -c "$H" 'exec claude --name x'; unsetfake
 i=0; while [ "$(jq -r '.pane // empty' "$P/hub.json")" = "" ] || ! hh_tmux list-panes -s -t =other -F '#{pane_id}' | grep -qx "$(jq -r .pane "$P/hub.json")"; do sleep 0.5; i=$((i + 1)); [ "$i" -lt 20 ] || break; done
 hub start >/dev/null 2>"$T_TMP/err"; assert_status "a hub that runs in another tmux session is not started twice" $? 4
-assert_contains "...it is told which" "$(cat "$T_TMP/err")" "other"
+assert_contains "...it is told which, once" "$(cat "$T_TMP/err")" "in tmux session other:"
 hh_tmux kill-session -t =other
 
 # ---- inside tmux already: no nesting, the line to start it there ----
@@ -57,6 +60,8 @@ out=$(cd "$H" && TMUX=/tmp/x,1,0 hh-hub start 2>&1); assert_status "start inside
 assert_eq "...starts nothing" "$(sessions hub)" "0"
 assert_contains "...says how to start it there" "$out" "new-session -d -s hub -c $H"
 assert_contains "...and to switch to it" "$out" "switch-client -t hub"
+assert_contains "...the line unsets the away marker for the hub it starts" "$out" "env -u HH_AWAY_BYPASS -u HH_AWAY_HUB -u HH_AWAY_MCP_ALLOW claude --name hub"
+out=$(hub 2>&1); assert_contains "the usage lists hh-hub start with no arguments" "$out" "hh-hub start  "
 
 # ---- self: the hub records its own pane ----
 setfake hubself; hub start >/dev/null 2>&1; unsetfake
@@ -75,6 +80,11 @@ out=$(bash "$T_TMP/cl/claude" --name hub 2>&1 >/dev/null); assert_status "self o
 assert_contains "...says so, with the line that starts the hub" "$out" "hh-hub start"
 assert_eq "...says it once" "$(printf '%s\n' "$out" | grep -c 'hh-hub start')" "1"
 assert_eq "...and records no pane (a stale one is dropped)" "$(jq -r '.pane // "none"' "$P/hub.json")" "none"
+setfake hubself; hub start >/dev/null 2>&1; unsetfake; pane=$(paneof hub)
+i=0; while [ "$(jq -r '.pane // empty' "$P/hub.json" 2>/dev/null)" != "$pane" ] && [ "$i" -lt 20 ]; do sleep 0.5; i=$((i + 1)); done
+out=$(TMUX_PANE="$pane" TMUX=/nonexistent/sock,1,0 bash "$T_TMP/cl/claude" --name hub 2>&1 >/dev/null); assert_status "self from a pane of another server (TMUX names it)" $? 0
+assert_eq "...records no pane: the socket is the one TMUX names" "$(jq -r '.pane // "none"' "$P/hub.json")" "none"
+hh_tmux kill-session -t =hub
 out=$(TMUX_PANE=%99 bash "$T_TMP/cl/claude" --name hub 2>&1 >/dev/null); assert_status "a pane id this server does not have" $? 0
 assert_contains "...is no pane to record" "$out" "hh-hub start"
 assert_eq "...nothing recorded" "$(jq -r '.pane // "none"' "$P/hub.json")" "none"

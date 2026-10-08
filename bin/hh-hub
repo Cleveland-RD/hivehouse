@@ -536,7 +536,10 @@ hub_start() {
   command -v claude >/dev/null 2>&1 || hh_die 2 "claude is not on the PATH"
   tm=$(tmux_word)
   if sess=$(hub_running "$root"); then
-    [ "$sess" = "$hubn" ] || hh_die 4 "the hub is already running ${sess:+in tmux session $sess}${sess:-outside tmux}: exit it first (/exit), or attach to it"
+    if [ "$sess" != "$hubn" ]; then
+      if [ -n "$sess" ]; then hh_die 4 "the hub is already running in tmux session $sess: exit it first (/exit), or attach to it"
+      else hh_die 4 "the hub is already running outside tmux: exit it first (/exit)"; fi
+    fi
     echo "$HH_PREFIX: the hub is running in tmux session $hubn"; hub_attach "$hubn"; return
   fi
   hh_tmux has-session -t "=$hubn" 2>/dev/null && hh_die 4 "a tmux session named $hubn exists and is not the hub (hub.json records no running hub in it): exit it, or give the hub another name with hh-hub name"
@@ -575,7 +578,8 @@ self)
   case "$name" in *[' ()']*) hh_die 4 "the hub's name is one word (letters, digits, - _ .): $name; rename the session" ;; esac
   # the hub's own pane, as hh-spawn --self records an orchestrator's: hh-hub rotate types into only this pane and process
   psock=""; ppane=""; ppid=""; pstarted=""
-  if [ -n "${TMUX_PANE:-}" ] && psock=$(hh_tmux display-message -p -t "$TMUX_PANE" '#{socket_path}' 2>/dev/null) && ident=$(hh_pane_identity "$psock" "$TMUX_PANE"); then
+  # the pane is read only on the server this process is in ($TMUX names it): $TMUX_PANE on another server is another pane
+  if [ -n "${TMUX_PANE:-}" ] && [ -n "${TMUX:-}" ] && psock=$(hh_tmux display-message -p -t "$TMUX_PANE" '#{socket_path}' 2>/dev/null) && [ "$psock" = "${TMUX%%,*}" ] && ident=$(hh_pane_identity "$psock" "$TMUX_PANE"); then
     ppane=$TMUX_PANE; ppid=${ident%%$'\t'*}; pstarted=${ident#*$'\t'}
   else
     echo "$HH_PREFIX: this hub is not in a tmux pane, so it cannot rotate itself: start it with hh-hub start" >&2
@@ -1177,7 +1181,7 @@ away)
   printf 'sudo chown -- root:%s %q %q %q\n' "$grp" "$base" "$dir" "$file"
   printf 'sudo chmod -- 0755 %q %q\n' "$base" "$dir"
   printf 'sudo chmod -- 0644 %q\n' "$file"
-  echo "# Then exit the running hub (so two do not share the folder) and start it in tmux with this line: marked, in bypass, with only its allowed MCP servers. The marker and its variables go to tmux with -e, never through the shell."
+  echo "# Then exit the running hub (so two do not share the folder) and start it in tmux with this line, pasted in a terminal outside tmux: marked, in bypass, with only its allowed MCP servers. The marker and its variables go to tmux with -e, never through the shell."
   hub_session_note "$hubn"
   tm=$(tmux_word)
   if [ -n "$sid" ]; then
@@ -1220,7 +1224,7 @@ back)
   case "$sid" in ''|*[!${HH_LOWER}${HH_UPPER}${HH_DIGITS}-]*) sid="" ;; esac
   echo "# Away ends when this file is gone. Paste the line in a terminal:"
   printf 'sudo rm -f -- %q\n' "$file"
-  echo "# Then exit the hub and start it again in tmux without bypass, so each action it takes asks you again:"
+  echo "# Then exit the hub and start it again in tmux (paste this in a terminal outside tmux) without bypass, so each action it takes asks you again:"
   hubn=$(hub_chosen_name "$root" 2>/dev/null || echo hub)
   hub_session_note "$hubn"
   tm=$(tmux_word)
