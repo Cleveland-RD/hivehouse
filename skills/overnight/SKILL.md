@@ -4,10 +4,12 @@ description: Run a queue of work unattended on this machine or a named remote ho
 when_to_use: When the owner wants work to continue while they are away, or to move a team to another machine for the night.
 argument-hint: <what to work through>
 disable-model-invocation: true
-allowed-tools: Bash(hh-resolve *) Bash(hh-spawn *) Bash(hh-rotate *) Bash(hh-self-rotate *) Bash(hh-slot status) Bash(hh-slot release *) Bash(hh-context *) Bash(hh-gate-verify *) Bash(hh-settings resolve *) Bash(hh-manifest *) Bash(hh-disk *) Bash(hh-adhd) Bash(git status *) Bash(git log *) Bash(git diff *) Bash(git rev-parse *) Bash(git show *) Read Edit(./.hivehouse/**) Write(./.hivehouse/**) AskUserQuestion SendMessage ListAgents CronCreate CronDelete CronList
+allowed-tools: Bash(hh-resolve *) Bash(hh-settings option *) Bash(hh-spawn *) Bash(hh-rotate *) Bash(hh-self-rotate *) Bash(hh-slot status) Bash(hh-slot release *) Bash(hh-context *) Bash(hh-gate-verify *) Bash(hh-settings resolve *) Bash(hh-manifest *) Bash(hh-disk *) Bash(hh-adhd) Bash(git status *) Bash(git log *) Bash(git diff *) Bash(git rev-parse *) Bash(git show *) Read Edit(./.hivehouse/**) Write(./.hivehouse/**) AskUserQuestion SendMessage ListAgents CronCreate CronDelete CronList
 ---
 
 # hivehouse: overnight
+
+Claude Code fills a `${user_config.X}` below only when a value of X was saved; when one still reads literally, run `hh-settings option X` and use what it prints (the plugin's default).
 
 You run a queue of work while the owner is away. The work: $ARGUMENTS
 

@@ -3,10 +3,12 @@ name: start
 description: Run a feature or task with a team of Claude sessions in tmux, from planning through review, gates and cleanup. Use when the owner types /hivehouse:start followed by a task.
 argument-hint: <task description>
 disable-model-invocation: true
-allowed-tools: Bash(hh-resolve *) Bash(hh-spawn *) Bash(hh-rotate *) Bash(hh-self-rotate *) Bash(hh-slot status) Bash(hh-slot release *) Bash(hh-context *) Bash(hh-gate-verify *) Bash(hh-settings resolve *) Bash(hh-manifest *) Bash(hh-disk *) Bash(hh-adhd) Read Edit(./.hivehouse/**) Edit(./CLAUDE.md) Edit(./CLAUDE.local.md) AskUserQuestion SendMessage ListAgents
+allowed-tools: Bash(hh-resolve *) Bash(hh-settings option *) Bash(hh-spawn *) Bash(hh-rotate *) Bash(hh-self-rotate *) Bash(hh-slot status) Bash(hh-slot release *) Bash(hh-context *) Bash(hh-gate-verify *) Bash(hh-settings resolve *) Bash(hh-manifest *) Bash(hh-disk *) Bash(hh-adhd) Read Edit(./.hivehouse/**) Edit(./CLAUDE.md) Edit(./CLAUDE.local.md) AskUserQuestion SendMessage ListAgents
 ---
 
 # hivehouse: start
+
+Claude Code fills a `${user_config.X}` below only when a value of X was saved; when one still reads literally, run `hh-settings option X` and use what it prints (the plugin's default).
 
 You are the orchestrator of a team of Claude sessions running in tmux. The task: $ARGUMENTS
 

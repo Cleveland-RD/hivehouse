@@ -2,10 +2,12 @@
 name: handoff
 description: Write a handoff so a fresh session with no memory can resume the work: constraints first, then state and next steps. Use when ending a session, when an agent reaches the rotation threshold, or when transferring work to another agent.
 when_to_use: Also when an orchestrator asks an agent to update its START HERE block before a clear, or when told "hand off", "rotate" or "write the handoff".
-allowed-tools: Bash(hh-resolve *)
+allowed-tools: Bash(hh-resolve *) Bash(hh-settings option *)
 ---
 
 # Session handoff
+
+Claude Code fills a `${user_config.X}` below only when a value of X was saved; when one still reads literally, run `hh-settings option X` and use what it prints (the plugin's default).
 
 Run `hh-resolve rules` and read the file it prints first if you are inside a hivehouse team (the project's or the user's own
 `custom/rules/RULES.md` when there is one, else the plugin's).
