@@ -39,10 +39,10 @@ printf '#!/bin/bash\necho "$HH_PROJECT" >> "%s/ctx.calls"\nexec "%s/hh-context.r
 assert_eq "hh-context ran once for each team root in one status call" "$(sort "$T_TMP/ctx.calls" | uniq -c | awk '{print $1}' | tr '\n' ' ')" "1 1 "
 assert_eq "...for the home and the worktree" "$(wc -l < "$T_TMP/ctx.calls" | tr -d ' ')" "2"
 # an orchestrator whose tokens exceed the window that is only assumed shows as unknown, never as a percent over 100
-jq -nc '{type:"assistant", isSidechain:false, message:{model:"claude-sonnet-5-5", usage:{input_tokens:300000, cache_read_input_tokens:0, cache_creation_input_tokens:0, output_tokens:0}}}' > "$T_TMP/big.jsonl"
+jq -nc '{type:"assistant", isSidechain:false, message:{model:"claude-sonnet-5-5", usage:{input_tokens:1500000, cache_read_input_tokens:0, cache_creation_input_tokens:0, output_tokens:0}}}' > "$T_TMP/big.jsonl"
 jq -nc --arg t "$T_TMP/big.jsonl" '{session_id:"sess-big", transcript_path:$t}' > "$WT/$T_STATE/team/orchestrator/session.json"
 assert_eq "the status carries no context number when the window is unknown" "$(proj '.projects[0].orchestrator | has("context")')" "false"
-assert_eq "...it says the window is unknown, with the tokens" "$(proj '.projects[0].orchestrator | [.context_unknown, .context_tokens] | map(tostring) | join(" ")')" "true 300000"
+assert_eq "...it says the window is unknown, with the tokens" "$(proj '.projects[0].orchestrator | [.context_unknown, .context_tokens] | map(tostring) | join(" ")')" "true 1500000"
 assert_eq "...and no context in the whole status is over 100" "$(hub status app --json | jq '[.. | .context? | numbers | select(. > 100)] | length')" "0"
 rm "$WT/$T_STATE/team/orchestrator/session.json"
 mkdir -p "$H/app/$T_STATE"
