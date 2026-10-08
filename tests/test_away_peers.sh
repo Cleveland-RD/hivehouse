@@ -123,4 +123,9 @@ assert_eq "...leaves none" "$(wc -l < "$AUDIT" | tr -d ' ')" "1"
 passes "an orchestrator's allowed send" orch "$proj" "far-agent" "from the orchestrator"
 assert_eq "...adds one, naming who sent it" "$(tail -1 "$AUDIT" | jq -r '.peer + " " + .from')" "far-agent proj-orchestrator"
 
+rm -f "$AUDIT"; mkdir "$AUDIT"; resethub
+refused "a send whose audit line cannot be written (a folder at peers.jsonl) is refused" hub "$hub" "far-agent"
+assert_contains "...saying the audit line could not be written" "$ERR" "could not be written"
+rmdir "$AUDIT"
+
 cd /; t_teardown; t_done
