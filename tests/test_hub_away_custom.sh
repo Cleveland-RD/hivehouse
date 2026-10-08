@@ -46,6 +46,11 @@ mkdel "$((NOW - 10))"
 rm -f "$P/memory/hub-handoff.md"; asclaude
 assert_not "an expired delegate file: custom/ is still not read for the template" "$(cat "$P/memory/hub-handoff.md" 2>/dev/null)" "CUSTOM-TEMPLATE"
 
+# a delegate file that names ANOTHER hub is no leave for this one: custom/ is read here as in relay mode
+mkdel "$((NOW + 3600))"; mkdir -p "$T_TMP/otherhub/$T_HUB"; printf "$T_DELEGATE_LINE1"'\nhub=%s\nuntil=%s\nmcp=\n' "$T_TMP/otherhub" "$((NOW + 3600))" > "$DF"; chmod 644 "$DF"
+rm -f "$P/memory/hub-handoff.md"; asclaude
+assert_contains "a delegate file naming another hub: the custom template is used" "$(cat "$P/memory/hub-handoff.md" 2>/dev/null)" "CUSTOM-TEMPLATE"
+
 # not away (no delegate file): custom/ works as before
 rm -f "$DF"
 rm -f "$P/memory/hub-handoff.md"; asclaude
