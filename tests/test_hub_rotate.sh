@@ -69,6 +69,18 @@ printf 'two\nlines {name}\n' > "$H/$T_STATE/$T_CUSTOM/rules/hub-pickup.md"
 rotated 2
 assert_not "a custom pickup of two lines is never typed" "$(screen hub)" "GOT: two"
 assert_contains "a custom pickup of two lines is refused, the plugin's is used" "$(screen hub)" "GOT: /$T_PLUGIN:hub You are hub."
+# a custom line may only start with a letter or digit, or with "/<plugin>:": a "!" is bash mode, "/login" and "/plugin" are commands
+cnt=3
+for bad in '!touch /tmp/x' '/login' '/plugin list' '#note' '&x' '  !x'; do
+  printf '%s {name}\n' "$bad" > "$H/$T_STATE/$T_CUSTOM/rules/hub-pickup.md"
+  (cd "$H" && HH_PROJECT="$H" hh-hub rotate --still 2 --settle 1 --max 30 >/dev/null 2>&1)
+  cnt=$((cnt + 1)); rotated $((cnt - 1))
+  assert_not "a custom pickup line starting with [$bad] is never typed" "$(screen hub)" "GOT: $bad"
+done
+assert_contains "...the plugin's own line is typed instead" "$(screen hub)" "GOT: /$T_PLUGIN:hub You are hub."
+printf '/%s:hub custom {name}\n' "$T_PLUGIN" > "$H/$T_STATE/$T_CUSTOM/rules/hub-pickup.md"
+(cd "$H" && HH_PROJECT="$H" hh-hub rotate --still 2 --settle 1 --max 30 >/dev/null 2>&1); cnt=$((cnt + 1)); rotated $((cnt - 1))
+assert_contains "a custom line starting with /<plugin>: is typed" "$(screen hub)" "GOT: /$T_PLUGIN:hub custom hub"
 rm -f "$H/$T_STATE/$T_CUSTOM/rules/hub-pickup.md"
 
 # the shared rotation checks the identity before it types /clear, not only after the wait

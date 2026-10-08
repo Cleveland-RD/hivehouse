@@ -516,8 +516,16 @@ hub_pickup_line() {  # hub_pickup_line <hub root> <hub name>
   text=$(cat "$f" 2>/dev/null)
   case "$text" in ''|*[[:cntrl:]]*) echo "$HH_PREFIX: ignoring $f: the pickup line is one line of plain text" >&2; text=$(cat "$own") ;; esac
   [ "${#text}" -le 1000 ] || { echo "$HH_PREFIX: ignoring $f: the pickup line is at most 1000 characters" >&2; text=$(cat "$own"); }
-  local h="$1/$HH_HUB_DIR/memory/hub-handoff.md" n="$2" pl="$PLUGIN"
+  local h="$1/$HH_HUB_DIR/memory/hub-handoff.md" n="$2" pl="$PLUGIN" lead
   text=${text//\{plugin\}/$pl}; text=${text//\{name\}/$n}; text=${text//\{handoff\}/$h}
+  # An allowlist: what is typed into the hub's own prompt box starts with a letter or digit (a message), or with exactly /<plugin>: (this
+  # plugin's skill). A "!" starts bash mode, and "/login", "/plugin" and the rest are commands; a custom/ file an away agent rewrote must
+  # not reach them.
+  lead=${text#"${text%%[![:space:]]*}"}
+  case "$lead" in
+    [A-Za-z0-9]*) ;;
+    *) [ "${text#"/$pl:"}" != "$text" ] || { echo "$HH_PREFIX: ignoring $f: the pickup line starts with a letter or digit, or with /$pl:" >&2; text=$(cat "$own"); text=${text//\{plugin\}/$pl}; text=${text//\{name\}/$n}; text=${text//\{handoff\}/$h}; } ;;
+  esac
   printf '%s' "$text"
 }
 hub_attach() {  # hub_attach <session>: attach from a terminal; inside tmux or with no terminal, say how
