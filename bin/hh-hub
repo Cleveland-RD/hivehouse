@@ -509,10 +509,18 @@ hub_running() {  # hub_running <hub root>
 }
 # What a rotated hub is typed: the pickup line from hh-resolve's file (the hub folder's custom/ first, as HH_PROJECT follows it), its
 # {plugin}, {name} and {handoff} filled in. A custom line that is not one line of plain text is ignored with a note.
+# While the owner is away custom/ is not read for anything the hub is typed or told: an away agent may write there, and what is typed into
+# the hub after a /clear is read by the hub as the owner's. A delegate file that exists but is refused counts as away: fail closed.
+away_now() {  # away_now <hub root>: 0 while a delegate file names this hub (valid or refused)
+  delegate_for_hub "$1" && return 0
+  [ -n "$AWAY_REFUSED" ]
+}
 hub_pickup_line() {  # hub_pickup_line <hub root> <hub name>
   local f text own
   own="$(cd "$HH_BIN/.." && pwd -P)/rules/hub-pickup.md"
-  f=$(hh_custom_file rules/hub-pickup.md 2>/dev/null) || f=$own
+  if away_now "$1"; then
+    f=$own; echo "$HH_PREFIX: the owner is away: custom/ is not read for the hub's pickup line; the plugin's own is used" >&2
+  else f=$(hh_custom_file rules/hub-pickup.md 2>/dev/null) || f=$own; fi
   text=$(cat "$f" 2>/dev/null)
   case "$text" in ''|*[[:cntrl:]]*) echo "$HH_PREFIX: ignoring $f: the pickup line is one line of plain text" >&2; text=$(cat "$own") ;; esac
   [ "${#text}" -le 1000 ] || { echo "$HH_PREFIX: ignoring $f: the pickup line is at most 1000 characters" >&2; text=$(cat "$own"); }
@@ -608,7 +616,9 @@ self)
   # the hub's handoff, from the template (a custom/ file first), when there is none: hh-hub rotate needs one to send the hub back to
   hfile="$root/$HH_HUB_DIR/memory/hub-handoff.md"
   if [ ! -e "$hfile" ]; then
-    mkdir -p "$root/$HH_HUB_DIR/memory" && tpl=$(HH_PROJECT="$root" hh_custom_file rules/hub-handoff.md 2>/dev/null) && cp "$tpl" "$hfile" 2>/dev/null \
+    if away_now "$root"; then tpl="$(cd "$HH_BIN/.." && pwd -P)/rules/hub-handoff.md"   # custom/ is not read while the owner is away
+    else tpl=$(HH_PROJECT="$root" hh_custom_file rules/hub-handoff.md 2>/dev/null) || tpl="$(cd "$HH_BIN/.." && pwd -P)/rules/hub-handoff.md"; fi
+    mkdir -p "$root/$HH_HUB_DIR/memory" && cp "$tpl" "$hfile" 2>/dev/null \
       || echo "$HH_PREFIX: could not write $hfile from the template" >&2
   fi
   seal_hub "$root"
