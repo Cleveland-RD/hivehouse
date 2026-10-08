@@ -24,6 +24,8 @@ rf="$(hh_registry_dir)/$(hh_pane_key "$HH_TMUX_SOCKET" "$pane").json"
 assert_eq "registered with the pane's process and start time" "$(jq -r '.pane_pid + "|" + .pane_started' "$rf")" "$(hh_pane_identity "$HH_TMUX_SOCKET" "$pane" | tr '\t' '|')"
 assert_eq "team.json model" "$(jq -r '.agents[0].model' $T_STATE/team.json)" "sonnet"
 assert_eq "team.json window" "$(jq -r '.agents[0].window' $T_STATE/team.json)" "123456"
+pane_nw=$(spawn nowin); assert_status "spawn with no --window" $? 0
+assert_eq "...records no window (the default is a guess, never written)" "$(jq -r '.agents[] | select(.name == "nowin") | has("window")' $T_STATE/team.json)" "false"
 assert_eq "team.json pane" "$(jq -r '.agents[0].pane' $T_STATE/team.json)" "$pane"
 screen=$(hh_tmux capture-pane -p -J -S - -t "$pane")
 assert_contains "named for project and agent" "$screen" "ARGV: proj-impl"

@@ -17,7 +17,7 @@ USAGE="usage: hh-spawn --agent <n> --role <file> --rules <file> --model <m> --ef
 # manifest (a pre-approved `hh-manifest add` would let cleanup remove a path, pane or pid nobody named).
 ALLOWED='Bash(hh-slot status) Bash(hh-slot release *) Bash(hh-context *) Bash(hh-gate-verify *) Bash(hh-settings resolve *) Bash(hh-disk *)'
 
-agent=""; role=""; rules=""; model=""; effort=""; mode=""; wt=""; branch=""; base=""; session=""; window=200000
+agent=""; role=""; rules=""; model=""; effort=""; mode=""; wt=""; branch=""; base=""; session=""; window=""
 handoff=""; close=""; still=5; maxwait=90; self=0; others=0; oname=""; respawn=""; settings=0; wgiven=0; hub=""; nohub=0; resume=0; modeset=0
 while [ $# -gt 0 ]; do
   [ $# -ge 2 ] || [ "$1" = --self ] || [ "$1" = --no-hub ] || [ "$1" = --resume ] || hh_die 64 "$USAGE"
@@ -97,7 +97,7 @@ if [ -n "$respawn" ]; then
 fi
 [ -n "$agent" ] || hh_die 64 "$USAGE"
 hh_is_agent_name "$agent" || hh_die 4 "bad agent name: $agent"
-hh_is_number "$window" && [ "$window" -gt 0 ] || hh_die 4 "--window must be a positive number: $window"
+[ -z "$window" ] || { hh_is_number "$window" && [ "$window" -gt 0 ]; } || hh_die 4 "--window must be a positive number: $window"
 hh_is_number "$still" && hh_is_number "$maxwait" || hh_die 4 "--still and --max-wait must be numbers"
 
 if [ "$self" = 1 ]; then
@@ -275,8 +275,9 @@ socket=$(hh_tmux display-message -p -t "$pane" '#{socket_path}') || exit $?
 "$HH_BIN/hh-manifest" add tmux socket="$socket" pane="$pane" agent="$agent" >/dev/null || exit $?   # first: what is on the manifest can be cleaned up
 register "$pane" "$socket" || exit $?
 upsert_team "$(jq -nc --arg n "$agent" --arg p "$pane" --arg s "$socket" --arg m "$model" --arg e "$effort" --arg mode "$mode" \
-  --arg wt "$wt" --arg b "$branch" --arg sess "$session" --argjson w "$window" --arg pp "$PANE_PID" --arg ps "$PANE_STARTED" --arg hf "$handoff" \
-  '{name:$n, pane:$p, socket:$s, model:$m, effort:$e, mode:$mode, worktree:$wt, branch:$b, session:$sess, window:$w, pane_pid:$pp, pane_started:$ps}
+  --arg wt "$wt" --arg b "$branch" --arg sess "$session" --arg w "$window" --arg pp "$PANE_PID" --arg ps "$PANE_STARTED" --arg hf "$handoff" \
+  '{name:$n, pane:$p, socket:$s, model:$m, effort:$e, mode:$mode, worktree:$wt, branch:$b, session:$sess, pane_pid:$pp, pane_started:$ps}
+   + (if $w != "" then {window:($w | tonumber)} else {} end)
    + (if $hf != "" then {handoff:$hf} else {} end)')"
 
 wait_idle "$pane" "$still" "$maxwait"; rc=$?
