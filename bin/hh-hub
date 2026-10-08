@@ -484,6 +484,54 @@ seal_hub() {  # seal_hub <hub root>: takes group and others' write off $HH_HUB_D
   chmod -R go-w "$1/$HH_HUB_DIR" || hh_die 4 "cannot take group and others' write off $1/$HH_HUB_DIR"
 }
 
+# ---- the hub in tmux (hh-hub start, and the lines away and back print) ----
+hub_session_note() {  # hub_session_note <hub name>: a printed new-session line never attaches (no -A), so a running hub of that name is to exit first
+  hh_tmux has-session -t "=$1" 2>/dev/null || return 0
+  echo "# A tmux session named $1 is running: exit the hub in it first (/exit). The line below starts a new session and never attaches to that one, which would not carry the change."
+}
+tmux_word() { if [ -n "${HH_TMUX_SOCKET:-}" ]; then printf 'tmux -S %q' "$HH_TMUX_SOCKET"; else printf 'tmux'; fi; }   # the tmux the printed lines name
+# The hub's own Claude, as hub.json records it: alive, and in the pane it recorded. Prints that pane's tmux session (nothing when no
+# pane was recorded). 0 running; 1 not.
+hub_running() {  # hub_running <hub root>
+  local f="$1/$HH_HUB_DIR/hub.json" sock pane
+  hh_claude_is "$(hh_json_get "$f" .claude_pid)" "$(hh_json_get "$f" .claude_started)" || return 1
+  sock=$(hh_json_get "$f" .socket); pane=$(hh_json_get "$f" .pane)
+  if [ -n "$pane" ] && hh_recorded_pane_is "$sock" "$pane" "$(hh_json_get "$f" .pane_pid)" "$(hh_json_get "$f" .pane_started)"; then
+    hh_tmux_on "$sock" display-message -p -t "$pane" '#{session_name}' 2>/dev/null
+  fi
+  return 0
+}
+hub_attach() {  # hub_attach <session>: attach from a terminal; inside tmux or with no terminal, say how
+  local tm; tm=$(tmux_word)
+  if [ -n "${TMUX:-}" ]; then echo "$HH_PREFIX: switch to it with: $tm switch-client -t $1"
+  elif [ -t 0 ] && [ -t 1 ]; then exec tmux ${HH_TMUX_SOCKET:+-S "$HH_TMUX_SOCKET"} attach-session -t "=$1"
+  else echo "$HH_PREFIX: attach with: $tm attach -t $1"; fi
+}
+hub_start() {
+  local root hubn sess tm
+  [ $# -eq 0 ] || hh_die 64 "$USAGE"
+  root=$(hub_root) || exit $?
+  hubn=$(hub_chosen_name "$root") || exit $?
+  hh_is_typed_path "$root" || hh_die 4 "the hub's folder is not a path hivehouse will print into a command: $root"
+  command -v tmux >/dev/null 2>&1 || hh_die 2 "tmux is not installed: the hub runs in a tmux session"
+  command -v claude >/dev/null 2>&1 || hh_die 2 "claude is not on the PATH"
+  tm=$(tmux_word)
+  if sess=$(hub_running "$root"); then
+    [ "$sess" = "$hubn" ] || hh_die 4 "the hub is already running ${sess:+in tmux session $sess}${sess:-outside tmux}: exit it first (/exit), or attach to it"
+    echo "$HH_PREFIX: the hub is running in tmux session $hubn"; hub_attach "$hubn"; return
+  fi
+  hh_tmux has-session -t "=$hubn" 2>/dev/null && hh_die 4 "a tmux session named $hubn exists and is not the hub (hub.json records no running hub in it): exit it, or give the hub another name with hh-hub name"
+  if [ -n "${TMUX:-}" ]; then   # tmux does not nest: the owner starts it from here
+    echo "$HH_PREFIX: you are inside tmux. Start the hub beside this session, then switch to it:"
+    printf '%s new-session -d -s %q -c %q -e HH_PROJECT=%q env -u HH_AWAY_BYPASS -u HH_AWAY_HUB -u HH_AWAY_MCP_ALLOW claude --name %q /%s:hub\n' "$tm" "$hubn" "$root" "$root" "$hubn" "$PLUGIN"
+    echo "$tm switch-client -t $hubn"
+    return 0
+  fi
+  hh_tmux new-session -d -s "$hubn" -c "$root" -e "HH_PROJECT=$root" env -u HH_AWAY_BYPASS -u HH_AWAY_HUB -u HH_AWAY_MCP_ALLOW claude --name "$hubn" "/$PLUGIN:hub" \
+    || hh_die 1 "tmux could not start the session $hubn"
+  echo "$HH_PREFIX: the hub started in tmux session $hubn"; hub_attach "$hubn"
+}
+
 case "$cmd" in
 init)
   [ $# -eq 0 ] || hh_die 64 "$USAGE"
@@ -506,8 +554,17 @@ self)
   hh_is_session_name "$name" || hh_die 4 "a session name hivehouse will type is one line of letters, digits, space, - _ . ( ), at most 64: $name"
   # orchestrators are told to type it (hh-spawn --self --hub <name>), so it is one word
   case "$name" in *[' ()']*) hh_die 4 "the hub's name is one word (letters, digits, - _ .): $name; rename the session" ;; esac
+  # the hub's own pane, as hh-spawn --self records an orchestrator's: hh-hub rotate types into only this pane and process
+  psock=""; ppane=""; ppid=""; pstarted=""
+  if [ -n "${TMUX_PANE:-}" ] && psock=$(hh_tmux display-message -p -t "$TMUX_PANE" '#{socket_path}' 2>/dev/null) && ident=$(hh_pane_identity "$psock" "$TMUX_PANE"); then
+    ppane=$TMUX_PANE; ppid=${ident%%$'\t'*}; pstarted=${ident#*$'\t'}
+  else
+    echo "$HH_PREFIX: this hub is not in a tmux pane, so it cannot rotate itself: start it with hh-hub start" >&2
+  fi
   jq -nc --arg n "$name" --arg p "$pid" --arg s "$(hh_lstart "$pid")" --arg sid "$(hh_session_record "$pid" .sessionId)" --arg at "$(hh_now)" \
-    '{name:$n, claude_pid:$p, claude_started:$s, at:$at} + (if $sid != "" then {session_id:$sid} else {} end)' \
+    --arg ts "$psock" --arg tp "$ppane" --arg tpp "$ppid" --arg tps "$pstarted" \
+    '{name:$n, claude_pid:$p, claude_started:$s, at:$at} + (if $sid != "" then {session_id:$sid} else {} end)
+     + (if $tp != "" then {socket:$ts, pane:$tp, pane_pid:$tpp, pane_started:$tps} else {} end)' \
     > "$root/$HH_HUB_DIR/hub.json.tmp$$" && mv "$root/$HH_HUB_DIR/hub.json.tmp$$" "$root/$HH_HUB_DIR/hub.json"
   seal_hub "$root"
   echo "$name" ;;
@@ -800,6 +857,7 @@ wake)
     "" "${args[@]}" ;;
 
 start)
+  [ $# -gt 0 ] || { hub_start; exit $?; }
   name="${1:-}"; id="${2:-}"; [ -n "$name" ] && [ -n "$id" ] || hh_die 64 "$USAGE"; shift 2
   overnight=0; sargs=()
   for a in "$@"; do if [ "$a" = --overnight ]; then overnight=1; else sargs+=("$a"); fi; done
@@ -1045,12 +1103,13 @@ away)
   printf 'sudo chown -- root:%s %q %q %q\n' "$grp" "$base" "$dir" "$file"
   printf 'sudo chmod -- 0755 %q %q\n' "$base" "$dir"
   printf 'sudo chmod -- 0644 %q\n' "$file"
-  echo "# Then exit the running hub (so two do not share the folder) and start it again with these lines: marked, in bypass, with only its allowed MCP servers."
-  printf 'cd %q\n' "$root"
+  echo "# Then exit the running hub (so two do not share the folder) and start it in tmux with this line: marked, in bypass, with only its allowed MCP servers. The marker and its variables go to tmux with -e, never through the shell."
+  hub_session_note "$hubn"
+  tm=$(tmux_word)
   if [ -n "$sid" ]; then
-    printf 'HH_AWAY_BYPASS=1 HH_PROJECT=%q HH_AWAY_HUB=%q HH_AWAY_MCP_ALLOW=%q claude --permission-mode bypassPermissions --no-chrome --strict-mcp-config --mcp-config %q --resume %q\n' "$root" "$root" "$allow" "$mcp" "$sid"
+    printf '%s new-session -s %q -c %q -e HH_AWAY_BYPASS=1 -e HH_PROJECT=%q -e HH_AWAY_HUB=%q -e HH_AWAY_MCP_ALLOW=%q claude --permission-mode bypassPermissions --no-chrome --strict-mcp-config --mcp-config %q --resume %q\n' "$tm" "$hubn" "$root" "$root" "$root" "$allow" "$mcp" "$sid"
   else
-    printf 'HH_AWAY_BYPASS=1 HH_PROJECT=%q HH_AWAY_HUB=%q HH_AWAY_MCP_ALLOW=%q claude --name %q --permission-mode bypassPermissions --no-chrome --strict-mcp-config --mcp-config %q /%s:hub\n' "$root" "$root" "$allow" "$hubn" "$mcp" "$PLUGIN"
+    printf '%s new-session -s %q -c %q -e HH_AWAY_BYPASS=1 -e HH_PROJECT=%q -e HH_AWAY_HUB=%q -e HH_AWAY_MCP_ALLOW=%q claude --name %q --permission-mode bypassPermissions --no-chrome --strict-mcp-config --mcp-config %q /%s:hub\n' "$tm" "$hubn" "$root" "$root" "$root" "$allow" "$hubn" "$mcp" "$PLUGIN"
   fi
   # what Claude Code asks once, by hand, before the owner leaves: nobody is there to answer it later
   if [ "$(jq -r '.skipDangerousModePermissionPrompt // false' "$cdir/settings.json" 2>/dev/null)" != true ]; then
@@ -1087,9 +1146,12 @@ back)
   case "$sid" in ''|*[!${HH_LOWER}${HH_UPPER}${HH_DIGITS}-]*) sid="" ;; esac
   echo "# Away ends when this file is gone. Paste the line in a terminal:"
   printf 'sudo rm -f -- %q\n' "$file"
-  echo "# Then exit the hub and start it again without bypass, so each action it takes asks you again:"
-  printf 'cd %q\n' "$root"
-  if [ -n "$sid" ]; then printf 'claude --resume %q\n' "$sid"; else printf 'claude --name %q /%s:hub\n' "$(hub_chosen_name "$root" 2>/dev/null || echo hub)" "$PLUGIN"; fi ;;
+  echo "# Then exit the hub and start it again in tmux without bypass, so each action it takes asks you again:"
+  hubn=$(hub_chosen_name "$root" 2>/dev/null || echo hub)
+  hub_session_note "$hubn"
+  tm=$(tmux_word)
+  if [ -n "$sid" ]; then printf '%s new-session -s %q -c %q -e HH_PROJECT=%q env -u HH_AWAY_BYPASS -u HH_AWAY_HUB -u HH_AWAY_MCP_ALLOW claude --resume %q\n' "$tm" "$hubn" "$root" "$root" "$sid"
+  else printf '%s new-session -s %q -c %q -e HH_PROJECT=%q env -u HH_AWAY_BYPASS -u HH_AWAY_HUB -u HH_AWAY_MCP_ALLOW claude --name %q /%s:hub\n' "$tm" "$hubn" "$root" "$root" "$hubn" "$PLUGIN"; fi ;;
 
 decide)
   # A decision the hub made for the owner, recorded word for word. Only while the owner's delegate file is valid for this

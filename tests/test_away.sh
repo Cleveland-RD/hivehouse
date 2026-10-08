@@ -74,8 +74,16 @@ assert_contains "...the content names this hub" "$out" "hub=$H"
 assert_contains "...and its MCP list (empty here) as the fourth line" "$out" "mcp= hosts= allow= | sudo tee"
 until_epoch=$(printf '%s\n' "$out" | sed -n 's/.*until=\([0-9]*\).*/\1/p' | head -1)
 [ "$until_epoch" -ge $((NOW + 7190)) ] && [ "$until_epoch" -le $((NOW + 7500)) ] && ok "...and the time asked for" || bad "until=$until_epoch is not about +2h"
-assert_contains "...the hub's start line is marked, in bypass, with only its allowed MCP servers" "$out" "HH_AWAY_BYPASS=1 HH_PROJECT=$H HH_AWAY_HUB=$H HH_AWAY_MCP_ALLOW='' claude --name hub --permission-mode bypassPermissions --no-chrome --strict-mcp-config --mcp-config $P/away-mcp.json /$T_PLUGIN:hub"
-assert_contains "...with the hub's own project and hub folders for the away hook" "$out" "HH_PROJECT=$H HH_AWAY_HUB=$H"
+assert_contains "...the hub's start line is a tmux line, marked, in bypass, with only its allowed MCP servers" "$out" "tmux -S $HH_TMUX_SOCKET new-session -s hub -c $H -e HH_AWAY_BYPASS=1 -e HH_PROJECT=$H -e HH_AWAY_HUB=$H -e HH_AWAY_MCP_ALLOW='' claude --name hub --permission-mode bypassPermissions --no-chrome --strict-mcp-config --mcp-config $P/away-mcp.json /$T_PLUGIN:hub"
+assert_contains "...with the hub's own project and hub folders for the away hook" "$out" "-e HH_PROJECT=$H -e HH_AWAY_HUB=$H"
+case "$out" in *"HH_AWAY_BYPASS=1 HH_PROJECT"*|*"cd $H"*) bad "the marker is set through the shell, or the line changes directory" ;; *) ok "...the marker goes through tmux -e, never through the shell" ;; esac
+case "$(printf '%s\n' "$out" | grep -v '^#')" in *" -A "*|*attach*) bad "the start line can attach to a running hub" ;; *) ok "...and never attaches to a running session" ;; esac
+case "$out" in *"exit the hub in it first"*) bad "no tmux session of the hub is running, yet the line says to exit it" ;; *) ok "...says nothing about a running session when there is none" ;; esac
+hh_tmux new-session -d -s hub 'sleep 600'
+out5=$(hub away --until +1h); assert_contains "a hub session already running (it lacks the marker): told to exit it first" "$out5" "A tmux session named hub is running: exit the hub in it first"
+case "$(printf '%s\n' "$out5" | grep -v '^#')" in *" -A "*|*attach*) bad "...the line attaches to it" ;; *) ok "...and the line still never attaches" ;; esac
+assert_contains "...back says so too" "$(hub back)" "A tmux session named hub is running: exit the hub in it first"
+hh_tmux kill-session -t =hub
 assert_contains "...before leaving: the one-time bypass warning, when it has not been accepted" "$out" "one-time warning"
 assert_contains "...and the folder trust, when the folder is not trusted" "$out" "not trusted by Claude Code yet"
 printf '{"skipDangerousModePermissionPrompt":true}\n' > "$CLAUDE_CONFIG_DIR/settings.json"
@@ -99,11 +107,14 @@ assert_contains "...and that SendMessage is held to the hub and its teams, so pe
 assert_contains "...and that no remote host is used" "$out" "No remote host"
 assert_eq "...the time away began is kept for the screen" "$(jq -r '.since | length' "$P/away.json")" "20"
 printf 'lead\n' > "$P/name"; out3=$(hub away --until +1h); out4=$(hub back)
-assert_contains "the start line names the hub as its folder chose" "$out3" "claude --name lead --permission-mode bypassPermissions"
-assert_contains "...and so does back's" "$out4" "claude --name lead /$T_PLUGIN:hub"
+assert_contains "the start line names the hub as its folder chose" "$out3" "new-session -s lead -c $H -e HH_AWAY_BYPASS=1"
+assert_contains "...and its claude" "$out3" "claude --name lead --permission-mode bypassPermissions"
+assert_contains "...and so does back's" "$out4" "new-session -s lead -c $H -e HH_PROJECT=$H env -u HH_AWAY_BYPASS -u HH_AWAY_HUB -u HH_AWAY_MCP_ALLOW claude --name lead /$T_PLUGIN:hub"
 rm -f "$P/name"
 jq '.session_id = "sess-hub-1"' "$P/hub.json" > "$P/hub.json.t" && mv "$P/hub.json.t" "$P/hub.json"
-out=$(hub away --until +1d); assert_contains "with a session recorded, the hub is resumed" "$out" "claude --permission-mode bypassPermissions --no-chrome --strict-mcp-config --mcp-config $P/away-mcp.json --resume sess-hub-1"
+out=$(hub away --until +1d)
+case "$(printf '%s\n' "$out" | grep -v '^#')" in *" -A "*|*attach*) bad "the resuming start line can attach to a running hub" ;; *) ok "the resuming start line never attaches either" ;; esac
+assert_contains "with a session recorded, the hub is resumed" "$out" "claude --permission-mode bypassPermissions --no-chrome --strict-mcp-config --mcp-config $P/away-mcp.json --resume sess-hub-1"
 printf '{"mcpServers":{"docs":{"command":"docs-mcp","args":["--x"]}}}\n' > "$CLAUDE_CONFIG_DIR/.claude.json"
 out=$(hub away --until +1h --mcp-allow docs,nothere)
 assert_eq "an allowed server's definition is copied into the hub's MCP file" "$(jq -c '.mcpServers | keys' "$P/away-mcp.json")" '["docs"]'
@@ -112,7 +123,7 @@ assert_contains "...and the list is the delegate file's fourth line" "$out" "mcp
 out=$(hub back); assert_status "back" $? 0
 assert_contains "...prints the line that removes the file" "$out" "sudo rm -f -- "
 assert_contains "......the user's own, under delegate.d" "$out" "/delegate.d/$REALUID"
-case "$out" in *HH_AWAY_BYPASS*|*bypassPermissions*) bad "the restart line after away is marked or in bypass" ;; *) ok "...and a restart line with no marker and no bypass" ;; esac
+case "$out" in *HH_AWAY_BYPASS=1*|*bypassPermissions*|*"-e HH_AWAY"*) bad "the restart line after away is marked or in bypass" ;; *) ok "...and a restart line with no marker and no bypass (the variables are unset for it)" ;; esac
 assert_contains "...which resumes the hub" "$out" "claude --resume sess-hub-1"
 # a scratch base: away and back print the line that removes the user's own delegate file
 OB="$T_TMP/oldbase"; mkdir -p "$OB"

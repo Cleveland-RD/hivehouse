@@ -6,7 +6,7 @@
 # prompt box: idle), clearbusy (idle until /clear, then never idle again), retryclear (idle, but the first /clear is left
 # on the input line), bare (reads with no prompt at all), busy (never still), ticking (a prompt that keeps being
 # redrawn, so never still), hook (runs the SessionStart hook as a Claude would, then idle), nested (starts a second Claude
-# below this one that runs the hook, as `claude -p` from an agent's own Bash does, then idle). The variable reaches a pane through tmux -e, never inherited.
+# below this one that runs the hook, as `claude -p` from an agent's own Bash does, then idle), hubself (runs hh-hub self --name $HH_FAKE_HUBNAME or hub, then idle). The variable reaches a pane through tmux -e, never inherited.
 # The prompt box is what Claude Code 2.1.x draws: a rule, "❯" + U+00A0 + a dim placeholder, a rule, a footer.
 # the remote-host queries hh-remote-sync makes (no model, no prompt): version, and the plugin's install path and version;
 # HH_FAKE_PLUGIN_LIST names a file to list instead, and HH_FAKE_PLUGIN_CALLS a file each `plugin list` call is logged to
@@ -29,6 +29,7 @@ dialog() { printf '%s\n Do you trust the files in this folder?\n\n ❯ 1. Yes, I
 hookinput='{"session_id":"sp","transcript_path":"/tmp/sp.jsonl","source":"startup"}'
 case "${HH_FAKE_CLAUDE:-idle}" in
   hook) sleep 3; printf "%s" "$hookinput" | hh-session-hook; box; cat ;;  # after hh-spawn has registered the pane
+  hubself) hh-hub self --name "${HH_FAKE_HUBNAME:-hub}" >/dev/null 2>&1; box; cat ;;   # a hub's Claude: records itself (and its pane) as hh-hub self does at every start
   nested) HH_FAKE_CLAUDE=hook bash "$0" >/dev/null 2>&1; box; cat ;;
   busy) while :; do date; sleep 0.3; done ;;
   dialog) dialog; cat ;;
