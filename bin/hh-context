@@ -14,21 +14,28 @@ STATE="$ROOT/$HH_STATE_DIR"
 if [ -n "$(git -C "$ROOT" ls-files -- "$HH_STATE_DIR")" ]; then
   hh_die 3 "files under $HH_STATE_DIR/ are tracked by git; untrack them before using hivehouse here"
 fi
+wsrc() {  # wsrc <agent> [window]: "<measured|arg|recorded|guess> <window>", the one place the window's source is decided
+  local a="$1" win="${2:-}" s c sid m
+  s="$STATE/team/$a/session.json"; c="$STATE/team/$a/context.json"; sid=$(hh_json_get "$s" .session_id)
+  # Claude Code's reading counts only for the session it was taken in: a rotated or replaced session's file is stale
+  if [ -n "$sid" ] && [ "$(hh_json_get "$c" .session_id)" = "$sid" ]; then
+    m=$(hh_json_get "$c" .window); case "$m" in ''|*[!0-9]*|0) ;; *) echo "measured $m"; return 0 ;; esac
+  fi
+  [ -n "$win" ] && { echo "arg $win"; return 0; }
+  win=$(jq -r --arg a "$a" '[.agents[]? | select(.name == $a) | .window][0] // empty' "$STATE/team.json" 2>/dev/null)
+  case "$win" in ''|*[!0-9]*|0) echo "guess $HH_WINDOW_DEFAULT" ;; *) echo "recorded $win" ;; esac
+}
 pct() {  # pct <agent> [window]
-  local a="$1" win="${2:-}" s t used c sid m
+  local a="$1" s t used src
   s="$STATE/team/$a/session.json"; [ -f "$s" ] || return 2
   t=$(hh_json_get "$s" .transcript_path); [ -f "$t" ] || return 2
   used=$(hh_transcript_used "$t")
   [ -n "$used" ] || return 2
-  # Claude Code's reading counts only for the session it was taken in: a rotated or replaced session's file is stale
-  c="$STATE/team/$a/context.json"; sid=$(hh_json_get "$s" .session_id)
-  if [ -n "$sid" ] && [ "$(hh_json_get "$c" .session_id)" = "$sid" ]; then
-    m=$(hh_json_get "$c" .window); case "$m" in ''|*[!0-9]*|0) ;; *) echo $(( used * 100 / m )); return 0 ;; esac
-  fi
-  [ -n "$win" ] && { echo $(( used * 100 / win )); return 0; }
-  win=$(jq -r --arg a "$a" '[.agents[]? | select(.name == $a) | .window][0] // empty' "$STATE/team.json" 2>/dev/null)
-  case "$win" in ''|*[!0-9]*|0) win=$HH_WINDOW_DEFAULT ;; esac
-  hh_assumed_level "$used" "$win"
+  src=$(wsrc "$a" "${2:-}")
+  case "$src" in
+    measured*|arg*) echo $(( used * 100 / ${src#* } )) ;;
+    *) hh_assumed_level "$used" "${src#* }" ;;
+  esac
 }
 mark() { hh_team_agent_is "$ROOT" "$1"; [ $? -eq 1 ] && printf ' (not running)'; return 0; }   # mark <agent>
 if [ "${1:-}" = "--all" ]; then
@@ -36,8 +43,13 @@ if [ "${1:-}" = "--all" ]; then
   for a in $(jq -r '.agents[].name' "$STATE/team.json"); do printf '%s %s%s\n' "$a" "$(pct "$a" || echo '?')" "$(mark "$a")"; done
   exit 0
 fi
-[ -n "${1:-}" ] || hh_die 64 "usage: hh-context <agent> [--window n] | --all"
+[ -n "${1:-}" ] || hh_die 64 "usage: hh-context <agent> [--window n | --source] | --all"
 w=""
+if [ "${2:-}" = "--source" ]; then  # where the window comes from, for the Stop hook: measured, given (recorded) or guess
+  pct "$1" >/dev/null || hh_die 2 "no session or transcript recorded for $1"
+  case "$(wsrc "$1")" in measured*) echo measured ;; guess*) echo guess ;; *) echo given ;; esac
+  exit 0
+fi
 if [ "${2:-}" = "--window" ]; then
   w="${3:-}"; case "$w" in ''|*[!0-9]*|0) hh_die 4 "--window must be a positive number: $w" ;; esac
 fi

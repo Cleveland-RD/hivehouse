@@ -52,6 +52,19 @@ assert_eq "--all lists every team member, ? when unknown" "$(hh-context --all | 
 printf '%s\n' '{"type":"assistant","isSidechain":false,"message":{"model":"<synthetic>","usage":{"input_tokens":0,"output_tokens":0}}}' > "$T_TMP/only-synthetic.jsonl"
 jq -nc --arg t "$T_TMP/only-synthetic.jsonl" '{session_id:"s",transcript_path:$t}' > $T_STATE/team/rev/session.json
 hh-context rev 2>/dev/null; assert_status "a transcript with no real usage line is unknown" $? 2
+# where the window came from, for the Stop hook: measured by Claude Code, recorded (spawn, --self, hh-hub window), or the default guess
+jq -nc --arg t "$HH_REPO_ROOT/tests/fixtures/transcript.jsonl" '{session_id:"s",transcript_path:$t}' > $T_STATE/team/impl/session.json
+echo '{"agents":[{"name":"impl","model":"sonnet"}]}' > $T_STATE/team.json
+assert_eq "--source: no window anywhere is a guess" "$(hh-context impl --source)" "guess"
+echo '{"agents":[{"name":"impl","model":"sonnet","window":1000000}]}' > $T_STATE/team.json
+assert_eq "--source: a recorded window is given" "$(hh-context impl --source)" "given"
+echo '{"window":1000000,"used_percentage":9,"session_id":"s","at":"t"}' > $T_STATE/team/impl/context.json
+assert_eq "--source: Claude Code's reading is measured" "$(hh-context impl --source)" "measured"
+echo '{"window":1000000,"used_percentage":9,"session_id":"older","at":"t"}' > $T_STATE/team/impl/context.json
+assert_eq "--source: another session's reading is not (given again)" "$(hh-context impl --source)" "given"
+rm $T_STATE/team/impl/context.json
+hh-context nobody --source 2>/dev/null; assert_status "--source of an unknown agent" $? 2
+assert_eq "the reading itself is unchanged by all this" "$(hh-context impl)" "10 (window assumed 1000000)"
 # a tracked .hivehouse is refused; outside a repo nothing is written
 echo x > $T_STATE/leak; git add -f $T_STATE/leak
 hh-context impl >/dev/null 2>&1; assert_status "tracked $T_STATE refused" $? 3
