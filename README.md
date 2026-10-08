@@ -53,11 +53,11 @@ Where a step says **ask**, ask the person and wait: never decide it for them.
 4. **The hub (optional).** **Ask** whether they want one, and which folder is their work folder: the one that holds
    their projects, never a project itself. On their yes, set it up there:
    `cd <folder> && <installPath>/bin/hh-hub init`, with the `installPath` that `claude plugin list --json` shows for
-   `hivehouse@hivehouse` (it refuses inside a repository). Then tell them to run `hh-hub start` in that folder: it opens the hub in a
+   `hivehouse@hivehouse` (it refuses inside a repository). Then tell them to run `<installPath>/bin/hh-hub start` in that folder: it opens the hub in a
    tmux session named `hub`, which opens the hub and offers to group their folders into projects. You cannot start that session for
    them: it is theirs.
-5. **Tell the person what they got:** `/hivehouse:start <task>` runs a team on a task inside a project; `claude` in the
-   work folder is the hub. Nothing runs until they ask.
+5. **Tell the person what they got:** `/hivehouse:start <task>` runs a team on a task inside a project; `<installPath>/bin/hh-hub start`
+   in the work folder opens the hub. Nothing runs until they ask.
 
 Never: start agents or sessions the person did not ask for, start a session in `bypassPermissions` (hivehouse does it only while the owner is away, through the owner's delegate file), install the
 optional i-have-adhd plugin unasked, or push anything.

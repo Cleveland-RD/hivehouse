@@ -26,12 +26,12 @@ each time. That is intended.
 
 ## 1. At every start, and after a /clear
 
-1. `hh-hub self` records this session, so orchestrators can reply to it. If it says there is no hub here, ask the
+1. `hh-hub self --window ${user_config.window_orchestrator}` records this session, so orchestrators can reply to it. If it says there is no hub here, ask the
    owner whether this folder (their work folder, above every project) should be the hub. On yes run `hh-hub init`, then
    stop and tell the owner: this session started before the folder was the hub, so it has no hub screen and no guard
    off project files; exit it and start `claude` here again. From then on every session started here is the hub: a
    plain `claude` names itself `hub` (or `hub-2` beside another) and opens this skill by itself, unless the owner turned
-   that off (`hub_auto_start`; then start it with `hh-hub start`, which opens a tmux session named after the hub, `hub` unless `hh-hub name` chose another). If `hh-hub self` says the session has no name,
+   that off (`hub_auto_start`; then start it with `${CLAUDE_PLUGIN_ROOT}/bin/hh-hub start`, which opens a tmux session named after the hub, `hub` unless `hh-hub name` chose another). If `hh-hub self` says the session has no name,
    or that its name is not one word, tell the owner to type `/rename <the hub's name>`; until then show the status, but hand no
    task: nobody could reply.
    Then run `ListAgents`. If another live session already has this session's name (a second machine's hub is named
@@ -44,8 +44,8 @@ each time. That is intended.
 2. `hh-adhd`. When it prints a path, Read that file and follow it for every message to the owner.
    Then read your handoff, `.hivehouse-hub/memory/hub-handoff.md` (its START HERE block is your prompt after a rotation); when it
    is missing, make it from the template `hh-resolve hub-handoff` prints.
-   When `hh-hub self` says this session is not in tmux, tell the owner once: start the hub with `hh-hub start` (a tmux session
-   named after the hub), or it cannot rotate itself.
+   When `hh-hub self` says this session is not in tmux, tell the owner once: start the hub with `${CLAUDE_PLUGIN_ROOT}/bin/hh-hub start`
+   (a tmux session named after the hub), or it cannot rotate itself.
    When `hub.away` is set (`hh-hub status --json`) and `CronList` lacks the beat job your handoff records, recreate the beat
    (section 5a, "The beat") and record the new id: a restart or a /clear ends the old one.
 3. `hh-hub status` and `hh-hub tasks --open`.
@@ -238,13 +238,15 @@ from a file or an environment variable.
 
 ## 5b. Rotating yourself
 
-Check your own level after each task you hand on and on every beat while the owner is away: read your own level: `hh-hub context` (a percent;
-"(window assumed ...)" means Claude Code's window was not measured). At or above `${user_config.rotate_at_percent}`%, which is
+Check your own level after each task you hand on and on every beat while the owner is away: `hh-hub context` prints a percent;
+"(window assumed N)" is the window `hh-hub self --window` recorded, not one Claude Code measured, and "window unknown" means the tokens
+used are over that window: tell the owner once, and rotate at once, since a level you cannot read is not a level below the limit. A second
+line, "last rotate: ...", is the last rotation that sent nothing (never idle, a dialog, another pane): tell the owner once. At or above `${user_config.rotate_at_percent}`%, which is
 the one rotation level for every session: finish what is in hand, update `.hivehouse-hub/memory/hub-handoff.md` (its START
 HERE block: who the owner is talking about, open tasks, the beat's job id, what waits on them; template: `hh-resolve
 hub-handoff`), and run `hh-hub rotate` as the last act of that turn. It returns at once; it waits until your pane is idle,
 checks it is still the pane and process `hh-hub self` recorded, types `/clear`, then your pickup line (`hh-resolve
-hub-pickup`), which sends you back to the handoff and to step 1. It needs the hub to run in tmux (`hh-hub start`); a refusal is
+hub-pickup`), which sends you back to the handoff and to step 1. It needs the hub to run in tmux (`${CLAUDE_PLUGIN_ROOT}/bin/hh-hub start`); a refusal is
 not an error to work round: tell the owner. Never rotate in the middle of a message to the owner.
 
 ## 6. The hub's screen

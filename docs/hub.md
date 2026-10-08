@@ -7,7 +7,7 @@ One Claude session in the owner's work folder, the folder above every project, i
   session started before the folder was the hub has no screen and no guard. From then on every session started in
   that folder, and only there, is the hub: a new, unnamed one names itself `hub` (`hub-2` beside another, since
   orchestrators reply to the hub by name) and opens the hub by itself, which takes one model turn. The `hub_auto_start`
-  setting turns that off; then start it with `hh-hub start`.
+  setting turns that off; then start it with `<installPath>/bin/hh-hub start`.
   The name belongs to the hub's folder: `hh-hub name <name>` keeps it in `.hivehouse-hub/name`, and the hub starts from it
   (`<name>-2` beside another). `ListAgents` shows sessions on other machines only while Remote Control is connected, and without it
   the check finds nothing; a hub that finds its name taken there says so once and never renames itself.
@@ -38,7 +38,8 @@ One Claude session in the owner's work folder, the folder above every project, i
   start asks the owner first, and runs in the owner's local permission mode (`permission_mode_local`, the one hivehouse's
   agents run in), made stricter where the project's own `.hivehouse/settings.json` says so. Start the hub in that mode
   too: sessions in different modes hold each other's messages for an approval nobody sees.
-- **Starting it: `hh-hub start`.** Run in the work folder, it opens the hub in a tmux session named after it, running
+- **Starting it: `<installPath>/bin/hh-hub start`.** Run in the work folder (`hh-hub` is not on your PATH in a terminal; the plugin's
+  `installPath` is the one `claude plugin list --json` shows), it opens the hub in a tmux session named after it, running
   `claude` for the hub, and attaches; when that session already runs the hub it only attaches, and it never starts a
   second one. Inside tmux it starts nothing and prints the lines to start the hub beside your session. At every start the
   hub records its own pane (`hh-hub self`), as an orchestrator does with `hh-spawn --self`.

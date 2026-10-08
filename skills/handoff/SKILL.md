@@ -29,7 +29,7 @@ manual, not a changelog. Priority order:
 
 ## Inside a hivehouse team
 
-Each agent, the orchestrator included, keeps one file: `.hivehouse/handoffs/<agent>.md`. Its newest **START HERE**
+Each agent, the orchestrator included, keeps one file: the file your pickup line names (by default `.hivehouse/handoffs/<agent>.md`). Its newest **START HERE**
 block is at the top and is the agent's whole prompt after a `/clear`; older blocks and dated log lines sit beneath.
 
 ### The START HERE block
@@ -55,14 +55,16 @@ from memory. Verify every hash, path and count against the source before writing
 
 After a clear, the orchestrator sends this (`hh-spawn` and `hh-rotate` send it for you):
 
-`You are <project>-<agent>. Read <root>/.hivehouse/handoffs/<agent>.md from the top: its START HERE block is your prompt, and <root>/.hivehouse/team/<agent>/ holds your role and the rules. Report to <orchestrator>. Wait for its first message before any work.`
+`You are <project>-<agent>. Read <handoff> from the top: its START HERE block is your prompt, and <root>/.hivehouse/team/<agent>/ holds your role and the rules. Report to <orchestrator>. Wait for its first message before any work.`
+
+<handoff> is the file `hh-spawn --handoff` recorded for the agent, else `<root>/.hivehouse/handoffs/<agent>.md`.
 
 <orchestrator> is the orchestrator session's own name, read when the line is sent (so a rename is followed), or
 <project>-orchestrator when it cannot be read.
 
 The orchestrator's own line, after `hh-self-rotate`, is shorter: it reports to nobody and waits for nobody.
 
-`You are <orchestrator>. Read <root>/.hivehouse/handoffs/<agent>.md from the top: its START HERE block is your prompt.`
+`You are <orchestrator>. Read <handoff> from the top: its START HERE block is your prompt.`
 
 When the owner uses the i-have-adhd output style (`hh-adhd` finds it), the line adds `Read <its SKILL.md> and follow it
 for every message to the owner.`
