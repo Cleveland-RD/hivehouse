@@ -69,8 +69,16 @@ assert_contains "--self with a reading of this session" "$(cat "$T_TMP/m.out")" 
 assert_eq "...records the window Claude Code reported" "$(jq -r '.agents[] | select(.name == "orchestrator") | .window // "none"' $T_STATE/team.json)" "1000000"
 echo '{"window":1000000,"used_percentage":9,"session_id":"an-older-session","at":"t"}' > $T_STATE/team/orchestrator/context.json
 selfrun "$T_TMP/n.out" sid-n
-assert_eq "a reading of another session is stale: no window" "$(jq -r '.agents[] | select(.name == "orchestrator") | .window // "none"' $T_STATE/team.json)" "none"
+assert_eq "a reading of another session is stale: the window this agent's record held is kept" "$(jq -r '.agents[] | select(.name == "orchestrator") | .window // "none"' $T_STATE/team.json)" "1000000"
 rm -f $T_STATE/team/orchestrator/context.json
 selfrun "$T_TMP/w.out" sid-w
-assert_eq "no reading at all: no window" "$(jq -r '.agents[] | select(.name == "orchestrator") | .window // "none"' $T_STATE/team.json)" "none"
+assert_eq "no reading at all: the recorded window is kept, as the handoff is" "$(jq -r '.agents[] | select(.name == "orchestrator") | .window // "none"' $T_STATE/team.json)" "1000000"
+jq '(.agents[] | select(.name == "orchestrator")) |= . + {window: 400000}' $T_STATE/team.json > "$T_TMP/t.json" && mv "$T_TMP/t.json" $T_STATE/team.json
+echo '{"window":1000000,"used_percentage":9,"session_id":"sid-m2","at":"t"}' > $T_STATE/team/orchestrator/context.json
+selfrun "$T_TMP/m2.out" sid-m2
+assert_eq "a measured window beats the recorded one" "$(jq -r '.agents[] | select(.name == "orchestrator") | .window' $T_STATE/team.json)" "1000000"
+rm -f $T_STATE/team/orchestrator/context.json
+jq '(.agents[] | select(.name == "orchestrator")) |= del(.window)' $T_STATE/team.json > "$T_TMP/t.json" && mv "$T_TMP/t.json" $T_STATE/team.json
+selfrun "$T_TMP/w2.out" sid-w2
+assert_eq "nothing recorded, nothing measured: no window" "$(jq -r '.agents[] | select(.name == "orchestrator") | .window // "none"' $T_STATE/team.json)" "none"
 cd /; t_teardown; t_done

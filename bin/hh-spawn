@@ -181,12 +181,14 @@ if [ "$self" = 1 ]; then
   [ -n "$handoff" ] || handoff=$(jq -r --arg a "$agent" '[.agents[]? | select(.name == $a) | .handoff][0] // empty' "$STATE/team.json" 2>/dev/null)
   register "$pane" "$socket" || exit $?
   # The window: the one given, else the one Claude Code reported for this very session (hh-statusline's context.json, when there is one
-  # and it was read in this session), else none. It is never guessed here: hh-context assumes one for a reading, and says so.
+  # and it was read in this session), else the one this agent's record holds, else none. It is never guessed here: hh-context assumes one for a reading, and says so.
   if [ "$wgiven" = 0 ]; then
     window=""; msid=$(hh_session_record "$CLAUDE_PID" .sessionId)
     if [ -n "$msid" ] && [ "$(hh_json_get "$STATE/team/$agent/context.json" .session_id)" = "$msid" ]; then
       mw=$(hh_json_get "$STATE/team/$agent/context.json" .window); case "$mw" in ''|*[!0-9]*|0) ;; *) window=$mw ;; esac
     fi
+    # no reading of this session: the window this agent's record already holds is kept, as its handoff is
+    [ -n "$window" ] || window=$(jq -r --arg a "$agent" '[.agents[]? | select(.name == $a) | .window][0] // empty | select(type == "number" and . > 0)' "$STATE/team.json" 2>/dev/null)
   fi
   # an orchestrator the hub launched in bypass was given an MCP file beside its pane record: it lives with the team from here. When the
   # delegate file no longer says so (it expired before this registration) the file may hold server secrets and is removed from the hub's folder.
