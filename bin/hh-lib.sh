@@ -518,10 +518,12 @@ hh_handoff_resolve() {
   HH_HANDOFF_WHY=""; HH_HANDOFF_OUT=""
   case "$p" in /*) ;; *) p="$root/$p" ;; esac
   case "/$p/" in */../*|*/./*) HH_HANDOFF_WHY="a handoff path has no . or .. in it: $2"; return 1 ;; esac
+  [ ! -L "$p" ] || { HH_HANDOFF_WHY="the last part is a link (the template would be written through it): $p"; return 1; }
   hh_is_typed_path "$p" || { HH_HANDOFF_WHY="not a path hivehouse will type (letters, digits, / . _ - and space, at most 256): $p"; return 1; }
   dir=${p%/*}; [ -d "$dir" ] || { HH_HANDOFF_WHY="the folder does not exist: $dir"; return 1; }
   real="$(cd -P "$dir" && pwd -P)/${p##*/}"
   while IFS= read -r t; do
+    t=$(cd -P "$t" 2>/dev/null && pwd -P) || continue   # git writes a worktree's path as it was typed: /var is /private/var
     case "$real" in "$t"/*) HH_HANDOFF_OUT=$real; printf '%s\n' "$real"; return 0 ;; esac
   done < <(printf '%s\n' "$(cd -P "$root" && pwd -P)"; git -C "$root" worktree list --porcelain 2>/dev/null | sed -n 's/^worktree //p')
   HH_HANDOFF_WHY="a handoff lives inside the project (its folder or one of its worktrees): $real"; return 1
