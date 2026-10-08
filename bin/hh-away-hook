@@ -353,7 +353,11 @@ script_operand() {  # script_operand <word>...: prints "shell <file>" or "direct
       [ "$t" != . ] || { mode=shell; continue; }
       case "$WRAPPERS" in *" $t "*) wr=$t; continue ;; esac
       case "$t" in
-        -*) case "$wr:$t" in sudo:-[ugChpRTU]|doas:-u|nice:-n|ionice:-[cnp]|stdbuf:-[ioe]|timeout:-[sk]|env:-[uCS]|xargs:-[IndLPsEaJ]) skip=1 ;; esac; continue ;;
+        -*) case "$wr:$t" in
+              env:-S|env:--split-string) script_operand "${@:$((i + 1))}"; return 0 ;;   # env -S '<code>': its argument is a command line
+              env:-S?*) script_operand "${t#-S}" "${@:$((i + 1))}"; return 0 ;;
+              sudo:-[ugChpRTU]|doas:-u|nice:-n|ionice:-[cnp]|stdbuf:-[ioe]|timeout:-[sk]|env:-[uC]|xargs:-[IndLPsEaJ]) skip=1 ;;
+            esac; continue ;;
       esac
       if [ -n "$wr" ] && [[ "$t" =~ ^[0-9][0-9.]*[smhd]?$ ]]; then continue; fi   # a duration or a number behind a wrapper
       case "$t" in */*) printf 'direct %s\n' "$t" ;; esac
@@ -403,6 +407,8 @@ uncheckable_shell() {  # uncheckable_shell <command text>: refuses a shell that 
   printf '%s' "$c" | grep -qE "(^|[^|])\|&?[[:space:]]*${w}${p}${sh}([[:space:];&)]|$)" && deny "a shell fed by a pipe reads code the hook cannot check first, which is not allowed while the owner is away"
   printf '%s' "$c" | grep -qE "(${sh}[^;&|]*|(^|[;&|(])[[:space:]]*(\.|source)[[:space:]]+)<\(" && deny "a shell reading a process substitution reads code the hook cannot check first, which is not allowed while the owner is away"
   printf '%s' "$c" | grep -qE "${sh}[[:space:]]+([^;&|]*[[:space:]])?-[A-Za-z]*c[[:space:]]+[^;&|]*(\\\$\(|\`)" && deny "a shell given code from a command substitution reads code the hook cannot check first, which is not allowed while the owner is away"
+  printf '%s' "$c" | grep -qE "${sh}[^;&|]*<&[0-9]" && deny "a shell reading a file descriptor reads code the hook cannot check first, which is not allowed while the owner is away"
+  printf '%s' "$c" | grep -qE "${sh}[^;&|]*<<<[^;&|]*(\\\$\(|\`)" && deny "a shell given a here-string from a command substitution reads code the hook cannot check first, which is not allowed while the owner is away"
   printf '%s' "$c" | grep -qE "(^|[;&|(])[[:space:]]*(builtin[[:space:]]+|command[[:space:]]+)?eval[[:space:]][^;&|]*(\\\$|\`)" && deny "eval of a variable or substitution runs code the hook cannot check first, which is not allowed while the owner is away"
   printf '%s' "$c" | grep -qE "xargs[^;&|]*[[:space:]]${p}${sh}([[:space:];&)]|$)" && deny "xargs feeding a shell runs code the hook cannot check first, which is not allowed while the owner is away"
   printf '%s' "$c" | grep -qE "-exec(dir)?[[:space:]]+${p}${sh}([[:space:];&)]|$)" && deny "find -exec with a shell runs code the hook cannot check first, which is not allowed while the owner is away"
