@@ -21,6 +21,7 @@ HH_BIN=${0%/*}; [ "$HH_BIN" != "$0" ] || HH_BIN=.   # parameter expansion, never
 deny() { DENIED=1; printf 'Refused by hivehouse away mode (the owner is away; this is not a permission prompt): %s. Do not try to change settings, hooks or permissions to get round it; tell the owner what you needed.\n' "$1" >&2; exit 2; }
 CONF="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
 READERS=" cd cat grep jq wc head tail sort uniq "   # the commands that only read their stdin or files: heredoc_strip treats their stages as safe, and xargs may run only these
+SED_READ_RE='^[0-9]+(,[0-9]+)?p$'   # the one script of a read-only sed -n: a line or a range, printed (the remote rule and the local rule both use it)
 WRAPPERS=" command exec nohup env sudo doas time nice ionice timeout stdbuf builtin eval xargs sh bash zsh dash ksh setsid if then else elif do while until ! { "
 
 canon() {  # canon <path> <cwd>: absolute, ~ and $HOME expanded, dot segments collapsed, symlinks of an existing parent resolved
@@ -570,6 +571,78 @@ heredoc_strip() {
     }'
 }
 
+# KI-35 (A2/A3): quoted text that is data. Only for `echo` and `printf` whose segment's output reaches no pipe, and the value after the free-text
+# flag of hh-hub log (--note), task (--text) and decide (--reason): those commands never run their arguments. Such a quoted word is replaced by X before
+# the segments are split, so a sentence with parentheses and "; . " in it is no script. Everything else is left as written, and the whole command is
+# left as written when it has an unquoted ( ) ` > < or $' (a substitution, a subshell, a function, a file redirect), an unbalanced quote, or the words
+# function or alias. A quoted word holding $, a backtick or a backslash is never blanked. Reuses no second quote parser: this is the one that reads the call's own quotes.
+data_blank() {
+  awk '
+    function isws(c) { return c == " " || c == "\t" }
+    function issep(c) { return c == "\n" || c == ";" || c == "&" || c == "|" }
+    function addp(kind, text) { np++; pk[np] = kind; pt[np] = text }
+    function blankable(k) { return index(pt[k], "$") == 0 && index(pt[k], "`") == 0 && index(pt[k], "\\") == 0 }
+    function wordtext(w,   k, t) { t = ""; for (k = wb[w]; k <= we[w]; k++) { if (pk[k] != "u") return ""; t = t pt[k] } return t }
+    function blankword(w,   k) { if (w > nw) return; for (k = wb[w]; k <= we[w]; k++) if (blankable(k)) pt[k] = "X" }
+    function segment(a, b, pipeafter,   k, w, t, hs, f, inw) {
+      nw = 0; inw = 0
+      for (k = a; k < b; k++) {
+        if (pk[k] == "w") { inw = 0; continue }
+        if (!inw) { nw++; wb[nw] = k; inw = 1 }
+        we[nw] = k
+      }
+      if (nw == 0) return
+      t = wordtext(1)
+      if (t == "echo" || t == "printf") {
+        if (!pipeafter) for (w = 2; w <= nw; w++) blankword(w)
+      } else if (t ~ /(^|\/)hh-hub$/) {
+        hs = ""
+        for (w = 2; w <= nw; w++) { f = wordtext(w); if (f == "") break; if (substr(f, 1, 1) == "-") continue; hs = f; break }
+        if (hs == "log" || hs == "task" || hs == "decide") {
+          for (w = 2; w < nw; w++) { f = wordtext(w); if (f == "--note" || f == "--text" || f == "--reason") blankword(w + 1) }
+        }
+      }
+    }
+    BEGIN { RS = "\001" }
+    {
+      s = $0; n = length(s); i = 1; bad = 0; np = 0
+      while (i <= n) {
+        c = substr(s, i, 1)
+        if (c == "\047") {
+          if (substr(s, i - 1, 1) == "$" && i > 1) { bad = 1; break }
+          j = index(substr(s, i + 1), "\047"); if (j == 0) { bad = 1; break }
+          addp("s", substr(s, i, j + 1)); i += j + 1; continue
+        }
+        if (c == "\"") {
+          if (substr(s, i - 1, 1) == "$" && i > 1) { bad = 1; break }
+          j = i + 1
+          while (j <= n) { d = substr(s, j, 1); if (d == "\\") { j += 2; continue } if (d == "\"") break; j++ }
+          if (j > n) { bad = 1; break }
+          addp("d", substr(s, i, j - i + 1)); i = j + 1; continue
+        }
+        if (c == "(" || c == ")" || c == "`" || c == ">" || c == "<") { bad = 1; break }
+        if (c == "\\") { addp("u", substr(s, i, 2)); i += 2; continue }
+        if (isws(c)) { j = i; while (j <= n && isws(substr(s, j, 1))) j++; addp("w", substr(s, i, j - i)); i = j; continue }
+        if (issep(c)) { j = i; while (j <= n && issep(substr(s, j, 1))) j++; addp("p", substr(s, i, j - i)); i = j; continue }
+        j = i
+        while (j <= n) { d = substr(s, j, 1); if (isws(d) || issep(d) || d == "\047" || d == "\"" || d == "\\" || d == "(" || d == ")" || d == "`" || d == ">" || d == "<") break; j++ }
+        if (j == i) j = i + 1
+        addp("u", substr(s, i, j - i)); i = j
+      }
+      if (!bad && s ~ /(^|[^A-Za-z0-9_])(function|alias)[ \t]/) bad = 1
+      if (bad || np == 0) { printf "%s", s; next }
+      a = 1
+      for (k = 1; k <= np + 1; k++) {
+        if (k > np || pk[k] == "p") {
+          segment(a, k, (k <= np && index(pt[k], "|") > 0 && pt[k] != "||"))
+          a = k + 1
+        }
+      }
+      out = ""; for (k = 1; k <= np; k++) out = out pt[k]
+      printf "%s", out
+    }'
+}
+
 # --- ssh to a host the owner listed (hosts= in the root-owned delegate file): a read, nothing else
 # bash_check rewrites the command (quotes and backslashes go, ; & | ( ) ` $ become line breaks) before it reads anything, so the shape of an ssh
 # command cannot be read from its result: `ssh h "tmux list-panes; touch x"` would come out as a read and a LOCAL touch while the remote runs both.
@@ -590,7 +663,7 @@ remote_check() {  # remote_check <word> [<word>...]: the words ssh sends to the 
     ls|cat|head|grep|wc|df|ps|hh-context) ;;
     tail) shift; for a in "$@"; do case "$a" in -*f*|-*F*|--follow*|--retry*) rc_deny "tail does not follow" ;; esac; done ;;
     sed) [ "$sub" = -n ] || rc_deny "sed only as sed -n <lines>p"
-         [[ "${3:-}" =~ ^[0-9]+(,[0-9]+)?p$ ]] || rc_deny "sed only as sed -n <lines>p"
+         [[ "${3:-}" =~ $SED_READ_RE ]] || rc_deny "sed only as sed -n <lines>p"
          shift 3; for a in "$@"; do case "$a" in -*) rc_deny "sed takes no option after its script" ;; esac; done ;;
     git) case "$sub" in
            log|show) shift 2
@@ -734,6 +807,7 @@ bash_text() {  # bash_text <command text> <cwd>: the rules for a command; a scri
   local cmd="$1" cwd="$2" s seg tok toks ws i first second prev have_git="" have_push="" have_pub="" have_dock="" pkgm="" wr rt cmdw fb a b nx so seen kf kro hs hn hseen
   local -a scripts=()
   cmd=$(printf '%s\n' "$cmd" | heredoc_strip)
+  cmd=$(printf '%s' "$cmd" | data_blank)
   uncheckable_shell "$cmd"
   s=${cmd//\'/}; s=${s//\"/}; s=${s//\\/}
   # redirect targets are looked at before the punctuation goes
@@ -879,6 +953,18 @@ bash_text() {  # bash_text <command text> <cwd>: the rules for a command; a scri
     esac
     case "$cmdw" in ssh-keygen|tee|dd|sed|perl|python|python3|node|ruby|truncate|touch|chmod|chown|patch|sponge|scp|sftp|rsync) has_write=1 ;; esac
     [ -z "$kro" ] || has_write=""
+    if [ "$cmdw" = sed ]; then   # W5a b: sed -n <lines>p <files> only prints; with any other option, or an option after the script, it stays a writer
+      nx=""; seen=""; local -a sw=()
+      for tok in ${ws[@]+"${ws[@]}"}; do
+        [ -n "$seen" ] || { case "$tok" in *=*) continue ;; esac; [ "$(bn "$tok")" != sed ] || seen=1; continue; }
+        sw+=("$tok")
+      done
+      if [ "${sw[0]:-}" = -n ] && [[ "${sw[1]:-}" =~ $SED_READ_RE ]]; then
+        has_write=1; nx=1
+        for tok in ${sw[@]+"${sw[@]:2}"}; do case "$tok" in -*) nx="" ;; esac; done
+        [ -z "$nx" ] || has_write=""
+      fi
+    fi
     if [ -n "$has_write" ]; then
       for tok in ${toks[@]+"${toks[@]}"}; do
         case "$tok" in -*) continue ;; esac

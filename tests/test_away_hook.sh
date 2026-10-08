@@ -816,6 +816,15 @@ done
 for c in 'git checkout main' 'git checkout -b feature' 'git restore scr/plain.txt' 'git rm --cached scr/plain.txt' 'git stash save wip' "rsync -a $T_TMP/src2/ $T_TMP/build/" "rsync -avt $T_TMP/src2/ $T_TMP/build/" "rsync -a --exclude x $T_TMP/src2/ $T_TMP/build/" 'tar -tf scr/bad.tar' 'tar -cf scr/o.tar scr' 'unzip -l scr/bad.zip'; do
   pallowed "S2/S3 stays allowed: $c" "$c"
 done
+echo "-- W5a b: sed -n <lines>p reads, whatever it reads; every other sed is a writer"
+for r in "" "$PROOT"; do
+  pallowed "W5b sed -n 1,40p of a plugin file (root [$r])" "sed -n 1,40p $PROOT/bin/x" "$r"
+  pallowed "W5b sed -n 5p of two plugin files (root [$r])" "sed -n 5p $PROOT/bin/x $PROOT/bin/y" "$r"
+done
+for c in "sed -i s/a/b/ $PROOT/bin/x" "sed -n -i 1p $PROOT/bin/x" "sed -ni 1p $PROOT/bin/x" "sed -n 1p -i $PROOT/bin/x" "sed -n 1p $PROOT/bin/x -i" "sed -n 1wscr/out $PROOT/bin/x" "sed 1,40p $PROOT/bin/x" "sed -n -e 1p $PROOT/bin/x" "sed -n 1p -s $PROOT/bin/x" "sed -n 1,40p -i $CD/settings.json"; do
+  pdenied "W5b stays refused: $c" "$c" "$PROOT"
+done
+pdenied "W5b sed -i of a protected settings file is refused" "sed -i 1p $CD/settings.json"
 echo "-- A15: xargs passes only with a reader; the arguments it is fed cannot be read first"
 ROLE=proj
 for c in 'xargs git < scr/plain.txt' 'xargs tmux < scr/plain.txt' 'xargs npm < scr/plain.txt' 'xargs curl < scr/plain.txt' 'xargs rm < scr/plain.txt' 'xargs -n 1 git < scr/plain.txt' 'echo "push origin main" | xargs git' 'ls | xargs -I {} git {}' 'sudo xargs hh-hub self'; do
