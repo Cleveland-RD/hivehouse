@@ -335,20 +335,27 @@ ssh_gate() {  # ssh_gate <raw command>: 1 = not an allowed ssh (the general rule
   return 0
 }
 
-# KI-26: a script a Bash call runs (`bash f`, `sh f`, `zsh f`, `. f`, `source f`, `./f`, `bash < f`) is read with the same rules as a command.
-# script_operand prints the file a segment's words run, or nothing; script_check reads it and checks its text, up to SCRIPT_MAX levels deep
-# (a script that sources itself ends in a refusal). A file under the plugin's own bin is not read, and a file run by path that holds a NUL byte
-# is a program, not a script. A file that is missing, unreadable or over SCRIPT_BYTES is refused, since its text cannot be checked.
+# KI-26: a script a Bash call runs (`bash f`, `sh f`, `zsh f`, `. f`, `source f`, `./f`, `bash < f`, behind wrappers and their arguments, and as the code
+# of `sh -c`) is read with the same rules as a command. script_operand prints the file a segment's words run, or nothing; script_check reads it and
+# checks its text, up to SCRIPT_MAX levels deep (a script that sources itself ends in a refusal). A file under the plugin's own bin (by where its
+# links end) is not read. A file run by path is a program, not text, when it starts with a Mach-O or ELF magic number or has a NUL byte in its first
+# line (what bash itself judges binary); everything else is read as text. A file that is missing, unreadable or over SCRIPT_BYTES is refused, since
+# its text cannot be checked. A shell that takes its code from somewhere the hook cannot read first is refused by uncheckable_shell.
 SCRIPT_MAX=4; SCRIPT_BYTES=262144; SCRIPT_DEPTH=0
 script_operand() {  # script_operand <word>...: prints "shell <file>" or "direct <file>" for the file the words run
-  local mode="" t skip=""
+  local mode="" t skip="" wr="" i=0
   for t in "$@"; do
+    i=$((i + 1))
     if [ -z "$mode" ]; then
+      [ -z "$skip" ] || { skip=""; continue; }
       case "$t" in *=*) continue ;; esac
       case "${t##*/}" in bash|sh|zsh|dash|ksh|source) mode=shell; continue ;; esac
       [ "$t" != . ] || { mode=shell; continue; }
-      case "$WRAPPERS" in *" $t "*) continue ;; esac
-      case "$t" in -*) continue ;; esac
+      case "$WRAPPERS" in *" $t "*) wr=$t; continue ;; esac
+      case "$t" in
+        -*) case "$wr:$t" in sudo:-[ugChpRTU]|doas:-u|nice:-n|ionice:-[cnp]|stdbuf:-[ioe]|timeout:-[sk]|env:-[uCS]|xargs:-[IndLPsEaJ]) skip=1 ;; esac; continue ;;
+      esac
+      if [ -n "$wr" ] && [[ "$t" =~ ^[0-9][0-9.]*[smhd]?$ ]]; then continue; fi   # a duration or a number behind a wrapper
       case "$t" in */*) printf 'direct %s\n' "$t" ;; esac
       return 0
     fi
@@ -356,29 +363,53 @@ script_operand() {  # script_operand <word>...: prints "shell <file>" or "direct
     case "$t" in
       -o|+o|-O|+O) skip=1; continue ;;
       --*) continue ;;
-      -*c*) return 0 ;;   # bash -c '<code>': the code is in the call's own text
+      -*c*) script_operand "${@:$((i + 1))}"; return 0 ;;   # sh -c '<code>': the code's words are a command of their own
       -*|+*) continue ;;
     esac
     printf 'shell %s\n' "$t"; return 0
   done
 }
+script_is_program() {  # script_is_program <file> <mode>: 0 when the file is a program, not text
+  local m
+  [ "$(head -c 80 "$1" | head -n 1 | tr -d '\0' | wc -c)" = "$(head -c 80 "$1" | head -n 1 | wc -c)" ] || return 0
+  [ "$2" = direct ] || return 1
+  m=$(head -c 4 "$1" | od -An -tx1 | tr -d ' \n')
+  case "$m" in feedface|feedfacf|cafebabe|cefaedfe|cffaedfe|bebafeca|7f454c46) return 0 ;; esac
+  return 1
+}
 script_check() {  # script_check <mode> <file> <cwd>
-  local mode="$1" f c n text
-  f=$(canon "$2" "$3")
-  c=$(canon "$HH_BIN" /); case "$f" in "$c"/*) return 0 ;; esac
-  if [ ! -e "$f" ]; then [ "$mode" = direct ] && return 0; deny "the script $2 cannot be read, so its text cannot be checked"; fi
-  [ -f "$f" ] && [ -r "$f" ] || deny "the script $2 cannot be read, so its text cannot be checked"
+  local mode="$1" f rf l c n text k=0
+  f=$(canon "$2" "$3"); rf=$f
+  while [ -L "$rf" ] && [ "$k" -lt 8 ]; do   # where the links end, not only the folder: a link in the plugin's bin can lead anywhere
+    l=$(readlink "$rf") || break
+    case "$l" in /*) ;; *) l="${rf%/*}/$l" ;; esac
+    rf=$(canon "$l" /); k=$((k + 1))
+  done
+  c=$(canon "$HH_BIN" /); [ -L "$rf" ] || case "$rf" in "$c"/*) return 0 ;; esac
+  [ -e "$f" ] && [ -f "$f" ] && [ -r "$f" ] || deny "the script $2 is not a file the hook can read, so its text cannot be checked"
+  script_is_program "$f" "$mode" && return 0
   n=$(wc -c < "$f" 2>/dev/null | tr -d ' ') || n=""
   case "$n" in ''|*[!0-9]*) deny "the script $2 cannot be read, so its text cannot be checked" ;; esac
   [ "$n" -le "$SCRIPT_BYTES" ] || deny "the script $2 is over $SCRIPT_BYTES bytes, too large to check while the owner is away"
-  if [ "$mode" = direct ]; then   # a program run by path (a NUL in its first bytes) is not text; a text file without #! still runs, under sh
-    [ "$(head -c 512 "$f" | tr -d '\0' | wc -c)" = "$(head -c 512 "$f" | wc -c)" ] || return 0
-  fi
   SCRIPT_DEPTH=$((SCRIPT_DEPTH + 1))
   [ "$SCRIPT_DEPTH" -le "$SCRIPT_MAX" ] || deny "scripts run scripts more than $SCRIPT_MAX levels deep, which cannot be checked while the owner is away"
   text=$(cat "$f" 2>/dev/null) || deny "the script $2 cannot be read, so its text cannot be checked"
   bash_text "$text" "$3"
   SCRIPT_DEPTH=$((SCRIPT_DEPTH - 1))
+}
+uncheckable_shell() {  # uncheckable_shell <command text>: refuses a shell that takes its code from a pipe, a substitution or a program's output, none of which the hook can read first
+  local c sh='(bash|sh|zsh|dash|ksh)' p='([A-Za-z0-9_./-]*/)?' w='((sudo|env|command|exec|nohup|time|nice|timeout|stdbuf)[[:space:]]+(-[^[:space:]]+[[:space:]]+|[0-9][0-9.smhd]*[[:space:]]+)*)*'
+  c=$(printf '%s' "$1" | tr '\n' ' ')
+  printf '%s' "$c" | grep -qE "(^|[^|])\|&?[[:space:]]*${w}${p}${sh}([[:space:];&)]|$)" && deny "a shell fed by a pipe reads code the hook cannot check first, which is not allowed while the owner is away"
+  printf '%s' "$c" | grep -qE "(${sh}[^;&|]*|(^|[;&|(])[[:space:]]*(\.|source)[[:space:]]+)<\(" && deny "a shell reading a process substitution reads code the hook cannot check first, which is not allowed while the owner is away"
+  printf '%s' "$c" | grep -qE "${sh}[[:space:]]+([^;&|]*[[:space:]])?-[A-Za-z]*c[[:space:]]+[^;&|]*(\\\$\(|\`)" && deny "a shell given code from a command substitution reads code the hook cannot check first, which is not allowed while the owner is away"
+  printf '%s' "$c" | grep -qE "(^|[;&|(])[[:space:]]*(builtin[[:space:]]+|command[[:space:]]+)?eval[[:space:]][^;&|]*(\\\$|\`)" && deny "eval of a variable or substitution runs code the hook cannot check first, which is not allowed while the owner is away"
+  printf '%s' "$c" | grep -qE "xargs[^;&|]*[[:space:]]${p}${sh}([[:space:];&)]|$)" && deny "xargs feeding a shell runs code the hook cannot check first, which is not allowed while the owner is away"
+  printf '%s' "$c" | grep -qE "-exec(dir)?[[:space:]]+${p}${sh}([[:space:];&)]|$)" && deny "find -exec with a shell runs code the hook cannot check first, which is not allowed while the owner is away"
+  if printf '%s' "$c" | grep -qE "(^|[[:space:];&|(])(BASH_ENV|ENV)="; then
+    printf '%s' "$c" | grep -qE "(^|[[:space:]/])${sh}([[:space:];&)]|$)" && deny "BASH_ENV or ENV beside a shell makes it run a file the hook cannot check first, which is not allowed while the owner is away"
+  fi
+  return 0
 }
 bash_check() {
   local cmd
@@ -387,9 +418,10 @@ bash_check() {
   bash_text "$cmd" "$cwd"
 }
 bash_text() {  # bash_text <command text> <cwd>: the rules for a command; a script's text is run through it again
-  local cmd="$1" cwd="$2" s seg tok toks ws i first second prev have_git="" have_push="" have_pub="" have_dock="" pkgm="" wr rt cmdw fb a b nx so
+  local cmd="$1" cwd="$2" s seg tok toks ws i first second prev have_git="" have_push="" have_pub="" have_dock="" pkgm="" wr rt cmdw fb a b nx so seen kf kro
   local -a scripts=()
   cmd=$(printf '%s\n' "$cmd" | heredoc_strip)
+  uncheckable_shell "$cmd"
   s=${cmd//\'/}; s=${s//\"/}; s=${s//\\/}
   # redirect targets are looked at before the punctuation goes
   while IFS= read -r rt; do
@@ -436,10 +468,14 @@ bash_text() {  # bash_text <command text> <cwd>: the rules for a command; a scri
       scp|sftp) deny "$cmdw is not allowed while the owner is away" ;;
       claude) deny "starting Claude by hand is not allowed from an away session; hh-spawn and hh-hub start sessions" ;;
     esac
-    if [ "$cmdw" = cd ]; then   # a relative script path later in the call is read from where the call has moved to
-      nx=""; for tok in ${ws[@]+"${ws[@]}"}; do case "$tok" in cd|-*) ;; *) nx=$tok; break ;; esac; done
-      case "$nx" in ""|-) cwd=/nonexistent-cwd ;; *) cwd=$(canon "$nx" "$cwd") ;; esac
-    fi
+    case "$cmdw" in cd|pushd|popd)   # a relative script path later in the call is read from where the call has moved to; an unknown place is refused
+      nx=""; seen=""
+      for tok in ${ws[@]+"${ws[@]}"}; do
+        [ -n "$seen" ] || { [ "$(bn "$tok")" != "$cmdw" ] || seen=1; continue; }
+        case "$tok" in -|+*) nx=-; break ;; -*) ;; *) nx=$tok; break ;; esac
+      done
+      case "$cmdw:$nx" in popd:*|*:""|*:-) cwd=/nonexistent-cwd ;; *) cwd=$(canon "$nx" "$cwd") ;; esac ;;
+    esac
     so=$(script_operand ${ws[@]+"${ws[@]}"})
     [ -z "$so" ] || scripts+=("${so%% *}"$'\x1f'"$cwd"$'\x1f'"${so#* }")
     local has_tmux="" has_start="" has_gh="" has_rsync="" has_curl="" has_wget="" has_write=""
@@ -478,14 +514,21 @@ bash_text() {  # bash_text <command text> <cwd>: the rules for a command; a scri
         esac
       done
     fi
-    # ssh-keygen -R removes a host from ~/.ssh/known_hosts, a write under ~/.ssh that names no path
+    # ssh-keygen -R removes a host from ~/.ssh/known_hosts, a write under ~/.ssh that names no path; with no -f it would make a key there (its default
+    # path); -l, -F, -y and -B only read
+    kro=""
     if [ "$cmdw" = ssh-keygen ]; then
+      kf=""
       for tok in ${ws[@]+"${ws[@]}"}; do
         case "$tok" in -*R*) deny "ssh-keygen -R changes ~/.ssh/known_hosts, which cannot be changed from an away session" ;; esac
+        case "$tok" in -*f*) kf=1 ;; esac
+        case "$tok" in -*[lFyB]*) kro=1 ;; esac
       done
+      [ -n "$kf$kro" ] || deny "ssh-keygen without -f would make a key at its default path under ~/.ssh, which cannot be changed from an away session"
     fi
     # a write into a protected file by a command that writes
     case "$cmdw" in ssh-keygen|tee|cp|mv|rm|ln|install|dd|sed|perl|python|python3|node|ruby|truncate|touch|chmod|chown|patch|sponge|scp|sftp|rsync) has_write=1 ;; esac
+    [ -z "$kro" ] || has_write=""
     if [ -n "$has_write" ]; then
       for tok in ${toks[@]+"${toks[@]}"}; do
         case "$tok" in -*) continue ;; esac

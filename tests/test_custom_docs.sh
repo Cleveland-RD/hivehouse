@@ -41,6 +41,10 @@ for w in '`ssh -F none [-T] [-o ConnectTimeout=<digits>] [-o BatchMode=yes] <hos
          '`--allow` is reserved in this release' 'refuses to print (exit 4, "allow= is reserved; no command is allowable in this version")' '`hh-hub status --json` shows the hosts in force' 'names `hh-hub away --tools`' '`CronCreate` and `ScheduleWakeup` always pass'; do
   assert_contains "Customising what away mode allows says: $w" "$away" "$w"
 done
+assert_contains "a script the call runs is read first" "$RD" "is read first and its text is checked by the same rules"
+assert_contains "...and what the hook cannot read is refused" "$RD" "The hook refuses what it cannot read first: a shell fed by a pipe"
+assert_contains "WebFetch is allowed only when listed" "$RD" "\`WebFetch\` is allowed only when the owner listed it with \`--tools\`"
+assert_eq "...and the docs no longer say WebFetch stays allowed" "$(printf '%s' "$RD" | grep -c 'WebFetch\` and \`WebSearch\` stay allowed')" 0
 assert_contains "the remote git reads need the three flags" "$away" "must carry \`--no-ext-diff --no-textconv --no-show-signature\`"
 assert_contains "hh-hub status is not on the remote read list" "$away" "\`hh-hub status\` is not on the list: it runs \`git status\`"
 assert_eq "...and the list names hh-hub tasks alone" "$(printf '%s' "$away" | grep -c 'hh-slot status\` and \`hh-hub tasks\`')" 1
