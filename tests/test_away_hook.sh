@@ -581,6 +581,18 @@ printf 'echo hi\n' > "$sd/locked.sh"; chmod 000 "$sd/locked.sh"; denied "an unre
 allowed "a script under the plugin's own bin is not read" "bash $HH_REPO_ROOT/bin/hh-cleanup"
 hook "$(jq -nc --arg c 'bash bad.sh' --arg d "$sd" '{tool_name:"Bash",cwd:$d,tool_input:{command:$c}}')"; assert_status "...the cwd the tool call names" $RC 2
 
+echo "-- the marked hub's own commands (A9), ssh-keygen -R, and a decision text that names tmux"
+ROLE=hub
+for c in "hh-hub rotate" "hh-hub rotate --still 15 --max 900 --settle 8" "hh-hub rotate --max 900" "hh-hub self" "hh-hub self --name hub1" "hh-hub context" "hh-hub context --window 200000"; do
+  allowed "the marked hub runs: $c" "$c"
+done
+ROLE=proj
+allowed "hh-hub decide with the word tmux and a tmux line in its text" "hh-hub decide T1 --reason 'tmux is fine' <<'EOF'${nl}run tmux new-window -d to start it${nl}EOF"
+denied "tmux new-window outside a decision text is still refused" "tmux new-window -d ls"
+denied "ssh-keygen -R edits known_hosts" "ssh-keygen -R night.example.org"
+denied "...also with the options first" "ssh-keygen -q -R night.example.org"
+denied "ssh-keygen -f into ~/.ssh" "ssh-keygen -t ed25519 -f ~/.ssh/id_x"
+allowed "ssh-keygen -l of a key in the project is a read" "ssh-keygen -l -f $proj/key.pub"
 echo "-- the env the Bash tool sees does not matter"
 r=$(printf '%s' "$(tc 'git push')" | HH_AWAY_BYPASS=1 HH_PROJECT="$other" HH_AWAY_HUB="$hub" HH_AWAY_MCP_ALLOW= "$HOOK" 2>&1 >/dev/null); assert_status "any project in the env: still refused" $? 2
 

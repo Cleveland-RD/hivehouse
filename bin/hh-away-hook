@@ -7,7 +7,7 @@
 # hub's folder), HH_PROJECT (the project's home; the hub's own folder or nothing for the hub), HH_AWAY_MCP_ALLOW (the owner's
 # away_mcp_allow, comma-separated, may be empty). Without the marker it exits 0 at once, before anything is read. With it,
 # anything it cannot read or parse is a denial.
-# Matching is by tokens and is not complete (a script the session wrote, `$'\x67'it push` and `g${e}it push` get through).
+# Matching is by tokens and is not complete (`$'\x67'it push` and `g${e}it push` get through; the text of a script file it runs is read, KI-26).
 PATH=/usr/bin:/bin:/usr/sbin:/sbin   # first of all: every program the hook and hh-lib.sh run by name comes from here, never from a PATH the session's Bash command set
 [ "${HH_AWAY_BYPASS:-}" = 1 ] || { cat >/dev/null; exit 0; }
 set -u
@@ -467,8 +467,14 @@ bash_text() {  # bash_text <command text> <cwd>: the rules for a command; a scri
         esac
       done
     fi
+    # ssh-keygen -R removes a host from ~/.ssh/known_hosts, a write under ~/.ssh that names no path
+    if [ "$cmdw" = ssh-keygen ]; then
+      for tok in ${ws[@]+"${ws[@]}"}; do
+        case "$tok" in -*R*) deny "ssh-keygen -R changes ~/.ssh/known_hosts, which cannot be changed from an away session" ;; esac
+      done
+    fi
     # a write into a protected file by a command that writes
-    case "$cmdw" in tee|cp|mv|rm|ln|install|dd|sed|perl|python|python3|node|ruby|truncate|touch|chmod|chown|patch|sponge|scp|sftp|rsync) has_write=1 ;; esac
+    case "$cmdw" in ssh-keygen|tee|cp|mv|rm|ln|install|dd|sed|perl|python|python3|node|ruby|truncate|touch|chmod|chown|patch|sponge|scp|sftp|rsync) has_write=1 ;; esac
     if [ -n "$has_write" ]; then
       for tok in ${toks[@]+"${toks[@]}"}; do
         case "$tok" in -*) continue ;; esac
