@@ -46,6 +46,10 @@ One Claude session in the owner's work folder, the folder above every project, i
   `claude` for the hub, and attaches; when that session already runs the hub it only attaches, and it never starts a
   second one. Inside tmux it starts nothing and prints the lines to start the hub beside your session. At every start the
   hub records its own pane (`hh-hub self`), as an orchestrator does with `hh-spawn --self`.
+- **A window that reads wrong is set by the hub.** `hh-hub window <project> <agent>[@<team root>] <tokens>` records the agent's real
+  context window in its team.json entry (a name used in two team roots of the project needs the root, as `hh-hub dialog` does) and
+  prints it. Only the hub runs it: while the owner is away every marked session but the hub's is refused; with the owner here any
+  session may, as with `hh-hub self`.
 - **The hub rotates like an orchestrator.** At `rotate_at_percent` (the same level every session uses) the hub updates
   its handoff, `.hivehouse-hub/memory/hub-handoff.md`, and runs `hh-hub rotate`: it waits until its pane is idle, checks
   it is still the recorded pane and process, types `/clear`, then its pickup line. `hh-hub context` shows its level. The

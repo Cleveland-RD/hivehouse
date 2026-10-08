@@ -59,6 +59,7 @@ USAGE="usage: hh-hub init
        hh-hub run <project> cleanup <task id> [--disk] [--still <s>] [--max-wait <s>]
        hh-hub continue <project> [--still <s>] [--max-wait <s>]
        hh-hub dialog <project> [<agent>[@<team root>]]
+       hh-hub window <project> <agent>[@<team root>] <tokens>   (sets the agent's context window in its team.json record; the hub only)
        hh-hub away --until <time> [--mcp-allow <list>] [--remote-allow <ssh hosts>] [--tools <list>] [--allow (reserved)]
        hh-hub back
        hh-hub decide <task id> --reason <one line>      (stdin: the question, a line === ANSWER ===, the answer)
@@ -193,6 +194,24 @@ append_event() {  # append_event <hub root> <id> <project> <event> <note>: one l
     >> "$1/$HH_HUB_DIR/tasks.jsonl"
 }
 in_list() { case " $2 " in *" $1 "*) return 0 ;; esac; return 1; }   # in_list <word> <space-separated list of words>
+# find_agent <project> <agent>[@<team root>]: sets F_ENTRY (its team.json record), F_ROOT (the team root it is in) and F_NAME. The agent may sit in
+# a worktree's team: a name used in two team roots of the project is ambiguous without its root. Dies when there is none or it is ambiguous.
+find_agent() {
+  local name="$1" want="$2" wroot="" e r roots="" nroots=0
+  F_ENTRY=""; F_ROOT=""
+  case "$want" in *@*) wroot=${want#*@}; want=${want%%@*} ;; esac
+  hh_is_agent_name "$want" || hh_die 4 "an agent name is lower-case letters, digits, '_' and '-': $want"
+  while IFS= read -r r <&3; do
+    e=$(jq -c --arg a "$want" '[.agents[]? | select(.name == $a)][0] // empty' "$r/$HH_STATE_DIR/team.json" 2>/dev/null)
+    [ -n "$e" ] || continue
+    if [ -n "$wroot" ] && [ "$r" != "$wroot" ]; then continue; fi
+    [ -n "$F_ENTRY" ] || { F_ENTRY=$e; F_ROOT=$r; }
+    roots="$roots $want@$r"; nroots=$((nroots + 1))
+  done 3< <(hh_team_roots "$HOME_DIR")
+  [ -n "$F_ENTRY" ] || hh_die 2 "no agent named $want${wroot:+ in $wroot} on $name's team"
+  [ "$nroots" -le 1 ] || hh_die 4 "$want is on several team roots of $name:$roots: name one of them"
+  F_NAME=$want
+}
 
 # An orchestrator this hub started (wake, start) is recorded until it registers itself: a second wake or start while
 # that pane still runs would put two orchestrators on one team.
@@ -482,19 +501,7 @@ dialog_target() {
     fi
     [ -n "$T_PANE" ] || hh_die 4 "$name has no orchestrator screen to read ($O_STATE)"
   else
-    # <name> or <name>@<team root>: a name used in two team roots of the project is ambiguous without its root
-    wroot=""; case "$want" in *@*) wroot=${want#*@}; want=${want%%@*} ;; esac
-    hh_is_agent_name "$want" || hh_die 4 "an agent name is lower-case letters, digits, '_' and '-': $want"
-    entry=""; tr=""; roots=""; nroots=0
-    while IFS= read -r r <&3; do   # the agent may sit in a worktree's team
-      e=$(jq -c --arg a "$want" '[.agents[]? | select(.name == $a)][0] // empty' "$r/$HH_STATE_DIR/team.json" 2>/dev/null)
-      [ -n "$e" ] || continue
-      if [ -n "$wroot" ] && [ "$r" != "$wroot" ]; then continue; fi
-      [ -n "$entry" ] || { entry=$e; tr=$r; }
-      roots="$roots $want@$r"; nroots=$((nroots + 1))
-    done 3< <(hh_team_roots "$HOME_DIR")
-    [ -n "$entry" ] || hh_die 2 "no agent named $want${wroot:+ in $wroot} on $name's team"
-    [ "$nroots" -le 1 ] || hh_die 4 "$want is on several team roots of $name:$roots: name one of them"
+    find_agent "$name" "$want"; entry=$F_ENTRY; tr=$F_ROOT; want=$F_NAME
     hh_team_agent_is "$tr" "$want"; [ $? -eq 0 ] || hh_die 4 "$want is not running: there is no screen to read"
     T_SOCKET=$(printf '%s' "$entry" | jq -r '.socket // empty'); T_PANE=$(printf '%s' "$entry" | jq -r '.pane // empty'); T_SESSION="$want"
     [ -n "$T_PANE" ] || hh_die 4 "$want has no pane recorded"
@@ -1058,6 +1065,18 @@ run)
     > "$rf"
   unlock
   finish "$root" "$name" runs ;;
+
+window)
+  # the hub's way to fix a window that reads wrong (hh-context says "assumed", or the level is far off): the one team.json writer, under its lock
+  name="${1:-}"; agent="${2:-}"; tokens="${3:-}"
+  [ $# -eq 3 ] && [ -n "$name" ] && [ -n "$agent" ] || hh_die 64 "$USAGE"
+  case "$tokens" in ''|*[!0-9]*|0|0[0-9]*) hh_die 4 "the window is a positive number of tokens: $tokens" ;; esac
+  root=$(hub_root) || exit $?
+  only_the_marked_hub "$root" window
+  need_project "$root" "$name"
+  find_agent "$name" "$agent"
+  hh_team_edit "$F_ROOT" '.agents |= map(if .name == $a then .window = ($w | tonumber) else . end)' --arg a "$F_NAME" --arg w "$tokens" || exit $?
+  echo "$F_NAME window $tokens" ;;
 
 dialog)
   name="${1:-}"; [ -n "$name" ] || hh_die 64 "$USAGE"; shift
