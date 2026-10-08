@@ -854,21 +854,18 @@ hh_jq_resolve() {  # sets HH_JQ once per process, on first need (the stats cost 
   [ "$HH_JQ_DONE" = 1 ] && return 0
   HH_JQ=$(hh_jq_fixed) || HH_JQ=""; HH_JQ_DONE=1
 }
-# hh_delegate_check_list <hosts|allow> <list>: 0 when every comma-separated entry is valid, else 1 with HH_DELEGATE_WHY naming the entry.
-# hosts: [A-Za-z0-9._-]+ with at most one user@ in front, and no entry starts with - (ssh would read it as an option). allow: only the
-# commands that move files by hand (scp, rsync, sftp). The push, sync and deploy words, ssh, claude and tmux are never allowed: a standing
-# grant of up to 7 days would break "a word given for one run does not carry to the next", and a session started by hand carries no marker.
-HH_DELEGATE_ALLOWABLE=' scp rsync sftp '
+# hh_delegate_check_list <hosts|allow> <list>: 0 when the list is valid, else 1 with HH_DELEGATE_WHY saying why. hosts: every comma-separated entry
+# is [A-Za-z0-9._-]+ with at most one user@ in front, and no entry starts with - (ssh would read it as an option). allow: RESERVED in 0.5.1, so it
+# must be empty. A listed scp, rsync or sftp would reach any host, read ~/.ssh/config like ssh, and offers routes that run a program (--rsync-path,
+# sftp -b, scp -O); the push, sync and deploy words would be a standing grant of up to 7 days against "a word given for one run does not carry to
+# the next". No command is allowable until a form that cannot do those things is designed.
 hh_delegate_check_list() {
   local kind="$1" list="$2" e rest="$2"
   [ -n "$list" ] || return 0
+  [ "$kind" != allow ] || { HH_DELEGATE_WHY="allow= is reserved; no command is allowable in this version"; return 1; }
   while :; do
     e=${rest%%,*}
     case "$kind" in
-      allow) [ -n "$e" ] || { HH_DELEGATE_WHY="allow= has an empty entry"; return 1; }
-             case "$e" in *[!${HH_LOWER}]*) HH_DELEGATE_WHY="allow= may hold only${HH_DELEGATE_ALLOWABLE}and '$e' is not one of them"; return 1 ;; esac
-             case "$HH_DELEGATE_ALLOWABLE" in *" $e "*) ;;
-               *) HH_DELEGATE_WHY="allow= may hold only${HH_DELEGATE_ALLOWABLE}and '$e' is not one of them"; return 1 ;; esac ;;
       hosts) case "$e" in
                ''|@*|*@|*@*@*|*[!${HH_LOWER}${HH_UPPER}${HH_DIGITS}._@-]*) HH_DELEGATE_WHY="hosts= has an entry that is not a host name or user@host: '$e'"; return 1 ;;
              esac
@@ -879,7 +876,7 @@ hh_delegate_check_list() {
 }
 hh_delegate_read() {  # hh_delegate_read <path> <uid> [<now>]: prints "<hub><TAB><until><TAB><mcp>" when the file is valid; 1 when it is not
   local f="$1" want="$2" now="${3:-}" d hub until mcp l1="" l2="" l3="" l4="" l5="" l6="" nl line dl ver hosts="" allow="" want_lines
-  HH_DELEGATE_WHY=""; HH_DR_HUB=""; HH_DR_UNTIL=""; HH_DR_MCP=""; HH_DR_HOSTS=""; HH_DR_ALLOW=""; HH_DR_ABSENT=""
+  HH_DELEGATE_WHY=""; HH_DR_HUB=""; HH_DR_UNTIL=""; HH_DR_MCP=""; HH_DR_HOSTS=""; HH_DR_ABSENT=""
   [ -e "$f" ] || [ -L "$f" ] || HH_DR_ABSENT=1   # no file at all: not away, and nothing to explain
   [ -n "$now" ] || now=$(/bin/date +%s)
   case "$f" in /*) ;; *) HH_DELEGATE_WHY="the path is not absolute"; return 1 ;; esac
@@ -914,7 +911,7 @@ hh_delegate_read() {  # hh_delegate_read <path> <uid> [<now>]: prints "<hub><TAB
   fi
   [ "$until" -gt "$now" ] || { HH_DELEGATE_WHY="the file has expired"; return 1; }
   [ "$until" -le $((now + 604800)) ] || { HH_DELEGATE_WHY="until is more than 7 days ahead"; return 1; }
-  HH_DR_HUB=$hub; HH_DR_UNTIL=$until; HH_DR_MCP=$mcp; HH_DR_HOSTS=$hosts; HH_DR_ALLOW=$allow
+  HH_DR_HUB=$hub; HH_DR_UNTIL=$until; HH_DR_MCP=$mcp; HH_DR_HOSTS=$hosts
   printf '%s\t%s\t%s\n' "$hub" "$until" "$mcp"
 }
 hh_delegate_now() { hh_delegate_read "$(hh_delegate_path)" 0; }
@@ -941,14 +938,14 @@ hh_hub_records_trusted() {
 }
 HH_DG_UID=""
 hh_delegate_mine() {
-  HH_DG_HUB=""; HH_DG_UNTIL=""; HH_DG_MCP=""; HH_DG_HOSTS=""; HH_DG_ALLOW=""; HH_DG_UID=$(hh_real_uid) || HH_DG_UID=""
+  HH_DG_HUB=""; HH_DG_UNTIL=""; HH_DG_MCP=""; HH_DG_HOSTS=""; HH_DG_UID=$(hh_real_uid) || HH_DG_UID=""
   case "$HH_DG_UID" in ''|*[!0-9]*) HH_DG_UID=""; HH_DELEGATE_WHY="this user's id cannot be read"; return 1 ;; esac
   hh_jq_resolve
   [ -n "$HH_JQ" ] || { HH_DELEGATE_WHY="no root-owned jq was found (/usr/bin/jq, /usr/local/bin/jq or /opt/homebrew/bin/jq), so the hub's records cannot be read safely"; return 1; }
   hh_delegate_now >/dev/null || return 1
   HH_DG_HUB=$(cd "$HH_DR_HUB" 2>/dev/null && pwd -P) || { HH_DG_HUB=""; HH_DELEGATE_WHY="the hub folder $HH_DR_HUB cannot be entered"; return 1; }
   hh_hub_records_trusted "$HH_DG_HUB" "$HH_DG_UID" || { HH_DG_HUB=""; return 1; }
-  HH_DG_UNTIL=$HH_DR_UNTIL; HH_DG_MCP=$HH_DR_MCP; HH_DG_HOSTS=$HH_DR_HOSTS; HH_DG_ALLOW=$HH_DR_ALLOW
+  HH_DG_UNTIL=$HH_DR_UNTIL; HH_DG_MCP=$HH_DR_MCP; HH_DG_HOSTS=$HH_DR_HOSTS
 }
 # hh_env_has <pid> <NAME=value>: 0 the process was launched with it; 1 its environment is visible and lacks it; 2 no
 # environment is visible at all (the caller says so and does not pretend to have checked). Linux reads /proc/<pid>/environ,

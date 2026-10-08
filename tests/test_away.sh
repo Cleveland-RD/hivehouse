@@ -125,17 +125,18 @@ t_run_printed "$(printf '%s\n' "$out" | grep -E '^sudo |\| sudo ')"; assert_stat
 DFILE="$OB/delegate.d/$REALUID"
 assert_eq "the plain away writes a version 2 file: tag, hub, until, mcp, empty hosts and allow" "$(sed 's/until=[0-9]*/until=N/; s|^hub=.*|hub=H|' "$DFILE" | tr '\n' ' ')" "$T_DELEGATE_TAG 2 hub=H until=N mcp= hosts= allow= "
 assert_contains "...and says no remote host is used" "$out" "No remote host"
-out=$(cd "$H" && "$OBIN/hh-hub" away --until +1h --remote-allow night.example.org,ops@10.0.0.7 --allow scp,sftp); assert_status "away with --remote-allow and --allow" $? 0
+out=$(cd "$H" && "$OBIN/hh-hub" away --until +1h --remote-allow night.example.org,ops@10.0.0.7); assert_status "away with --remote-allow" $? 0
 t_run_printed "$(printf '%s\n' "$out" | grep -E '^sudo |\| sudo ')"; assert_status "...its sudo lines run" $? 0
-assert_eq "...the file holds hosts= and allow= as lines 5 and 6" "$(sed -n '5,6p' "$DFILE" | tr '\n' ' ')" "hosts=night.example.org,ops@10.0.0.7 allow=scp,sftp "
+assert_eq "...the file holds hosts= and an EMPTY allow= as lines 5 and 6" "$(sed -n '5,6p' "$DFILE" | tr '\n' ' ')" "hosts=night.example.org,ops@10.0.0.7 allow= "
 assert_eq "...in six lines, with the tag naming version 2" "$(wc -l < "$DFILE" | tr -d ' ') $(head -1 "$DFILE")" "6 $T_DELEGATE_TAG 2"
 hh_delegate_read "$DFILE" "$ME" "$NOW" >/dev/null; assert_status "...and the file reads as valid" $? 0
 assert_contains "...the text names the hosts" "$out" "Remote hosts allowed while away: night.example.org,ops@10.0.0.7"
-assert_contains "...and the commands allowed by hand" "$out" "Commands allowed while away: scp,sftp"
+case "$out" in *"Commands allowed"*) bad "a commands-allowed line is printed though allow= is reserved" ;; *) ok "...and no commands-allowed line (allow= is reserved)" ;; esac
 case "$out" in *"No remote host is used"*) bad "the no-remote-host line is printed with hosts allowed" ;; *) ok "...and not the no-remote-host line" ;; esac
-for bad_allow in claude tmux hh-push hh-remote-sync vercel netlify ssh bash "scp rsync" "scp,,sftp" 'a;b'; do
+for bad_allow in scp rsync sftp scp,sftp claude tmux hh-push hh-remote-sync vercel netlify ssh bash "scp rsync" "scp,,sftp" 'a;b'; do
   o=$(cd "$H" && "$OBIN/hh-hub" away --until +1h --allow "$bad_allow" 2>"$T_TMP/away.err"); rc=$?
   assert_status "--allow '$bad_allow' is refused" $rc 4
+  assert_contains "...saying allow= is reserved" "$(cat "$T_TMP/away.err")" "allow= is reserved"
   case "$o" in *sudo*) bad "--allow '$bad_allow' printed a sudo line" ;; *) ok "...and prints no sudo line" ;; esac
 done
 for bad_host in -x -o "a b" 'a;b' 'a/b' "@h" "u@" "a,,b"; do
@@ -151,10 +152,10 @@ assert_eq "...and still no sudo ran" "$(cat "$HH_SUDO_LOG")" ""
 case "$(hub status --json | jq -c '.hub | has("away")')" in false) ok "no valid file for this hub: not away" ;; *) bad "away shown with no valid file" ;; esac
 s=$(dhub status --json); assert_eq "with a valid file for this hub, status says until when" "$(printf '%s' "$s" | jq -r .hub.away.until)" "$((NOW + 3600))"
 assert_contains "...and the plain status" "$(dhub status)" "away until"
-assert_eq "...a version 1 file: no hosts and no allowances in the status" "$(printf '%s' "$s" | jq -c '[.hub.away.hosts, .hub.away.allow]')" '["",""]'
-printf "$T_DELEGATE_LINE2"'\nhub=%s\nuntil=%s\nmcp=\nhosts=night.example.org\nallow=scp\n' "$H" "$((NOW + 3600))" > "$DF"
+assert_eq "...a version 1 file: no hosts in the status, and no allow at all" "$(printf '%s' "$s" | jq -c '[.hub.away.hosts, (.hub.away | has("allow"))]')" '["",false]'
+printf "$T_DELEGATE_LINE2"'\nhub=%s\nuntil=%s\nmcp=\nhosts=night.example.org\nallow=\n' "$H" "$((NOW + 3600))" > "$DF"
 s=$(dhub status --json); assert_eq "a version 2 file: status shows the hosts" "$(printf '%s' "$s" | jq -r .hub.away.hosts)" "night.example.org"
-assert_eq "...and the allowances" "$(printf '%s' "$s" | jq -r .hub.away.allow)" "scp"
+assert_eq "...and still no allow field" "$(printf '%s' "$s" | jq -r '.hub.away | has("allow")')" "false"
 assert_eq "...and until, as before" "$(printf '%s' "$s" | jq -r .hub.away.until)" "$((NOW + 3600))"
 mkdel
 mkdel "$T_TMP"; case "$(dhub status --json | jq -c '.hub | has("away")')" in false) ok "a file naming another hub is not this hub's away" ;; *) bad "away shown for another hub's file" ;; esac

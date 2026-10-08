@@ -184,7 +184,7 @@ bn() { local t=${1##*/}; printf '%s' "$t"; }
 # KI-23: a heredoc body is data, not commands, only when the command that reads it does not run it. heredoc_strip prints the command
 # with such bodies removed (an unquoted body keeps only its lines with $( or a backtick, which the segment reading then checks as
 # before). Bodies are dropped only when EVERY command in the WHOLE call (each stage of each pipeline and list, on every line outside a
-# body) is a known reader: cd, cat, git, grep, jq, wc, head, tail, sort, uniq, or hh-hub task / hh-hub decide (the only hh- commands that
+# body) is a known reader: cd, cat, grep, jq, wc, head, tail, sort, uniq, or hh-hub task / hh-hub decide (the only hh- commands that
 # read a text from stdin). A list of runners would fail open for every program missing from it, so the call is held to a list of what is
 # safe instead, and one unknown command anywhere (`bash s.sh` on a later line, `eval "$x"` after a $(cat <<EOF)) keeps every body checked.
 # A command substitution anywhere (quoted or not), a line ending in a pipe, && or || and a quote left open at a line's end also keep them.
@@ -197,7 +197,7 @@ heredoc_strip() {
       if (c == "") return 0
       sub(/^.*\//, "", c)
       if (c == "hh-hub") return (d == "task" || d == "decide") ? 1 : 0
-      return index(" cd cat git grep jq wc head tail sort uniq ", " " c " ") ? 1 : 0
+      return index(" cd cat grep jq wc head tail sort uniq ", " " c " ") ? 1 : 0
     }
     function allreaders(line,   t, n, i, w) {   # every stage of the line is a reader; quoted text is blanked first, and a command substitution anywhere fails it
       if (index(line, "$(") || index(line, "`")) return 0
@@ -290,17 +290,6 @@ remote_check() {  # remote_check <word> [<word>...]: the words ssh sends to the 
     *) rc_deny "$c is not on the list of reads" ;;
   esac
 }
-# allow= of the owner's delegate file (scp, rsync, sftp, as hh-hub away --allow wrote them): each lifts only the command-position refusal of its own
-# word. Read once per command, and only for a command that names one of those words; a file that is not valid for this hub allows nothing.
-DG_ALLOW_READ=""; DG_ALLOW=""
-allow_has() {  # allow_has <word>: 0 when the owner's valid delegate file for this hub lists it
-  if [ -z "$DG_ALLOW_READ" ]; then
-    DG_ALLOW_READ=1
-    if hh_delegate_mine && [ "$HH_DG_HUB" = "$HUB" ]; then DG_ALLOW=$HH_DG_ALLOW; fi
-  fi
-  case ",$DG_ALLOW," in *",$1,"*) return 0 ;; esac
-  return 1
-}
 ssh_gate() {  # ssh_gate <raw command>: 1 = not an allowed ssh (the general rules decide, and refuse ssh); 0 = allowed; denies a listed-host ssh that breaks the shape
   local c="$1" w i o host e hosts
   c=${c#"${c%%[![:space:]]*}"}
@@ -383,10 +372,7 @@ bash_check() {
       hh-push) deny "hh-push is not allowed while the owner is away" ;;
       hh-remote-sync) deny "hh-remote-sync is not allowed while the owner is away" ;;
       ssh|vercel|netlify) deny "$cmdw is not allowed while the owner is away" ;;
-      scp|sftp) allow_has "$cmdw" || deny "$cmdw is not allowed while the owner is away (the owner's delegate file can list it with hh-hub away --allow)"
-                for tok in ${toks[@]+"${toks[@]}"}; do
-                  case "$tok" in -o*|-S|-F|-J|-D|-s|-e) deny "$cmdw with $tok runs a program or reads another ssh config, which an allowed $cmdw may not do while the owner is away" ;; esac
-                done ;;
+      scp|sftp) deny "$cmdw is not allowed while the owner is away" ;;
       claude) deny "starting Claude by hand is not allowed from an away session; hh-spawn and hh-hub start sessions" ;;
     esac
     local has_tmux="" has_start="" has_gh="" has_rsync="" has_curl="" has_wget="" has_write=""
@@ -408,8 +394,7 @@ bash_check() {
     if [ -n "$has_rsync" ]; then
       for tok in ${toks[@]+"${toks[@]}"}; do
         case "$tok" in
-          -e|--rsh*) deny "rsync to a remote is not allowed while the owner is away (rsync -e and --rsh run a program, whatever the owner allowed)" ;;
-          *:*) allow_has rsync || deny "rsync to a remote is not allowed while the owner is away (the owner's delegate file can list rsync with hh-hub away --allow)" ;;
+          -e|--rsh*|*:*) deny "rsync to a remote is not allowed while the owner is away" ;;
         esac
       done
     fi

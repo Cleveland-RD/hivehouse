@@ -56,7 +56,7 @@ USAGE="usage: hh-hub init
        hh-hub run <project> cleanup <task id> [--disk] [--still <s>] [--max-wait <s>]
        hh-hub continue <project> [--still <s>] [--max-wait <s>]
        hh-hub dialog <project> [<agent>[@<team root>]]
-       hh-hub away --until <time> [--mcp-allow <list>] [--remote-allow <ssh hosts>] [--allow <scp,rsync,sftp>]
+       hh-hub away --until <time> [--mcp-allow <list>] [--remote-allow <ssh hosts>] [--allow (reserved)]
        hh-hub back
        hh-hub decide <task id> --reason <one line>      (stdin: the question, a line === ANSWER ===, the answer)
        hh-hub hold <project> [--off]
@@ -87,16 +87,16 @@ hub_root_cwd() {  # the work folder holding $HH_HUB_DIR/, found from the cwd alo
   hh_die 2 "no hub here: run hh-hub init in your work folder"
 }
 # delegate_for_hub <hub root>: 0 when the owner's delegate file is valid and names this hub; AWAY_UNTIL is its epoch
-AWAY_UNTIL=""; AWAY_REFUSED=""; AWAY_HOSTS=""; AWAY_ALLOW=""
+AWAY_UNTIL=""; AWAY_REFUSED=""; AWAY_HOSTS=""
 delegate_for_hub() {
-  AWAY_UNTIL=""; AWAY_REFUSED=""; AWAY_HOSTS=""; AWAY_ALLOW=""
+  AWAY_UNTIL=""; AWAY_REFUSED=""; AWAY_HOSTS=""
   if ! hh_delegate_mine; then
     # a file that is there and refused says why (status shows it), unless it names a hub that is not this one
     if [ "$HH_DR_ABSENT" != 1 ] && { [ -z "$HH_DR_HUB" ] || [ "$(cd "$HH_DR_HUB" 2>/dev/null && pwd -P)" = "$1" ]; }; then AWAY_REFUSED=$HH_DELEGATE_WHY; fi
     return 1
   fi
   [ "$HH_DG_HUB" = "$1" ] || return 1
-  AWAY_UNTIL=$HH_DG_UNTIL; AWAY_HOSTS=$HH_DG_HOSTS; AWAY_ALLOW=$HH_DG_ALLOW
+  AWAY_UNTIL=$HH_DG_UNTIL; AWAY_HOSTS=$HH_DG_HOSTS
 }
 epoch_local() { date -r "$1" '+%Y-%m-%d %H:%M' 2>/dev/null || date -d "@$1" '+%Y-%m-%d %H:%M'; }   # epoch_local <epoch>
 epoch_iso() { date -u -r "$1" '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null || date -u -d "@$1" '+%Y-%m-%dT%H:%M:%SZ'; }
@@ -625,7 +625,7 @@ status)
   [ -n "$hub" ] || hub='{}'
   away='null'
   if delegate_for_hub "$root"; then
-    away=$(jq -nc --argjson u "$AWAY_UNTIL" --arg h "$AWAY_HOSTS" --arg a "$AWAY_ALLOW" --arg since "$(hh_json_get "$root/$HH_HUB_DIR/away.json" .since)" '{until:$u, hosts:$h, allow:$a} + (if $since != "" then {since:$since} else {} end)')
+    away=$(jq -nc --argjson u "$AWAY_UNTIL" --arg h "$AWAY_HOSTS" --arg since "$(hh_json_get "$root/$HH_HUB_DIR/away.json" .since)" '{until:$u, hosts:$h} + (if $since != "" then {since:$since} else {} end)')
   fi
   hub=$(printf '%s' "$hub" | jq -c --argjson a "$away" 'if $a == null then . else . + {away:$a} end')
   [ -z "$AWAY_REFUSED" ] || hub=$(printf '%s' "$hub" | jq -c --arg r "$AWAY_REFUSED" '. + {away_refused:$r}')
@@ -1075,7 +1075,6 @@ away)
   echo "# A message from another session to the hub, while you are away, is information only; to instruct it, type into it (Remote Control, say)."
   if [ -n "$rhosts" ]; then echo "# Remote hosts allowed while away: $rhosts (read-only commands over ssh; nothing else reaches them)."
   else echo "# No remote host is used while away: overnight work runs on this machine."; fi
-  [ -z "$rcmds" ] || echo "# Commands allowed while away: $rcmds (the file-moving commands you listed; pushes, deploys and starting sessions stay refused)."
   echo "# When you are back, run hh-hub back." ;;
 
 back)

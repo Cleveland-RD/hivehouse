@@ -69,14 +69,12 @@ mk2() {  # mk2 <hosts line> <allow line> [until]: a version 2 file
   mkf; printf "$T_DELEGATE_LINE2"'\nhub=/work\nuntil=%s\nmcp=\n%s\n%s\n' "${3:-$((NOW + 3600))}" "$1" "$2" > "$F"
 }
 mk2 "hosts=" "allow="; ok_ && ok "v2 with empty hosts= and allow= is valid" || bad "v2 empty is refused: $HH_DELEGATE_WHY"
-mk2 "hosts=night.example.org,ops@10.0.0.7,a_b-c" "allow=scp,rsync,sftp"; hh_delegate_read "$F" "$ME" "$NOW" > "$T_TMP/dg.out"; assert_status "v2 with hosts and allowances is valid" $? 0
+mk2 "hosts=night.example.org,ops@10.0.0.7,a_b-c" "allow="; hh_delegate_read "$F" "$ME" "$NOW" > "$T_TMP/dg.out"; assert_status "v2 with hosts (and the empty allow=) is valid" $? 0
 assert_eq "...still prints hub, time and mcp (three columns)" "$(cat "$T_TMP/dg.out")" "$(printf '/work\t%s\t' "$((NOW + 3600))")"
 assert_eq "...HH_DR_HOSTS holds the hosts" "$HH_DR_HOSTS" "night.example.org,ops@10.0.0.7,a_b-c"
-assert_eq "...HH_DR_ALLOW holds the allowed words" "$HH_DR_ALLOW" "scp,rsync,sftp"
 mkf; hh_delegate_read "$F" "$ME" "$NOW" >/dev/null; assert_eq "a v1 file has no hosts" "$HH_DR_HOSTS" ""
-assert_eq "...and no allowances" "$HH_DR_ALLOW" ""
-for w in claude tmux hh-push hh-remote-sync vercel netlify ssh bash zzz SCP "scp rsync"; do
-  mk2 "hosts=" "allow=$w"; ok_ && bad "allow=$w is valid" || { case "$HH_DELEGATE_WHY" in *"$w"*) ok "allow=$w makes the file invalid, naming the word" ;; *) bad "allow=$w refused without naming it: $HH_DELEGATE_WHY" ;; esac; }
+for w in scp rsync sftp scp,sftp,rsync claude tmux hh-push hh-remote-sync vercel netlify ssh bash zzz SCP "scp rsync"; do
+  mk2 "hosts=" "allow=$w"; ok_ && bad "allow=$w is valid" || assert_contains "allow=$w makes the file invalid: reserved" "$HH_DELEGATE_WHY" "allow= is reserved; no command is allowable in this version"
 done
 mk2 "hosts=" "allow=scp,claude"; ok_ && bad "one forbidden word among good ones is valid" || ok "one forbidden word among good ones makes the file invalid"
 mk2 "hosts=" "allow=scp,,sftp"; ok_ && bad "an empty entry in allow= is valid" || ok "an empty entry in allow= is invalid"
