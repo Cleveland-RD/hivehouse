@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# The file to read for a role, the rules or the brief template: the project's custom/ file, else the user's, else the plugin's (the
+# The file to read for a role, the rules, the brief template, or the hub's pickup line and handoff template: the project's custom/ file, else the user's, else the plugin's (the
 # resolver is hh_custom_file in hh-lib.sh; every skill asks it here). Prints the absolute path; notes (which level, or why a custom file was
 # ignored) go to stderr. Reads nothing but paths; takes no command to run.
-#   hh-resolve role <name> | rules | brief
+#   hh-resolve role <name> | rules | brief | hub-pickup | hub-handoff
 # Exit: 2 no such file at any level, 4 a bad role name, 64 usage.
 set -u
 . "$(dirname "$0")/hh-lib.sh"
-USAGE="usage: hh-resolve role <name> | rules | brief"
+USAGE="usage: hh-resolve role <name> | rules | brief | hub-pickup | hub-handoff"
 case "${1:-}" in
   role)
     [ $# -eq 2 ] || hh_die 64 "$USAGE"
@@ -15,6 +15,8 @@ case "${1:-}" in
     rel="roles/$2.md" ;;
   rules) [ $# -eq 1 ] || hh_die 64 "$USAGE"; rel="rules/RULES.md" ;;
   brief) [ $# -eq 1 ] || hh_die 64 "$USAGE"; rel="rules/brief-template.md" ;;
+  hub-pickup) [ $# -eq 1 ] || hh_die 64 "$USAGE"; rel="rules/hub-pickup.md" ;;
+  hub-handoff) [ $# -eq 1 ] || hh_die 64 "$USAGE"; rel="rules/hub-handoff.md" ;;
   *) hh_die 64 "$USAGE" ;;
 esac
 hh_custom_file "$rel"; rc=$?
