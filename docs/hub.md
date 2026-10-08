@@ -38,6 +38,9 @@ One Claude session in the owner's work folder, the folder above every project, i
   start asks the owner first, and runs in the owner's local permission mode (`permission_mode_local`, the one hivehouse's
   agents run in), made stricter where the project's own `.hivehouse/settings.json` says so. Start the hub in that mode
   too: sessions in different modes hold each other's messages for an approval nobody sees.
+  Both launch the orchestrator with the same measuring statusLine a spawned agent has, so its context window is read from
+  Claude Code and not guessed; one that then registers under another name than the one the start or wake line gives measures
+  into the other name's folder, which does no harm.
 - **Starting it: `<installPath>/bin/hh-hub start`.** Run in the work folder (`hh-hub` is not on your PATH in a terminal; the plugin's
   `installPath` is the one `claude plugin list --json` shows), it opens the hub in a tmux session named after it, running
   `claude` for the hub, and attaches; when that session already runs the hub it only attaches, and it never starts a

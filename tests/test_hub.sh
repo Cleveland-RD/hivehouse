@@ -124,6 +124,10 @@ assert_contains "...under its name" "$screen" "ARGV: app-orchestrator"
 assert_contains "...with a permission mode" "$screen" "ARGV: --permission-mode"
 assert_contains "...the one the project allows" "$screen" "ARGV: plan"
 case "$screen" in *"ARGV: --model"*) bad "a model was forced on the resumed session" ;; *) ok "...with its own model" ;; esac
+# W3b: the woken orchestrator gets the measuring statusLine a spawned agent gets, its agent folder in the command
+wcmd=$(printf '%s\n' "$screen" | grep '^ARGV: {"statusLine"' | sed 's/^ARGV: //' | jq -r '.statusLine.command')
+assert_contains "...with hh-statusline as its statusLine" "$wcmd" "/hh-statusline"
+assert_contains "...writing into the folder of the agent the wake line registers" "$wcmd" "/$T_STATE/team/orchestrator"
 assert_contains "...and told it works through the hub, which survives a rotation" "$screen" "--hub hub"
 assert_contains "...told to register again" "$screen" "hh-spawn --self --agent orchestrator"
 assert_contains "...and to report to the hub" "$screen" "send hub one line"
@@ -144,11 +148,17 @@ hh_tmux kill-pane -t "$wp"   # it has registered: the pane this hub started is n
 t2=$(hub task two --text "Write the guide"); assert_eq "a task for the second project" "$(idof "$t2")" "two-1"
 hub start two app-2 >/dev/null 2>&1; assert_status "a task of another project" $? 4
 hub start two two-9 >/dev/null 2>&1; assert_status "a task nobody asked" $? 2
+echo '{"statusLine":{"type":"command","command":"echo OWNERSL"}}' > "$CLAUDE_CONFIG_DIR/settings.json"
 sp=$(hub start two two-1 --still 2 --max-wait 15 2>"$T_TMP/start.err"); assert_status "start" $? 0
 screen=$(hh_tmux capture-pane -p -J -S - -t "$sp")
 assert_contains "...a new orchestrator by name" "$screen" "ARGV: two-orchestrator"
 assert_contains "...started on the task's file" "$screen" "GOT: /$T_PLUGIN:start Task two-1: read $P/tasks/two-1.md"
 assert_eq "...in its home" "$(hh_tmux display-message -p -t "$sp" '#{pane_current_path}')" "$H/solo"
+scmd=$(printf '%s\n' "$screen" | grep '^ARGV: {"statusLine"' | sed 's/^ARGV: //' | jq -r '.statusLine.command')
+assert_contains "...with hh-statusline as its statusLine" "$scmd" "/hh-statusline"
+assert_eq "...and the owner's statusLine as the command's one quoted argument" "$(/bin/sh -c "set -- $scmd; printf %s \"\$3\"")" "echo OWNERSL"
+[ -d "$H/solo/$T_STATE/team/orchestrator" ] && ok "...its agent folder exists before the launch" || bad "no agent folder for the new orchestrator"
+[ ! -e "$H/solo/$T_STATE/team/orchestrator/statusline.json" ] && ok "...and no statusline.json is written there" || bad "a statusline.json was written for the orchestrator"
 assert_eq "the task is marked handed" "$(hub tasks --json | jq -r '.[] | select(.id=="two-1") | .state')" "handed"
 hub start two two-1 --still 2 --max-wait 15 >/dev/null 2>&1; assert_status "never started twice while the first is coming up" $? 4
 hh_tmux kill-pane -t "$sp"; sleep 0.5   # it died before registering (a restart, say): it no longer holds the project

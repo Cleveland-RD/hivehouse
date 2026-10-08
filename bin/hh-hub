@@ -347,8 +347,8 @@ refuse_pending() {  # refuse_pending <hub root> <project>: under the lock, exits
 # line it is to be sent; then finish. The pane is the owner's, like the one an orchestrator registers with --self, so it is
 # never on a project's manifest (cleanup kills what the manifest names).
 launch() {
-  local root="$1" name="$2" kind="$3" cwd="$4" line="$5" task="$6" c pane socket ident envs mcpf rc
-  shift 6
+  local root="$1" name="$2" kind="$3" cwd="$4" line="$5" task="$6" agent="$7" c pane socket ident envs mcpf rc settings
+  shift 7
   HH_BP_ENVS=(); HH_BP_ARGS=()
   lock "$root"
   refuse_pending "$root" "$name"
@@ -357,7 +357,11 @@ launch() {
   mcpf="$root/$HH_HUB_DIR/panes/$name-mcp.json"
   if [ "$MODE" = bypassPermissions ]; then mkdir -p "$root/$HH_HUB_DIR/panes"; hh_bypass_launch "$cwd" "$mcpf" || { rm -f "$mcpf"; hh_die 4 "cannot prepare the away MCP file for $name"; }
   else rm -f "$mcpf"; fi   # an earlier bypass start's file may hold server secrets and is not this launch's
-  c="umask $HH_CALLER_UMASK; exec $(printf '%q ' claude "$@" ${HH_BP_ARGS[@]+"${HH_BP_ARGS[@]}"})"   # the pane's files are the caller's, not the hub's records
+  # the measuring statusLine a spawned agent gets (one function, hh_agent_settings), so its window is read, never guessed; the agent's folder is
+  # made first (an orchestrator registered under another name than this one measures into the other folder: harmless)
+  (HH_PROJECT="$cwd"; export HH_PROJECT; hh_ensure_state && mkdir -p "$cwd/$HH_STATE_DIR/team/$agent") || { rc=$?; rm -f "$mcpf"; exit $rc; }
+  settings=$(hh_agent_settings "$HH_BIN" "$cwd" "$cwd/$HH_STATE_DIR/team/$agent") || { rc=$?; rm -f "$mcpf"; exit $rc; }
+  c="umask $HH_CALLER_UMASK; exec $(printf '%q ' claude "$@" --settings "$settings" ${HH_BP_ARGS[@]+"${HH_BP_ARGS[@]}"})"   # the pane's files are the caller's, not the hub's records
   envs=(-e "HIVEHOUSE_HOME=$(hh_home)" -e "HH_PROJECT=$cwd" ${HH_BP_ENVS[@]+"${HH_BP_ENVS[@]}"})
   [ -n "${HH_TMUX_SOCKET:-}" ] && envs+=(-e "HH_TMUX_SOCKET=$HH_TMUX_SOCKET")
   pane=$(umask "$HH_CALLER_UMASK"; hh_open_window "$name" orchestrator "$cwd" "$c" "${envs[@]}") || { rc=$?; rm -f "$mcpf"; exit $rc; }
@@ -984,7 +988,7 @@ wake)
   args=(--resume "$O_SID" --name "$O_NAME"); [ -z "$MODE" ] || args+=(--permission-mode "$MODE")
   launch "$root" "$name" wake "$O_ROOT" \
     "You are $O_NAME, resumed by $hn after a restart. Register again with hh-spawn --self --agent $O_AGENT --hub $hn, run hh-context --all, and run hh-spawn --respawn <agent> for each agent it marks (not running). Then send $hn one line, first word BACK: which agents are back and what you were doing." \
-    "" "${args[@]}" ;;
+    "" "${O_AGENT:-orchestrator}" "${args[@]}" ;;
 
 start)
   [ $# -gt 0 ] || { hub_start; exit $?; }
@@ -1009,7 +1013,7 @@ start)
   project_mode "$HOME_DIR"
   args=(--name "$name-orchestrator"); [ -z "$MODEL" ] || args+=(--model "$MODEL"); [ -z "$MODE" ] || args+=(--permission-mode "$MODE")
   if [ "$overnight" = 1 ]; then sline=$(overnight_line "$id" "$tf" "$hn"); else sline="/$PLUGIN:start Task $id: read $tf. It came from the owner through $hn."; fi
-  launch "$root" "$name" start "$HOME_DIR" "$sline" "$id" "${args[@]}" ;;
+  launch "$root" "$name" start "$HOME_DIR" "$sline" "$id" orchestrator "${args[@]}" ;;
 
 run)
   # the two owner-only skills, typed into the project's running orchestrator: only a line this script builds, only when the
