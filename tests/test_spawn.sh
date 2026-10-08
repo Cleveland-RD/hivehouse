@@ -154,13 +154,15 @@ assert_status "spawn with spaces in the plugin's and the project's paths" $? 0
 sset=$(hh_tmux capture-pane -p -J -S - -t "$spane" | grep '^ARGV: {"statusLine"' | sed 's/^ARGV: //')
 assert_eq "--settings carries one statusLine" "$(printf '%s' "$sset" | jq -r '.statusLine.type')" "command"
 assert_eq "...keeping the owner's other keys" "$(printf '%s' "$sset" | jq -r '.statusLine.padding')" "2"
-assert_eq "the owner's statusLine is recorded for the agent" "$(jq -r .command "$sp/$T_STATE/team/sl/statusline.json")" "echo OWNER; exit 4"
 scmd=$(printf '%s' "$sset" | jq -r '.statusLine.command')
+assert_eq "the owner's statusLine rides in --settings as one quoted argument" "$(/bin/sh -c "set -- $scmd; printf %s \"\$3\"")" "echo OWNER; exit 4"
+[ ! -e "$sp/$T_STATE/team/sl/statusline.json" ] && ok "...and no statusline.json is written (A12)" || bad "a statusline.json was written for the agent"
 out=$(printf '%s' '{"session_id":"q","context_window":{"context_window_size":1000000,"used_percentage":1}}' | /bin/sh -c "$scmd"); rc=$?
 assert_eq "run as Claude Code runs it, it shows the owner's line" "$out" "OWNER"
 assert_status "...with the owner's status" "$rc" 4
 assert_eq "...and keeps the window in the agent's dir" "$(jq -r .window "$sp/$T_STATE/team/sl/context.json")" "1000000"
 rm "$CLAUDE_CONFIG_DIR/settings.json"
+mkdir -p "$sp/$T_STATE/team/sl2"; echo '{"command":"echo PLANTED"}' > "$sp/$T_STATE/team/sl2/statusline.json"
 "$T_TMP/plug in/bin/hh-spawn" --agent sl2 --role "$T_TMP/impl.md" --rules "$T_TMP/RULES.md" --model sonnet --effort medium --mode auto --still 2 --max-wait 15 >/dev/null
-[ ! -e "$sp/$T_STATE/team/sl2/statusline.json" ] && ok "no owner statusLine: none recorded" || bad "an owner statusLine was recorded from nowhere"
+[ ! -e "$sp/$T_STATE/team/sl2/statusline.json" ] && ok "no owner statusLine: none recorded, a leftover one removed" || bad "a statusline.json is left for sl2"
 cd /; t_teardown; t_done

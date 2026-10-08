@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # A spawned agent's statusLine (hh-spawn hands it to claude with --settings). It keeps Claude Code's own reading of the
-# context window in <agent dir>/context.json for hh-context, then runs the owner's statusLine (resolved and recorded in
-# <agent dir>/statusline.json at spawn) on the same input, with /bin/sh -c as Claude Code runs one: what the pane shows,
+# context window in <agent dir>/context.json for hh-context, then runs the owner's statusLine (its command: the second argument hh-spawn quoted into --settings;
+# no file in the agent's folder is read for it) on the same input, with /bin/sh -c as Claude Code runs one: what the pane shows,
 # and the exit status, are the owner's. With no owner statusLine it prints nothing. Keeping the reading is best effort
 # and never stands between the owner and his status line.
-# hh-statusline <agent dir>
+# hh-statusline <agent dir> [<owner's statusLine command>]
 set -u
 . "$(dirname "$0")/hh-lib.sh"
 dir="${1:-}"
@@ -15,6 +15,6 @@ if [ -d "$dir" ]; then
        | select((.window | type) == "number" and .window > 0 and (.session_id | type) == "string")' > "$dir/context.json.tmp$$" \
       && mv -f "$dir/context.json.tmp$$" "$dir/context.json"; } 2>/dev/null || rm -f "$dir/context.json.tmp$$" 2>/dev/null
 fi
-owner=$(hh_json_get "$dir/statusline.json" .command)
+owner="${2:-}"
 [ -n "$owner" ] || exit 0
 printf '%s\n' "$input" | exec /bin/sh -c "$owner"

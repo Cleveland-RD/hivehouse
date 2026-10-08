@@ -4,10 +4,10 @@
 t_setup
 d="$T_TMP/agent dir"; mkdir -p "$d"
 in='{"session_id":"s1","context_window":{"context_window_size":1000000,"used_percentage":9.2},"model":{"id":"m"}}'
-printf '%s\n' '{"type":"command","command":"cat > \"$OWNER_IN\"; echo OWNER LINE; exit 3","padding":0}' > "$d/statusline.json"
+own='cat > "$OWNER_IN"; echo OWNER LINE; exit 3'   # the owner's command arrives as the second argument, quoted into --settings by hh-spawn
 export OWNER_IN="$T_TMP/owner.in"
 
-out=$(printf '%s' "$in" | hh-statusline "$d"); rc=$?
+out=$(printf '%s' "$in" | hh-statusline "$d" "$own"); rc=$?
 assert_eq "the owner's statusLine prints what the pane shows" "$out" "OWNER LINE"
 assert_status "...and its exit status is passed through" "$rc" 3
 assert_eq "...and it got the same input" "$(jq -r .session_id "$OWNER_IN")" "s1"
@@ -18,7 +18,7 @@ assert_contains "...and when it was read" "$(jq -r .at "$d/context.json")" "T"
 
 # a write that fails costs the owner nothing: same line, same status, no file
 rm -f "$d/context.json"; chmod 555 "$d"
-out=$(printf '%s' "$in" | hh-statusline "$d" 2>"$T_TMP/err"); rc=$?
+out=$(printf '%s' "$in" | hh-statusline "$d" "$own" 2>"$T_TMP/err"); rc=$?
 chmod 755 "$d"
 assert_eq "an unwritable agent dir: the owner's line still shows" "$out" "OWNER LINE"
 assert_status "...with its own status" "$rc" 3
@@ -30,16 +30,15 @@ assert_eq "...and prints nothing (no owner recorded there)" "$out" ""
 
 # input that carries no window (before the first reply, or another shape) keeps nothing and still runs the owner's line
 printf '%s\n' '{"session_id":"old","window":5,"at":"x"}' > "$d/context.json"
-out=$(printf '%s' '{"session_id":"s2","context_window":{"context_window_size":null}}' | hh-statusline "$d")
+out=$(printf '%s' '{"session_id":"s2","context_window":{"context_window_size":null}}' | hh-statusline "$d" "$own")
 assert_eq "no window: the owner's line still shows" "$out" "OWNER LINE"
 assert_eq "...and the last good reading stays" "$(jq -r .session_id "$d/context.json")" "old"
-out=$(printf 'not json' | hh-statusline "$d"); rc=$?
+out=$(printf 'not json' | hh-statusline "$d" "$own"); rc=$?
 assert_eq "input that is not JSON: the owner's line still shows" "$out" "OWNER LINE"
-printf '%s' '{"session_id":"s3","context_window":{"context_window_size":200000,"used_percentage":null}}' | hh-statusline "$d" >/dev/null
+printf '%s' '{"session_id":"s3","context_window":{"context_window_size":200000,"used_percentage":null}}' | hh-statusline "$d" "$own" >/dev/null
 assert_eq "a null percent (no reply yet) still keeps the window" "$(jq -r '"\(.window) \(.used_percentage)"' "$d/context.json")" "200000 null"
 
 # no owner statusLine: nothing printed, status 0
-rm -f "$d/statusline.json"
 out=$(printf '%s' "$in" | hh-statusline "$d"); rc=$?
 assert_eq "no owner statusLine prints nothing" "$out" ""
 assert_status "...and exits 0" "$rc" 0
@@ -58,4 +57,9 @@ echo '{"statusLine":{"type":"command","command":"managed"}}' > "$HH_MANAGED_SETT
 assert_eq "managed beats them all" "$(hh_owner_statusline "$p" | jq -r .command)" "managed"
 echo '{"model":"x"}' > "$HH_MANAGED_SETTINGS"; echo 'not json' > "$p/.claude/settings.local.json"
 assert_eq "a file with no statusLine, or not JSON, is passed over" "$(hh_owner_statusline "$p" | jq -r .command)" "project"
+# A12: a statusline.json in the agent's folder is never read, never run: that file is writable by an away session, so a command found there
+# would run as the owner outside every hook
+printf '%s\n' '{"type":"command","command":"echo PLANTED"}' > "$d/statusline.json"
+out=$(printf '%s' "$in" | hh-statusline "$d"); assert_eq "a planted statusline.json is not run (no owner given)" "$out" ""
+out=$(printf '%s' "$in" | hh-statusline "$d" "$own"); assert_eq "...nor beside an owner's command" "$out" "OWNER LINE"
 cd /; t_teardown; t_done

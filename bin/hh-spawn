@@ -248,13 +248,8 @@ fi
 session=${session:-hh-$(hh_project_key "$ROOT")}
 # exec: the pane's own process must BE claude (the hook's one rule for a spawned agent), not a shell that happens to exec its last
 # command; a shell that does not (fish, a startup file that sets a trap, `cmd; :`) would otherwise stay as the pane's process
-# The agent's statusLine is hh-statusline, which keeps Claude Code's own window reading for hh-context and then runs the owner's
-# statusLine, resolved here once (its other keys, padding and the like, are kept as the owner set them).
-owner_sl=$(hh_owner_statusline "$cwd")
-if [ -n "$owner_sl" ]; then printf '%s\n' "$owner_sl" > "$STATE/team/$agent/statusline.json"; else rm -f "$STATE/team/$agent/statusline.json"; fi
-rm -f "$STATE/team/$agent/context.json"
-settings=$(jq -nc --argjson o "${owner_sl:-null}" --arg bin "$(cd "$HH_BIN" && pwd -P)/hh-statusline" --arg dir "$STATE/team/$agent" \
-  '{statusLine: (($o // {}) + {type: "command", command: ([$bin, $dir] | map(@sh) | join(" "))})}') || exit $?
+# The agent's statusLine is hh-statusline, with the owner's own carried in the value (hh_agent_settings)
+settings=$(hh_agent_settings "$HH_BIN" "$cwd" "$STATE/team/$agent") || exit $?
 # --resume: the agent's own recorded session, when it is still there and no live Claude already holds it (the owner resumed it by hand:
 # a second process on one conversation would fork it); otherwise today's respawn from the handoff
 resume_id=""

@@ -483,6 +483,17 @@ hh_owner_statusline() {  # hh_owner_statusline <session cwd>
   return 0
 }
 
+# The --settings value every session hivehouse starts (an agent, an orchestrator the hub starts) is launched with: its statusLine is
+# hh-statusline, which keeps Claude Code's own window reading in <agent dir>/context.json for hh-context, then runs the owner's
+# statusLine. The owner's command rides in the value as one quoted argument; it is never kept in a file an away session can write, and
+# a statusline.json left in the folder (0.5.2 wrote one) is removed. The owner's other statusLine keys (padding and the like) are kept.
+hh_agent_settings() {  # hh_agent_settings <bin dir> <session cwd> <agent dir>
+  local o; o=$(hh_owner_statusline "$2")
+  rm -f "$3/statusline.json" "$3/context.json"
+  jq -nc --argjson o "${o:-null}" --arg bin "$(cd "$1" && pwd -P)/hh-statusline" --arg dir "$3" \
+    '{statusLine: (($o // {}) + {type: "command", command: ([$bin, $dir] + (if (($o // {}).command | type) == "string" then [$o.command] else [] end) | map(@sh) | join(" "))})}'
+}
+
 # An agent's session record, .hivehouse/team/<agent>/session.json {session_id, transcript_path, source, at}: hh-context reads
 # it. The one writer, for the SessionStart hook and for hh-spawn --self. Never writes for a bad agent name or into a tracked
 # .hivehouse; the write is atomic. Returns 1 when nothing was written.
