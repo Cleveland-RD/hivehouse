@@ -649,6 +649,25 @@ ROLE=hub
 for c in "hh-hub rotate" "hh-hub rotate --still 15 --max 900 --settle 8" "hh-hub rotate --max 900" "hh-hub self" "hh-hub self --name hub1" "hh-hub self --window 1000000" "hh-hub self --name hub1 --window 200000" "hh-hub context" "hh-hub context --window 200000"; do
   allowed "the marked hub runs: $c" "$c"
 done
+echo "-- the hub's own commands are the hub's alone (final review): an agent can type into the hub's prompt with rotate, re-record it with self, and start a hub with start"
+ROLE=proj
+for c in "hh-hub rotate" "hh-hub rotate --still 15 --max 900 --settle 8" "hh-hub self" "hh-hub self --name hub1" "hh-hub self --window 1000000" "hh-hub context" "hh-hub context --window 200000" \
+         "env hh-hub rotate" "timeout 5 hh-hub rotate" "cd $proj && hh-hub rotate" "hh-slot run x -- hh-hub self"; do
+  denied "a project's session may not run: $c" "$c"
+  assert_contains "...and the refusal says it is the hub's own" "$ERR" "hub's own session"
+done
+for c in "hh-hub rotate" "hh-hub self --name hub1" "hh-hub context --window 200000"; do ROLE=hub; allowed "the hub still runs: $c" "$c"; ROLE=other; denied "another project's session may not run: $c" "$c"; done
+for r in proj hub other; do
+  ROLE=$r
+  denied "hh-hub start with no arguments is refused ($r)" "hh-hub start"
+  assert_contains "...and says it starts a hub by hand" "$ERR" "starts or attaches a hub"
+  denied "...also with only an option ($r)" "hh-hub start --foo"
+  denied "...also behind a wrapper ($r)" "env hh-hub start"
+  allowed "hh-hub start <project> <id> stays as it is ($r)" "hh-hub start proj T1"
+done
+ROLE=proj
+allowed "hh-hub status is not one of them" "hh-hub status"
+allowed "hh-hub tasks is not one of them" "hh-hub tasks"
 ROLE=proj
 allowed "hh-hub decide with the word tmux and a tmux line in its text" "hh-hub decide T1 --reason 'tmux is fine' <<'EOF'${nl}run tmux new-window -d to start it${nl}EOF"
 denied "tmux new-window outside a decision text is still refused" "tmux new-window -d ls"

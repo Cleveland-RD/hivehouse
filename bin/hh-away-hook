@@ -424,7 +424,7 @@ bash_check() {
   bash_text "$cmd" "$cwd"
 }
 bash_text() {  # bash_text <command text> <cwd>: the rules for a command; a script's text is run through it again
-  local cmd="$1" cwd="$2" s seg tok toks ws i first second prev have_git="" have_push="" have_pub="" have_dock="" pkgm="" wr rt cmdw fb a b nx so seen kf kro
+  local cmd="$1" cwd="$2" s seg tok toks ws i first second prev have_git="" have_push="" have_pub="" have_dock="" pkgm="" wr rt cmdw fb a b nx so seen kf kro hs hn hseen
   local -a scripts=()
   cmd=$(printf '%s\n' "$cmd" | heredoc_strip)
   uncheckable_shell "$cmd"
@@ -474,6 +474,18 @@ bash_text() {  # bash_text <command text> <cwd>: the rules for a command; a scri
       scp|sftp) deny "$cmdw is not allowed while the owner is away" ;;
       claude) deny "starting Claude by hand is not allowed from an away session; hh-spawn and hh-hub start sessions" ;;
     esac
+    if [ "$cmdw" = hh-hub ]; then   # rotate, self and context act on the hub's own pane and prompt; a start with no arguments starts or attaches a hub
+      hs=""; hn=0; hseen=""
+      for tok in ${ws[@]+"${ws[@]}"}; do
+        [ -n "$hseen" ] || { [ "$(bn "$tok")" != hh-hub ] || hseen=1; continue; }
+        case "$tok" in -*) continue ;; esac
+        if [ -z "$hs" ]; then hs=$tok; else hn=$((hn + 1)); fi
+      done
+      case "$hs" in
+        rotate|self|context) [ "$PROJ_REAL" = "$HUB" ] || deny "hh-hub $hs belongs to the hub's own session (it types into or records the hub's pane), so no other away session may run it" ;;
+        start) [ "$hn" -gt 0 ] || deny "hh-hub start with no arguments starts or attaches a hub, which is starting a session by hand and is not allowed from an away session (hh-hub start <project> <id> is)" ;;
+      esac
+    fi
     case "$cmdw" in cd|pushd|popd)   # a relative script path later in the call is read from where the call has moved to; an unknown place is refused
       nx=""; seen=""
       for tok in ${ws[@]+"${ws[@]}"}; do

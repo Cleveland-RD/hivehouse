@@ -46,6 +46,8 @@ assert_contains "a script the call runs is read first" "$RD" "is read first and 
 assert_contains "...and what the hook cannot read is refused" "$RD" "The hook refuses what it cannot read first: a shell fed by a pipe"
 assert_contains "a program that runs another is not read" "$RD" "program that runs another (\`python -c\`, \`perl -e\`, \`awk\` with \`system()\`, \`make\`, a git alias) is not read"
 assert_contains "\"| bash\" inside quoted text is refused too" "$RD" "\`| bash\` inside quoted text is refused the same way"
+assert_contains "hh-hub start with no arguments is refused for every away session" "$RD" "\`hh-hub start\` with no arguments (it starts or attaches a hub) is refused for every away session, the hub included"
+assert_contains "rotate, self and context are the hub's own" "$RD" "\`hh-hub rotate\`, \`hh-hub self\` and \`hh-hub context\` are refused for every away session except the hub's own"
 assert_contains "WebFetch is allowed only when listed" "$RD" "\`WebFetch\` is allowed only when the owner listed it with \`--tools\`"
 assert_eq "...and the docs no longer say WebFetch stays allowed" "$(printf '%s' "$RD" | grep -c 'WebFetch\` and \`WebSearch\` stay allowed')" 0
 assert_contains "the remote git reads need the three flags" "$away" "must carry \`--no-ext-diff --no-textconv --no-show-signature\`"
