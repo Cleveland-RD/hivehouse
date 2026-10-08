@@ -17,7 +17,7 @@ for w in 'custom/' '--role' '--rules' '--remote-allow' '--allow' 'root-owned' 'p
 done
 assert_contains "the guide says an edit in the plugin cache is lost" "$(printf '%s' "$sec" | tr '\n' ' ' | sed 's/  */ /g')" "replaced by the next plugin update"
 assert_contains "the guide says to print the sudo lines to loosen away mode" "$(printf '%s' "$sec" | tr '\n' ' ' | sed 's/  */ /g')" "never edit anything to get round it"
-assert_contains "the hub has no project custom/ of its own" "$(printf '%s' "$sec" | tr '\n' ' ' | sed 's/  */ /g')" "The hub has no project of its own, so for the hub only your own \`custom/\` and the plugin's apply."
+assert_contains "the hub's project level follows HH_PROJECT" "$(printf '%s' "$sec" | tr '\n' ' ' | sed 's/  */ /g')" "The project level follows \`hh_project_root\`, which honours \`HH_PROJECT\`; the away hub's start line sets \`HH_PROJECT=<the hub's folder>\`"
 assert_contains "the principle: setup-specific behaviour is configuration, never code" "$(printf '%s' "$sec" | tr '\n' ' ' | sed 's/  */ /g')" "never a code change"
 grep -qE '^#+ Delegate mode$|^## Delegate mode' "$HH_REPO_ROOT/README.md" && ok "the README has a Delegate mode pitch near the top" || bad "the README has a Delegate mode pitch near the top"
 pitchline=$(grep -nE '^## Delegate mode$' "$HH_REPO_ROOT/README.md" | head -1 | cut -d: -f1); firstsec=$(grep -nE '^## Install$' "$HH_REPO_ROOT/README.md" | head -1 | cut -d: -f1)
@@ -30,27 +30,28 @@ away=$(awk '/^#+ Customising what away mode allows/{f=1;next} /^#+ /{f=0} f' "$H
 for w in '--remote-allow' '--allow' 'sudo' 'by hand' 'settings'; do assert_contains "Customising what away mode allows mentions $w" "$away" "$w"; done
 assert_contains "the delegate file's version 2 is described" "$RD" "Line 1 is \`$T_DELEGATE_LINE2\`"
 assert_contains "...with its two allowance lines" "$RD" "\`hosts=<list>\`"
-assert_contains "...and version 1 is still read" "$RD" "is still read, with no hosts and no allowed words"
+assert_contains "...and version 1 is still read" "$RD" "is still read, with no hosts"
 assert_contains "...and a file is exactly the lines of its version" "$RD" "exactly the lines of its version (four for version 1, six for version 2)"
 assert_eq "...and no longer says the file is exactly four lines" "$(printf '%s' "$RD" | grep -c 'exactly those four lines')" 0
 for w in '`ssh -F none [-T] [-o ConnectTimeout=<digits>] [-o BatchMode=yes] <host> <command>`' 'names from your `~/.ssh/config` are not usable while away' \
          '`git status` and `git diff` are not allowed' 'its first word must be one of a read-only list' '`~/.ssh/` is protected in away sessions' \
-         '`scp`, `rsync` or `sftp` from the refusal' '`hh-hub away` refuses to print (exit 4, naming the word or host)' '`hh-hub status --json` shows the hosts and words in force'; do
+         '`--allow` is reserved in this release' 'refuses to print (exit 4, "allow= is reserved; no command is allowable in this version")' '`hh-hub status --json` shows the hosts in force'; do
   assert_contains "Customising what away mode allows says: $w" "$away" "$w"
 done
 assert_contains "the remote git reads need the three flags" "$away" "must carry \`--no-ext-diff --no-textconv --no-show-signature\`"
 assert_contains "hh-hub status is not on the remote read list" "$away" "\`hh-hub status\` is not on the list: it runs \`git status\`"
 assert_eq "...and the list names hh-hub tasks alone" "$(printf '%s' "$away" | grep -c 'hh-slot status\` and \`hh-hub tasks\`')" 1
-assert_contains "an allowed word lets only that command past its command-position refusal" "$away" "an allowed word lets only that command past its command-position refusal, every other rule still runs on the command, and it never applies to the remote part of an ssh command"
+assert_contains "scp, sftp and rsync to a remote stay refused whatever the file says" "$away" '`scp`, `sftp` and `rsync` to a remote stay refused while away, whatever the file says'
 HUBSK=$(tr '\n' ' ' < "$HH_REPO_ROOT/skills/hub/SKILL.md" | sed 's/  */ /g')
 assert_eq "the hub skill no longer says no remote host is used while away" "$(printf '%s' "$HUBSK" | grep -c 'no remote host is used')" 0
 assert_contains "...it names the read-only ssh checks the owner allowed" "$HUBSK" "the only reach to a remote host is the read-only ssh checks the owner allowed with \`hh-hub away --remote-allow\`"
 assert_contains "the hook list names the ssh exception" "$RD" "\`ssh\` (except the reads the owner allowed with \`--remote-allow\`, below)"
 assert_contains "the hook list protects ~/.ssh/" "$RD" "a project's \`.mcp.json\` and \`~/.ssh/\`"
-assert_contains "the heredoc rule is stated" "$RD" "A heredoc body is data, never commands, only when the command in front of"
+assert_contains "the heredoc rule is stated" "$RD" "Heredoc bodies are data, never commands, only when every command in the whole call"
 assert_contains "N2: an away agent can rewrite future roles and rules in custom/" "$RD" "an away agent can rewrite its own team's, and another project's, future roles and rules in custom/"
 assert_contains "N2: ...and says no grant is loosened by it" "$RD" "away grants come only from the root-owned delegate file"
-assert_contains "D: SendMessage to other machines stays cut off while away" "$RD" "SendMessage to sessions on other machines stays cut off while away"
+assert_contains "D: messages to other machines stay cut off while away, said once" "$RD" "Messages to sessions on other machines stay cut off while away"
+assert_eq "...and not said a second time" "$(printf '%s' "$RD" | grep -o 'sessions on other machines stay' | wc -l | tr -d ' ')" "1"
 
 echo "-- rules/RULES.md: one line for contributors and agents"
 RU=$(tr '\n' ' ' < "$HH_REPO_ROOT/rules/RULES.md" | sed 's/  */ /g')
