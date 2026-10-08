@@ -104,12 +104,16 @@ hh_custom_safe() {  # hh_custom_safe <custom dir> <rel> <uid>: 0 when every part
   hh_path_trusted "$base/$rel" file "$uid" strict
 }
 hh_custom_file() {
-  local rel="$1" plugin level base f root uid
+  local rel="$1" plugin level base f root uid levels="project user"
   case "$rel" in roles/[${HH_LOWER}]*.md|rules/RULES.md|rules/brief-template.md|rules/hub-pickup.md|rules/hub-handoff.md) ;; *) return 4 ;; esac
   case "$rel" in *[!${HH_LOWER}${HH_UPPER}${HH_DIGITS}._/-]*|*..*) return 4 ;; esac
   plugin=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P) || return 2
   uid=$(hh_real_uid) || return 2
-  for level in project user; do
+  # the hub reads no custom/ file while the owner is away: an away agent can write one, and the hub would follow it (rules, pickup line, handoff template)
+  if hh_hub_root_here && hh_away_for_hub "$HH_HUB_ROOT_HERE"; then
+    levels=""; echo "$HH_PREFIX: the owner is away, so the hub reads the plugin's own $rel and no custom file" >&2
+  fi
+  for level in $levels; do
     if [ "$level" = project ]; then root=$(hh_project_root 2>/dev/null) || continue; base="$root/$HH_STATE_DIR/$HH_CUSTOM_DIR"
     else base="$(hh_home)/$HH_CUSTOM_DIR"; fi
     f="$base/$rel"
@@ -1048,6 +1052,28 @@ hh_delegate_mine() {
   HH_DG_HUB=$(cd "$HH_DR_HUB" 2>/dev/null && pwd -P) || { HH_DG_HUB=""; HH_DELEGATE_WHY="the hub folder $HH_DR_HUB cannot be entered"; return 1; }
   hh_hub_records_trusted "$HH_DG_HUB" "$HH_DG_UID" || { HH_DG_HUB=""; return 1; }
   HH_DG_UNTIL=$HH_DR_UNTIL; HH_DG_MCP=$HH_DR_MCP; HH_DG_HOSTS=$HH_DR_HOSTS; HH_DG_TOOLS=$HH_DR_TOOLS
+}
+# hh_hub_root_here: 0 when the caller's project is a hub's root, setting HH_HUB_ROOT_HERE to it: HH_PROJECT when set, else the git root, else the cwd (never a
+# parent folder: the projects of a hub live inside its folder). A hub's root is a folder holding a real (not linked) $HH_HUB_DIR/.
+HH_HUB_ROOT_HERE=""
+hh_hub_root_here() {
+  local r
+  HH_HUB_ROOT_HERE=""
+  if [ -n "${HH_PROJECT:-}" ]; then r=$(cd -P "$HH_PROJECT" 2>/dev/null && pwd -P) || return 1
+  else r=$(hh_project_root 2>/dev/null) || r=$(pwd -P); fi
+  [ -d "$r/$HH_HUB_DIR" ] && [ ! -L "$r/$HH_HUB_DIR" ] || return 1
+  HH_HUB_ROOT_HERE=$r
+}
+# hh_away_for_hub <hub root>: 0 when the owner is away for that hub: a valid delegate file that names it, or a delegate file that exists and is refused and
+# names it or names no hub (fail closed: an unreadable file is not a licence to read custom/). No file at all, or a valid one naming another hub: 1.
+hh_away_for_hub() {
+  local hub
+  hub=$(cd -P "$1" 2>/dev/null && pwd -P) || return 1
+  HH_DR_ABSENT=""; HH_DR_HUB=""
+  hh_jq_resolve; [ -n "$HH_JQ" ] || return 1   # no root-owned jq: away mode cannot have been switched on here, and the delegate file cannot be read
+  if hh_delegate_mine; then [ "$HH_DG_HUB" = "$hub" ]; return; fi   # hh_delegate_mine is the one reader of the file (it sets HH_DR_ABSENT and HH_DR_HUB)
+  [ "${HH_DR_ABSENT:-}" != 1 ] || return 1
+  [ -z "${HH_DR_HUB:-}" ] || [ "$(cd "$HH_DR_HUB" 2>/dev/null && pwd -P)" = "$hub" ]
 }
 # hh_env_has <pid> <NAME=value>: 0 the process was launched with it; 1 its environment is visible and lacks it; 2 no
 # environment is visible at all (the caller says so and does not pretend to have checked). Linux reads /proc/<pid>/environ,
