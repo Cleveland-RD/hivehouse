@@ -26,6 +26,13 @@ assert_eq "team.json model" "$(jq -r '.agents[0].model' $T_STATE/team.json)" "so
 assert_eq "team.json window" "$(jq -r '.agents[0].window' $T_STATE/team.json)" "123456"
 pane_nw=$(spawn nowin); assert_status "spawn with no --window" $? 0
 assert_eq "...records no window (the default is a guess, never written)" "$(jq -r '.agents[] | select(.name == "nowin") | has("window")' $T_STATE/team.json)" "false"
+# S1: a team.json that stays locked past the timeout is an error, not an agent running unrecorded
+sleep 60 & lp=$!; t_track "$lp"; hh_lock_try "$r/$T_STATE/team.json.lock" "$(hh_holder_json "$lp")"
+out=$(spawn locked 2>&1); rc=$?
+assert_eq "a locked team.json: spawn exits 1" "$rc" "1"
+assert_contains "...saying it could not record the agent" "$out" "could not record locked in team.json"
+[ "$(jq -r '[.agents[] | select(.name == "locked")] | length' $T_STATE/team.json)" = 0 ] && ok "...and nothing was recorded" || bad "locked was recorded"
+rm -rf "$r/$T_STATE/team.json.lock"; kill "$lp" 2>/dev/null
 assert_eq "team.json pane" "$(jq -r '.agents[0].pane' $T_STATE/team.json)" "$pane"
 screen=$(hh_tmux capture-pane -p -J -S - -t "$pane")
 assert_contains "named for project and agent" "$screen" "ARGV: proj-impl"

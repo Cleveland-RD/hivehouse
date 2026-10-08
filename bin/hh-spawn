@@ -161,7 +161,8 @@ register() {  # register <pane> <socket>: the registry maps a pane back to its p
     && mv "$dir/$key.json.tmp$$" "$dir/$key.json"
 }
 upsert_team() {  # upsert_team <json object for the agent>: one entry per agent name
-  hh_team_edit "$ROOT" '.agents = ([.agents[]? | select(.name != $a.name)] + [$a])' --argjson a "$1"
+  hh_team_edit "$ROOT" '.agents = ([.agents[]? | select(.name != $a.name)] + [$a])' --argjson a "$1" \
+    || hh_die 1 "could not record $agent in team.json"
 }
 
 if [ "$self" = 1 ]; then
