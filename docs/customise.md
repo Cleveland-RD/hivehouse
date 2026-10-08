@@ -30,9 +30,9 @@ Ask Claude to customise anything: roles, rules, skills' behaviour, options. The 
 | `model_reviewer` | Reviewer/architect/product model: Model alias for reviewing agents | `opus` |
 | `effort_builder` | Builder effort: Reasoning effort for builder agents | `medium` |
 | `effort_reviewer` | Reviewer effort: Reasoning effort for reviewing agents | `high` |
-| `window_orchestrator` | Orchestrator context window (tokens): Used only when Claude Code's own reading of the window is missing (always for the orchestrator); never inferred from a model name | `200000` |
-| `window_builder` | Builder context window (tokens): Used only when Claude Code's own reading of the window is missing; never inferred from a model name | `200000` |
-| `window_reviewer` | Reviewer context window (tokens): Used only when Claude Code's own reading of the window is missing; never inferred from a model name | `200000` |
+| `window_orchestrator` | Orchestrator context window (tokens): Used only when Claude Code's own reading of the window is missing; never inferred from a model name | `1000000` |
+| `window_builder` | Builder context window (tokens): Used only when Claude Code's own reading of the window is missing; never inferred from a model name | `1000000` |
+| `window_reviewer` | Reviewer context window (tokens): Used only when Claude Code's own reading of the window is missing; never inferred from a model name | `1000000` |
 | `permission_mode_local` | Agents' permission mode on this machine: Bypass permissions is never used locally, except while the hub is in delegate mode (the owner is away): that needs this set to auto | `auto` |
 | `remote_hosts` | Known remote hosts (comma-separated ssh names): ssh host names hivehouse may run overnight work on | `empty` |
 | `dedicated_hosts` | Remote hosts dedicated to agents (bypass allowed): Comma-separated ssh names where bypass permissions may be used, asked again each time | `empty` |
