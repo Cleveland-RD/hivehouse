@@ -142,7 +142,7 @@ t_check_socket_path() {
   base=$(cd -P "${TMPDIR:-/tmp}" 2>/dev/null && pwd -P) || base=${TMPDIR:-/tmp}
   n=$(( ${#base} + ${#T_SOCKET_TAIL} ))
   if [ "$n" -gt 103 ]; then
-    echo "tests: TMPDIR is too long: the test tmux socket would be $n characters ($base$T_SOCKET_TAIL), over the 103 a socket path may have. Set a shorter one, e.g. TMPDIR=\$(getconf DARWIN_USER_TEMP_DIR)hh-test" >&2
+    echo "tests: TMPDIR is too long: the test tmux socket would be $n characters ($base$T_SOCKET_TAIL), over the 103 a socket path may have. Set a shorter one: at most 79 characters once resolved (/tmp is /private/tmp, 12), for example mkdir -p /tmp/hh-test && TMPDIR=/tmp/hh-test" >&2
     exit 2
   fi
 }

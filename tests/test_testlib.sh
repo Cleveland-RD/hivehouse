@@ -44,8 +44,18 @@ out=$(TMPDIR="$LONG" bash -c '. "$1"; t_setup; echo started' _ "$HH_REPO_ROOT/te
 assert_contains "...saying why and what to set" "$out" "TMPDIR"
 case "$out" in *started*) bad "...nothing runs after the refusal" ;; *) ok "...nothing runs after the refusal" ;; esac
 [ -z "$(ls -A "$LONG")" ] && ok "...and no folder was made there" || bad "the refused run left files in $LONG"
-SHORT="$SW/s"; mkdir -p "$SHORT"
+SHORT=$(mktemp -d /tmp/hhs.XXXXXX); SHORT=$(cd "$SHORT" && pwd -P); trap 'rm -f "$f"; rm -rf "$SW" "$SHORT"' EXIT   # a fixed short folder, whatever TMPDIR the caller uses
 out=$(TMPDIR="$SHORT" bash -c '. "$1"; t_setup; echo started; t_teardown' _ "$HH_REPO_ROOT/tests/lib.sh" 2>&1 </dev/null)
 assert_contains "a short TMPDIR starts" "$out" "started"
+assert_contains "the refusal names a TMPDIR that leaves room" "$(TMPDIR="$LONG" bash -c '. "$1"; t_setup' _ "$HH_REPO_ROOT/tests/lib.sh" 2>&1 </dev/null)" "/tmp/hh-test"
+
+# ---- t_lstart_fp (the reaper's copy) gives what hh_lstart_fp gives, for every language and for strings that hold no start time ----
+fpboth() {  # fpboth <text>: "<t_lstart_fp output>|<hh_lstart_fp output>"
+  printf '%s|%s' "$(t_lstart_fp "$1")" "$(bash -c '. "$1"; hh_lstart_fp "$2"' _ "$HH_REPO_ROOT/bin/hh-lib.sh" "$1")"
+}
+for fx in "Thu Oct  8 11:14:09 2026" "Thu  8 Oct 11:14:09 2026" "jeu.  8 oct. 11:14:09 2026" "木  8 10月 11:14:09 2026" "Do.  8 Okt. 11:14:09 2026" "" "Thu Oct  8 11:14:09 2026 2027" "Thu Oct 8 9 11:14:09 2026" "Thu Oct  8 11:14:09 11:14:10 2026" "Thu Oct  8 2026" "Thu Oct 08 11:14:09 2026"; do
+  got=$(fpboth "$fx"); assert_eq "the reaper's start-time reduction matches hh_lstart_fp for [$fx]" "${got%%|*}" "${got#*|}"
+done
+assert_eq "...and reads a real one" "$(t_lstart_fp "Thu  8 Oct 11:14:09 2026")" "11:14:09 2026 8"
 
 [ "$FAILS" -eq 0 ] || exit 1

@@ -42,14 +42,13 @@ assert_eq "an interrupted waiter removes its ticket" "$(ls "$Q" | wc -l | tr -d 
 wait $h
 # --- a planted link at the ticket's name is not followed
 sleep 30 & p=$!; t_track $p; mkdir -p "$Q"
-hh-slot run holder -- sleep 12 & h=$!; sleep 0.5
+hh-slot run holder -- sleep 600 & h=$!; sleep 0.5; t_track $h $(pgrep -P $h)
 secret="$T_TMP/secret"; echo keep > "$secret"
 now=$(date +%s)
 for k in $(seq 0 119); do ln -s "$secret" "$Q/$(printf '%010d' $((now + k)))-$p.json"; done   # every second it could file in for the next two minutes
-sleep 6   # past the five seconds the test used to plant for: the name it files under is still a link
 hh-slot acquire planted --pid $p --wait 1 2>/dev/null; assert_status "a ticket name taken by a link makes the write fail" $? 1
 assert_eq "...and the file it pointed at is untouched" "$(cat "$secret")" "keep"
-wait $h; kill $p; wait $p 2>/dev/null
+hc=$(pgrep -P $h); kill $h $hc 2>/dev/null; wait $h 2>/dev/null; kill $p; wait $p 2>/dev/null   # the holder: its own pid and its sleep, recorded above
 # --- the argument forms
 hh-slot run --wait 2>/dev/null; assert_status "run --wait with nothing after is a usage error" $? 64
 hh-slot run --wait 3 onlylabel 2>/dev/null; assert_status "run --wait <s> <label> with no command is a usage error" $? 64
