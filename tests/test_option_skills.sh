@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# KI-36: Claude Code fills a skill's ${user_config.X} only from a saved value, so a skill that holds one must say what to do when it reads
+# Claude Code fills a skill's ${user_config.X} only from a saved value, so a skill that holds one must say what to do when it reads
 # literally (run hh-settings option X), and must be allowed to run that command.
 . "$(dirname "$0")/lib.sh"
 t_setup

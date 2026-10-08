@@ -9,7 +9,7 @@ assert_eq "root from repo" "$(cd "$r" && hh_project_root)" "$r"
 git -C "$r" worktree add -q "$T_TMP/proj-wt" -b wt
 assert_eq "root from a worktree is the main repo" "$(cd "$T_TMP/proj-wt" && hh_project_root)" "$r"
 assert_eq "HH_PROJECT wins" "$(cd "$T_TMP" && HH_PROJECT="$r" hh_project_root)" "$r"
-# A1: a missing HH_PROJECT or no repo fails with 2, and the failure propagates through a substitution
+# a missing HH_PROJECT or no repo fails with 2, and the failure propagates through a substitution
 (cd "$T_TMP" && HH_PROJECT="$T_TMP/nope" hh_project_root >/dev/null 2>&1); assert_status "missing HH_PROJECT dir is exit 2" $? 2
 mkdir "$T_TMP/norepo"; (cd "$T_TMP/norepo" && hh_project_root >/dev/null 2>&1); assert_status "outside a repo is exit 2" $? 2
 (cd "$T_TMP/norepo" && x=$(hh_state) || exit $?; echo "reached" >"$T_TMP/reached") >/dev/null 2>&1; assert_status "hh_state failure propagates" $? 2

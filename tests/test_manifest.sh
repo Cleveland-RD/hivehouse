@@ -45,7 +45,7 @@ assert_eq "pane start time captured" "$(printf '%s' "$line" | jq -r .pane_starte
 hh-manifest add tmux socket="$HH_TMUX_SOCKET" pane=%99 agent=a 2>/dev/null; assert_status "refuses a pane the server does not have" $? 4
 assert_eq "...and records nothing" "$(hh-manifest list --kind tmux | wc -l | tr -d ' ')" "1"
 
-# A5: path safety
+# path safety
 hh-manifest add dir path="$T_TMP" 2>/dev/null; assert_status "refuses the project's parent" $? 4
 hh-manifest add dir path=/tmp 2>/dev/null; assert_status "refuses /tmp" $? 4
 # the refusal's reason, not only its status: on macOS /private/tmp is root-owned and /tmp is a symlink, so either would
@@ -61,7 +61,7 @@ hh-manifest add dir path="$T_TMP/link" 2>/dev/null; assert_status "refuses a sym
 hh-manifest add file path=/etc/hosts 2>/dev/null; assert_status "refuses a file not owned by the caller" $? 4
 hh-manifest add dir path="$T_TMP/no/such/parent" 2>/dev/null; assert_status "refuses a path whose parent is missing" $? 4
 
-# A18: inside the project root or a recorded worktree
+# inside the project root or a recorded worktree
 mkdir "$r/src"; hh-manifest add file path="$r/src/x" 2>/dev/null; assert_status "refuses a file inside the project" $? 4
 mkdir -p "$r/$T_STATE/tmp"; hh-manifest add file path="$r/$T_STATE/tmp/a" >/dev/null; assert_status "allows $T_STATE/tmp" $? 0
 hh-manifest add file path="$r/$T_STATE/other" 2>/dev/null; assert_status "refuses the rest of $T_STATE" $? 4
@@ -70,7 +70,7 @@ mkdir "$T_TMP/wt1"; hh-manifest add dir path="$T_TMP/wt1/sub" 2>/dev/null; asser
 hh-manifest add dir path="$T_TMP/wt1" 2>/dev/null; assert_status "refuses the worktree path itself as a dir" $? 4
 hh-manifest add worktree path="$T_TMP/wt2" base=-x 2>/dev/null; assert_status "refuses an option-like base" $? 4
 
-# A14: concurrent writers all land, under the lock
+# concurrent writers all land, under the lock
 before=$(hh-manifest list | wc -l | tr -d ' ')
 for i in 1 2 3 4 5 6 7 8 9 10; do hh-manifest add dir path="$T_TMP/c$i" >/dev/null & done; wait
 assert_eq "10 concurrent adds all land" "$(( $(hh-manifest list | wc -l | tr -d ' ') - before ))" "10"
@@ -93,7 +93,7 @@ mkdir "$L"; HH_LOCK_WAIT_S=1 hh-manifest add dir path="$T_TMP/l4" 2>/dev/null; a
 touch -t 202001010000 "$L"; hh-manifest add dir path="$T_TMP/l4" >/dev/null; assert_status "an empty old lock is stale" $? 0
 [ -e "$L" ] && bad "the lock is released after a write" || ok "the lock is released after a write"
 
-# A1: outside any repo and with no HH_PROJECT: exit 2, nothing written
+# outside any repo and with no HH_PROJECT: exit 2, nothing written
 mkdir "$T_TMP/norepo"; cd "$T_TMP/norepo"
 for c in "add dir path=$T_TMP/z" "list" "drop x"; do hh-manifest $c 2>/dev/null; assert_status "outside a repo: $c" $? 2; done
 [ ! -e "$T_TMP/norepo/$T_STATE" ] && [ ! -e /$T_STATE ] && [ -z "$(find "$HIVEHOUSE_HOME" -type f)" ] && ok "nothing written outside a repo" || bad "nothing written outside a repo"

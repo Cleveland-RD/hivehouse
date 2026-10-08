@@ -91,7 +91,7 @@ mkf; printf "$T_DELEGATE_LINE1"'\nhub=/work\nuntil=%s\nmcp=\nhosts=a\n' "$((NOW 
 mk2 "hosts=a" "allow="; printf '%s\r\n' x >> "$F"; ok_ && bad "carriage return in a v2 file is valid" || ok "a carriage return in a v2 file is invalid"
 mkf; printf "$T_DELEGATE_LINE2"'\r\nhub=/work\r\nuntil=%s\r\nmcp=\r\nhosts=\r\nallow=\r\n' "$((NOW + 60))" > "$F"; ok_ && bad "a v2 file with carriage returns in lines 5 and 6 is valid" || ok "carriage returns in a v2 file are refused"
 
-# ---- version 3: tools= (0.5.2, KI-25) ----
+# ---- version 3: tools= (0.5.2) ----
 mk3() {  # mk3 <tools line> [until]: a version 3 file
   mkf; printf "$T_DELEGATE_LINE3"'\nhub=/work\nuntil=%s\nmcp=\nhosts=\nallow=\n%s\n' "${2:-$((NOW + 3600))}" "$1" > "$F"
 }
@@ -233,7 +233,7 @@ chmod 775 "$HP/repo"; hh_delegate_for_project "$HP/wt"; assert_status "a group-w
 assert_contains "...for the home" "$HH_DELEGATE_WHY" "$HP/repo is writable by group or others"
 chmod 755 "$HP/repo"
 
-# ---- the launch environment of a process (the marker's check, A42) ----
+# ---- the launch environment of a process (the marker's check) ----
 pp=$(t_env_probe HH_PROBE_TEST=1) || pp=""
 [ -n "$pp" ] || { ( HH_PROBE_TEST=1 bash -c 'exec -a claude sleep 30' ) & pp=$!; }   # a platform binary: readable on Linux only
 t_track "$pp"; sleep 0.5
