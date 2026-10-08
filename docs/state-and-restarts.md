@@ -35,5 +35,9 @@ orchestrator itself are never respawned. An agent recorded in bypass is refused 
 `--mode <a stricter mode>` (the owner's `permission_mode_local`). `--resume` brings the agent back in its own recorded
 conversation instead of from its handoff, when no live Claude already holds that conversation.
 
+An agent the orchestrator has ended for good is taken off the team with `hh-spawn --close <agent>`: its record leaves `team.json`, the pane
+registry and the manifest, so nothing lists it as "(not running)" again; its worktree, branch and handoff stay. It is refused while the
+agent's pane is live (end the agent first), for a record that proves nothing, for the orchestrator and for a name that is not on the team.
+
 With a hub, `hh-hub status` shows which orchestrators a restart stopped; `hh-hub wake <project>` (or the screen's Resume)
 resumes each one's own conversation in tmux and tells it to do the above.

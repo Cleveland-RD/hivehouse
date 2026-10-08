@@ -10,21 +10,22 @@ HH_BIN=${0%/*}; [ "$HH_BIN" != "$0" ] || HH_BIN=.
 . "$HH_BIN/hh-lib.sh"
 USAGE="usage: hh-spawn --agent <n> --role <file> --rules <file> --model <m> --effort <e> --mode <m> [--worktree <abs> --branch <b> --base <b>] [--session <s>] [--window <tokens>] [--still <s>] [--max-wait <s>]
        hh-spawn --self --agent <n> [--name <orchestrator session name>] [--hub <hub session name> | --no-hub] [--window <tokens>] [--handoff <abs path>]
-       hh-spawn --respawn <n> [--mode <a stricter mode>] [--resume] [--still <s>] [--max-wait <s>]"
+       hh-spawn --respawn <n> [--mode <a stricter mode>] [--resume] [--still <s>] [--max-wait <s>]
+       hh-spawn --close <n>"
 # The only commands an agent may run without asking (A16): nothing here runs an arbitrary command, writes a chosen path
 # (no git: --output=<path> writes anywhere; Claude Code already runs the read-only forms unprompted) or edits the
 # manifest (a pre-approved `hh-manifest add` would let cleanup remove a path, pane or pid nobody named).
 ALLOWED='Bash(hh-slot status) Bash(hh-slot release *) Bash(hh-context *) Bash(hh-gate-verify *) Bash(hh-settings resolve *) Bash(hh-disk *)'
 
 agent=""; role=""; rules=""; model=""; effort=""; mode=""; wt=""; branch=""; base=""; session=""; window=200000
-handoff=""; still=5; maxwait=90; self=0; others=0; oname=""; respawn=""; settings=0; wgiven=0; hub=""; nohub=0; resume=0; modeset=0
+handoff=""; close=""; still=5; maxwait=90; self=0; others=0; oname=""; respawn=""; settings=0; wgiven=0; hub=""; nohub=0; resume=0; modeset=0
 while [ $# -gt 0 ]; do
   [ $# -ge 2 ] || [ "$1" = --self ] || [ "$1" = --no-hub ] || [ "$1" = --resume ] || hh_die 64 "$USAGE"
   case "$1" in
     --self) self=1; shift; continue ;;
     --no-hub) nohub=1; shift; continue ;;
     --resume) resume=1; shift; continue ;;
-    --agent) agent="$2" ;; --window) window="$2"; wgiven=1 ;; --name) oname="$2" ;; --respawn) respawn="$2" ;; --hub) hub="$2" ;; --handoff) handoff="$2" ;;
+    --agent) agent="$2" ;; --window) window="$2"; wgiven=1 ;; --name) oname="$2" ;; --respawn) respawn="$2" ;; --close) close="$2" ;; --hub) hub="$2" ;; --handoff) handoff="$2" ;;
     --role) role="$2"; others=1; settings=1 ;; --rules) rules="$2"; others=1; settings=1 ;; --model) model="$2"; others=1; settings=1 ;;
     --effort) effort="$2"; others=1; settings=1 ;; --mode) mode="$2"; modeset=1; others=1 ;; --worktree) wt="$2"; others=1; settings=1 ;;
     --branch) branch="$2"; others=1; settings=1 ;; --base) base="$2"; others=1; settings=1 ;; --session) session="$2"; others=1; settings=1 ;;
@@ -34,6 +35,36 @@ while [ $# -gt 0 ]; do
   shift 2
 done
 [ "$resume" = 0 ] || [ -n "$respawn" ] || hh_die 64 "--resume is for --respawn only"
+# --close: an agent the orchestrator has ended leaves the team, so nothing lists it as "not running" again. Its record in team.json, its pane
+# registry file and its pane's manifest entry go; its worktree, branch, handoff and role stay (the owner's work, and hh-cleanup's to remove).
+# Only an agent proven stopped: a live pane is to be ended first, a record with no identity proves nothing, and the orchestrator is never closed.
+if [ -n "$close" ]; then
+  [ "$self" = 0 ] && [ "$settings" = 0 ] && [ "$others" = 0 ] && [ -z "$agent$oname$hub$respawn$handoff" ] && [ "$nohub" = 0 ] && [ "$wgiven" = 0 ] && [ "$resume" = 0 ] \
+    || hh_die 64 "--close takes only the agent's name"
+  hh_is_agent_name "$close" || hh_die 4 "bad agent name: $close"
+  ROOT=$(hh_project_root) || exit $?
+  hh_ensure_state || exit $?
+  export HH_PROJECT="$ROOT"
+  entry=$(jq -c --arg a "$close" '[.agents[]? | select(.name == $a)][0] // empty' "$ROOT/$HH_STATE_DIR/team.json" 2>/dev/null)
+  [ -n "$entry" ] || hh_die 2 "no agent named $close in this project's team"
+  [ "$(printf '%s' "$entry" | jq -r '.claude_pid // empty')" = "" ] || hh_die 4 "$close is the orchestrator: it is never closed"
+  hh_team_agent_is "$ROOT" "$close"; case $? in
+    0) hh_die 4 "$close is running (pane $(printf '%s' "$entry" | jq -r .pane)): end it first (its pane must be gone), then close it" ;;
+    2) hh_die 4 "cannot tell whether $close is running (its process is alive but no tmux answers for its pane); not closed" ;;
+    3) hh_die 4 "$close was recorded with no identity, so nothing proves it stopped; not closed" ;;
+  esac
+  csock=$(printf '%s' "$entry" | jq -r '.socket // empty'); cpane=$(printf '%s' "$entry" | jq -r '.pane // empty')
+  tmp="$ROOT/$HH_STATE_DIR/team.json.tmp$$"
+  jq --arg a "$close" '.agents = [.agents[]? | select(.name != $a)]' "$ROOT/$HH_STATE_DIR/team.json" > "$tmp" && mv "$tmp" "$ROOT/$HH_STATE_DIR/team.json" \
+    || { rm -f "$tmp"; hh_die 1 "could not rewrite team.json"; }
+  for f in "$(hh_registry_dir)"/*.json; do   # this project's registry file of this agent, whatever pane it names
+    [ -f "$f" ] && [ "$(hh_json_get "$f" .project)" = "$ROOT" ] && [ "$(hh_json_get "$f" .agent)" = "$close" ] && rm -f "$f"
+  done
+  "$HH_BIN/hh-manifest" list --kind tmux | jq -r --arg a "$close" --arg s "$csock" --arg p "$cpane" 'select(.agent == $a and .pane == $p and (.socket == $s or $s == "")) | .id' \
+    | while IFS= read -r id; do "$HH_BIN/hh-manifest" drop "$id" >/dev/null; done
+  echo "$HH_PREFIX: closed $close (its worktree, branch and handoff are kept)"
+  exit 0
+fi
 # --respawn: an agent that stopped (a restart took its pane) is started again from its own record, exactly as spawned:
 # model, effort, mode, worktree, branch and window from team.json, the worktree's base from the manifest, role and rules
 # from the copies in its team dir. Its handoff is kept, so the pickup line sends it back to its START HERE block. Only an

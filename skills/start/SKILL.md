@@ -54,6 +54,10 @@ session "(not running)", yours included. Register yourself again first, `hh-spaw
 6's form; a hub you were registered with is kept, `--no-hub` drops it), then `hh-spawn --respawn <agent>` for each agent marked "(not running)": it starts the agent again from its
 own record and sends it back to its handoff. Tell the owner which agents you respawned.
 
+When you end an agent for good (its work is landed and you will not need it again), end its pane and then run `hh-spawn --close <agent>`: it
+leaves the team, so `hh-context --all` and the hub stop listing it as "not running". Its worktree, branch and handoff stay. It refuses a live
+pane, the orchestrator and an unknown name.
+
 Then run `hh-adhd`. When it prints a path, the owner uses the i-have-adhd output style: Read that file and follow it
 for every message to the owner, from now on (your pickup line after a rotation names it again). When it prints nothing,
 carry on as usual; never install or enable it.
