@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Folder trust (KI-7): Claude Code trusts a plain folder through any folder above it, but a git repository only through its own entry in
+# Folder trust: Claude Code trusts a plain folder through any folder above it, but a git repository only through its own entry in
 # .claude.json, and a worktree through its MAIN repository's entry. hh_claude_trusts says which; hh-spawn warns before an agent is
 # launched into a worktree that would stop at the dialog.
 . "$(dirname "$0")/lib.sh"

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Stand-in for ssh in tests: no network, ever. The "remote" is this machine; the host name is only checked, never resolved.
 # It runs the remote command under bash -c with hivehouse's own bin/ removed from PATH, so only an absolute path to an
-# hh-* executable can work there (A6). HH_FAKE_SSH=down makes it unreachable (exit 255). HH_FAKE_LOG, when set, records
+# hh-* executable can work there. HH_FAKE_SSH=down makes it unreachable (exit 255). HH_FAKE_LOG, when set, records
 # every call (the command only: file contents travel on stdin and are never logged).
 here="$(cd "$(dirname "$0")" && pwd -P)"; repo_bin="$(cd "$here/../../bin" && pwd -P)"
 [ "${HH_FAKE_SSH:-up}" = down ] && exit 255

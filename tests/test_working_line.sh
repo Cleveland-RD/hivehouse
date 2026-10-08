@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # hh_pane_working_seconds (bin/hh-lib.sh): Claude Code's working line ("✳ Effecting… (3s · thinking)") read from a pane, as the
-# elapsed seconds. Anything it does not recognise is unknown (the function fails), never working and never hung (A10, A27).
+# elapsed seconds. Anything it does not recognise is unknown (the function fails), never working and never hung.
 # Fixtures: tests/fixtures/working/06-working-4s and -7s are REAL captures (Claude Code 2.1.291, capture-pane -p -e -J, scrubbed per
 # A67), as is tests/fixtures/dialogs/02-working-1s. The minutes and hours forms are HAND-BUILT here from the 7s capture by replacing
 # its working line, because no capture of a long run was taken; they follow the lines seen in panes: "✽ Processing… (5m 29s ·

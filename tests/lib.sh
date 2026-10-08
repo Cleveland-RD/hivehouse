@@ -54,7 +54,7 @@ t_outside_tmp() {  # t_outside_tmp -> a fresh dir under /tmp (not under $T_TMP),
   printf '%s\n' "$d" >> "$T_TMP/run.dirs"; printf '%s\n' "$d"
 }
 # The start time ps prints is written in the language of the caller's locale ("Thu Oct  8 ..." in C, "Thu  8 Oct ..." in en_GB, "jeu.  8 oct. ..."
-# in fr_FR), and a run is judged by a later run that may use another one: comparing the text would sweep a live run (KI-28). A start time is
+# in fr_FR), and a run is judged by a later run that may use another one: comparing the text would sweep a live run. A start time is
 # reduced to the numbers every language shares, its HH:MM:SS, its year and its day, and the pid's own start time is read in C. The same
 # reduction as hh_lstart_fp in bin/hh-lib.sh, written out here so that the reaper still shares no code with what it tests.
 t_lstart_fp() {  # t_lstart_fp <start time text>: "HH:MM:SS YYYY D", or nothing when it does not hold exactly one of each
@@ -140,7 +140,7 @@ t_allowlist_env() {
   done
 }
 # The test tmux server's socket is <TMPDIR>/hhtest.XXXXXX/tmux.sock, and a unix socket path holds at most 103 characters on macOS: past
-# that no tmux server starts and the hub, spawn and rotate tests fail as "unknown" or exit 2 with nothing wrong in the code (KI-30).
+# that no tmux server starts and the hub, spawn and rotate tests fail as "unknown" or exit 2 with nothing wrong in the code.
 t_check_socket_path() {
   local base n
   base=$(cd -P "${TMPDIR:-/tmp}" 2>/dev/null && pwd -P) || base=${TMPDIR:-/tmp}

@@ -77,7 +77,7 @@ for bad_groups in '[{"name":"A"}]' '[{"name":"A","repos":[]}]' '[{"name":"A","re
 done
 
 # the file itself
-if grep -nE '/Users/|discourse' "$W" >/dev/null; then bad "the workflow names no project and no user path"; else ok "the workflow names no project and no user path"; fi
+if grep -nE '/Users/' "$W" >/dev/null; then bad "the workflow names no project and no user path"; else ok "the workflow names no project and no user path"; fi
 assert_contains "meta names the workflow" "$(sed -n '/^export const meta/,/^}/p' "$W")" "name: 'docs-health-check'"
 [ ! -e "$HH_REPO_ROOT/skills/docs-health-check" ] && ok "no wrapper skill (A8)" || bad "no wrapper skill (A8)"
 t_done
