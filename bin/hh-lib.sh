@@ -489,6 +489,19 @@ hh_write_session() {  # hh_write_session <project root> <agent> <session id> <tr
     > "$dir/session.json.tmp$$" 2>/dev/null && mv "$dir/session.json.tmp$$" "$dir/session.json" || { rm -f "$dir/session.json.tmp$$"; return 1; }
 }
 
+# What a session has used of its context, read from its transcript (Claude Code's own format, undocumented: this is the one place it is read
+# for this): the last main-conversation assistant line that carries usage (a sidechain's or a synthetic line would read as another agent's,
+# or as zero), its input, cache and output tokens added. Prints nothing when there is none. hh-context and hh-hub context both read it here.
+hh_transcript_used() {  # hh_transcript_used <transcript file>
+  jq -c 'select(.type == "assistant" and .message.model != "<synthetic>" and (.isSidechain // false) == false)
+      | .message.usage | (.input_tokens // 0) + (.cache_read_input_tokens // 0) + (.cache_creation_input_tokens // 0) + (.output_tokens // 0)
+      | select(. > 0)' "$1" 2>/dev/null | tail -1
+}
+# A reading against a window nobody measured: tokens over a window that was only assumed are no percent (a 1M session read 158-188).
+hh_assumed_level() {  # hh_assumed_level <used tokens> <assumed window>
+  [ "$1" -le "$2" ] || { echo "$1 tokens (window unknown)"; return 0; }
+  echo "$(( $1 * 100 / $2 )) (window assumed $2)"
+}
 # The handoff an agent is sent back to: the path hh-spawn recorded with --handoff (a project that keeps it elsewhere), else the default
 # under the state folder. A recorded path that is not an absolute path hivehouse will type is ignored, never typed.
 hh_handoff_path() {  # hh_handoff_path <project root> <agent>

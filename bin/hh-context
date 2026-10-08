@@ -18,11 +18,7 @@ pct() {  # pct <agent> [window]
   local a="$1" win="${2:-}" s t used c sid m
   s="$STATE/team/$a/session.json"; [ -f "$s" ] || return 2
   t=$(hh_json_get "$s" .transcript_path); [ -f "$t" ] || return 2
-  # the last assistant line that is the main conversation's own and carries usage (a sidechain's or a synthetic line
-  # would read as another agent's, or as zero)
-  used=$(jq -c 'select(.type == "assistant" and .message.model != "<synthetic>" and (.isSidechain // false) == false)
-      | .message.usage | (.input_tokens // 0) + (.cache_read_input_tokens // 0) + (.cache_creation_input_tokens // 0) + (.output_tokens // 0)
-      | select(. > 0)' "$t" 2>/dev/null | tail -1)
+  used=$(hh_transcript_used "$t")
   [ -n "$used" ] || return 2
   # Claude Code's reading counts only for the session it was taken in: a rotated or replaced session's file is stale
   c="$STATE/team/$a/context.json"; sid=$(hh_json_get "$s" .session_id)
@@ -32,9 +28,7 @@ pct() {  # pct <agent> [window]
   [ -n "$win" ] && { echo $(( used * 100 / win )); return 0; }
   win=$(jq -r --arg a "$a" '[.agents[]? | select(.name == $a) | .window][0] // empty' "$STATE/team.json" 2>/dev/null)
   case "$win" in ''|*[!0-9]*|0) win=200000 ;; esac
-  # tokens over a window that was only assumed are no percent: Claude Code's own window may be larger (a 1M session read 158-188)
-  [ "$used" -le "$win" ] || { echo "$used tokens (window unknown)"; return 0; }
-  echo "$(( used * 100 / win )) (window assumed $win)"
+  hh_assumed_level "$used" "$win"
 }
 mark() { hh_team_agent_is "$ROOT" "$1"; [ $? -eq 1 ] && printf ' (not running)'; return 0; }   # mark <agent>
 if [ "${1:-}" = "--all" ]; then

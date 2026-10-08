@@ -39,7 +39,7 @@ HUB_NEEDS_OWNER_JSON=$(printf '%s' "$HUB_NEEDS_OWNER" | jq -Rc 'split(" ")')
 HUB_REPLIES="HH-CLARIFY HH-PLAN BLOCKED DONE BACK"
 HUB_ASKS="TASK OWNER HUB PROGRESS RESPAWN RESTART"
 USAGE="usage: hh-hub init
-       hh-hub self [--name <session name>]
+       hh-hub self [--name <session name>] [--window <tokens>]
        hh-hub start                                   (no arguments: the hub itself, in a tmux session named after it)
        hh-hub rotate [--still <s>] [--max <s>] [--settle <s>]   (the hub clears itself and picks up its handoff)
        hh-hub context [--window <tokens>]             (the hub's own context level)
@@ -574,8 +574,13 @@ init)
   echo "$d/$HH_HUB_DIR" ;;
 
 self)
-  name=""
-  while [ $# -gt 0 ]; do [ $# -ge 2 ] && [ "$1" = --name ] || hh_die 64 "$USAGE"; name="$2"; shift 2; done
+  name=""; win=""
+  while [ $# -gt 0 ]; do
+    [ $# -ge 2 ] || hh_die 64 "$USAGE"
+    case "$1" in --name) name="$2" ;; --window) win="$2" ;; *) hh_die 64 "$USAGE" ;; esac
+    shift 2
+  done
+  if [ -n "$win" ]; then case "$win" in ''|*[!0-9]*|0) hh_die 4 "--window must be a positive number: $win" ;; esac; fi
   root=$(hub_root) || exit $?
   pid=$(hh_claude_ancestor) || hh_die 2 "hh-hub self must run inside the Claude session that is the hub"
   [ -n "$name" ] || name=$(hh_session_record "$pid" .name)
@@ -590,13 +595,22 @@ self)
   if [ -n "${TMUX_PANE:-}" ] && [ -n "${TMUX:-}" ] && psock=$(hh_tmux display-message -p -t "$TMUX_PANE" '#{socket_path}' 2>/dev/null) && [ "$psock" = "${TMUX%%,*}" ] && ident=$(hh_pane_identity "$psock" "$TMUX_PANE"); then
     ppane=$TMUX_PANE; ppid=${ident%%$'\t'*}; pstarted=${ident#*$'\t'}
   else
-    echo "$HH_PREFIX: this hub is not in a tmux pane, so it cannot rotate itself: start it with hh-hub start" >&2
+    if [ -n "${TMUX_PANE:-}" ] && [ -n "${TMUX:-}" ]; then why="is in a tmux server hivehouse does not use"; else why="is not in a tmux pane"; fi
+    echo "$HH_PREFIX: this hub $why, so it cannot rotate itself: start it with $(cd "$HH_BIN" && pwd -P)/hh-hub start" >&2
   fi
+  # the window the hub was told it has (the hub skill passes the orchestrator window option); registering again keeps it
+  [ -n "$win" ] || win=$(hh_json_get "$root/$HH_HUB_DIR/hub.json" .window)
   jq -nc --arg n "$name" --arg p "$pid" --arg s "$(hh_lstart "$pid")" --arg sid "$(hh_session_record "$pid" .sessionId)" --arg at "$(hh_now)" \
-    --arg ts "$psock" --arg tp "$ppane" --arg tpp "$ppid" --arg tps "$pstarted" \
-    '{name:$n, claude_pid:$p, claude_started:$s, at:$at} + (if $sid != "" then {session_id:$sid} else {} end)
+    --arg ts "$psock" --arg tp "$ppane" --arg tpp "$ppid" --arg tps "$pstarted" --arg w "$win" \
+    '{name:$n, claude_pid:$p, claude_started:$s, at:$at} + (if $sid != "" then {session_id:$sid} else {} end) + (if $w != "" then {window:($w | tonumber)} else {} end)
      + (if $tp != "" then {socket:$ts, pane:$tp, pane_pid:$tpp, pane_started:$tps} else {} end)' \
     > "$root/$HH_HUB_DIR/hub.json.tmp$$" && mv "$root/$HH_HUB_DIR/hub.json.tmp$$" "$root/$HH_HUB_DIR/hub.json"
+  # the hub's handoff, from the template (a custom/ file first), when there is none: hh-hub rotate needs one to send the hub back to
+  hfile="$root/$HH_HUB_DIR/memory/hub-handoff.md"
+  if [ ! -e "$hfile" ]; then
+    mkdir -p "$root/$HH_HUB_DIR/memory" && tpl=$(HH_PROJECT="$root" hh_custom_file rules/hub-handoff.md 2>/dev/null) && cp "$tpl" "$hfile" 2>/dev/null \
+      || echo "$HH_PREFIX: could not write $hfile from the template" >&2
+  fi
   seal_hub "$root"
   echo "$name" ;;
 
@@ -615,6 +629,8 @@ rotate)
   [ -n "$pane" ] || hh_die 2 "the hub has not recorded its pane: start it with hh-hub start (hh-hub self records it inside tmux)"
   hh_pane_pid "$sock" "$pane" >/dev/null || hh_die 2 "the hub's pane ($pane) is gone"   # display-message exits 0 for a pane that is not there
   hh_is_typed_path "$root" || hh_die 4 "the hub's folder is not a path hivehouse will type: $root"
+  hfile="$root/$HH_HUB_DIR/memory/hub-handoff.md"
+  grep -q 'START HERE' "$hfile" 2>/dev/null || hh_die 4 "the hub's handoff $hfile is missing or has no START HERE block: the hub would wake with nothing to read; write it first (hh-resolve hub-handoff prints the template)"
   if [ "$detached" = 0 ]; then   # the hub's last act: return at once, the rotation runs on with all three streams redirected
     HH_PROJECT="$root" nohup "$0" rotate --detached --still "$still" --max "$max" --settle "$settle" </dev/null >>"$root/$HH_HUB_DIR/rotate.out" 2>&1 &
     exit 0
@@ -647,13 +663,16 @@ context)
   hf="$root/$HH_HUB_DIR/hub.json"
   sid=$(hh_session_record "$(hh_json_get "$hf" .claude_pid)" .sessionId); [ -n "$sid" ] || sid=$(hh_json_get "$hf" .session_id)
   tp=$(hh_session_transcript "$sid") || hh_die 2 "no transcript is recorded for the hub's session: run hh-hub self"
-  used=$(jq -c 'select(.type == "assistant" and .message.model != "<synthetic>" and (.isSidechain // false) == false)
-      | .message.usage | (.input_tokens // 0) + (.cache_read_input_tokens // 0) + (.cache_creation_input_tokens // 0) + (.output_tokens // 0)
-      | select(. > 0)' "$tp" 2>/dev/null | tail -1)
+  used=$(hh_transcript_used "$tp")
   [ -n "$used" ] || hh_die 2 "the hub's transcript has no usage line yet"
   if [ -n "$win" ]; then echo $(( used * 100 / win ))
-  elif [ "$used" -gt 200000 ]; then echo "$used tokens (window unknown)"
-  else echo "$(( used * 100 / 200000 )) (window assumed 200000)"; fi ;;
+  else
+    rw=$(hh_json_get "$hf" .window); { hh_is_number "$rw" && [ "$rw" -gt 0 ]; } || rw=200000   # what hh-hub self recorded, else a guess
+    hh_assumed_level "$used" "$rw"
+  fi
+  # a rotation that sent nothing (never idle, a dialog, another pane) is told here, until one works: the hub cannot see rotate.log otherwise
+  last=$(tail -1 "$root/$HH_HUB_DIR/rotate.log" 2>/dev/null)
+  case "$last" in ''|*" rotated "*) ;; *) echo "last rotate: $last" ;; esac ;;
 
 discover)
   [ $# -eq 0 ] || hh_die 64 "$USAGE"

@@ -48,6 +48,14 @@ cat > "$HANDOFF" <<'EOF'
 x
 EOF
 rm -f "$H/$T_STATE/$T_CUSTOM/rules/hub-pickup.md"
+# a hub with no handoff, or one with no START HERE block, is not cleared: it would wake with nothing to read
+mv "$HANDOFF" "$HANDOFF.saved"
+hub rotate --still 2 --settle 1 --max 30 >"$T_TMP/r.out" 2>&1; assert_status "rotate with no handoff file refuses" $? 4
+assert_contains "...saying why" "$(cat "$T_TMP/r.out")" "hub-handoff.md"
+printf 'no block here\n' > "$HANDOFF"
+hub rotate --still 2 --settle 1 --max 30 >"$T_TMP/r.out" 2>&1; assert_status "rotate with a handoff that has no START HERE block refuses" $? 4
+sleep 1; assert_not "...and nothing was typed" "$(screen hub)" "/clear"
+mv "$HANDOFF.saved" "$HANDOFF"
 t0=$(date +%s)
 out=$(hub rotate --still 2 --settle 1 --max 30 2>&1); assert_status "rotate" $? 0
 t1=$(date +%s)
@@ -122,12 +130,34 @@ hub rotate --still 2 --settle 1 --max 6 >/dev/null 2>&1; assert_status "a pane t
 startfake hubself
 sid=$(printf 'hub-sess-1')
 jq --arg s "$sid" '.session_id = $s' "$P/hub.json" > "$P/hub.json.n" && mv "$P/hub.json.n" "$P/hub.json"
+rm -f "$P/rotate.log"
 hub context >/dev/null 2>&1; assert_status "context with no transcript" $? 2
 mkdir -p "$CLAUDE_CONFIG_DIR/projects/p"
 jq -nc '{type:"assistant", isSidechain:false, message:{model:"claude-sonnet-5-5", usage:{input_tokens:100000, cache_read_input_tokens:0, cache_creation_input_tokens:0, output_tokens:0}}}' > "$CLAUDE_CONFIG_DIR/projects/p/$sid.jsonl"
 assert_eq "context is a percent of the window it is given" "$(hub context --window 400000 2>/dev/null)" "25"
 assert_eq "...and says when the window is only assumed" "$(hub context 2>/dev/null)" "50 (window assumed 200000)"
 hub context --window x >/dev/null 2>&1; assert_status "a window that is no number" $? 4
+# S4: the window the hub recorded for itself (hh-hub self --window), as hh-spawn --self records an orchestrator's
+mkdir -p "$T_TMP/cl2"; printf '#!/usr/bin/env bash\ncd "%s" && hh-hub self "$@"\n' "$H" > "$T_TMP/cl2/claude"
+bash "$T_TMP/cl2/claude" --name hub --window 400000 >/dev/null 2>&1; assert_status "self --window" $? 0
+assert_eq "...is recorded in hub.json" "$(jq -r .window "$P/hub.json")" "400000"
+bash "$T_TMP/cl2/claude" --name hub --window abc >/dev/null 2>&1; assert_status "a window that is no number is refused" $? 4
+bash "$T_TMP/cl2/claude" --name hub >/dev/null 2>&1
+assert_eq "registering again without --window keeps it" "$(jq -r .window "$P/hub.json")" "400000"
+jq --arg s "$sid" '.session_id = $s' "$P/hub.json" > "$P/hub.json.n" && mv "$P/hub.json.n" "$P/hub.json"
+assert_eq "context uses the recorded window, and says it was not measured" "$(hub context 2>/dev/null)" "25 (window assumed 400000)"
+assert_eq "...unless it is given one" "$(hub context --window 200000 2>/dev/null)" "50"
+# S2: a rotate that sent nothing is told at the next level check
+printf '%s rotated hub\n' "2026-10-08T10:00:00Z" > "$P/rotate.log"
+assert_eq "context says nothing about a rotation that worked" "$(hub context 2>/dev/null | wc -l | tr -d ' ')" "1"
+printf '%s not-idle hub (nothing sent)\n' "2026-10-08T10:05:00Z" >> "$P/rotate.log"
+assert_contains "a refusal after the last success shows with the level" "$(hub context 2>/dev/null | tail -1)" "not-idle hub (nothing sent)"
+assert_eq "...the level is still the first line" "$(hub context 2>/dev/null | head -1)" "25 (window assumed 400000)"
+printf '%s rotated hub\n' "2026-10-08T10:09:00Z" >> "$P/rotate.log"
+assert_eq "...and is gone once a rotation worked again" "$(hub context 2>/dev/null | wc -l | tr -d ' ')" "1"
+# S5: the used tokens of a transcript are read in one place
+for f in hh-context hh-hub; do case "$(cat "$HH_REPO_ROOT/bin/$f")" in *isSidechain*) bad "bin/$f reads a transcript's usage itself: it belongs to hh-lib.sh" ;; *) ok "bin/$f has no copy of the transcript reading" ;; esac; done
+case "$(cat "$HH_REPO_ROOT/bin/hh-lib.sh")" in *isSidechain*) ok "hh-lib.sh holds it" ;; *) bad "hh-lib.sh does not read a transcript's usage" ;; esac
 
 # ---- the hub skill: handoff, when to rotate, the beat after a restart ----
 SK=$(cat "$HH_REPO_ROOT/skills/hub/SKILL.md")
@@ -140,6 +170,13 @@ assert_contains "...updates the handoff, then rotates as its last act" "$SK" "hh
 assert_contains "the beat is recreated at every start when away and CronList lacks the job" "$SK" "CronList"
 assert_contains "...which says so in the start steps" "$(sed -n '/^## 1\. At every start/,/^## 2\./p' "$HH_REPO_ROOT/skills/hub/SKILL.md")" "recreate"
 assert_contains "the start line the owner is given is hh-hub start" "$(sed -n '/^## 1\. At every start/,/^## 2\./p' "$HH_REPO_ROOT/skills/hub/SKILL.md")" "hh-hub start"
+assert_contains "the owner is told to start the hub with a path that works in their terminal" "$SK" 'bin/hh-hub start'
+assert_contains "the skill records the window with self" "$SK" 'hh-hub self --window ${user_config.window_orchestrator}'
+assert_contains "...and says what to do with a window that is unknown" "$(sed -n '/^## 5b/,/^## 6/p' "$HH_REPO_ROOT/skills/hub/SKILL.md")" "window unknown"
+assert_contains "...and tells the owner once of a refused rotation" "$(sed -n '/^## 5b/,/^## 6/p' "$HH_REPO_ROOT/skills/hub/SKILL.md")" "last rotate"
+for f in README.md docs/hub.md; do assert_contains "$f gives hh-hub start as a path that works" "$(cat "$HH_REPO_ROOT/$f")" "<installPath>/bin/hh-hub start"; done
+case "$(cat "$HH_REPO_ROOT/README.md")" in *'`claude` in the'*'work folder is the hub'*) bad "README step 5 still says claude is the hub" ;; *) ok "README step 5 names hh-hub start too" ;; esac
+for f in skills/handoff/SKILL.md rules/RULES.md; do assert_contains "$f says the handoff is the file the pickup line names" "$(cat "$HH_REPO_ROOT/$f")" "the file your pickup line names"; done
 case "$SK" in *"rotate_at_percent"*"rotate_at_percent"*) ok "...the level is read from the one option" ;; *) bad "the skill names rotate_at_percent fewer than twice" ;; esac
 
 t_done

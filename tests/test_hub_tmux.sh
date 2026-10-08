@@ -78,15 +78,24 @@ hh_tmux kill-session -t =hub
 mkdir -p "$T_TMP/cl"; printf '#!/usr/bin/env bash\ncd "%s" && hh-hub self "$@"\n' "$H" > "$T_TMP/cl/claude"
 out=$(bash "$T_TMP/cl/claude" --name hub 2>&1 >/dev/null); assert_status "self outside tmux" $? 0
 assert_contains "...says so, with the line that starts the hub" "$out" "hh-hub start"
+assert_contains "...as a path that works in the owner's own terminal" "$out" "$HH_REPO_ROOT/bin/hh-hub start"
 assert_eq "...says it once" "$(printf '%s\n' "$out" | grep -c 'hh-hub start')" "1"
 assert_eq "...and records no pane (a stale one is dropped)" "$(jq -r '.pane // "none"' "$P/hub.json")" "none"
 setfake hubself; hub start >/dev/null 2>&1; unsetfake; pane=$(paneof hub)
 i=0; while [ "$(jq -r '.pane // empty' "$P/hub.json" 2>/dev/null)" != "$pane" ] && [ "$i" -lt 20 ]; do sleep 0.5; i=$((i + 1)); done
 out=$(TMUX_PANE="$pane" TMUX=/nonexistent/sock,1,0 bash "$T_TMP/cl/claude" --name hub 2>&1 >/dev/null); assert_status "self from a pane of another server (TMUX names it)" $? 0
 assert_eq "...records no pane: the socket is the one TMUX names" "$(jq -r '.pane // "none"' "$P/hub.json")" "none"
+assert_contains "...and says it is a tmux server hivehouse does not use" "$out" "tmux server hivehouse does not use"
+case "$out" in *"not in a tmux pane"*) bad "...and not that it is no tmux pane at all" ;; *) ok "...and not that it is no tmux pane at all" ;; esac
 hh_tmux kill-session -t =hub
 out=$(TMUX_PANE=%99 bash "$T_TMP/cl/claude" --name hub 2>&1 >/dev/null); assert_status "a pane id this server does not have" $? 0
 assert_contains "...is no pane to record" "$out" "hh-hub start"
 assert_eq "...nothing recorded" "$(jq -r '.pane // "none"' "$P/hub.json")" "none"
+
+# ---- the hub's handoff: written from the template when absent, kept when there ----
+rm -f "$P/memory/hub-handoff.md"; bash "$T_TMP/cl/claude" --name hub >/dev/null 2>&1
+assert_contains "self writes the handoff from the template when it is absent" "$(cat "$P/memory/hub-handoff.md" 2>/dev/null)" "## START HERE"
+printf '# mine\n\n## START HERE\nkeep me\n' > "$P/memory/hub-handoff.md"; bash "$T_TMP/cl/claude" --name hub >/dev/null 2>&1
+assert_contains "...and keeps one that is there" "$(cat "$P/memory/hub-handoff.md")" "keep me"
 
 t_done
