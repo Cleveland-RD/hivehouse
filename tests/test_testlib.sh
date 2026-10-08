@@ -18,7 +18,7 @@ assert_contains "...and so is the shell that started it" "$(sed -n 2p "$f")" " $
 out=$(bash -c '. "$1"; t_guard; printf "%s %s" "$T_OWN_PG" "$(ps -o pgid= -p $$ | tr -d " ")"' _ "$HH_REPO_ROOT/tests/lib.sh")
 assert_eq "under bash -c: that shell's own group" "${out% *}" "${out#* }"
 [ -n "${out% *}" ] && ok "...and it is not empty" || bad "under bash -c: no group read"
-# ---- KI-28: the sweep never deletes the folder of a run whose process is alive, whatever language its start time was written in ----
+# ---- the sweep never deletes the folder of a run whose process is alive, whatever language its start time was written in ----
 SW=$(mktemp -d "${TMPDIR:-/tmp}/hmsweep.XXXXXX"); SW=$(cd "$SW" && pwd -P); trap 'rm -f "$f"; rm -rf "$SW"' EXIT
 sleep 60 & live=$!
 mkrun() {  # mkrun <name> <start time as the run recorded it>: a run folder owned by the live process
@@ -37,7 +37,7 @@ for lc in C en_GB.UTF-8 de_DE.UTF-8; do
 done
 kill $live 2>/dev/null; wait $live 2>/dev/null
 
-# ---- KI-30: a TMPDIR that would put the test tmux socket over the macOS limit is refused at the start ----
+# ---- a TMPDIR that would put the test tmux socket over the macOS limit is refused at the start ----
 LONG="$SW"; while [ ${#LONG} -lt 100 ]; do LONG="$LONG/x"; done; mkdir -p "$LONG"
 out=$(TMPDIR="$LONG" bash -c '. "$1"; t_setup; echo started' _ "$HH_REPO_ROOT/tests/lib.sh" 2>&1 </dev/null); rc=$?
 [ "$rc" -ne 0 ] && ok "a long TMPDIR stops t_setup" || bad "a long TMPDIR was accepted"

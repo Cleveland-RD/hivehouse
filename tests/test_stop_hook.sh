@@ -101,7 +101,7 @@ jq -nc '{window:200000,used_percentage:50,session_id:"sK",at:"t"}' > "$r/$T_STAT
 session "$r" implementer sL "$FIX"; jq -nc '{window:200000,used_percentage:50,session_id:"sL",at:"t"}' > "$r/$T_STATE/team/implementer/context.json"
 reg "$r" implementer; SID=sL; out=$(stop "$r"); assert_contains "a measured window rotates" "$(printf '%s' "$out" | jq -r .reason)" "ROTATE READY"
 rm -f "$r/$T_STATE/team/implementer/context.json"
-# KI-36: no rotate_at_percent saved (the option reached the hook unset): plugin.json's default is the level, not a second literal in the hook
+# no rotate_at_percent saved (the option reached the hook unset): plugin.json's default is the level, not a second literal in the hook
 jq -nc '{agents:[{name:"implementer",pane:"%1",window:200000}]}' > "$r/$T_STATE/team.json"
 session "$r" implementer sM "$FIX"; reg "$r" implementer; SID=sM; out=$(NOLEVEL=1 stop "$r"); assert_eq "an unset option: the default (50) rotates a session at 50%" "$(printf '%s' "$out" | jq -r .decision)" "block"
 PX="$T_TMP/plug90"; mkdir -p "$PX/.claude-plugin"; cp -R "$HH_REPO_ROOT/bin" "$PX/bin"; jq '.userConfig.rotate_at_percent.default = 90' "$HH_REPO_ROOT/.claude-plugin/plugin.json" > "$PX/.claude-plugin/plugin.json"

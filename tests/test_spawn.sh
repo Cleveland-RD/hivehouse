@@ -4,8 +4,8 @@
 t_setup
 r=$(t_repo proj); cd "$r"; echo role > "$T_TMP/impl.md"; echo rules > "$T_TMP/RULES.md"
 # set-environment -g (below) is how a test hands the fake claude its behaviour: hh-spawn passes a pane only what it names
-# (A22), so the server's global environment is the one channel that is not production code.
-# the server starts WITHOUT the machine home, so a pane that has it got it from hh-spawn (A3)
+# so the server's global environment is the one channel that is not production code.
+# the server starts WITHOUT the machine home, so a pane that has it got it from hh-spawn
 env -u HIVEHOUSE_HOME tmux -S "$HH_TMUX_SOCKET" new-session -d -s keep 'sleep 600'
 spawn() { hh-spawn --agent "$1" --role "$T_TMP/impl.md" --rules "$T_TMP/RULES.md" --model sonnet --effort medium --mode auto --still 2 --max-wait 15 "${@:2}"; }
 

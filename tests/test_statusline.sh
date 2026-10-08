@@ -57,7 +57,7 @@ echo '{"statusLine":{"type":"command","command":"managed"}}' > "$HH_MANAGED_SETT
 assert_eq "managed beats them all" "$(hh_owner_statusline "$p" | jq -r .command)" "managed"
 echo '{"model":"x"}' > "$HH_MANAGED_SETTINGS"; echo 'not json' > "$p/.claude/settings.local.json"
 assert_eq "a file with no statusLine, or not JSON, is passed over" "$(hh_owner_statusline "$p" | jq -r .command)" "project"
-# A12: a statusline.json in the agent's folder is never read, never run: that file is writable by an away session, so a command found there
+# a statusline.json in the agent's folder is never read, never run: that file is writable by an away session, so a command found there
 # would run as the owner outside every hook
 printf '%s\n' '{"type":"command","command":"echo PLANTED"}' > "$d/statusline.json"
 out=$(printf '%s' "$in" | hh-statusline "$d"); assert_eq "a planted statusline.json is not run (no owner given)" "$out" ""

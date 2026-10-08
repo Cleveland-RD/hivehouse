@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # hh_stop_hung (bin/hh-lib.sh): the one place hivehouse stops a process it did not just start, for a session whose working line
-# has not moved (Phase 4.3, A10). It stops the recorded pid only while that pid still has its recorded start time, is still
+# has not moved (Phase 4.3). It stops the recorded pid only while that pid still has its recorded start time, is still
 # Claude, and its pane still shows the same working line; TERM, up to 10 s, then KILL only the same process. The frozen screen is
 # a REAL capture (tests/fixtures/working/06-working-7s.ansi, "6s") drawn in a tmux pane; the "frozen for 15 minutes" is the hung
 # state in test_away.sh, so a still screen here stands for it. The processes are `sleep` run under the name claude.
@@ -68,7 +68,7 @@ t0=$(date +%s); hh_stop_hung "$PID" "$STARTED" "$HH_TMUX_SOCKET" "$PANE" 6; asse
 t1=$(date +%s); [ $((t1 - t0)) -ge 10 ] && ok "...after the 10 s wait" || bad "gave up after $((t1 - t0)) s"
 unset -f kill
 kill -9 "$PID" 2>/dev/null
-# A83: a start time 0.2.0 recorded, in the caller's locale, is still that process's
+# a start time 0.2.0 recorded, in the caller's locale, is still that process's
 if locale -a 2>/dev/null | grep -qix en_GB.UTF-8; then
   frozen "$W/06-working-7s.ansi"
   loc=$(LC_ALL=en_GB.UTF-8 /bin/ps -o lstart= -p "$PID" | sed 's/^ *//;s/ *$//')
