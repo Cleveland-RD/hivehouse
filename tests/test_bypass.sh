@@ -133,7 +133,7 @@ mkdel
 
 # ---- hh-hub: only the hub the owner's file names, in its own marked Claude, and never through --mode ----
 rm -f "$H/app/$T_STATE/team.json"; rm -rf "$H/app/$T_STATE/team"
-hh() { local who=$1; shift; (cd "$H" && "${M[@]}" node "$who" "$DB/hh-hub" "$@" 2>"$T_TMP/hh.err"); }
+hh() { local who=$1; shift; (cd "$H" && "${M[@]}" HH_PROJECT="$H" node "$who" "$DB/hh-hub" "$@" 2>"$T_TMP/hh.err"); }
 # a delegate file that names ANOTHER hub, which also lists this project: the hub that runs this hh-hub is not the one the owner meant
 H2="$T_TMP/work2"; mkdir -p "$H2/$T_HUB"; H2=$(cd "$H2" && pwd -P)
 jq -nc --arg h "$H/app" '{projects:[{name:"app", home:$h, repos:[$h]}]}' > "$H2/$T_HUB/projects.json"

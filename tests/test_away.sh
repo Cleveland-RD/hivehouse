@@ -273,7 +273,7 @@ mkorch beta "$bpid"
 # beta's one agent runs in a window of its own
 aw=$(hh_tmux new-window -d -P -F '#{pane_id}' -t keep: -n impl 'sleep 600'); ai=$(hh_pane_identity "$HH_TMUX_SOCKET" "$aw")
 jq --arg k "$HH_TMUX_SOCKET" --arg p "$aw" --arg pp "${ai%%$'\t'*}" --arg ps "${ai#*$'\t'}" '.agents += [{name:"impl", pane:$p, socket:$k, pane_pid:$pp, pane_started:$ps}]' "$H/beta/$T_STATE/team.json" > "$T_TMP/tj" && mv "$T_TMP/tj" "$H/beta/$T_STATE/team.json"
-rec() { if [ "$READABLE" = 1 ]; then HH_AWAY_BYPASS=1 node "$CLN" recover "$@" 2>/dev/null; else HH_AWAY_BYPASS=1 bash "$CLD" recover "$@" 2>/dev/null; fi; }
+rec() { if [ "$READABLE" = 1 ]; then HH_AWAY_BYPASS=1 HH_PROJECT="$H" node "$CLN" recover "$@" 2>/dev/null; else HH_AWAY_BYPASS=1 bash "$CLD" recover "$@" 2>/dev/null; fi; }
 act() { printf '%s' "$1" | jq -r '[.actions[] | "\(.action):\(.project)"] | join(",")'; }
 blk() { printf '%s' "$1" | jq -r '[.blocked[] | "\(.action):\(.project)"] | join(",")'; }
 r=$(hub recover --json); assert_eq "recover with the owner home: nothing is due" "$r" '{"away":false,"actions":[],"blocked":[]}'
@@ -330,7 +330,7 @@ assert_contains "...is still refused as another session" "$(cat "$T_TMP/n3.err")
 # recover reads every project's state without the hub's lock: a log meanwhile is not held up
 tmx=$(command -v tmux); slow="$T_TMP/slow"; mkdir -p "$slow"; rm -f "$T_TMP/slow.done"
 printf '#!/bin/sh\nif [ ! -e "%s/slow.done" ]; then touch "%s/slow.done"; sleep 4; fi\nexec "%s" "$@"\n' "$T_TMP" "$T_TMP" "$tmx" > "$slow/tmux"; chmod +x "$slow/tmux"
-( PATH="$slow:$PATH" HH_AWAY_BYPASS=1 node "$CLN" recover --json > "$T_TMP/slowrec.out" 2>/dev/null ) & sr=$!; t_track "$sr"; sleep 1
+( PATH="$slow:$PATH" HH_AWAY_BYPASS=1 HH_PROJECT="$H" node "$CLN" recover --json > "$T_TMP/slowrec.out" 2>/dev/null ) & sr=$!; t_track "$sr"; sleep 1
 t0=$(date +%s); hub log "$ta" note --note "while recover reads" >/dev/null 2>&1; lrc=$?; t1=$(date +%s)
 assert_status "a log while recover is still reading state" "$lrc" 0
 [ $((t1 - t0)) -le 2 ] && ok "...is not held up by it" || bad "the log waited $((t1 - t0)) s for the lock"
@@ -363,10 +363,12 @@ hub recover --max-starts x >/dev/null 2>&1; assert_status "a daily cap that is a
 t=$(rec); case "$t" in *"wake alpha (task $ta)"*) ok "the plain output names each action" ;; *) bad "plain recover: $t" ;; esac
 # a hub started without the away marker does not recover; one started with it does; one whose environment cannot be read is refused
 node "$CLN" recover --json >/dev/null 2>"$T_TMP/m.err"; assert_status "recover without the away marker" $? 4; assert_contains "...says why" "$(cat "$T_TMP/m.err")" "away marker"
-HH_AWAY_BYPASS=1 node "$CLN" recover --json >/dev/null 2>"$T_TMP/m.err"; assert_status "recover with the away marker" $? 0
+HH_AWAY_BYPASS=1 HH_PROJECT="$H" node "$CLN" recover --json >/dev/null 2>"$T_TMP/m.err"; assert_status "recover with the away marker" $? 0
 assert_eq "...and nothing said on stderr" "$(cat "$T_TMP/m.err")" ""
 HH_AWAY_BYPASS=0 node "$CLN" recover --json >/dev/null 2>&1; assert_status "...a marker with another value is none" $? 4
-env -i HH_AWAY_BYPASS=1 "$NODEBIN" "$CLN" recover --json >/dev/null 2>"$T_TMP/m.err"; assert_status "recover from a Claude whose environment shows no variables at all (cannot be read)" $? 4
+env -i HH_AWAY_BYPASS=1 HH_PROJECT="$H" "$NODEBIN" "$CLN" recover --json >/dev/null 2>"$T_TMP/m.err"; assert_status "recover from a Claude whose environment shows no variables at all (cannot be read)" $? 4
+NC2=$(t_node_claude "$H")
+env -i HH_AWAY_BYPASS=1 HH_PROJECT="$H" "$NODEBIN" "$NC2" "$DB/hh-hub" self --name hub >/dev/null 2>"$T_TMP/m.err"; assert_status "hh-hub self from such a Claude, while away" $? 4
 assert_contains "...is refused, saying it cannot be read" "$(cat "$T_TMP/m.err")" "cannot be read"
 # trust, for a project with a second repository (distinct from its home) and a worktree of its home
 mk zeta; mk "zeta api"; git -C "$H/zeta" worktree add -q -b zwt "$H/zeta-wt"

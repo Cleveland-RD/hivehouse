@@ -119,6 +119,22 @@ away_hub_caller() {
     *) hh_die 4 "this session's launch environment cannot be read, so the away marker cannot be checked: refused" ;;
   esac
 }
+# hh-hub self records "the hub" and hh-hub rotate types into it, and the away hook reads only the words of a command (`hh-hub $(echo self)`
+# gets through it): so the script asks who is calling. A Claude carrying the away marker is the hub only when it was also launched with
+# HH_PROJECT set to this hub's folder (the hub's start line does; an agent's is its project). A caller that is not marked is unchanged.
+# An environment that cannot be read is no proof either way: refused while a delegate file names this hub, as away_hub_caller refuses.
+only_the_marked_hub() {  # only_the_marked_hub <hub root> <command word>
+  local cpid mrc prc
+  cpid=$(hh_claude_ancestor) || return 0
+  hh_env_has "$cpid" HH_AWAY_BYPASS=1; mrc=$?
+  case "$mrc" in
+    1) return 0 ;;
+    0) hh_env_has "$cpid" "HH_PROJECT=$1"; prc=$?
+       [ "$prc" -eq 0 ] || hh_die 4 "hh-hub $2: this Claude carries the away marker but was not launched with HH_PROJECT=$1: only the hub that hh-hub away's start line launched may run it" ;;
+    *) away_now "$1" && hh_die 4 "hh-hub $2: this session's launch environment cannot be read, so the away marker cannot be checked: refused while the owner is away"
+       return 0 ;;
+  esac
+}
 # A project's name follows the agent-name rule (lower-case letters, digits, '_' and '-'): it becomes a tmux session, a
 # task id and part of an orchestrator's session name.
 check_name() { hh_is_agent_name "$1" || hh_die 4 "a project name is lower-case letters, digits, '_' and '-': $1"; }
@@ -591,6 +607,7 @@ self)
   if [ -n "$win" ]; then case "$win" in ''|*[!0-9]*|0) hh_die 4 "--window must be a positive number: $win" ;; esac; fi
   root=$(hub_root) || exit $?
   pid=$(hh_claude_ancestor) || hh_die 2 "hh-hub self must run inside the Claude session that is the hub"
+  only_the_marked_hub "$root" self
   [ -n "$name" ] || name=$(hh_session_record "$pid" .name)
   hubn=$(hub_chosen_name "$root" 2>/dev/null) || hubn=hub
   [ -n "$name" ] || hh_die 4 "this session has no name: start the hub with claude --name $hubn /$PLUGIN:hub (or type /rename $hubn), or pass --name"
@@ -635,6 +652,7 @@ rotate)
     esac
   done
   root=$(hub_root) || exit $?
+  [ "$detached" = 1 ] || only_the_marked_hub "$root" rotate   # the detached copy has no Claude above it any more: the first call asked
   hf="$root/$HH_HUB_DIR/hub.json"; sock=$(hh_json_get "$hf" .socket); pane=$(hh_json_get "$hf" .pane)
   [ -n "$pane" ] || hh_die 2 "the hub has not recorded its pane: start it with hh-hub start (hh-hub self records it inside tmux)"
   hh_pane_pid "$sock" "$pane" >/dev/null || hh_die 2 "the hub's pane ($pane) is gone"   # display-message exits 0 for a pane that is not there
