@@ -17,6 +17,7 @@ for w in 'custom/' '--role' '--rules' '--remote-allow' '--allow' 'root-owned' 'p
 done
 assert_contains "the guide says an edit in the plugin cache is lost" "$(printf '%s' "$sec" | tr '\n' ' ' | sed 's/  */ /g')" "replaced by the next plugin update"
 assert_contains "the guide says to print the sudo lines to loosen away mode" "$(printf '%s' "$sec" | tr '\n' ' ' | sed 's/  */ /g')" "never edit anything to get round it"
+assert_contains "the hub has no project custom/ of its own" "$(printf '%s' "$sec" | tr '\n' ' ' | sed 's/  */ /g')" "The hub has no project of its own, so for the hub only your own \`custom/\` and the plugin's apply."
 assert_contains "the principle: setup-specific behaviour is configuration, never code" "$(printf '%s' "$sec" | tr '\n' ' ' | sed 's/  */ /g')" "never a code change"
 grep -qE '^#+ Delegate mode$|^## Delegate mode' "$HH_REPO_ROOT/README.md" && ok "the README has a Delegate mode pitch near the top" || bad "the README has a Delegate mode pitch near the top"
 pitchline=$(grep -nE '^## Delegate mode$' "$HH_REPO_ROOT/README.md" | head -1 | cut -d: -f1); firstsec=$(grep -nE '^## Install$' "$HH_REPO_ROOT/README.md" | head -1 | cut -d: -f1)
