@@ -631,7 +631,7 @@ allowed "cheap: ssh-keygen -f into the project makes a key there" "ssh-keygen -t
 
 echo "-- the marked hub's own commands (A9), ssh-keygen -R, and a decision text that names tmux"
 ROLE=hub
-for c in "hh-hub rotate" "hh-hub rotate --still 15 --max 900 --settle 8" "hh-hub rotate --max 900" "hh-hub self" "hh-hub self --name hub1" "hh-hub context" "hh-hub context --window 200000"; do
+for c in "hh-hub rotate" "hh-hub rotate --still 15 --max 900 --settle 8" "hh-hub rotate --max 900" "hh-hub self" "hh-hub self --name hub1" "hh-hub self --window 1000000" "hh-hub self --name hub1 --window 200000" "hh-hub context" "hh-hub context --window 200000"; do
   allowed "the marked hub runs: $c" "$c"
 done
 ROLE=proj
