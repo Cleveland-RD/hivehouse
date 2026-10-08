@@ -37,6 +37,13 @@ for w in '`ssh -F none [-T] [-o ConnectTimeout=<digits>] [-o BatchMode=yes] <hos
          '`scp`, `rsync` or `sftp` from the refusal' '`hh-hub away` refuses to print (exit 4, naming the word or host)' '`hh-hub status --json` shows the hosts and words in force'; do
   assert_contains "Customising what away mode allows says: $w" "$away" "$w"
 done
+assert_contains "the remote git reads need the three flags" "$away" "must carry \`--no-ext-diff --no-textconv --no-show-signature\`"
+assert_contains "hh-hub status is not on the remote read list" "$away" "\`hh-hub status\` is not on the list: it runs \`git status\`"
+assert_eq "...and the list names hh-hub tasks alone" "$(printf '%s' "$away" | grep -c 'hh-slot status\` and \`hh-hub tasks\`')" 1
+assert_contains "an allowed word lets only that command past its command-position refusal" "$away" "an allowed word lets only that command past its command-position refusal, every other rule still runs on the command, and it never applies to the remote part of an ssh command"
+HUBSK=$(tr '\n' ' ' < "$HH_REPO_ROOT/skills/hub/SKILL.md" | sed 's/  */ /g')
+assert_eq "the hub skill no longer says no remote host is used while away" "$(printf '%s' "$HUBSK" | grep -c 'no remote host is used')" 0
+assert_contains "...it names the read-only ssh checks the owner allowed" "$HUBSK" "the only reach to a remote host is the read-only ssh checks the owner allowed with \`hh-hub away --remote-allow\`"
 assert_contains "the hook list names the ssh exception" "$RD" "\`ssh\` (except the reads the owner allowed with \`--remote-allow\`, below)"
 assert_contains "the hook list protects ~/.ssh/" "$RD" "a project's \`.mcp.json\` and \`~/.ssh/\`"
 assert_contains "the heredoc rule is stated" "$RD" "A heredoc body is data, never commands, only when the command in front of"
