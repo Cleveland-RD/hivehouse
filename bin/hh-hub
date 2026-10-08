@@ -340,7 +340,7 @@ start_opts() {  # start_opts <model allowed 0|1> [--model m] [--mode m] [--still
 # it: the pane is then coming up, not waiting on the owner, and nothing else may send its line
 sending() { local p; p=$(hh_json_get "$1" .sender_pid); [ -n "$p" ] && hh_alive "$p" && hh_lstart_is "$p" "$(hh_json_get "$1" .sender_started)"; }
 # project_mode <home>: the owner's --mode, made stricter by the project's own .hivehouse/settings.json (and auto raised to bypass only
-# while the owner is away, A7), as
+# while the owner is away), as
 # hh-spawn's agents get it (hh-settings); the hub's folder is no repository, so it is resolved in the project's home
 project_mode() {
   [ -z "$MODE" ] || MODE=$(HH_PROJECT="$1" "$HH_BIN/hh-settings" resolve permission_mode "$MODE") || exit $?
@@ -427,7 +427,7 @@ session_target() {
     | map(. // "" | tostring) | join("\u001f")' "$1/$HH_STATE_DIR/team.json" 2>/dev/null
 }
 # hung_try <project> <kind orchestrator|agent> <agent> <task> <socket> <pane> <pid> <started> [<state key>]: recover's look at one running session
-# (Phase 4.3, A10). Hung needs positive evidence: Claude Code's working line recognised, with its elapsed time unchanged for 15 minutes
+# (Phase 4.3). Hung needs positive evidence: Claude Code's working line recognised, with its elapsed time unchanged for 15 minutes
 # (hung-state.json holds what each beat saw: the same process, the same time, and since when). Any other screen is unknown: never hung,
 # nothing kept. A hung session is stopped (hh_stop_hung) within the cap of 3 restarts of one session in 24 hours, and recover has
 # already refused unless the delegate file is valid and this hub's marker was read (away_hub_caller); the action that brings it

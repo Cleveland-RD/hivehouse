@@ -1,6 +1,6 @@
 #!/bin/bash -p
 # Remove only what the manifest recorded. Never runs a command from it: what to do is derived from the entry's kind,
-# and every entry is judged again when it is acted on (A5, A18), since a line is only as safe as the check made when
+# and every entry is judged again when it is acted on, since a line is only as safe as the check made when
 # it is read. Newest entries first; an entry acted on is dropped, one kept or skipped stays.
 #   --disk    deletes temporary files and dirs (under $TMPDIR, /tmp, /private/tmp or <root>/.hivehouse/tmp) only
 #   --finish  also moves other files and dirs to .hivehouse/trash/<date>/, stops processes, kills panes and removes

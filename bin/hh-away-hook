@@ -7,7 +7,7 @@
 # hub's folder), HH_PROJECT (the project's home; the hub's own folder or nothing for the hub), HH_AWAY_MCP_ALLOW (the owner's
 # away_mcp_allow, comma-separated, may be empty). Without the marker it exits 0 at once, before anything is read. With it,
 # anything it cannot read or parse is a denial.
-# Matching is by tokens and is not complete (`$'\x67'it push` and `g${e}it push` get through; the text of a script file it runs is read, KI-26).
+# Matching is by tokens and is not complete (`$'\x67'it push` and `g${e}it push` get through; the text of a script file it runs is read).
 PATH=/usr/bin:/bin:/usr/sbin:/sbin   # first of all: every program the hook and hh-lib.sh run by name comes from here, never from a PATH the session's Bash command set
 [ "${HH_AWAY_BYPASS:-}" = 1 ] || { cat >/dev/null; exit 0; }
 set -u
@@ -88,7 +88,7 @@ protected() {  # protected <path> <cwd>: the path itself, and where its links le
   return 1
 }
 
-# A14: rm, mv and the destinations of cp, install and ln are held to "is or holds a protected path": the path itself (protected), a path at or
+# rm, mv and the destinations of cp, install and ln are held to "is or holds a protected path": the path itself (protected), a path at or
 # above a fixed protected root (rm -rf ~/.claude, mv . x), a folder named .claude or .hivehouse, and, for a copy or move of a folder, every file of
 # its tree mapped to where it lands (<dest>/<rel> and <dest>/<name of the source>/<rel>: BSD and GNU differ). A destination that is a folder, or ends
 # in a slash, also gets <dest>/<name of each source> checked.
@@ -373,7 +373,7 @@ mcp_check() {
   deny "$tool is not allowed while the owner is away (the owner's away_mcp_allow lists what is)"
 }
 
-# KI-25: Workflow, WebFetch, DesignSync, ArtifactCheck and PushNotification pass only when the owner listed them with `hh-hub away --tools`, which
+# Workflow, WebFetch, DesignSync, ArtifactCheck and PushNotification pass only when the owner listed them with `hh-hub away --tools`, which
 # is the tools= line of the root-owned delegate file, read the way ssh_gate reads hosts=: never from the session's env, which it could not have set
 # for itself anyway. A file that is missing, invalid, or names another hub grants none. (CronCreate and ScheduleWakeup are not in the matcher at all.)
 tool_check() {
@@ -500,7 +500,7 @@ file_check() {
 
 # --- Bash
 bn() { local t=${1##*/}; printf '%s' "$t"; }
-# KI-23: a heredoc body is data, not commands, only when the command that reads it does not run it. heredoc_strip prints the command
+# A heredoc body is data, not commands, only when the command that reads it does not run it. heredoc_strip prints the command
 # with such bodies removed (an unquoted body keeps only its lines with $( or a backtick, which the segment reading then checks as
 # before). Bodies are dropped only when EVERY command in the WHOLE call (each stage of each pipeline and list, on every line outside a
 # body) is a known reader: cd, cat, grep, jq, wc, head, tail, sort, uniq, or hh-hub task / hh-hub decide (the only hh- commands that
@@ -571,7 +571,7 @@ heredoc_strip() {
     }'
 }
 
-# KI-35 (A2/A3): quoted text that is data. Only for `echo` and `printf` whose segment's output reaches no pipe, and the value after the free-text
+# Quoted text that is data. Only for `echo` and `printf` whose segment's output reaches no pipe, and the value after the free-text
 # flag of hh-hub log (--note), task (--text) and decide (--reason): those commands never run their arguments. Such a quoted word is replaced by X before
 # the segments are split, so a sentence with parentheses and "; . " in it is no script. Everything else is left as written, and the whole command is
 # left as written when it has an unquoted ( ) ` > < or $' (a substitution, a subshell, a function, a file redirect), an unbalanced quote, or the words
@@ -715,7 +715,7 @@ ssh_gate() {  # ssh_gate <raw command>: 1 = not an allowed ssh (the general rule
   return 0
 }
 
-# KI-26: a script a Bash call runs (`bash f`, `sh f`, `zsh f`, `. f`, `source f`, `./f`, `bash < f`, behind wrappers and their arguments, and as the code
+# A script a Bash call runs (`bash f`, `sh f`, `zsh f`, `. f`, `source f`, `./f`, `bash < f`, behind wrappers and their arguments, and as the code
 # of `sh -c`) is read with the same rules as a command. script_operand prints the file a segment's words run, or nothing; script_check reads it and
 # checks its text, up to SCRIPT_MAX levels deep (a script that sources itself ends in a refusal). A file under the plugin's own bin (by where its
 # links end) is not read. A file run by path is a program, not text, when it starts with a Mach-O or ELF magic number or has a NUL byte in its first
@@ -835,7 +835,7 @@ bash_text() {  # bash_text <command text> <cwd>: the rules for a command; a scri
       first=$tok; break
     done
     fb=$(bn "$first")
-    # A15: xargs takes its arguments from a file or a pipe the hook cannot read first, so it passes only with a command that just reads
+    # xargs takes its arguments from a file or a pipe the hook cannot read first, so it passes only with a command that just reads
     if [ -n "$xa" ]; then case "$READERS" in *" $fb "*) ;; *) deny "xargs runs ${fb:-a command} with arguments the hook cannot read first, which is not allowed while the owner is away (only a reader: cat, grep, head, wc, ...)" ;; esac; fi
     for tok in ${toks[@]+"${toks[@]}"}; do
       case "$(bn "$tok")" in
