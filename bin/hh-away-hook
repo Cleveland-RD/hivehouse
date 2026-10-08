@@ -169,7 +169,9 @@ fs_write_check() {  # fs_write_check <command> <cwd> <word>...: the words after 
         --target-directory) tflag=1; continue ;;
         --link|--symbolic-link) link=1; continue ;;
         --*) continue ;;
-        -*t*) tdir=${w#*t}; if [ -z "$tdir" ]; then tflag=1; fi; continue ;;   # -t <dir>, -t<dir>, -rt <dir>, -rt<dir>
+        # cp, mv, install and ln have no other short option with a t in it in BSD or GNU (cp -t, mv -t, install -t, ln -t), so any cluster with a t names the target
+        -*t*) [ "$cmd" != rsync ] || continue   # rsync's -t is --times, not a target
+              tdir=${w#*t}; if [ -z "$tdir" ]; then tflag=1; fi; continue ;;   # -t <dir>, -t<dir>, -rt <dir>, -rt<dir>
         -*) [ "$cmd" != cp ] || case "${w#-}" in *l*|*s*) link=1 ;; esac; continue ;;
       esac
     fi
@@ -183,7 +185,7 @@ fs_write_check() {  # fs_write_check <command> <cwd> <word>...: the words after 
   for src in ${srcs[@]+"${srcs[@]}"}; do
     case "$cmd" in
       rm|mv) fs_hit "$src" "$cwd" && deny "$cmd refused: $P_WHY" ;;
-      *) if [ "$cmd" != cp ] || [ -n "$link" ]; then protected "$src" "$cwd" && deny "$cmd refused: $P_WHY"; fi ;;   # a plain cp only reads its sources
+      *) if { [ "$cmd" != cp ] && [ "$cmd" != rsync ]; } || [ -n "$link" ]; then protected "$src" "$cwd" && deny "$cmd refused: $P_WHY"; fi ;;   # a plain cp only reads its sources
     esac
   done
   [ -n "$dest" ] || return 0
@@ -251,32 +253,51 @@ fs_fetch_check() {  # fs_fetch_check <curl|wget> <cwd> <word>...: where a downlo
   fi
   return 0
 }
-fs_unpack_check() {  # fs_unpack_check <tar|unzip|ditto> <cwd> <word>...: where an archive is unpacked
-  local c=$1 cwd=$2 w prev="" dir="" ext="" first=1 last=""
+fs_unpack_check() {  # fs_unpack_check <tar|unzip|ditto> <cwd> <word>...: where an archive is unpacked, and, for tar and unzip, where each member lands (the list is read first)
+  local c=$1 cwd=$2 w prev="" pf="" dir="" ext="" first=1 arch="" list m d n noext=""
   shift 2
   for w in "$@"; do
+    if [ -n "$pf" ]; then arch=$w; pf=""; first=""; continue; fi
     if [ -n "$prev" ]; then dir=$w; prev=""; continue; fi
     case "$c" in
       tar) case "$w" in
              --extract|--get) ext=1 ;;
              --directory=*) dir=${w#*=} ;;
              --directory|-C) prev=1 ;;
+             --file=*) arch=${w#*=} ;;
+             --file) pf=1 ;;
              --*) ;;
              -*C*) if [ "${w#*C}" = "" ]; then prev=1; else dir=${w#*C}; fi; case "$w" in -*x*) ext=1 ;; esac ;;
+             -*f) pf=1; case "$w" in -*x*) ext=1 ;; esac ;;
              -*x*) ext=1 ;;
-             *) [ -z "$first" ] || case "$w" in *x*) ext=1 ;; esac ;;
+             *) if [ -n "$first" ]; then case "$w" in *x*) ext=1 ;; esac; case "$w" in *f) pf=1 ;; esac; fi ;;
            esac ;;
-      unzip) case "$w" in -d) prev=1 ;; -d?*) dir=${w#-d} ;; esac; ext=1 ;;
+      unzip) case "$w" in -d) prev=1 ;; -d?*) dir=${w#-d} ;; -[ltvZpc]*) noext=1 ;; -*) ;; *) [ -n "$arch" ] || arch=$w ;; esac; ext=1 ;;
       ditto) case "$w" in -*) ;; *) dir=$w ;; esac; ext=1 ;;
     esac
     first=""
   done
-  [ -n "$ext" ] || return 0
+  [ -n "$ext" ] && [ -z "$noext" ] || return 0   # tar -t and unzip -l, -v, -t, -Z only list, test or print
   if [ -n "$dir" ]; then
     fs_hit "$dir" "$cwd" && deny "$c refused: it would unpack into $dir, and $P_WHY"
   else
     FS_GLOBAL=1; fs_hit "$cwd" / && { FS_GLOBAL=""; deny "$c refused: it would unpack into $cwd, and $P_WHY"; }; FS_GLOBAL=""
   fi
+  [ "$c" != ditto ] || return 0
+  # the members: each is put under the destination, and none may land on a protected path (a tar or zip of .claude/settings.json unpacked in a project)
+  [ -n "$arch" ] && [ "$arch" != - ] || deny "$c unpacking an archive the hook cannot list (standard input, or no name) is not allowed while the owner is away"
+  arch=$(canon "$arch" "$cwd")
+  if [ "$c" = tar ]; then list=$(tar -tf "$arch" 2>/dev/null) || deny "$c could not list $arch, so where its members land cannot be checked while the owner is away"
+  else list=$(unzip -Z1 "$arch" 2>/dev/null) || deny "$c could not list $arch, so where its members land cannot be checked while the owner is away"; fi
+  d=$(canon "${dir:-.}" "$cwd"); n=0
+  while IFS= read -r m; do
+    [ -n "$m" ] || continue
+    n=$((n + 1)); [ "$n" -le "$FS_TREE_MAX" ] || deny "$c of an archive with more than $FS_TREE_MAX members cannot be checked while the owner is away"
+    m=${m#./}; while [ "${m#/}" != "$m" ]; do m=${m#/}; done; while [ "${m%/}" != "$m" ]; do m=${m%/}; done; [ -n "$m" ] || continue
+    fs_mapped "$d/$m" && deny "$c would unpack $m onto a protected path under ${dir:-$cwd}: $P_WHY"
+  done <<EOF
+$list
+EOF
   return 0
 }
 fs_git_check() {  # fs_git_check <cwd> <word>...: a git command that rewrites the working tree acts on the repo of -C or the cwd; that repo may not be, or hold, Claude Code's or hivehouse's own files
@@ -315,6 +336,13 @@ fs_git_check() {  # fs_git_check <cwd> <word>...: a git command that rewrites th
   FS_GLOBAL=1
   fs_hit "${repo:-$cwd}" "$cwd" && { FS_GLOBAL=""; deny "git $sub refused: it rewrites the working tree of ${repo:-$cwd}, and $P_WHY"; }
   FS_GLOBAL=""
+  # the paths it names (git checkout <rev> -- .claude/settings.json) are written too: each goes through the rm rule with the project's own folders kept
+  case "$sub" in rm|mv|checkout|restore|reset|stash)
+    for w in ${rest[@]+"${rest[@]}"}; do
+      case "$w" in -*) continue ;; esac
+      fs_hit "$(canon "$w" "${repo:-$cwd}")" "$cwd" && deny "git $sub refused: it would write $w, and $P_WHY"
+    done ;;
+  esac
   return 0
 }
 
@@ -793,7 +821,7 @@ bash_text() {  # bash_text <command text> <cwd>: the rules for a command; a scri
       [ -n "$kf$kro" ] || deny "ssh-keygen without -f would make a key at its default path under ~/.ssh, which cannot be changed from an away session"
     fi
     # a write into a protected file by a command that writes
-    case "$cmdw" in cp|mv|rm|ln|install|unlink|rmdir|shred|find|curl|wget|tar|unzip|ditto|git)   # A14, A18: the words after the command word
+    case "$cmdw" in cp|mv|rm|ln|install|rsync|unlink|rmdir|shred|find|curl|wget|tar|unzip|ditto|git)   # A14, A18: the words after the command word
       nx=""; seen=""; local -a fw=()
       for tok in ${ws[@]+"${ws[@]}"}; do
         [ -n "$seen" ] || { case "$tok" in *=*) continue ;; esac; [ "$(bn "$tok")" != "$cmdw" ] || seen=1; continue; }

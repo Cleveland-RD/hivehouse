@@ -761,6 +761,10 @@ pallowed "A17 mv scr/*.tmp scr/sub/" 'mv scr/*.tmp scr/sub/'
 PHOME=""
 echo "-- A18: other ways to remove, overwrite or unpack over a protected path; A20: a glued -t<dir>"
 mkdir -p "$T_TMP/fh/.claude" "$scr/sub"; : > "$T_TMP/fh/.claude/settings.json"
+mkdir -p "$T_TMP/tsrc/.claude" "$T_TMP/tsrc/okdir"; : > "$T_TMP/tsrc/.claude/settings.json"; : > "$T_TMP/tsrc/okdir/f.txt"
+tar -cf "$T_TMP/bad.tar" -C "$T_TMP/tsrc" .claude; tar -cf "$T_TMP/ok.tar" -C "$T_TMP/tsrc" okdir; tar -czf "$T_TMP/ok.tgz" -C "$T_TMP/tsrc" okdir
+python3 -c "import zipfile,sys; z=zipfile.ZipFile(sys.argv[1],'w'); z.write(sys.argv[2],'.claude/settings.json'); z.close(); z=zipfile.ZipFile(sys.argv[3],'w'); z.write(sys.argv[2],'okdir/f.txt'); z.close()" "$T_TMP/bad.zip" "$T_TMP/tsrc/okdir/f.txt" "$T_TMP/ok.zip"
+cp "$T_TMP/ok.tar" "$scr/ok.tar"; cp "$T_TMP/ok.tgz" "$scr/ok.tgz"; cp "$T_TMP/ok.zip" "$scr/ok.zip"; cp "$T_TMP/bad.tar" "$scr/bad.tar"; cp "$T_TMP/bad.zip" "$scr/bad.zip"
 PHOME="$T_TMP/fh"
 for c in 'unlink ~/.claude/settings.json' 'rmdir ~/.claude' 'shred ~/.claude/settings.json' 'find ~/.claude -delete' 'find ~/.claude -exec rm {} +' 'find ~/.claude -name x -execdir mv {} y ;' 'find ~/.claude -ok rm {} ;' 'find . -delete' \
   'curl -o ~/.claude/settings.json http://x' 'curl --output ~/.claude/settings.json http://x' 'curl -sSo ~/.claude/settings.json http://x' 'wget -O ~/.claude/settings.json http://x' 'wget -P ~/.claude http://x' 'curl --output-dir ~/.claude -O http://x' \
@@ -777,7 +781,7 @@ pdenied "A18 git stash from inside the plugin root" "cd $PROOT && git stash" "$P
 pdenied "A18 git clean in the config dir" "git -C ~/.claude clean -fd"
 pdenied "A18 git restore under -c and -C" "git -c core.x=1 -C $PROOT restore ." "$PROOT"
 pdenied "A18 tar -x into the plugin root" "tar -xf a.tar -C $PROOT" "$PROOT"
-for c in 'find . -name x.tmp -delete' 'find scr -name "*.tmp" -delete' 'find . -name x -exec grep y {} +' 'find . -name x -exec rm {} +' 'unlink scr/plain.txt' 'rmdir scr/sub' 'shred scr/plain.txt' 'curl -o scr/page.html http://x' 'wget -O scr/page.html http://x' 'tar -xf a.tar -C scr' 'tar -czf scr/a.tgz scr' 'unzip a.zip -d scr' 'git status' 'git checkout -b x' 'git stash' 'git -C scr rm --cached x' 'git restore x' 'git reset --hard' 'cp -rt scr/sub scr/plain.txt'; do
+for c in 'find . -name x.tmp -delete' 'find scr -name "*.tmp" -delete' 'find . -name x -exec grep y {} +' 'find . -name x -exec rm {} +' 'unlink scr/plain.txt' 'rmdir scr/sub' 'shred scr/plain.txt' 'curl -o scr/page.html http://x' 'wget -O scr/page.html http://x' 'tar -xf scr/ok.tar -C scr' 'tar xf scr/ok.tar' 'tar -xzf scr/ok.tgz -C scr' 'unzip scr/ok.zip -d scr' 'tar -czf scr/a.tgz scr' 'git status' 'git checkout -b x' 'git stash' 'git -C scr rm --cached x' 'git restore x' 'git reset --hard' 'cp -rt scr/sub scr/plain.txt'; do
   case "$c" in 'find . -name x.tmp -delete'|'find . -name x -exec rm {} +') continue ;; esac
   pallowed "A18 stays allowed: $c" "$c"
 done
@@ -799,6 +803,18 @@ done
 pdenied "git clean -C into the plugin root refused" "git -C $PROOT clean -fdx" "$PROOT"
 for c in 'git clean -n' 'git clean -nfdx' 'git clean --dry-run -fdx' 'git clean -fdxn' 'git clean -fd scr/' 'git clean -fdx scr/sub' 'git clean -fdx -n'; do
   pallowed "git clean allowed: $c" "$c"
+done
+echo "-- review S1, S2, S3: the tree bound, pathspecs, archive members, rsync"
+mkdir -p "$T_TMP/big"; i=0; while [ $i -lt 3001 ]; do : > "$T_TMP/big/f$i"; i=$((i + 1)); done
+pdenied "S1 a copied tree over the bound is refused" "cp -R $T_TMP/big $T_TMP/bigcopy"
+pdenied "S1 rsync of a tree over the bound is refused" "rsync -a $T_TMP/big/ $T_TMP/bigcopy/"
+for c in 'git checkout HEAD -- .claude/settings.json' 'git checkout abc123 -- .hivehouse/team.json' 'git restore .claude/settings.json' 'git restore --source=HEAD~1 .claude' 'git restore .hivehouse/team.json' 'git checkout -- .' 'git reset HEAD .claude/settings.json' 'git rm .claude/settings.json' 'git rm -r .hivehouse' 'git mv .claude/settings.json scr/' 'git stash push -- .claude/settings.json' 'tar xf bad.tar' 'tar -xf scr/bad.tar' 'tar -xzf scr/bad.tar -C scr/sub' 'tar xf -' 'tar xf missing.tar' 'unzip scr/bad.zip' 'unzip scr/bad.zip -d scr/sub' 'unzip missing.zip' \
+  'rsync -a scr/ ~/.claude/' 'rsync -a scr/ ~/.claude' 'rsync -avz scr ~/.claude/' 'rsync -rt scr/ ~/.claude/' 'rsync -a --delete tsrc/ ~/.claude/' 'rsync -a scr/ .claude/' 'rsync -a scr/ .hivehouse/'; do
+  case "$c" in 'tar xf bad.tar') c='tar xf scr/bad.tar' ;; esac
+  pdenied "S2/S3 refused: $c" "$c"
+done
+for c in 'git checkout main' 'git checkout -b feature' 'git restore scr/plain.txt' 'git rm --cached scr/plain.txt' 'git stash save wip' "rsync -a $T_TMP/src2/ $T_TMP/build/" "rsync -avt $T_TMP/src2/ $T_TMP/build/" "rsync -a --exclude x $T_TMP/src2/ $T_TMP/build/" 'tar -tf scr/bad.tar' 'tar -cf scr/o.tar scr' 'unzip -l scr/bad.zip'; do
+  pallowed "S2/S3 stays allowed: $c" "$c"
 done
 echo "-- A15: xargs passes only with a reader; the arguments it is fed cannot be read first"
 ROLE=proj
