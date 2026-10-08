@@ -84,12 +84,14 @@ res nothing;            assert_status "an unknown kind" "$RC" 64
 res role;               assert_status "role without a name" "$RC" 64
 res rules extra;        assert_status "rules takes no name" "$RC" 64
 res role ../x;          assert_status "a name with .. is refused" "$RC" 4
+res brief extra;        assert_status "brief takes no name" "$RC" 64
 res role 'a/b';         assert_status "a name with a slash is refused" "$RC" 4
-res role '-x';          assert_status "a name starting with a dash is refused" "$RC" 4
-res role 'Impl';        assert_status "a name with a capital is refused" "$RC" 4
+res role '-x';          assert_status "a name starting with a dash is refused" "$RC" 4; assert_contains "...by the executable's own rule" "$ERR" "starts with a lowercase letter"
+res role 'Impl';        assert_status "a name with a capital is refused" "$RC" 4; assert_contains "...by the executable's own rule" "$ERR" "starts with a lowercase letter"
+res role 'a/b';          assert_contains "a slash is refused by the executable's own rule" "$ERR" "lowercase letters, digits"
 
 echo "-- the resolver itself refuses a path that is not one of the three kinds (hh-resolve cannot send one, a caller of the function could)"
-for bad_rel in '../../etc/passwd' 'roles/../../x.md' 'rules/other.md' 'roles/Implementer.md' 'roles/.md' '/etc/passwd' 'roles/a b.md'; do
+for bad_rel in '../../etc/passwd' 'roles/../../x.md' 'roles/a/../../x.md' 'roles/a..b.md' 'rules/other.md' 'roles/Implementer.md' 'roles/.md' '/etc/passwd' 'roles/a b.md'; do
   ( . "$HH_REPO_ROOT/bin/hh-lib.sh"; hh_custom_file "$bad_rel" >/dev/null 2>&1 ); assert_status "hh_custom_file refuses $bad_rel" "$?" 4
 done
 

@@ -7,6 +7,7 @@ t_setup
 echo "-- the README: the promise, the knobs, the delegate pitch, what an away agent can change"
 RD=$(tr '\n' ' ' < "$HH_REPO_ROOT/README.md" | sed 's/  */ /g')
 assert_contains "the promise line, word for word" "$RD" "Ask Claude to customise anything: roles, rules, skills' behaviour, options. The one exception is loosening delegate (away) mode, which takes one sudo paste from you."
+assert_eq "...at the top of the README and again in the Customise section" "$(printf '%s' "$RD" | grep -o "Ask Claude to customise anything: roles, rules, skills' behaviour, options. The one exception is loosening delegate (away) mode, which takes one sudo paste from you." | wc -l | tr -d ' ')" 2
 sec=$(awk '/^## Customise hivehouse/{f=1;next} /^## /{f=0} f' "$HH_REPO_ROOT/README.md")
 [ -n "$sec" ] && ok "the README has a Customise hivehouse section" || bad "the README has a Customise hivehouse section"
 for k in $(jq -r '.userConfig | keys[]' "$HH_REPO_ROOT/.claude-plugin/plugin.json"); do
