@@ -25,6 +25,20 @@ hh_plugin_name() {  # use as x=$(hh_plugin_name) || exit $?. The plugin's name, 
   case "$n" in ''|*[!a-z0-9-]*) echo "$HH_PREFIX: cannot read the plugin's name from $f" >&2; return 2 ;; esac
   printf '%s\n' "$n"
 }
+# A skill's ${user_config.X} reaches the session as written when no value of X was ever saved (Claude Code fills a placeholder only from a
+# saved value, never from the plugin's default). hh_option_default is plugin.json's default for an option; hh_option_value is the value a
+# skill passed, or that default when the value is missing, empty or still the placeholder. The one place either is decided.
+hh_option_default() {  # hh_option_default <key>: prints the default; 4 when plugin.json declares no such option
+  local f; f="$(dirname "${BASH_SOURCE[0]}")/../.claude-plugin/plugin.json"
+  jq -e --arg k "$1" '.userConfig | has($k)' "$f" >/dev/null 2>&1 || return 4
+  jq -r --arg k "$1" '.userConfig[$k] | if has("default") then (.default | tostring) else "" end' "$f"
+}
+hh_option_value() {  # hh_option_value <key> [<value the skill passed>]
+  local k="$1" v="${2:-}"
+  case "$v" in '${user_config.'*'}') k=${v#'${user_config.'}; k=${k%'}'}; v="" ;; esac
+  [ -z "$v" ] || { printf '%s\n' "$v"; return 0; }
+  hh_option_default "$k"
+}
 hh_die()  { echo "$HH_PREFIX: $2" >&2; exit "$1"; }
 # A session hivehouse launched in bypass while the owner is away carries HH_AWAY_BYPASS=1 (A31). Whatever leaves the machine or ends the
 # run for good is refused to it. This is a second layer: a Bash command can unset the variable for itself, so hh-away-hook is the guard.

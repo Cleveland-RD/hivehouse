@@ -12,7 +12,8 @@ cat > "$T_TMP/cl/claude" <<'CL'
 #!/usr/bin/env bash
 . "$HH_REPO_ROOT/bin/hh-lib.sh"
 jq 'if .claude_pid == "self" then .claude_pid = $c | .claude_started = $t else . end' --arg c "$$" --arg t "$(hh_lstart $$)" "$REGFILE" > "$REGFILE.n" 2>/dev/null && mv "$REGFILE.n" "$REGFILE"
-printf '%s' "$INPUT" | TMUX="$HH_TMUX_SOCKET,1,0" TMUX_PANE="$TP" CLAUDE_PLUGIN_OPTION_ROTATE_AT_PERCENT="${LEVEL:-50}" hh-stop-hook
+if [ -n "${NOLEVEL:-}" ]; then printf '%s' "$INPUT" | TMUX="$HH_TMUX_SOCKET,1,0" TMUX_PANE="$TP" "${HOOK_CMD:-hh-stop-hook}"
+else printf '%s' "$INPUT" | TMUX="$HH_TMUX_SOCKET,1,0" TMUX_PANE="$TP" CLAUDE_PLUGIN_OPTION_ROTATE_AT_PERCENT="${LEVEL:-50}" hh-stop-hook; fi
 CL
 export HH_REPO_ROOT TP="$P" REGFILE="$(hh_registry_dir)/$(hh_pane_key "$HH_TMUX_SOCKET" "$P").json"
 mkdir -p "$(hh_registry_dir)"
@@ -48,7 +49,7 @@ SID=sA
 out=$(stop "$r"); assert_status "an agent at the level" $? 0
 assert_eq "...is blocked once" "$(printf '%s' "$out" | jq -r .decision)" "block"
 assert_contains "...told its level" "$(printf '%s' "$out" | jq -r .reason)" "50%"
-assert_contains "...and that the window is an assumed one" "$(printf '%s' "$out" | jq -r .reason)" "50% of an assumed 200000-token window"
+assert_contains "...and that the window is a recorded one, never called assumed" "$(printf '%s' "$out" | jq -r .reason)" "50% of a recorded 200000-token window"
 assert_contains "...to update its handoff" "$(printf '%s' "$out" | jq -r .reason)" "START HERE"
 assert_contains "...and say ROTATE READY to its orchestrator" "$(printf '%s' "$out" | jq -r .reason)" "ROTATE READY"
 assert_contains "...named as hivehouse names it" "$(printf '%s' "$out" | jq -r .reason)" "$(hh_orchestrator_name "$r")"
@@ -100,4 +101,9 @@ jq -nc '{window:200000,used_percentage:50,session_id:"sK",at:"t"}' > "$r/$T_STAT
 session "$r" implementer sL "$FIX"; jq -nc '{window:200000,used_percentage:50,session_id:"sL",at:"t"}' > "$r/$T_STATE/team/implementer/context.json"
 reg "$r" implementer; SID=sL; out=$(stop "$r"); assert_contains "a measured window rotates" "$(printf '%s' "$out" | jq -r .reason)" "ROTATE READY"
 rm -f "$r/$T_STATE/team/implementer/context.json"
+# KI-36: no rotate_at_percent saved (the option reached the hook unset): plugin.json's default is the level, not a second literal in the hook
+jq -nc '{agents:[{name:"implementer",pane:"%1",window:200000}]}' > "$r/$T_STATE/team.json"
+session "$r" implementer sM "$FIX"; reg "$r" implementer; SID=sM; out=$(NOLEVEL=1 stop "$r"); assert_eq "an unset option: the default (50) rotates a session at 50%" "$(printf '%s' "$out" | jq -r .decision)" "block"
+PX="$T_TMP/plug90"; mkdir -p "$PX/.claude-plugin"; cp -R "$HH_REPO_ROOT/bin" "$PX/bin"; jq '.userConfig.rotate_at_percent.default = 90' "$HH_REPO_ROOT/.claude-plugin/plugin.json" > "$PX/.claude-plugin/plugin.json"
+session "$r" implementer sN "$FIX"; reg "$r" implementer; SID=sN; out=$(NOLEVEL=1 HOOK_CMD="$PX/bin/hh-stop-hook" stop "$r"); assert_eq "...and it is plugin.json's: a default of 90 leaves 50% alone" "$out" ""
 t_done

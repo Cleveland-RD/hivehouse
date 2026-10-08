@@ -3,14 +3,23 @@
 # .hivehouse/settings.json may make a safety value stricter than the owner's, never looser. permission_mode alone can come back as
 # bypassPermissions, and only for a marked caller (hh_away_caller) while the owner's delegate file is valid for this project and the
 # owner's own value is auto and the project did not tighten it. Takes no command to run.
+# `hh-settings option <key> [<value>]` prints the value a skill passed for a plugin option, or plugin.json's default when it is missing or
+# still the literal ${user_config.<key>} (Claude Code leaves a placeholder unfilled when no value was saved); resolve treats an owner
+# value that is such a placeholder the same way.
 # Exit: 2 no project, 3 .hivehouse tracked by git, 4 refused value or key, 64 usage.
 set -u
 # Privileged mode: no BASH_ENV, no functions from the environment, and a fixed bash (the away check below decides bypass).
 HH_BIN=${0%/*}; [ "$HH_BIN" != "$0" ] || HH_BIN=.
 . "$HH_BIN/hh-lib.sh"
 KEYS="permission_mode overnight_ceiling_usd allow_attribution files_per_commit"
-[ $# -eq 3 ] && [ "$1" = resolve ] || hh_die 64 "usage: hh-settings resolve <key> <owner value>"
+if [ "${1:-}" = option ] && [ $# -ge 2 ] && [ $# -le 3 ]; then
+  hh_option_default "$2" >/dev/null || hh_die 4 "unknown option: $2"
+  hh_option_value "$2" "${3:-}" || hh_die 4 "unknown option: $2"
+  exit 0
+fi
+[ $# -eq 3 ] && [ "$1" = resolve ] || hh_die 64 "usage: hh-settings resolve <key> <owner value> | hh-settings option <key> [<value>]"
 key="$2"; owner="$3"
+case "$owner" in '${user_config.'*'}') owner=$(hh_option_value "$key" "$owner") || hh_die 4 "unknown option in the owner's value for $key: $3" ;; esac
 case " $KEYS " in *" $key "*) ;; *) hh_die 4 "unknown setting: $key" ;; esac
 
 mode_rank() {  # hh_mode_rank, but bypassPermissions is never a local value (a project or the owner may not name it)

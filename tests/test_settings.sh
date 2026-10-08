@@ -55,6 +55,27 @@ set_project '{"allow_attributon":false}'; hh-settings resolve allow_attribution 
 set_project '{not json'; hh-settings resolve files_per_commit 5 >/dev/null 2>&1; assert_status "bad json refused" $? 4
 hh-settings resolve >/dev/null 2>&1; assert_status "usage" $? 64
 
+# KI-36: a skill's ${user_config.X} can reach a session unfilled; `option` turns that into plugin.json's default, a saved value passes unchanged
+PL="$HH_REPO_ROOT/.claude-plugin/plugin.json"
+opt() { hh-settings option "$@" 2>/dev/null; }
+def() { jq -r --arg k "$1" '.userConfig[$k].default | tostring' "$PL"; }
+assert_eq "option: a placeholder left as written gives the default (number)" "$(opt window_builder '${user_config.window_builder}')" "$(def window_builder)"
+assert_eq "option: ...a string" "$(opt commit_style '${user_config.commit_style}')" "$(def commit_style)"
+assert_eq "option: ...a boolean" "$(opt hub_auto_start '${user_config.hub_auto_start}')" "$(def hub_auto_start)"
+assert_eq "option: no value at all gives the default" "$(opt rotate_at_percent)" "$(def rotate_at_percent)"
+assert_eq "option: an empty value gives the default" "$(opt rotate_at_percent '')" "$(def rotate_at_percent)"
+assert_eq "option: a saved number passes unchanged" "$(opt files_per_commit 7)" "7"
+assert_eq "option: a saved false passes unchanged (not the default true)" "$(opt hub_auto_start false)" "false"
+assert_eq "option: a saved 0 passes unchanged" "$(opt min_free_gb 0)" "0"
+assert_eq "option: a saved string passes unchanged" "$(opt commit_style free)" "free"
+assert_eq "option: a key with an empty default prints an empty line" "$(opt remote_hosts '${user_config.remote_hosts}' | wc -c | tr -d ' ')" "1"
+hh-settings option no_such_key 5 >/dev/null 2>&1; assert_status "option: an unknown key is refused" $? 4
+hh-settings option >/dev/null 2>&1; assert_status "option: usage" $? 64
+cd "$r"; rm -f $T_STATE/settings.json
+assert_eq "resolve: a placeholder as the owner's value is the default (number)" "$(res files_per_commit '${user_config.files_per_commit}')" "$(def files_per_commit)"
+assert_eq "...a boolean" "$(res allow_attribution '${user_config.allow_attribution}')" "$(def allow_attribution)"
+assert_eq "...the mode, named by its other option" "$(res permission_mode '${user_config.permission_mode_local}')" "$(def permission_mode_local)"
+set_project '{"files_per_commit":3}'; assert_eq "...and a project may still tighten it" "$(res files_per_commit '${user_config.files_per_commit}')" "3"
 # a tracked .hivehouse is refused, with no value printed
 set_project '{"files_per_commit":1}'; git add -f $T_STATE/settings.json; git -c user.email=t@t -c user.name=t commit -qm track
 out=$(hh-settings resolve files_per_commit 5 2>/dev/null); assert_status "tracked refused" $? 3
