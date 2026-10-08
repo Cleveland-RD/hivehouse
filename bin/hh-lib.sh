@@ -12,8 +12,9 @@ HH_MAC_BASE='/Library/Application Support/hivehouse'   # the delegate files' fol
 HH_LINUX_BASE='/etc/hivehouse'            # the delegate files' folder on Linux
 HH_LINUX_SLOT='/var/lib/hivehouse/slot'   # the machine slot on Linux
 HH_DELEGATE_TAG='hivehouse-delegate'  # the delegate file's first word; the first line is the tag, a space and a version
-HH_DELEGATE_VERSIONS=' 1 2 '          # the versions hh_delegate_read accepts (1: hub, until, mcp; 2: adds hosts and allow)
-HH_DELEGATE_WRITE=2                   # the version hh-hub away writes
+HH_DELEGATE_VERSIONS=' 1 2 3 '        # the versions hh_delegate_read accepts (1: hub, until, mcp; 2: adds hosts and allow; 3: adds tools)
+HH_DELEGATE_TOOLS=' Workflow WebFetch DesignSync ArtifactCheck PushNotification '   # the only extra tools an away session may be given (tools=)
+HH_DELEGATE_WRITE=3                   # the version hh-hub away writes
 HH_CUSTOM_DIR='custom'                    # the user's overrides of the plugin's roles, rules and brief template: under a project's state folder and under the per-user home
 hh_plugin_name() {  # use as x=$(hh_plugin_name) || exit $?. The plugin's name, read with built-ins from .claude-plugin/plugin.json (its top-level "name" line)
   local f l n="" pre='  "name": "'; f="$(dirname "${BASH_SOURCE[0]}")/../.claude-plugin/plugin.json"
@@ -849,7 +850,8 @@ hh_pane_dialog() {  # hh_pane_dialog <socket, or empty for hivehouse's own serve
 # folders above by the required user or root (with root required, root alone); the content is exactly
 #   hivehouse-delegate <version> / hub=<absolute path> / until=<epoch seconds> / mcp=<comma-separated servers or tools, may be empty>
 #   and, from version 2, hosts=<ssh hosts the away sessions may reach, may be empty> / allow=<scp, rsync or sftp, may be empty>
-#   (version 1 is exactly the first four lines, version 2 exactly these six)
+#   and, from version 3, tools=<extra tools the away sessions may use: Workflow, WebFetch, DesignSync, ArtifactCheck, PushNotification; may be empty>
+#   (version 1 is exactly the first four lines, version 2 exactly the first six, version 3 exactly these seven)
 # with `until` in the future and at most 7 days ahead (a CronCreate heartbeat does not outlive that). HH_DELEGATE_WHY is set
 # to the first check that failed.
 # the process's real uid, read by /usr/bin/id: bash 3.2 takes UID and EUID from the environment, even under -p. One exact line, which a test rewrites.
@@ -948,7 +950,7 @@ hh_jq_resolve() {  # sets HH_JQ once per process, on first need (the stats cost 
   [ "$HH_JQ_DONE" = 1 ] && return 0
   HH_JQ=$(hh_jq_fixed) || HH_JQ=""; HH_JQ_DONE=1
 }
-# hh_delegate_check_list <hosts|allow> <list>: 0 when the list is valid, else 1 with HH_DELEGATE_WHY saying why. hosts: every comma-separated entry
+# hh_delegate_check_list <hosts|allow|tools> <list>: 0 when the list is valid, else 1 with HH_DELEGATE_WHY saying why. hosts: every comma-separated entry
 # is [A-Za-z0-9._-]+ with at most one user@ in front, and no entry starts with - (ssh would read it as an option). allow: RESERVED in 0.5.1, so it
 # must be empty. A listed scp, rsync or sftp would reach any host, read ~/.ssh/config like ssh, and offers routes that run a program (--rsync-path,
 # sftp -b, scp -O); the push, sync and deploy words would be a standing grant of up to 7 days against "a word given for one run does not carry to
@@ -960,6 +962,8 @@ hh_delegate_check_list() {
   while :; do
     e=${rest%%,*}
     case "$kind" in
+      tools) case "$e" in ''|*[!${HH_LOWER}${HH_UPPER}]*) HH_DELEGATE_WHY="tools= has an entry that is not one of${HH_DELEGATE_TOOLS}: '$e'"; return 1 ;; esac   # letters only: a space or a glob would match the list below
+             case "$HH_DELEGATE_TOOLS" in *" $e "*) ;; *) HH_DELEGATE_WHY="tools= has an entry that is not one of${HH_DELEGATE_TOOLS}: '$e'"; return 1 ;; esac ;;
       hosts) case "$e" in
                ''|@*|*@|*@*@*|*[!${HH_LOWER}${HH_UPPER}${HH_DIGITS}._@-]*) HH_DELEGATE_WHY="hosts= has an entry that is not a host name or user@host: '$e'"; return 1 ;;
              esac
@@ -969,8 +973,8 @@ hh_delegate_check_list() {
   done
 }
 hh_delegate_read() {  # hh_delegate_read <path> <uid> [<now>]: prints "<hub><TAB><until><TAB><mcp>" when the file is valid; 1 when it is not
-  local f="$1" want="$2" now="${3:-}" d hub until mcp l1="" l2="" l3="" l4="" l5="" l6="" nl line dl ver hosts="" allow="" want_lines
-  HH_DELEGATE_WHY=""; HH_DR_HUB=""; HH_DR_UNTIL=""; HH_DR_MCP=""; HH_DR_HOSTS=""; HH_DR_ABSENT=""
+  local f="$1" want="$2" now="${3:-}" d hub until mcp l1="" l2="" l3="" l4="" l5="" l6="" l7="" nl line dl ver hosts="" allow="" tools="" want_lines
+  HH_DELEGATE_WHY=""; HH_DR_HUB=""; HH_DR_UNTIL=""; HH_DR_MCP=""; HH_DR_HOSTS=""; HH_DR_TOOLS=""; HH_DR_ABSENT=""
   [ -e "$f" ] || [ -L "$f" ] || HH_DR_ABSENT=1   # no file at all: not away, and nothing to explain
   [ -n "$now" ] || now=$(/bin/date +%s)
   case "$f" in /*) ;; *) HH_DELEGATE_WHY="the path is not absolute"; return 1 ;; esac
@@ -979,16 +983,16 @@ hh_delegate_read() {  # hh_delegate_read <path> <uid> [<now>]: prints "<hub><TAB
   d=${f%/*}; [ -n "$d" ] || d=/
   hh_path_trusted "$d" dir "$want" strict || return 1
   hh_chain_trusted "${d%/*}" "$want" || return 1
-  # up to 7 lines (one past the longest version), counted: a blank line is a line (comparing the text of the later lines to "" would let one through)
+  # up to 8 lines (one past the longest version), counted: a blank line is a line (comparing the text of the later lines to "" would let one through)
   dl=(); nl=0
-  while [ "$nl" -lt 7 ] && { IFS= read -r line || [ -n "$line" ]; }; do dl[nl]=$line; nl=$((nl + 1)); line=""; done < "$f" 2>/dev/null
-  l1=${dl[0]-}; l2=${dl[1]-}; l3=${dl[2]-}; l4=${dl[3]-}; l5=${dl[4]-}; l6=${dl[5]-}
-  case "$l1$l2$l3$l4$l5$l6" in *$'\r'*) HH_DELEGATE_WHY="the content has carriage returns"; return 1 ;; esac
+  while [ "$nl" -lt 8 ] && { IFS= read -r line || [ -n "$line" ]; }; do dl[nl]=$line; nl=$((nl + 1)); line=""; done < "$f" 2>/dev/null
+  l1=${dl[0]-}; l2=${dl[1]-}; l3=${dl[2]-}; l4=${dl[3]-}; l5=${dl[4]-}; l6=${dl[5]-}; l7=${dl[6]-}
+  case "$l1$l2$l3$l4$l5$l6$l7" in *$'\r'*) HH_DELEGATE_WHY="the content has carriage returns"; return 1 ;; esac
   ver=${l1#"$HH_DELEGATE_TAG "}
   case "$l1" in "$HH_DELEGATE_TAG "?*) ;; *) ver="" ;; esac
   case "$HH_DELEGATE_VERSIONS" in *" $ver "*) ;; *) HH_DELEGATE_WHY="the first line is not '$HH_DELEGATE_TAG <version>' with a version in:$HH_DELEGATE_VERSIONS"; return 1 ;; esac
-  case "$ver" in 1) want_lines=4 ;; *) want_lines=6 ;; esac
-  # the lines past the version's own count: none (a version 1 file has no fifth line, a version 2 file no seventh)
+  case "$ver" in 1) want_lines=4 ;; 2) want_lines=6 ;; *) want_lines=7 ;; esac
+  # the lines past the version's own count: none (a version 1 file has no fifth line, a version 2 file no seventh, a version 3 file no eighth)
   [ "$nl" -le "$want_lines" ] || { HH_DELEGATE_WHY="the content is more than $want_lines lines (a version $ver file has exactly $want_lines)"; return 1; }
   hub=$l2; until=$l3
   case "$hub" in hub=/*) hub=${hub#hub=} ;; *) HH_DELEGATE_WHY="line 2 is not hub=<absolute path>"; return 1 ;; esac
@@ -997,15 +1001,19 @@ hh_delegate_read() {  # hh_delegate_read <path> <uid> [<now>]: prints "<hub><TAB
   hh_is_number "$until" || { HH_DELEGATE_WHY="until is not a number"; return 1; }
   case "$l4" in mcp=*) mcp=${l4#mcp=} ;; *) HH_DELEGATE_WHY="line 4 is not mcp=<list>"; return 1 ;; esac
   case "$mcp" in *[!${HH_LOWER}${HH_UPPER}${HH_DIGITS}_,.:-]*) HH_DELEGATE_WHY="the mcp list has a character outside letters, digits and _ , . : -"; return 1 ;; esac
-  if [ "$want_lines" = 6 ]; then
+  if [ "$want_lines" -ge 6 ]; then
     case "$l5" in hosts=*) hosts=${l5#hosts=} ;; *) HH_DELEGATE_WHY="line 5 is not hosts=<list>"; return 1 ;; esac
     case "$l6" in allow=*) allow=${l6#allow=} ;; *) HH_DELEGATE_WHY="line 6 is not allow=<list>"; return 1 ;; esac
     hh_delegate_check_list hosts "$hosts" || return 1
     hh_delegate_check_list allow "$allow" || return 1
   fi
+  if [ "$want_lines" = 7 ]; then
+    case "$l7" in tools=*) tools=${l7#tools=} ;; *) HH_DELEGATE_WHY="line 7 is not tools=<list>"; return 1 ;; esac
+    hh_delegate_check_list tools "$tools" || return 1
+  fi
   [ "$until" -gt "$now" ] || { HH_DELEGATE_WHY="the file has expired"; return 1; }
   [ "$until" -le $((now + 604800)) ] || { HH_DELEGATE_WHY="until is more than 7 days ahead"; return 1; }
-  HH_DR_HUB=$hub; HH_DR_UNTIL=$until; HH_DR_MCP=$mcp; HH_DR_HOSTS=$hosts
+  HH_DR_HUB=$hub; HH_DR_UNTIL=$until; HH_DR_MCP=$mcp; HH_DR_HOSTS=$hosts; HH_DR_TOOLS=$tools
   printf '%s\t%s\t%s\n' "$hub" "$until" "$mcp"
 }
 hh_delegate_now() { hh_delegate_read "$(hh_delegate_path)" 0; }
@@ -1032,14 +1040,14 @@ hh_hub_records_trusted() {
 }
 HH_DG_UID=""
 hh_delegate_mine() {
-  HH_DG_HUB=""; HH_DG_UNTIL=""; HH_DG_MCP=""; HH_DG_HOSTS=""; HH_DG_UID=$(hh_real_uid) || HH_DG_UID=""
+  HH_DG_HUB=""; HH_DG_UNTIL=""; HH_DG_MCP=""; HH_DG_HOSTS=""; HH_DG_TOOLS=""; HH_DG_UID=$(hh_real_uid) || HH_DG_UID=""
   case "$HH_DG_UID" in ''|*[!0-9]*) HH_DG_UID=""; HH_DELEGATE_WHY="this user's id cannot be read"; return 1 ;; esac
   hh_jq_resolve
   [ -n "$HH_JQ" ] || { HH_DELEGATE_WHY="no root-owned jq was found (/usr/bin/jq, /usr/local/bin/jq or /opt/homebrew/bin/jq), so the hub's records cannot be read safely"; return 1; }
   hh_delegate_now >/dev/null || return 1
   HH_DG_HUB=$(cd "$HH_DR_HUB" 2>/dev/null && pwd -P) || { HH_DG_HUB=""; HH_DELEGATE_WHY="the hub folder $HH_DR_HUB cannot be entered"; return 1; }
   hh_hub_records_trusted "$HH_DG_HUB" "$HH_DG_UID" || { HH_DG_HUB=""; return 1; }
-  HH_DG_UNTIL=$HH_DR_UNTIL; HH_DG_MCP=$HH_DR_MCP; HH_DG_HOSTS=$HH_DR_HOSTS
+  HH_DG_UNTIL=$HH_DR_UNTIL; HH_DG_MCP=$HH_DR_MCP; HH_DG_HOSTS=$HH_DR_HOSTS; HH_DG_TOOLS=$HH_DR_TOOLS
 }
 # hh_env_has <pid> <NAME=value>: 0 the process was launched with it; 1 its environment is visible and lacks it; 2 no
 # environment is visible at all (the caller says so and does not pretend to have checked). Linux reads /proc/<pid>/environ,

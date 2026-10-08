@@ -91,6 +91,27 @@ mkf; printf "$T_DELEGATE_LINE1"'\nhub=/work\nuntil=%s\nmcp=\nhosts=a\n' "$((NOW 
 mk2 "hosts=a" "allow="; printf '%s\r\n' x >> "$F"; ok_ && bad "carriage return in a v2 file is valid" || ok "a carriage return in a v2 file is invalid"
 mkf; printf "$T_DELEGATE_LINE2"'\r\nhub=/work\r\nuntil=%s\r\nmcp=\r\nhosts=\r\nallow=\r\n' "$((NOW + 60))" > "$F"; ok_ && bad "a v2 file with carriage returns in lines 5 and 6 is valid" || ok "carriage returns in a v2 file are refused"
 
+# ---- version 3: tools= (0.5.2, KI-25) ----
+mk3() {  # mk3 <tools line> [until]: a version 3 file
+  mkf; printf "$T_DELEGATE_LINE3"'\nhub=/work\nuntil=%s\nmcp=\nhosts=\nallow=\n%s\n' "${2:-$((NOW + 3600))}" "$1" > "$F"
+}
+mk3 "tools="; ok_ && ok "v3 with an empty tools= is valid" || bad "v3 empty is refused: $HH_DELEGATE_WHY"
+assert_eq "...and allows none" "$HH_DR_TOOLS" ""
+mk3 "tools=Workflow,WebFetch,DesignSync,ArtifactCheck,PushNotification"; ok_ && ok "v3 with all five tools is valid" || bad "v3 with five tools is refused: $HH_DELEGATE_WHY"
+assert_eq "...HH_DR_TOOLS holds them" "$HH_DR_TOOLS" "Workflow,WebFetch,DesignSync,ArtifactCheck,PushNotification"
+mk3 "tools=WebFetch"; hh_delegate_read "$F" "$ME" "$NOW" > "$T_TMP/dg.out"; assert_eq "...the three columns are unchanged" "$(cat "$T_TMP/dg.out")" "$(printf '/work\t%s\t' "$((NOW + 3600))")"
+for w in Bash CronCreate ScheduleWakeup workflow WORKFLOW Agent mcp__x Workflow,Bash "Workflow WebFetch" Workflow,,WebFetch ,Workflow Workflow, 'a;b' 'Work*'; do
+  mk3 "tools=$w"; ok_ && bad "tools=$w is valid" || assert_contains "tools=$w makes the file invalid" "$HH_DELEGATE_WHY" "tools="
+done
+mk3 "tool=Workflow"; ok_ && bad "line 7 not tools= is valid" || ok "line 7 that is not tools= is invalid"
+mk3 "tools="; printf 'extra\n' >> "$F"; ok_ && bad "a v3 file with 8 lines is valid" || ok "a v3 file with 8 lines is invalid"
+mk3 "tools="; printf '\n' >> "$F"; ok_ && bad "a v3 file with a blank 8th line is valid" || ok "a v3 file with a blank 8th line is invalid"
+mkf; printf "$T_DELEGATE_LINE3"'\nhub=/work\nuntil=%s\nmcp=\nhosts=\nallow=\n' "$((NOW + 60))" > "$F"; ok_ && bad "a v3 file with 6 lines is valid" || ok "a v3 file with 6 lines is invalid"
+mk3 "tools=WebFetch"; sed -i.bak 's/$/\r/' "$F"; rm -f "$F.bak"; ok_ && bad "a v3 file with carriage returns is valid" || ok "a v3 file with carriage returns is invalid"
+mk2 "hosts=" "allow="; hh_delegate_read "$F" "$ME" "$NOW" >/dev/null; assert_eq "a v2 file allows no tools" "$HH_DR_TOOLS" ""
+mkf; hh_delegate_read "$F" "$ME" "$NOW" >/dev/null; assert_eq "a v1 file allows no tools" "$HH_DR_TOOLS" ""
+mk2 "hosts=" "allow="; printf 'tools=Workflow\n' >> "$F"; ok_ && bad "a v2 file with a tools= line is valid" || ok "a v2 file with a seventh line (tools=) is invalid"
+
 # a blank line past the version's count is a line (the content is exactly 4 or 6 lines, a blank one included)
 mkf; printf "$T_DELEGATE_LINE1"'\nhub=/work\nuntil=%s\nmcp=\n\n' "$((NOW + 60))" > "$F"; ok_ && bad "a v1 file with a blank 5th line is valid" || ok "a v1 file with a blank 5th line is refused"
 mk2 "hosts=" "allow="; printf '\n' >> "$F"; ok_ && bad "a v2 file with a blank 7th line is valid" || ok "a v2 file with a blank 7th line is refused"
