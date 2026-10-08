@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Bypass permissions, granted only while the owner is away (A7, A23, A31, A34, A40, A48, A71, A75, A80): hh-settings resolve, hh-spawn and
+# Bypass permissions, granted only while the owner is away: hh-settings resolve, hh-spawn and
 # hh-hub give bypassPermissions only when the owner's delegate file is valid, the project's home is listed in the hub it names, and the
 # caller's own Claude carries the away marker in its launch environment (read by ps -E, so the stand-in is a node script named claude).
 # A session started in bypass gets the marker, the hook's variables and only the MCP servers the owner allowed; any other mode gets none.

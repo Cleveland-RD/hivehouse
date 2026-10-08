@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# The second layer behind hh-away-hook (A31, A8, A25): hh-push, hh-remote-sync and hh-cleanup --finish refuse with exit 4 when
+# The second layer behind hh-away-hook: hh-push, hh-remote-sync and hh-cleanup --finish refuse with exit 4 when
 # HH_AWAY_BYPASS=1 is in their environment, and hh-cleanup --disk stays allowed. A Bash command can unset the variable for itself,
 # so the hook is the guard and this is a backstop. (hh-push and hh-remote-sync are tested in test_push.sh and test_remote_sync.sh;
 # hh-cleanup --finish is never run here without the marker: it signals real processes, which test_cleanup.sh does for the owner.)

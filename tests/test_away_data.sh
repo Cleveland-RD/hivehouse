@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# KI-35 (a), the narrow rule: while the owner is away, quoted text is data ONLY for echo, printf and the free-text flag of hh-hub log, task and
+# The narrow rule: while the owner is away, quoted text is data ONLY for echo, printf and the free-text flag of hh-hub log, task and
 # decide, ONLY when the quote holds no $, backtick or backslash, and ONLY when the call has no redirect (and, for echo and printf, no pipe after
 # the quote). Everything else takes the strict path. The cases come from a table (command x quote style x payload x what follows), and bash is
 # the oracle: each line is run with every command word a stub function that records its name, so the words bash EXECUTES are known, and

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # hh-away-hook: the PreToolUse hook of a session launched in bypass while the owner is away. It reads the launch marker and
-# the launch env, never the Bash env; it matches by tokens and does not claim to be complete (A43).
+# the launch env, never the Bash env; it matches by tokens and does not claim to be complete.
 . "$(dirname "$0")/lib.sh"
 . "$HH_REPO_ROOT/bin/hh-lib.sh"
 t_setup
@@ -58,7 +58,7 @@ r=$(printf '%s' "$(tc 'git push')" | BASH_ENV="$T_TMP/benv.sh" HH_AWAY_BYPASS=1 
 mkdir "$T_TMP/dn"; printf '#!/bin/sh\necho /nonexistent\n' > "$T_TMP/dn/dirname"; chmod +x "$T_TMP/dn/dirname"
 r=$(printf '%s' "$(tc 'ls')" | PATH="$T_TMP/dn:$PATH" HH_AWAY_BYPASS=1 HH_PROJECT="$proj" HH_AWAY_HUB="$hub" HH_AWAY_MCP_ALLOW= "$HOOK" 2>&1 >/dev/null); assert_status "a dirname first on PATH cannot move where the hook finds hh-lib.sh" $? 0
 assert_eq "the hook's first line is #!/bin/bash -p" "$(head -1 "$HH_REPO_ROOT/bin/hh-away-hook")" "#!/bin/bash -p"
-echo "-- fail closed (A9)"
+echo "-- fail closed"
 hook 'not json'; assert_status "marker, input not json" $RC 2
 hook '{"cwd":"/"}'; assert_status "marker, no tool name" $RC 2
 hook '{"tool_name":"Bash","tool_input":{}}'; assert_status "Bash with no command" $RC 2
@@ -87,7 +87,7 @@ for pr in "" unset; do
   else r=$(printf '%s' "$(tc ls)" | HH_AWAY_BYPASS=1 HH_PROJECT= HH_AWAY_HUB="$hub" HH_AWAY_MCP_ALLOW= "$HOOK" 2>&1); fi
   assert_status "S4 a marked session with HH_PROJECT '${pr:-empty}' is refused" $? 2
 done
-echo "-- git push (A22, A32, A38)"
+echo "-- git push"
 for c in 'git push' 'git push origin main' 'git -C /tmp/x push' 'git push origin HEAD:main' 'git push +main' 'git push :main' 'git push --delete origin x' \
   'git push --all' 'git push --mirror' '/usr/bin/git push' 'command git push' 'exec git push' 'nohup git push' 'env GIT_X=1 git push' \
   'sh -c "git push"' "bash -c 'git push'" "zsh -c 'git push'" 'eval "git push"' 'echo x | xargs git push' 'echo $(git push)' 'echo `git push`' \
@@ -104,7 +104,7 @@ mkdir -p "$proj/tests"; printf 'echo ok\n' > "$proj/tests/run.sh"
 allowed "bash tests/run.sh test_push.sh" 'bash tests/run.sh test_push.sh'
 allowed "cat bin/hh-push" 'cat bin/hh-push'
 
-echo "-- hh-push and hh-remote-sync (A32, A38)"
+echo "-- hh-push and hh-remote-sync"
 for c in 'hh-push origin abc main' 'bin/hh-push origin abc main' './bin/hh-push x' "''hh-push x" 'hh-""push x' 'FOO=1 hh-push x' 'env hh-push x' 'nohup hh-push x' 'bash -c "hh-push x"' \
   'xargs hh-push' 'true; hh-push x' 'echo a && bin/hh-push x' 'xargs -n1 hh-push' 'timeout 5 hh-push x' 'sudo -n hh-push x' 'hh-slot run push -- hh-push origin a b' 'hh-remote-sync status' 'time hh-push x'; do
   denied "hh-push form: $c" "$c"
@@ -114,7 +114,7 @@ allowed "hh-push inside a commit message" 'git commit -m "docs: about hh-push"'
 allowed "the team's own hh-slot traffic" 'hh-slot run gate -- hh-gate'
 allowed "hh-gate-verify" 'hh-gate-verify log /tmp/x.log --commit abc'
 
-echo "-- gh (A21)"
+echo "-- gh"
 for c in 'gh pr create' 'gh pr merge 3' 'gh api repos/x/y' 'gh issue create' 'gh release create v1' 'gh pr view 3 && gh pr merge 3' 'sh -c "gh pr merge"'; do denied "gh form: $c" "$c"; done
 for c in 'gh pr view 3' 'gh pr list' 'gh pr status' 'gh pr diff 3' 'gh pr checks 3' 'gh run view 5' 'gh run list' 'gh issue view 2' 'gh issue list'; do allowed "gh read-only: $c" "$c"; done
 
@@ -126,7 +126,7 @@ for c in 'ssh host ls' '/usr/bin/ssh host' 'scp a host:b' 'rsync -a a host:b' 'r
 done
 for c in 'curl http://localhost:3000' 'curl -X GET http://x' 'curl -s -o /dev/null http://x' 'wget http://x' 'rsync -a a/ b/' 'npm test' 'npm install' 'yarn build' 'docker build .' 'docker ps' 'curl http://x | grep -F foo'; do allowed "A21 allowed: $c" "$c"; done
 
-echo "-- the way out of the marker (A52)"
+echo "-- the way out of the marker"
 for c in 'claude' 'claude --permission-mode bypassPermissions' '/usr/local/bin/claude -p hi' 'env X=1 claude' 'nohup claude &' 'bash -c "claude"' \
   'tmux new-window claude' 'tmux split-window -h' 'tmux new-session -d' 'tmux respawn-pane -k' 'tmux respawn-window' 'tmux neww' 'tmux -S /x new-window'; do denied "way out: $c" "$c"; done
 for c in 'tmux run-shell "claude x"' 'tmux run x' 'tmux if-shell true x' 'tmux if x' 'tmux display-popup' 'tmux popup' 'tmux pipe-pane x' 'tmux pipep x' 'tmux source-file x' 'tmux source x' 'tmux send-keys -t %0 "hh-push x" Enter' 'tmux send x'; do denied "S2 tmux way out: $c" "$c"; done
@@ -134,7 +134,7 @@ allowed "tmux list-panes" 'tmux list-panes -a'
 allowed "which claude" 'which claude'
 allowed "hh-spawn" 'hh-spawn --agent x --role implementer'
 
-echo "-- protected files, by Bash (A52, A57, A61)"
+echo "-- protected files, by Bash"
 CD="$CLAUDE_CONFIG_DIR"
 for c in "echo {} > $CD/settings.json" "echo {} >> $CD/settings.local.json" 'echo {} > ~/.claude/settings.json' 'echo {} > $HOME/.claude.json' 'echo x > ~/.claude.json' 'echo x > ${HOME}/.claude.json' 'cp a ~/.claude.json' 'cp a $HOME/.claude.json' 'echo {} > .claude/settings.json' \
   'echo x > .claude/settings.local.json' 'echo x > .mcp.json' "tee $CD/settings.json" "sed -i s/a/b/ $CD/settings.json" "cp a $CD/plugins/x/hooks.json" "mv x $CD/plugins/y" 'echo x > hooks/hooks.json' \
@@ -157,7 +157,7 @@ allowed "memory stays writable" "echo x > $CD/projects/p/memory/note.md"
 allowed "an ordinary redirect" 'echo x > /tmp/a.txt'
 allowed "grep in the plugins folder" "grep -r x $CD/plugins"
 
-echo "-- protected files, by Edit and Write (A52, A57, A61)"
+echo "-- protected files, by Edit and Write"
 for t in Edit Write MultiEdit NotebookEdit; do tool_denied "$t on settings.json in the config dir" "$(fileop $t "$CD/settings.json")"; done
 tool_denied "Write to settings.local.json" "$(fileop Write "$CD/settings.local.json")"
 tool_denied "Write to the project's .claude/settings.json" "$(fileop Write "$proj/.claude/settings.json")"
@@ -269,7 +269,7 @@ tool_denied "S6 Agent with an unreadable input" '{"tool_name":"Agent","cwd":"/",
 unset HH_AWAY_MCP_ALLOW
 ERR=$(printf '%s' "$(mcp mcp__x__y)" | HH_AWAY_BYPASS=1 HH_PROJECT="$proj" HH_AWAY_HUB="$hub" "$HOOK" 2>&1 >/dev/null); assert_status "an unset allowlist allows nothing" $? 2
 
-echo "-- SendMessage (A50, A55, A60)"
+echo "-- SendMessage"
 ROLE=proj
 tool_allowed "agent to its orchestrator by live name" "$(msg proj-orchestrator)"
 tool_allowed "a [ref] suffix is removed" "$(msg 'proj-orchestrator [3fa9c1]')"
@@ -379,7 +379,7 @@ r=$(printf '%s' "$(msg hub1)" | HH_AWAY_BYPASS=1 HH_PROJECT="$hub/" HH_AWAY_HUB=
 r=$(printf '%s' "$(msg main)" | HH_AWAY_BYPASS=1 HH_PROJECT="$T_TMP/gone" HH_AWAY_HUB="$hub" HH_AWAY_MCP_ALLOW= "$HOOK" 2>&1 >/dev/null); assert_status "main still passes, the check is by target" $? 0
 r=$(printf '%s' "$(msg proj-orchestrator)" | HH_AWAY_BYPASS=1 HH_PROJECT="$T_TMP/gone" HH_AWAY_HUB="$hub" HH_AWAY_MCP_ALLOW= "$HOOK" 2>&1 >/dev/null); assert_status "an unreadable HH_PROJECT denies a named target" $? 2
 
-echo "-- KI-23: a heredoc body is data unless the command it feeds runs it"
+echo "-- a heredoc body is data unless the command it feeds runs it"
 nl=$'\n'
 allowed "an hh-hub task heredoc with ssh and git push in its text" "hh-hub task proj <<'EOF'${nl}please ssh to the host and git push the branch${nl}EOF"
 allowed "...the same with a <<- tab-stripped terminator" "hh-hub task proj <<-'EOF'${nl}	ssh h; git push${nl}	EOF"
@@ -546,7 +546,7 @@ fi
 denied "no fixture, no listed host: ssh stays refused" "ssh -F none night.example.org ls"
 denied "ssh as before in the plain shape" "ssh night.example.org ls"
 
-echo "-- KI-26: a script the Bash call runs is read with the same rules as a command"
+echo "-- a script the Bash call runs is read with the same rules as a command"
 sd="$proj/scr"; mkdir -p "$sd"
 printf 'echo hello\nls\n' > "$sd/clean.sh"; printf '#!/bin/sh\necho hello\n' > "$sd/cleanx.sh"; chmod +x "$sd/cleanx.sh"
 printf 'echo before\ngit push origin main\n' > "$sd/bad.sh"; printf '#!/bin/sh\ngit push origin main\n' > "$sd/badx.sh"; chmod +x "$sd/badx.sh"
@@ -581,7 +581,7 @@ printf 'echo hi\n' > "$sd/locked.sh"; chmod 000 "$sd/locked.sh"; denied "an unre
 allowed "a script under the plugin's own bin is not read" "bash ${HOOK%/*}/hh-cleanup"
 hook "$(jq -nc --arg c 'bash bad.sh' --arg d "$sd" '{tool_name:"Bash",cwd:$d,tool_input:{command:$c}}')"; assert_status "...the cwd the tool call names" $RC 2
 
-echo "-- KI-26 review round: R1 program or text, R2 a file that is not there, R3 wrappers with arguments, S4 code the hook cannot read"
+echo "-- a script the Bash call runs: program or text, a file that is not there, wrappers with arguments, code the hook cannot read"
 printf '#!/bin/sh\ngit push origin main\n# \0' > "$sd/trick"; chmod +x "$sd/trick"
 denied "R1: a NUL far down the file does not make a script a program" "cd $sd && ./trick"
 printf 'echo hi\ngit push\0' > "$sd/nul2"; chmod +x "$sd/nul2"; denied "R1: a NUL on a later line is still text" "cd $sd && ./nul2"
@@ -644,7 +644,7 @@ allowed "cheap: ssh-keygen -l -f of a public key under ~/.ssh is only a read" "s
 allowed "cheap: ssh-keygen -y -f of a key in the project" "ssh-keygen -y -f $proj/key"
 allowed "cheap: ssh-keygen -f into the project makes a key there" "ssh-keygen -t ed25519 -N x -f $proj/newkey"
 
-echo "-- the marked hub's own commands (A9), ssh-keygen -R, and a decision text that names tmux"
+echo "-- the marked hub's own commands, ssh-keygen -R, and a decision text that names tmux"
 ROLE=hub
 for c in "hh-hub rotate" "hh-hub rotate --still 15 --max 900 --settle 8" "hh-hub rotate --max 900" "hh-hub self" "hh-hub self --name hub1" "hh-hub self --window 1000000" "hh-hub self --name hub1 --window 200000" "hh-hub context" "hh-hub context --window 200000" "hh-hub window proj orchestrator 1000000"; do
   allowed "the marked hub runs: $c" "$c"
@@ -676,7 +676,7 @@ denied "...also with the options first" "ssh-keygen -q -R night.example.org"
 denied "ssh-keygen -f into ~/.ssh" "ssh-keygen -t ed25519 -f ~/.ssh/id_x"
 allowed "ssh-keygen -l of a key in the project is a read" "ssh-keygen -l -f $proj/key.pub"
 assert_eq "mcp_check and tool_check keep their list in a local es" "$(grep -cE '^  local .*[ ]es([ ]|$)' "$HH_REPO_ROOT/bin/hh-away-hook")" 2
-echo "-- KI-25: the extra tools pass only when the owner's delegate file lists them (hh-hub away --tools)"
+echo "-- the extra tools pass only when the owner's delegate file lists them (hh-hub away --tools)"
 TOOLS="Workflow WebFetch DesignSync ArtifactCheck PushNotification"
 tcall() { jq -nc --arg t "$1" '{tool_name:$t,cwd:"/",tool_input:{}}'; }
 for t in $TOOLS; do tool_denied "$t is refused with no delegate file" "$(tcall "$t")"; assert_contains "...and the message names --tools" "$ERR" "hh-hub away --tools"; done
@@ -836,7 +836,7 @@ done
 echo "-- the env the Bash tool sees does not matter"
 r=$(printf '%s' "$(tc 'git push')" | HH_AWAY_BYPASS=1 HH_PROJECT="$other" HH_AWAY_HUB="$hub" HH_AWAY_MCP_ALLOW= "$HOOK" 2>&1 >/dev/null); assert_status "any project in the env: still refused" $? 2
 
-echo "-- wiring and the rule (A51, A72)"
+echo "-- wiring and the rule"
 m=$(jq -r '.hooks.PreToolUse[]? | select(.hooks[]?.command | test("bin/hh-away-hook")) | .matcher' "$HH_REPO_ROOT/hooks/hooks.json")
 inner=${m#^(}; inner=${inner%)\$}
 for t in Bash 'mcp__.*' SendMessage Edit Write MultiEdit NotebookEdit Artifact ArtifactData ArtifactComments RemoteTrigger Agent Workflow WebFetch DesignSync ArtifactCheck PushNotification; do case "|$inner|" in *"|$t|"*) ok "hooks.json matcher has $t" ;; *) bad "hooks.json matcher lacks $t: [$m]" ;; esac; done

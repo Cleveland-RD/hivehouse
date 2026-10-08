@@ -145,7 +145,7 @@ hh_delegate_read "$DFILE" "$ME" "$NOW" >/dev/null; assert_status "...and the fil
 assert_contains "...the text names the hosts" "$out" "Remote hosts allowed while away: night.example.org,ops@10.0.0.7"
 case "$out" in *"Commands allowed"*) bad "a commands-allowed line is printed though allow= is reserved" ;; *) ok "...and no commands-allowed line (allow= is reserved)" ;; esac
 case "$out" in *"No remote host is used"*) bad "the no-remote-host line is printed with hosts allowed" ;; *) ok "...and not the no-remote-host line" ;; esac
-# ---- version 3: --tools (0.5.2, KI-25) ----
+# ---- version 3: --tools (0.5.2) ----
 out=$(cd "$H" && "$OBIN/hh-hub" away --until +1h --tools Workflow,WebFetch); assert_status "away with --tools" $? 0
 t_run_printed "$(printf '%s\n' "$out" | grep -E '^sudo |\| sudo ')"; assert_status "...its sudo lines run" $? 0
 assert_eq "...the file holds the tools as line 7" "$(sed -n 7p "$DFILE")" "tools=Workflow,WebFetch"
@@ -216,7 +216,7 @@ mkdel
 
 # the last away period stays in status after away has ended (for the screen and the hub's return)
 assert_eq "the last away period is in status, with no valid file" "$(hub status --json | jq -c '.hub.last_away | [has("since"), (.until | type)]')" '[true,"number"]'
-# ---- nothing in the environment revives an expired file (A76) ----
+# ---- nothing in the environment revives an expired file ----
 mkdel "$H" "$((NOW - 10))"
 fk="$T_TMP/fk"; mkdir -p "$fk"; printf '#!/bin/sh\necho %s\n' "$((NOW - 100000))" > "$fk/date"; chmod +x "$fk/date"
 printf 'date() { echo %s; }\n' "$((NOW - 100000))" > "$T_TMP/benv.sh"
@@ -391,7 +391,7 @@ jq -nc --arg t "$T_TMP" '{projects:{($t):{hasTrustDialogAccepted:true}}}' > "$CL
 out4=$(hub away --until +1h)
 assert_eq "a worktree and its main repository listed together give one line (one key)" "$(printf '%s\n' "$out4" | grep -c "Start claude in $H/zeta once")" "1"
 rm -f "$CLAUDE_CONFIG_DIR/.claude.json"
-# ---- hung sessions: positive evidence, then the stop (Phase 4.3, A10, A27) ----
+# ---- hung sessions: positive evidence, then the stop (Phase 4.3) ----
 # The screens are REAL captures (tests/fixtures/working/06-working-7s.ansi, "6s"; dialogs/07-idle-after-answer.ansi) drawn in a pane whose
 # process is a `sleep` named claude. "Frozen for 15 minutes" is HAND-BUILT: a beat records the elapsed time it saw and when it first saw it
 # (hung-state.json), and the test moves that time back, since waiting 15 real minutes is not a test.
@@ -439,7 +439,7 @@ r=$(rec --json); ago "eps/hdup" 1000; ago "eps/$EW:hdup" 1000; r=$(rec --json)
 assert_eq "a hung agent name in two roots: both are stopped, each by its own record" "$(restarts "$r")" "hdup,hdup"
 live "$HD1" "$HS1" && bad "the home's hdup is still running" || ok "...the home's was stopped"
 live "$HD2" "$HS2" && bad "the worktree's hdup is still running" || ok "...and the worktree's"
-# a timer that moved is not hung (A27): the state says 5s was seen 16 minutes ago, the screen now says 6s
+# a timer that moved is not hung: the state says 5s was seen 16 minutes ago, the screen now says 6s
 hagent beta moving "$WF"; MV_PID=$HPID; MV_START=$HSTART
 rec --json >/dev/null; ago beta/moving 960; jq '.["beta/moving"].secs = 5' "$HS" > "$T_TMP/hs" && mv "$T_TMP/hs" "$HS"
 r=$(rec --json); assert_eq "a working line whose time moved is not hung" "$(restarts "$r")" ""
