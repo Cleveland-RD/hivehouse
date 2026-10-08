@@ -759,6 +759,38 @@ pallowed "A17 rm scr/*.tmp in scratch" 'rm scr/*.tmp'
 pallowed "A17 a pattern with no match passes as written" 'rm scr/nothing-*'
 pallowed "A17 mv scr/*.tmp scr/sub/" 'mv scr/*.tmp scr/sub/'
 PHOME=""
+echo "-- A18: other ways to remove, overwrite or unpack over a protected path; A20: a glued -t<dir>"
+mkdir -p "$T_TMP/fh/.claude" "$scr/sub"; : > "$T_TMP/fh/.claude/settings.json"
+PHOME="$T_TMP/fh"
+for c in 'unlink ~/.claude/settings.json' 'rmdir ~/.claude' 'shred ~/.claude/settings.json' 'find ~/.claude -delete' 'find ~/.claude -exec rm {} +' 'find ~/.claude -name x -execdir mv {} y ;' 'find ~/.claude -ok rm {} ;' 'find . -delete' \
+  'curl -o ~/.claude/settings.json http://x' 'curl --output ~/.claude/settings.json http://x' 'curl -sSo ~/.claude/settings.json http://x' 'wget -O ~/.claude/settings.json http://x' 'wget -P ~/.claude http://x' 'curl --output-dir ~/.claude -O http://x' \
+  'tar -xf a.tar -C ~/.claude' 'tar xf a.tar -C ~/.claude' 'tar -xzf a.tgz --directory=~/.claude' 'tar --extract -f a.tar -C ~/.claude' 'unzip a.zip -d ~/.claude' 'ditto a.zip ~/.claude' 'ditto -x -k a.zip ~/.claude' \
+  'cp -rt~/.claude scr/plain.txt' 'mv -ft~/.claude scr/plain.txt' 'cp -rt ~/.claude scr/plain.txt'; do
+  pdenied "A18 refused, plugin root unset: $c" "$c"
+  pdenied "A18 refused, plugin root set: $c" "$c" "$PROOT"
+done
+pdenied "A18 unlink a file in the plugin's bin" "unlink $PROOT/bin/hh-away-hook" "$PROOT"
+pdenied "A18 find -delete in the plugin's bin" "find $PROOT/bin -name hh-away-hook -delete" "$PROOT"
+pdenied "A18 git reset --hard in the plugin root" "git -C $PROOT reset --hard" "$PROOT"
+pdenied "A18 git checkout in the plugin root" "git -C $PROOT checkout -- bin/hh-away-hook" "$PROOT"
+pdenied "A18 git stash from inside the plugin root" "cd $PROOT && git stash" "$PROOT"
+pdenied "A18 git clean in the config dir" "git -C ~/.claude clean -fd"
+pdenied "A18 git restore under -c and -C" "git -c core.x=1 -C $PROOT restore ." "$PROOT"
+pdenied "A18 tar -x into the plugin root" "tar -xf a.tar -C $PROOT" "$PROOT"
+for c in 'find . -name x.tmp -delete' 'find scr -name "*.tmp" -delete' 'find . -name x -exec grep y {} +' 'find . -name x -exec rm {} +' 'unlink scr/plain.txt' 'rmdir scr/sub' 'shred scr/plain.txt' 'curl -o scr/page.html http://x' 'wget -O scr/page.html http://x' 'tar -xf a.tar -C scr' 'tar -czf scr/a.tgz scr' 'unzip a.zip -d scr' 'git status' 'git checkout -b x' 'git stash' 'git -C scr rm --cached x' 'git restore x' 'git reset --hard' 'cp -rt scr/sub scr/plain.txt'; do
+  case "$c" in 'find . -name x.tmp -delete'|'find . -name x -exec rm {} +') continue ;; esac
+  pallowed "A18 stays allowed: $c" "$c"
+done
+pdenied "A18 find . -delete in the project root (it holds .hivehouse)" 'find . -name x.tmp -delete'
+pallowed "A18 find . -exec rm in the project root is read as a global-scope hit only" 'find . -name x -exec rm {} +'
+PHOME=""
+echo "-- A19: a link inside the destination folder leads into a protected folder"
+mkdir -p "$T_TMP/lk/dest" "$T_TMP/lk/scr/sub"; : > "$T_TMP/lk/scr/sub/settings.json"; ln -sfn "$T_TMP/fh/.claude" "$T_TMP/lk/dest/sub"
+PHOME="$T_TMP/fh"
+pdenied "A19 cp -R through a link in the destination" "cp -R $T_TMP/lk/scr/ $T_TMP/lk/dest/"
+pdenied "A19 cp -R through a link in the destination (name given)" "cp -R $T_TMP/lk/scr $T_TMP/lk/dest"
+PHOME=""
+assert_eq "A21 the reader list is spelled once in the hook" "$(grep -c 'cd cat grep jq wc head tail sort uniq' "$HH_REPO_ROOT/bin/hh-away-hook")" 1
 echo "-- A15: xargs passes only with a reader; the arguments it is fed cannot be read first"
 ROLE=proj
 for c in 'xargs git < scr/plain.txt' 'xargs tmux < scr/plain.txt' 'xargs npm < scr/plain.txt' 'xargs curl < scr/plain.txt' 'xargs rm < scr/plain.txt' 'xargs -n 1 git < scr/plain.txt' 'echo "push origin main" | xargs git' 'ls | xargs -I {} git {}' 'sudo xargs hh-hub self'; do

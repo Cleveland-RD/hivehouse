@@ -20,6 +20,7 @@ HH_BIN=${0%/*}; [ "$HH_BIN" != "$0" ] || HH_BIN=.   # parameter expansion, never
 
 deny() { DENIED=1; printf 'Refused by hivehouse away mode (the owner is away; this is not a permission prompt): %s. Do not try to change settings, hooks or permissions to get round it; tell the owner what you needed.\n' "$1" >&2; exit 2; }
 CONF="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
+READERS=" cd cat grep jq wc head tail sort uniq "   # the commands that only read their stdin or files: heredoc_strip treats their stages as safe, and xargs may run only these
 WRAPPERS=" command exec nohup env sudo doas time nice ionice timeout stdbuf builtin eval xargs sh bash zsh dash ksh setsid if then else elif do while until ! { "
 
 canon() {  # canon <path> <cwd>: absolute, ~ and $HOME expanded, dot segments collapsed, symlinks of an existing parent resolved
@@ -62,13 +63,14 @@ protected_one() {  # protected_one <canonical path>: 0 when Claude Code's settin
   case "$p" in */"$HH_STATE_DIR"/team|*/"$HH_STATE_DIR"/team/*) P_WHY="a team's agent folders (${HH_STATE_DIR}/team) are written by hivehouse's own scripts, never through a session's tools"; return 0 ;; esac
   return 1
 }
-PC=""; PH=""; PR=""; FS_ROOTS=()
+PC=""; PH=""; PR=""; FS_ROOTS=(); FS_NG=0; FS_GLOBAL=""   # FS_GLOBAL=1: fs_hit leaves out the project's own state folders (a folder that merely holds a project is no hit)
 fs_init() {  # the canonical config dir, home and plugin root, and the fixed roots a rm, mv or copy may not be at or above: resolved once per call
   [ -z "$PC" ] || return 0
   PC=$(canon "$CONF" /); PH=$(canon "$HOME" /)
   [ -z "${CLAUDE_PLUGIN_ROOT:-}" ] || PR=$(canon "$CLAUDE_PLUGIN_ROOT" /)
   FS_ROOTS=("$PC" "$PH/.claude" "$PH/.claude.json" "$PH/.ssh" "$HUB/$HH_HUB_DIR")
   [ -z "$PR" ] || FS_ROOTS+=("$PR")
+  FS_NG=${#FS_ROOTS[@]}   # the roots above are Claude Code's and hivehouse's own; the project's state folders follow
   [ -z "$PROJ_REAL" ] || FS_ROOTS+=("$PROJ_REAL/$HH_STATE_DIR" "$PROJ_REAL/.claude")
 }
 protected() {  # protected <path> <cwd>: the path itself, and where its links lead (a write goes to the target); a link loop counts
@@ -91,14 +93,16 @@ protected() {  # protected <path> <cwd>: the path itself, and where its links le
 # in a slash, also gets <dest>/<name of each source> checked.
 FS_TREE_MAX=3000
 fs_hit() {  # fs_hit <path> <cwd>: 0 when the path is, or holds, a protected path (P_WHY says why)
-  local a b r l n=0
+  local a b r l n=0 ri
   protected "$1" "$2" && return 0
   fs_init
   a=$(canon "$1" "$2")
   while :; do
     b=${a##*/}
     case "$b" in .claude|.hivehouse) P_WHY="a folder named $b holds Claude Code's or hivehouse's protected files and cannot be removed, moved or copied over from an away session"; return 0 ;; esac
+    ri=0
     for r in ${FS_ROOTS[@]+"${FS_ROOTS[@]}"}; do
+      ri=$((ri + 1)); [ -z "$FS_GLOBAL" ] || [ "$ri" -le "$FS_NG" ] || continue
       if [ "$a" = "$r" ] || [ "$a" = / ]; then :; else case "$r" in "$a/"*) ;; *) continue ;; esac; fi
       P_WHY="$a is, or holds, Claude Code's settings, plugin, ssh or hivehouse's protected files, so it cannot be removed, moved or copied over from an away session"; return 0
     done
@@ -109,6 +113,16 @@ fs_hit() {  # fs_hit <path> <cwd>: 0 when the path is, or holds, a protected pat
   done
   return 1
 }
+FS_LAST_DIR=""; FS_LAST_RD=""
+fs_mapped() {  # fs_mapped <path>: 0 when the path, reached through the links of its folder, is protected; the folder is resolved once per run of files
+  local m=$1 dir=${1%/*} rd
+  if [ "$dir" != "$FS_LAST_DIR" ]; then FS_LAST_RD=$(canon "$m" /); FS_LAST_RD=${FS_LAST_RD%/*}; FS_LAST_DIR=$dir; fi   # canon resolves the links of a path's folder, so the folder is asked for through a file in it
+  rd=$FS_LAST_RD
+  protected_one "$rd" && return 0
+  protected_one "${rd%/}/${m##*/}" && return 0
+  if [ -L "$m" ] && protected "$m" /; then return 0; fi
+  return 1
+}
 fs_tree() {  # fs_tree <source> <dest> <cwd> <command>: every file under a source folder, where it would land under the destination
   local a d sb out rc f rel cnt
   a=$(canon "$1" "$3"); [ -d "$a" ] || return 0
@@ -117,11 +131,12 @@ fs_tree() {  # fs_tree <source> <dest> <cwd> <command>: every file under a sourc
   cnt=$(printf '%s' "$out" | grep -c '^' || true)
   [ "$cnt" -le "$FS_TREE_MAX" ] || deny "$4 of a folder with more than $FS_TREE_MAX files cannot be checked while the owner is away"
   [ "$rc" -eq 0 ] || deny "$4 of a folder the hook cannot read all of cannot be checked while the owner is away"
+  # a mapped path is looked at through the links of its folder (protected resolves them): dest/sub may be a link into ~/.claude
   while IFS= read -r f; do
     [ -n "$f" ] || continue
     rel=${f#"$a"/}
-    protected_one "$d/$rel" && deny "$4 would put $rel under $2, a protected path: $P_WHY"
-    protected_one "$d/$sb/$rel" && deny "$4 would put $sb/$rel under $2, a protected path: $P_WHY"
+    fs_mapped "$d/$rel" && deny "$4 would put $rel under $2, a protected path: $P_WHY"
+    fs_mapped "$d/$sb/$rel" && deny "$4 would put $sb/$rel under $2, a protected path: $P_WHY"
   done <<EOF
 $out
 EOF
@@ -154,8 +169,7 @@ fs_write_check() {  # fs_write_check <command> <cwd> <word>...: the words after 
         --target-directory) tflag=1; continue ;;
         --link|--symbolic-link) link=1; continue ;;
         --*) continue ;;
-        -t?*) tdir=${w#-t}; continue ;;
-        -*t) tflag=1; continue ;;
+        -*t*) tdir=${w#*t}; if [ -z "$tdir" ]; then tflag=1; fi; continue ;;   # -t <dir>, -t<dir>, -rt <dir>, -rt<dir>
         -*) [ "$cmd" != cp ] || case "${w#-}" in *l*|*s*) link=1 ;; esac; continue ;;
       esac
     fi
@@ -181,6 +195,109 @@ fs_write_check() {  # fs_write_check <command> <cwd> <word>...: the words after 
     fi
     [ "$cmd" = ln ] || fs_tree "$src" "$dest" "$cwd" "$cmd"
   done
+  return 0
+}
+
+fs_find_check() {  # fs_find_check <cwd> <word>...: find that deletes, or runs a command that is not a reader, is held to the rm rule for its path operands
+  local cwd=$1 w act="" nx="" glob="" fe fm
+  local -a paths=() rest=()
+  shift
+  for w in "$@"; do
+    if [ -z "$nx" ]; then
+      case "$w" in -H|-L|-P|-E|-X|-x|-s|-d) continue ;; -[A-Za-z]*|"!"|"(") nx=1 ;; *) paths+=("$w"); continue ;; esac
+    fi
+    rest+=("$w")
+  done
+  local i
+  for i in "${!rest[@]}"; do
+    case "${rest[$i]}" in
+      -delete) act=full ;;
+      -exec|-execdir|-ok|-okdir) case " $READERS " in *" $(bn "${rest[$((i + 1))]:-}") "*) ;; *) [ -n "$act" ] || act=global ;; esac ;;
+    esac
+  done
+  [ -n "$act" ] || return 0
+  [ "$act" = full ] || FS_GLOBAL=1
+  [ ${#paths[@]} -gt 0 ] || paths=(.)
+  for w in "${paths[@]}"; do
+    while IFS= read -r fm; do
+      case "$fm" in $'\001'*) deny "${fm#?}" ;; esac
+      fs_hit "$fm" "$cwd" && { FS_GLOBAL=""; deny "find refused: it deletes or runs a writer under $fm, and $P_WHY"; }
+    done < <(fs_expand "$cwd" "$w")
+  done
+  FS_GLOBAL=""
+  return 0
+}
+fs_fetch_check() {  # fs_fetch_check <curl|wget> <cwd> <word>...: where a download is written
+  local c=$1 cwd=$2 w prev="" dir="" tgt="" cwdw=""
+  shift 2
+  for w in "$@"; do
+    case "$prev" in
+      -o|--output) tgt=$w ;; -O) [ "$c" = wget ] && tgt=$w ;; --output-document) tgt=$w ;; -P|--directory-prefix|--output-dir) dir=$w ;;
+    esac
+    prev=""
+    case "$w" in
+      --output=*|--output-document=*) tgt=${w#*=} ;;
+      --directory-prefix=*|--output-dir=*) dir=${w#*=} ;;
+      --output|--output-document|--directory-prefix|--output-dir|-o|-P) prev=$w ;;
+      -O) prev=$w; [ "$c" = curl ] && { prev=""; cwdw=1; } ;;
+      --remote-name|--remote-name-all) cwdw=1 ;;
+      -[A-Za-z]*o) [ "$c" = curl ] && prev=-o ;;
+    esac
+  done
+  [ -z "$tgt" ] || [ "$tgt" = - ] || { fs_hit "$tgt" "$cwd" && deny "$c refused: it would write $tgt, and $P_WHY"; }
+  [ -z "$dir" ] || { fs_hit "$dir" "$cwd" && deny "$c refused: it would write into $dir, and $P_WHY"; }
+  if [ "$c" = wget ] || [ -n "$cwdw" ]; then
+    if [ -z "$tgt" ] && [ -z "$dir" ]; then FS_GLOBAL=1; fs_hit "$cwd" / && { FS_GLOBAL=""; deny "$c refused: it would write into $cwd, and $P_WHY"; }; FS_GLOBAL=""; fi
+  fi
+  return 0
+}
+fs_unpack_check() {  # fs_unpack_check <tar|unzip|ditto> <cwd> <word>...: where an archive is unpacked
+  local c=$1 cwd=$2 w prev="" dir="" ext="" first=1 last=""
+  shift 2
+  for w in "$@"; do
+    if [ -n "$prev" ]; then dir=$w; prev=""; continue; fi
+    case "$c" in
+      tar) case "$w" in
+             --extract|--get) ext=1 ;;
+             --directory=*) dir=${w#*=} ;;
+             --directory|-C) prev=1 ;;
+             --*) ;;
+             -*C*) if [ "${w#*C}" = "" ]; then prev=1; else dir=${w#*C}; fi; case "$w" in -*x*) ext=1 ;; esac ;;
+             -*x*) ext=1 ;;
+             *) [ -z "$first" ] || case "$w" in *x*) ext=1 ;; esac ;;
+           esac ;;
+      unzip) case "$w" in -d) prev=1 ;; -d?*) dir=${w#-d} ;; esac; ext=1 ;;
+      ditto) case "$w" in -*) ;; *) dir=$w ;; esac; ext=1 ;;
+    esac
+    first=""
+  done
+  [ -n "$ext" ] || return 0
+  if [ -n "$dir" ]; then
+    fs_hit "$dir" "$cwd" && deny "$c refused: it would unpack into $dir, and $P_WHY"
+  else
+    FS_GLOBAL=1; fs_hit "$cwd" / && { FS_GLOBAL=""; deny "$c refused: it would unpack into $cwd, and $P_WHY"; }; FS_GLOBAL=""
+  fi
+  return 0
+}
+fs_git_check() {  # fs_git_check <cwd> <word>...: a git command that rewrites the working tree acts on the repo of -C or the cwd; that repo may not be, or hold, Claude Code's or hivehouse's own files
+  local cwd=$1 w prev="" sub="" repo=""
+  shift
+  for w in "$@"; do
+    case "$prev" in
+      C) repo=$(canon "$w" "${repo:-$cwd}"); prev=""; continue ;;
+      skip) prev=""; continue ;;
+    esac
+    case "$w" in
+      -C) prev=C ;;
+      -c|--git-dir|--work-tree|--exec-path|--namespace) prev=skip ;;
+      -*) ;;
+      *) sub=$w; break ;;
+    esac
+  done
+  case "$sub" in rm|clean|checkout|restore|reset|stash|mv) ;; *) return 0 ;; esac
+  FS_GLOBAL=1
+  fs_hit "${repo:-$cwd}" "$cwd" && { FS_GLOBAL=""; deny "git $sub refused: it rewrites the working tree of ${repo:-$cwd}, and $P_WHY"; }
+  FS_GLOBAL=""
   return 0
 }
 
@@ -312,14 +429,14 @@ bn() { local t=${1##*/}; printf '%s' "$t"; }
 # A command substitution anywhere (quoted or not), a line ending in a pipe, && or || and a quote left open at a line's end also keep them.
 # A << inside quotes opens nothing, and an arithmetic 1<<A is not a heredoc (its stage is no reader).
 heredoc_strip() {
-  awk '
+  awk -v readers="$READERS" '
     function reader(stage,   n, i, w, c, d) {   # 1 when the stage runs a command that only reads its stdin as text
       n = split(stage, w, /[ \t]+/); c = ""
       for (i = 1; i <= n; i++) { if (w[i] == "" || index(w[i], "=")) continue; c = w[i]; d = w[i + 1]; break }
       if (c == "") return 0
       sub(/^.*\//, "", c)
       if (c == "hh-hub") return (d == "task" || d == "decide") ? 1 : 0
-      return index(" cd cat grep jq wc head tail sort uniq ", " " c " ") ? 1 : 0
+      return index(readers, " " c " ") ? 1 : 0
     }
     function allreaders(line,   t, n, i, w) {   # every stage of the line is a reader; quoted text is blanked first, and a command substitution anywhere fails it
       if (index(line, "$(") || index(line, "`")) return 0
@@ -566,7 +683,7 @@ bash_text() {  # bash_text <command text> <cwd>: the rules for a command; a scri
     done
     fb=$(bn "$first")
     # A15: xargs takes its arguments from a file or a pipe the hook cannot read first, so it passes only with a command that just reads
-    if [ -n "$xa" ]; then case " cd cat grep jq wc head tail sort uniq  " in *" $fb "*) ;; *) deny "xargs runs ${fb:-a command} with arguments the hook cannot read first, which is not allowed while the owner is away (only a reader: cat, grep, head, wc, ...)" ;; esac; fi
+    if [ -n "$xa" ]; then case "$READERS" in *" $fb "*) ;; *) deny "xargs runs ${fb:-a command} with arguments the hook cannot read first, which is not allowed while the owner is away (only a reader: cat, grep, head, wc, ...)" ;; esac; fi
     for tok in ${toks[@]+"${toks[@]}"}; do
       case "$(bn "$tok")" in
         git) have_git=1 ;;
@@ -659,20 +776,27 @@ bash_text() {  # bash_text <command text> <cwd>: the rules for a command; a scri
       [ -n "$kf$kro" ] || deny "ssh-keygen without -f would make a key at its default path under ~/.ssh, which cannot be changed from an away session"
     fi
     # a write into a protected file by a command that writes
-    case "$cmdw" in cp|mv|rm|ln|install)   # A14: the words after the command word
+    case "$cmdw" in cp|mv|rm|ln|install|unlink|rmdir|shred|find|curl|wget|tar|unzip|ditto|git)   # A14, A18: the words after the command word
       nx=""; seen=""; local -a fw=()
       for tok in ${ws[@]+"${ws[@]}"}; do
         [ -n "$seen" ] || { case "$tok" in *=*) continue ;; esac; [ "$(bn "$tok")" != "$cmdw" ] || seen=1; continue; }
         fw+=("$tok")
       done
       local -a fx=(); local fe fm
-      for fe in ${fw[@]+"${fw[@]}"}; do
-        while IFS= read -r fm; do
-          case "$fm" in $'\001'*) deny "${fm#?}" ;; esac
-          fx+=("$fm")
-        done < <(fs_expand "$cwd" "$fe")
-      done
-      fs_write_check "$cmdw" "$cwd" ${fx[@]+"${fx[@]}"} ;;
+      case "$cmdw" in
+        find) fs_find_check "$cwd" ${fw[@]+"${fw[@]}"} ;;
+        curl|wget) fs_fetch_check "$cmdw" "$cwd" ${fw[@]+"${fw[@]}"} ;;
+        tar|unzip|ditto) fs_unpack_check "$cmdw" "$cwd" ${fw[@]+"${fw[@]}"} ;;
+        git) fs_git_check "$cwd" ${fw[@]+"${fw[@]}"} ;;
+        *)
+          for fe in ${fw[@]+"${fw[@]}"}; do
+            while IFS= read -r fm; do
+              case "$fm" in $'\001'*) deny "${fm#?}" ;; esac
+              fx+=("$fm")
+            done < <(fs_expand "$cwd" "$fe")
+          done
+          case "$cmdw" in unlink|rmdir|shred) fs_write_check rm "$cwd" ${fx[@]+"${fx[@]}"} ;; *) fs_write_check "$cmdw" "$cwd" ${fx[@]+"${fx[@]}"} ;; esac ;;
+      esac ;;
     esac
     case "$cmdw" in ssh-keygen|tee|dd|sed|perl|python|python3|node|ruby|truncate|touch|chmod|chown|patch|sponge|scp|sftp|rsync) has_write=1 ;; esac
     [ -z "$kro" ] || has_write=""
