@@ -8,7 +8,7 @@
       "name": "hivehouse",
       "source": "./",
       "description": "Run a feature with a team of Claude sessions in tmux.",
-      "version": "0.5.1"
+      "version": "0.5.2"
     }
   ],
   "description": "Run a feature with a team of Claude sessions in tmux."
