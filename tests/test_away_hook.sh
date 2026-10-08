@@ -367,6 +367,27 @@ allowed "...and with a backslash-quoted delimiter" "hh-hub task proj <<\\EOF${nl
 allowed "cat of a quoted heredoc into a file in the project" "cat > notes.txt <<'EOF'${nl}git push origin main${nl}EOF"
 allowed "a closed single-quoted word before the <<" "hh-hub task 'proj' <<'EOF'${nl}git push${nl}EOF"
 allowed "a closed double-quoted word with an escaped quote before the <<" "hh-hub task \"pr\\\"oj\" <<'EOF'${nl}git push${nl}EOF"
+allowed "hh-hub decide with a ; inside its quoted reason" "hh-hub decide T1 --reason \"a; b | c\" <<'EOF'${nl}git push${nl}EOF"
+allowed "a heredoc piped through readers only" "cat <<'EOF' | grep x | head -5 | wc -l${nl}git push${nl}EOF"
+denied "an unlisted program that runs its input, through a pipe (tclsh)" "cat <<'EOF' | tclsh${nl}git push${nl}EOF"
+denied "...another one, through a pipe (zzrunner)" "cat <<'EOF' | zzrunner${nl}git push${nl}EOF"
+denied "...after a reader in the middle of the pipe" "cat <<'EOF' | head -5 | tclsh${nl}git push${nl}EOF"
+denied "hh-slot run is no reader: it runs a command (the unlisted runner)" "hh-slot run --wait x -- tclsh <<'EOF'${nl}git push${nl}EOF"
+denied "hh-hub back is no reader of a heredoc" "hh-hub back <<'EOF'${nl}git push${nl}EOF"
+denied "a list: reader, then an unlisted runner" "cat <<'EOF'; tclsh${nl}git push${nl}EOF"
+denied "...with &&" "cat <<'EOF' && tclsh${nl}git push${nl}EOF"
+denied "a command substitution on the << line, quoted or not" "cat \"\$(tclsh x)\" <<'EOF'${nl}git push${nl}EOF"
+denied "...in backticks" "cat \`tclsh x\` <<'EOF'${nl}git push${nl}EOF"
+denied "a line ending in || (the runner may follow)" "cat <<'EOF' ||${nl}git push${nl}EOF"
+allowed "a single-quoted reason with ; inside, before the <<" "hh-hub decide T1 --reason 'a; b | c' <<'EOF'${nl}git push${nl}EOF"
+allowed "cd, then a reader with a heredoc" "cd /work${nl}hh-hub task proj <<'EOF'${nl}git push${nl}EOF"
+denied "P3: a script written by a heredoc, run on a later line" "cat > s.sh <<'EOF'${nl}git push${nl}EOF${nl}bash s.sh"
+denied "...run by sh on a later line" "cat > s.sh <<'EOF'${nl}git push${nl}EOF${nl}sh s.sh"
+denied "...run by an unlisted program on a later line" "cat > s.tcl <<'EOF'${nl}git push${nl}EOF${nl}tclsh s.tcl"
+denied "P4: a heredoc inside \$( ), then eval" "x=\$(cat <<'EOF'${nl}git push${nl}EOF${nl})${nl}eval \"\$x\""
+denied "...then a source of the script" "cat > s.sh <<'EOF'${nl}git push${nl}EOF${nl}. ./s.sh"
+denied "...then a script run by its path" "cat > s.sh <<'EOF'${nl}git push${nl}EOF${nl}chmod +x s.sh${nl}./s.sh"
+denied "a reader call followed by a non-reader on the SAME line after &&" "hh-hub task proj <<'EOF' && bash s.sh${nl}git push${nl}EOF"
 denied "ssh as a real command after the heredoc" "hh-hub task proj <<'EOF'${nl}text${nl}EOF${nl}ssh h ls"
 denied "git push as a real command after the heredoc" "cat <<'EOF'${nl}text${nl}EOF${nl}git push"
 denied "bash <<'EOF' holding git push" "bash <<'EOF'${nl}git push${nl}EOF"
@@ -393,13 +414,16 @@ mkdg() {  # mkdg <hosts>: a valid version 2 delegate file naming this hub
   printf "$T_DELEGATE_LINE2"'\nhub=%s\nuntil=%s\nmcp=\nhosts=%s\nallow=\n' "$(cd "$hub" && pwd -P)" "$((NOW + 3600))" "$1" > "$DGF"; chmod 644 "$DGF"
 }
 mkdg night.example.org,ops@10.0.0.7
+mkdga() {  # mkdga <hosts> <allow>: a valid version 2 delegate file with both lines
+  printf "$T_DELEGATE_LINE2"'\nhub=%s\nuntil=%s\nmcp=\nhosts=%s\nallow=%s\n' "$(cd "$hub" && pwd -P)" "$((NOW + 3600))" "$1" "$2" > "$DGF"; chmod 644 "$DGF"
+}
 if hh_delegate_read "$DGF" "$(id -u)" "$NOW" >/dev/null 2>&1; then
   SAVE_HOOK="$HOOK"; HOOK="$(t_delegate_bin "$DGF")/hh-away-hook"
   S="ssh -F none night.example.org"
   for c in "tmux list-panes -a" "tmux list-sessions" "tmux list-windows -t night" "tmux capture-pane -p -t %3" "tmux display-message -p -t %3" \
            "ls -la /work/proj" "cat /work/proj/notes.md" "head -n 20 /work/proj/log" "tail -n 50 /work/proj/log" "grep -rn todo /work/proj" "sed -n 5,20p /work/proj/log" \
-           "wc -l /work/proj/log" "df -h" "ps -ef" "git log --no-ext-diff --no-textconv -5" "git show --no-ext-diff --no-textconv HEAD" "git rev-parse HEAD" \
-           "hh-context" "hh-slot status" "hh-hub status --json" "hh-hub tasks --open"; do
+           "wc -l /work/proj/log" "df -h" "ps -ef" "git log --no-ext-diff --no-textconv --no-show-signature -5" "git show --no-ext-diff --no-textconv --no-show-signature HEAD" "git rev-parse HEAD" \
+           "hh-context" "hh-slot status" "hh-hub tasks --open"; do
     allowed "ssh to a listed host: $c" "$S $c"
   done
   allowed "...with -T and the two allowed -o options" "ssh -F none -T -o ConnectTimeout=5 -o BatchMode=yes night.example.org ls /work"
@@ -426,12 +450,20 @@ if hh_delegate_read "$DGF" "$(id -u)" "$NOW" >/dev/null 2>&1; then
   denied "ssh after another command" "cd /work && $S ls"
   denied "ssh piped into something" "$S ls | head"
   for c in "rm -rf /work/proj" "touch x" "git push" "git status" "git diff" "git log -5" "git log --no-ext-diff -5" "git log --no-textconv -5" "git show HEAD" "git log --no-ext-diff --no-textconv --ext-diff" \
-           "git log --no-ext-diff --no-textconv --textconv" "git log --no-ext-diff --no-textconv --output=x" "git -c core.pager=x log" "git config -l" "git fetch" \
+           "git log --no-ext-diff --no-textconv --no-show-signature --ext-diff" "git log --no-ext-diff --no-textconv -5" "git show --no-ext-diff --no-textconv HEAD" \
+           "git log --no-ext-diff --no-textconv --no-show-signature --show-signature" "git log --show-signature --no-ext-diff --no-textconv --no-show-signature" "hh-hub status" "hh-hub status --json" \
+           "git log --no-ext-diff --no-textconv --no-show-signature --textconv" "git log --no-ext-diff --no-textconv --no-show-signature --output=x" "git -c core.pager=x log" "git config -l" "git fetch" \
            "claude" "tmux new-session" "tmux send-keys x" "tmux kill-server" "tmux capture-pane" "tmux display-message" "tmux -S /x list-panes" "tmux run-shell x" \
            "sed -i s/a/b/ f" "sed -i 1p f" "sed -s 1p f" "sed -n 1wfile f" "sed -n p f" "sed s/a/b/ f" "tail -f log" "tail -F log" "tail -nf log" "bash" "sh" "env ls" "xargs ls" "nohup ls" "PATH=/x cat f" "ls=1 cat f" \
            "ssh -F none other.example.org ls" "ssh night.example.org ls" "scp a b" "hh-hub back" "hh-hub away" "hh-slot run" "hh-slot acquire" "hh-push" "hh-spawn x" "hh-gate" "vim" "python3" "find /" "dd if=/dev/zero of=x" "tee x" "cp a b" "mv a b" "ln a b" "chmod 777 x" "cat f -- x;"; do
     denied "remote command refused: $c" "$S $c"
   done
+  # a SECOND valid hub: the file is valid and names a hub, just not this one (the hub-match guard, not the reader, refuses)
+  hub2="$T_TMP/hub2"; mkdir -p "$hub2/$T_HUB"; cp "$hub/$T_HUB/hub.json" "$hub/$T_HUB/projects.json" "$hub2/$T_HUB/"
+  printf "$T_DELEGATE_LINE2"'\nhub=%s\nuntil=%s\nmcp=\nhosts=night.example.org\nallow=scp\n' "$(cd "$hub2" && pwd -P)" "$((NOW + 3600))" > "$DGF"; chmod 644 "$DGF"
+  hh_delegate_read "$DGF" "$(id -u)" "$NOW" >/dev/null 2>&1 && ok "(the second hub's file reads as valid)" || bad "the second hub's file is not valid: $HH_DELEGATE_WHY"
+  denied "a valid file naming ANOTHER valid hub grants no ssh here" "$S ls"
+  denied "...and allows no scp here" "scp a b"
   mkdg ""; denied "no hosts listed: ssh is refused as before" "$S ls"
   mkdg night.example.org
   ROLE=hub; allowed "the hub's own session passes the same way" "$S ls"; ROLE=proj
@@ -441,6 +473,49 @@ if hh_delegate_read "$DGF" "$(id -u)" "$NOW" >/dev/null 2>&1; then
   chmod 644 "$DGF"; mkdg night.example.org; mv "$DGF" "$DGF.off"; denied "no delegate file grants nothing" "$S ls"; mv "$DGF.off" "$DGF"
   printf "$T_DELEGATE_LINE1"'\nhub=%s\nuntil=%s\nmcp=\n' "$(cd "$hub" && pwd -P)" "$((NOW + 3600))" > "$DGF"; chmod 644 "$DGF"; denied "a version 1 file lists no hosts" "$S ls"
   mkdg night.example.org
+  echo "-- allow= lifts only the command-position refusal of the word it names"
+  mkdga "" ""; denied "no allowances: scp is refused" "scp notes.txt backup/notes.txt"
+  denied "...sftp is refused too" "sftp host"
+  denied "...rsync to a remote is refused" "rsync -a dir/ host:dir/"
+  allowed "...local rsync passes as before" "rsync -a dir/ dir2/"
+  mkdga "" "allow=scp"; denied "a malformed allow= line (the word allow=scp) is no grant" "scp notes.txt backup/notes.txt"
+  mkdga "" "scp"; allowed "allow=scp: scp passes" "scp notes.txt backup/notes.txt"
+  allowed "...with a remote operand" "scp notes.txt host:backup/notes.txt"
+  allowed "...with -i and -P" "scp -i key -P 2222 notes.txt host:backup/"
+  denied "...but not rsync to a remote" "rsync -a dir/ host:dir/"
+  denied "...nor sftp" "sftp host"
+  denied "...nor ssh" "ssh -F none host ls"
+  denied "...nor vercel, netlify, hh-push or hh-remote-sync" "vercel deploy"
+  denied "......netlify" "netlify deploy"
+  denied "......hh-push" "hh-push origin abc main"
+  denied "......hh-remote-sync" "hh-remote-sync x"
+  denied "...git push still refused on the same command line" "scp a b; git push"
+  denied "...a second command that is refused still is" "scp a b && claude"
+  for o in "-o ProxyCommand=x" "-oProxyCommand=x" "-S ./prog" "-F cfg" "-J jump" "-e ssh"; do denied "...scp with $o runs a program or reads another config" "scp $o a host:b"; done
+  denied "...a write to a protected path by the same word" "scp host:x $HOME/.ssh/config"
+  mkdga "" "rsync"; denied "...rsync into a protected path" "rsync -a host:x $HOME/.ssh/config"; mkdga "" "scp"
+  mkdga "" "sftp"; allowed "allow=sftp: sftp passes" "sftp host"
+  denied "...scp is still refused" "scp a b"
+  denied "...rsync to a remote too" "rsync -a d/ host:d/"
+  denied "...sftp -o runs a program" "sftp -o ProxyCommand=x host"
+  mkdga "" "rsync"; allowed "allow=rsync: rsync to a remote passes" "rsync -a dir/ host:dir/"
+  denied "...rsync -e runs a program" "rsync -e 'ssh -o ProxyCommand=x' d/ host:d/"
+  denied "......--rsh" "rsync --rsh=x d/ host:d/"
+  denied "...scp is still refused" "scp a b"
+  denied "...sftp too" "sftp host"
+  mkdga "" "scp,sftp,rsync"; allowed "all three listed: scp" "scp a host:b"; allowed "...sftp" "sftp host"; allowed "...rsync to a remote" "rsync -a d/ host:d/"
+  mkdga night.example.org "scp,sftp,rsync"
+  denied "allow= never lifts the remote part: a write" "ssh -F none night.example.org rm -rf /work"
+  denied "...an ssh without -F none" "ssh night.example.org ls"
+  denied "...a quoted remote ;" "ssh -F none night.example.org \"ls; touch x\""
+  printf "$T_DELEGATE_LINE1"'\nhub=%s\nuntil=%s\nmcp=\n' "$(cd "$hub" && pwd -P)" "$((NOW + 3600))" > "$DGF"; chmod 644 "$DGF"
+  denied "a version 1 file allows nothing: scp" "scp a b"
+  denied "...sftp" "sftp host"
+  denied "...rsync to a remote" "rsync -a d/ host:d/"
+  mkdga "" "scp"; chmod 666 "$DGF"; denied "a delegate file anyone can write allows nothing" "scp a b"; chmod 644 "$DGF"
+  printf "$T_DELEGATE_LINE2"'\nhub=%s\nuntil=%s\nmcp=\nhosts=\nallow=scp\n' "$T_TMP" "$((NOW + 3600))" > "$DGF"; denied "a file naming another hub allows nothing" "scp a b"
+  mkdga "" "scp"; mv "$DGF" "$DGF.off"; denied "no file allows nothing" "scp a b"; mv "$DGF.off" "$DGF"
+  mkdga night.example.org ""
   echo "-- ~/.ssh is protected (known_hosts and keys; the config is no longer read)"
   tool_denied "Write to ~/.ssh/config" "$(fileop Write "$HOME/.ssh/config")"
   tool_denied "Edit to ~/.ssh/known_hosts" "$(fileop Edit "$HOME/.ssh/known_hosts")"

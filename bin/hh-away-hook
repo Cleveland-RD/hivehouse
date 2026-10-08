@@ -183,37 +183,42 @@ file_check() {
 bn() { local t=${1##*/}; printf '%s' "$t"; }
 # KI-23: a heredoc body is data, not commands, only when the command that reads it does not run it. heredoc_strip prints the command
 # with such bodies removed (an unquoted body keeps only its lines with $( or a backtick, which the segment reading then checks as
-# before). A body stays whole when the line holding the << has a word that runs or relays its input (an interpreter, ssh, xargs,
-# eval, tmux, a WRAPPERS word), when the command in front of the << is not a known reader (cat, git, grep, jq, wc, head, tail,
-# sort, uniq or an hh- executable), when the line ends in a pipe or && (the runner may be on the next line), or when a quote is still
-# open at its end. A << inside quotes opens nothing, and an arithmetic 1<<A is not a heredoc (the command before it is no reader).
+# before). Bodies are dropped only when EVERY command in the WHOLE call (each stage of each pipeline and list, on every line outside a
+# body) is a known reader: cd, cat, git, grep, jq, wc, head, tail, sort, uniq, or hh-hub task / hh-hub decide (the only hh- commands that
+# read a text from stdin). A list of runners would fail open for every program missing from it, so the call is held to a list of what is
+# safe instead, and one unknown command anywhere (`bash s.sh` on a later line, `eval "$x"` after a $(cat <<EOF)) keeps every body checked.
+# A command substitution anywhere (quoted or not), a line ending in a pipe, && or || and a quote left open at a line's end also keep them.
+# A << inside quotes opens nothing, and an arithmetic 1<<A is not a heredoc (its stage is no reader).
 heredoc_strip() {
-  awk -v wr="$WRAPPERS" '
-    function runner(line,   t, n, i, w) {
-      t = line; gsub(/[^A-Za-z0-9_.-]/, " ", t); n = split(t, w, " ")
-      for (i = 1; i <= n; i++) if (index(" bash sh zsh dash ksh python python3 perl node ruby php lua osascript awk gawk ssh xargs eval tmux source . " wr, " " w[i] " ")) return 1
-      return 0
-    }
-    function reader(stage,   t, n, i, w, c) {
-      t = stage; n = split(t, w, /[ \t]+/)
-      for (i = 1; i <= n; i++) { if (w[i] == "" || index(w[i], "=")) continue; c = w[i]; break }
+  awk '
+    function reader(stage,   n, i, w, c, d) {   # 1 when the stage runs a command that only reads its stdin as text
+      n = split(stage, w, /[ \t]+/); c = ""
+      for (i = 1; i <= n; i++) { if (w[i] == "" || index(w[i], "=")) continue; c = w[i]; d = w[i + 1]; break }
+      if (c == "") return 0
       sub(/^.*\//, "", c)
-      return (c ~ /^hh-/ || index(" cat git grep jq wc head tail sort uniq ", " " c " ")) ? 1 : 0
+      if (c == "hh-hub") return (d == "task" || d == "decide") ? 1 : 0
+      return index(" cd cat git grep jq wc head tail sort uniq ", " " c " ") ? 1 : 0
     }
-    BEGIN { inq = ""; inbody = 0 }
+    function allreaders(line,   t, n, i, w) {   # every stage of the line is a reader; quoted text is blanked first, and a command substitution anywhere fails it
+      if (index(line, "$(") || index(line, "`")) return 0
+      t = line; gsub(/\047[^\047]*\047/, "X", t); gsub(/"([^"\\]|\\.)*"/, "X", t)
+      n = split(t, w, /[;&|()]+/)
+      for (i = 1; i <= n; i++) { if (w[i] ~ /^[ \t]*$/) continue; if (!reader(w[i])) return 0 }
+      return 1
+    }
+    BEGIN { inq = ""; inbody = 0; all = 1; no = 0 }
     {
       line = $0
       if (inbody) {
         t = line; if (strip[ci]) sub(/^\t+/, "", t)
         if (t == delim[ci]) { ci++; if (ci > nh) inbody = 0; next }
-        if (mode[ci] == "keep") print line
-        else if (mode[ci] == "scan" && (index(line, "$(") || index(line, "`"))) print line
+        no++; txt[no] = line; kd[no] = bq[ci] ? "drop" : "scan"
         next
       }
-      print line
-      nh = 0; n = length(line); run = runner(line)
+      no++; txt[no] = line; kd[no] = "line"
+      nh = 0; n = length(line); if (!allreaders(line)) all = 0
       tl = line; sub(/[ \t]+$/, "", tl); tail = substr(tl, length(tl))
-      pipeend = (tail == "|" || tail == "\\" || substr(tl, length(tl) - 1) == "&&")
+      if (tail == "|" || tail == "\\" || substr(tl, length(tl) - 1) == "&&") all = 0
       i = 1
       while (i <= n) {
         c = substr(line, i, 1)
@@ -231,17 +236,19 @@ heredoc_strip() {
           else { if (ch == "\\") { q = 1; j++ }
                  while (substr(line, j, 1) ~ /[A-Za-z0-9_.-]/) { d = d substr(line, j, 1); j++ } }
           if (d == "") { i++; continue }
-          stage = substr(line, 1, i - 1); m = 0
-          for (k = 1; k <= length(stage); k++) if (substr(stage, k, 1) ~ /[;&|(]/) m = k
-          stage = substr(stage, m + 1)
-          nh++; delim[nh] = d; strip[nh] = st
-          mode[nh] = (run || pipeend || !reader(stage)) ? "keep" : (q ? "drop" : "scan")
+          nh++; delim[nh] = d; strip[nh] = st; bq[nh] = q
           i = j; continue
         }
         i++
       }
       if (inq != "") nh = 0
       if (nh > 0) { inbody = 1; ci = 1 }
+    }
+    END {
+      for (k = 1; k <= no; k++) {
+        if (kd[k] == "line" || !all) print txt[k]
+        else if (kd[k] == "scan" && (index(txt[k], "$(") || index(txt[k], "`"))) print txt[k]
+      }
     }'
 }
 
@@ -255,7 +262,7 @@ heredoc_strip() {
 SSH_PLAIN='A-Za-z0-9_.:,=+/@%\ -'   # the only characters of such a command: letters, digits, _ . : , = + / @ % - and the space
 rc_deny() { deny "a remote command may only read while the owner is away ($1)"; }
 remote_check() {  # remote_check <word> [<word>...]: the words ssh sends to the remote shell; denies unless they are on the read-only list
-  local c="${1:-}" sub="${2:-}" a p="" ext="" txt=""
+  local c="${1:-}" sub="${2:-}" a p="" ext="" txt="" sig=""
   case "$c" in
     tmux) case "$sub" in
             list-panes|list-sessions|list-windows) ;;
@@ -271,16 +278,28 @@ remote_check() {  # remote_check <word> [<word>...]: the words ssh sends to the 
            log|show) shift 2
                      for a in "$@"; do case "$a" in
                        --no-ext-diff) ext=1 ;; --no-textconv) txt=1 ;;
-                       --ext-diff|--textconv|--output|--output=*|-c|--exec-path*|--open-files-in-pager*|-O*) rc_deny "git $sub option $a runs or writes" ;;
+                       --no-show-signature) sig=1 ;;
+                       --ext-diff|--textconv|--show-signature|--output|--output=*|-c|--exec-path*|--open-files-in-pager*|-O*) rc_deny "git $sub option $a runs or writes" ;;
                      esac; done
-                     [ -n "$ext$txt" ] && [ -n "$ext" ] && [ -n "$txt" ] || rc_deny "git $sub needs --no-ext-diff --no-textconv, since the remote repository's config names programs for both" ;;
+                     [ -n "$ext" ] && [ -n "$txt" ] && [ -n "$sig" ] || rc_deny "git $sub needs --no-ext-diff --no-textconv --no-show-signature, since the remote repository's config names programs for all three" ;;
            rev-parse) ;;
            *) rc_deny "git $sub" ;;
          esac ;;
     hh-slot) [ "$sub" = status ] || rc_deny "hh-slot $sub" ;;
-    hh-hub) case "$sub" in status|tasks) ;; *) rc_deny "hh-hub $sub" ;; esac ;;
+    hh-hub) [ "$sub" = tasks ] || rc_deny "hh-hub $sub (hh-hub status runs git status in every project, which can run core.fsmonitor)" ;;
     *) rc_deny "$c is not on the list of reads" ;;
   esac
+}
+# allow= of the owner's delegate file (scp, rsync, sftp, as hh-hub away --allow wrote them): each lifts only the command-position refusal of its own
+# word. Read once per command, and only for a command that names one of those words; a file that is not valid for this hub allows nothing.
+DG_ALLOW_READ=""; DG_ALLOW=""
+allow_has() {  # allow_has <word>: 0 when the owner's valid delegate file for this hub lists it
+  if [ -z "$DG_ALLOW_READ" ]; then
+    DG_ALLOW_READ=1
+    if hh_delegate_mine && [ "$HH_DG_HUB" = "$HUB" ]; then DG_ALLOW=$HH_DG_ALLOW; fi
+  fi
+  case ",$DG_ALLOW," in *",$1,"*) return 0 ;; esac
+  return 1
 }
 ssh_gate() {  # ssh_gate <raw command>: 1 = not an allowed ssh (the general rules decide, and refuse ssh); 0 = allowed; denies a listed-host ssh that breaks the shape
   local c="$1" w i o host e hosts
@@ -363,7 +382,11 @@ bash_check() {
     case "$cmdw" in
       hh-push) deny "hh-push is not allowed while the owner is away" ;;
       hh-remote-sync) deny "hh-remote-sync is not allowed while the owner is away" ;;
-      ssh|scp|vercel|netlify) deny "$cmdw is not allowed while the owner is away" ;;
+      ssh|vercel|netlify) deny "$cmdw is not allowed while the owner is away" ;;
+      scp|sftp) allow_has "$cmdw" || deny "$cmdw is not allowed while the owner is away (the owner's delegate file can list it with hh-hub away --allow)"
+                for tok in ${toks[@]+"${toks[@]}"}; do
+                  case "$tok" in -o*|-S|-F|-J|-D|-s|-e) deny "$cmdw with $tok runs a program or reads another ssh config, which an allowed $cmdw may not do while the owner is away" ;; esac
+                done ;;
       claude) deny "starting Claude by hand is not allowed from an away session; hh-spawn and hh-hub start sessions" ;;
     esac
     local has_tmux="" has_start="" has_gh="" has_rsync="" has_curl="" has_wget="" has_write=""
@@ -383,7 +406,12 @@ bash_check() {
     done
     [ -z "$has_tmux" ] || [ -z "$has_start" ] || deny "tmux cannot start windows or sessions, run commands or type into panes from an away session; hh-spawn and hh-hub do those"
     if [ -n "$has_rsync" ]; then
-      for tok in ${toks[@]+"${toks[@]}"}; do case "$tok" in *:*|-e|--rsh*) deny "rsync to a remote is not allowed while the owner is away" ;; esac; done
+      for tok in ${toks[@]+"${toks[@]}"}; do
+        case "$tok" in
+          -e|--rsh*) deny "rsync to a remote is not allowed while the owner is away (rsync -e and --rsh run a program, whatever the owner allowed)" ;;
+          *:*) allow_has rsync || deny "rsync to a remote is not allowed while the owner is away (the owner's delegate file can list rsync with hh-hub away --allow)" ;;
+        esac
+      done
     fi
     if [ -n "$has_curl$has_wget" ]; then
       for i in "${!toks[@]}"; do
@@ -399,7 +427,7 @@ bash_check() {
       done
     fi
     # a write into a protected file by a command that writes
-    case "$cmdw" in tee|cp|mv|rm|ln|install|dd|sed|perl|python|python3|node|ruby|truncate|touch|chmod|chown|patch|sponge) has_write=1 ;; esac
+    case "$cmdw" in tee|cp|mv|rm|ln|install|dd|sed|perl|python|python3|node|ruby|truncate|touch|chmod|chown|patch|sponge|scp|sftp|rsync) has_write=1 ;; esac
     if [ -n "$has_write" ]; then
       for tok in ${toks[@]+"${toks[@]}"}; do
         case "$tok" in -*) continue ;; esac
