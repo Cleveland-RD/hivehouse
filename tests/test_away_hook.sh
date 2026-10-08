@@ -719,7 +719,7 @@ echo "-- A14: a write operand that is or holds a protected path (rm, mv, cp, ins
 scr="$proj/scr"; mkdir -p "$scr/sub" "$proj/$T_STATE/team/impl"; : > "$scr/settings.json"; : > "$scr/team.json"; : > "$scr/plain.txt"; : > "$scr/sub/.mcp.json"
 mkdir -p "$T_TMP/anydir" "$T_TMP/src2" "$T_TMP/build"; : > "$T_TMP/src2/a.txt"
 phook() {  # phook <json> [plugin root]: as hook(), with the plugin root set, or unset when none is given
-  ERR=$(printf '%s' "$1" | env -u CLAUDE_PLUGIN_ROOT ${2:+CLAUDE_PLUGIN_ROOT="$2"} HH_AWAY_BYPASS=1 HH_PROJECT="$proj" HH_AWAY_HUB="$hub" HH_AWAY_MCP_ALLOW= "$HOOK" 2>&1 >/dev/null); RC=$?
+  ERR=$(printf '%s' "$1" | env -u CLAUDE_PLUGIN_ROOT ${2:+CLAUDE_PLUGIN_ROOT="$2"} ${PHOME:+HOME="$PHOME"} HH_AWAY_BYPASS=1 HH_PROJECT="$proj" HH_AWAY_HUB="$hub" HH_AWAY_MCP_ALLOW= "$HOOK" 2>&1 >/dev/null); RC=$?
 }
 pdenied()  { phook "$(tc "$2")" "${3:-}"; [ "$RC" -eq 2 ] && [ -n "$ERR" ] && ok "$1" || bad "$1: exit $RC [$ERR]"; }
 pallowed() { phook "$(tc "$2")" "${3:-}"; [ "$RC" -eq 0 ] && ok "$1" || bad "$1: exit $RC [$ERR]"; }
@@ -748,6 +748,17 @@ for f in session.json context.json rotate-asked.json statusline.json; do
 done
 tool_allowed "A13 handoffs stay writable" "$(fileop Write "$proj/$T_STATE/handoffs/impl.md")"
 allowed "A13 team/ is readable" "cat $T_STATE/team/impl/context.json"
+echo "-- A17: a glob in a write operand is expanded the way bash would, and each match is checked"
+mkdir -p "$T_TMP/fh/.claude"; : > "$scr/a.tmp"; : > "$scr/b.tmp"   # the patterns need something to match: a home of the test's own, never the real one
+PHOME="$T_TMP/fh"
+for c in 'rm -rf ~/.cl*' 'rm -rf ~/.c?aude' 'rm -rf ~/.[c]laude' 'mv ~/.cl* ~/old' 'cp scr/plain.txt ~/.cl*/' 'rm -rf ~/.{claude,x}' 'rm -rf ~/.cla{u,x}de'; do
+  pdenied "A17 refused, plugin root unset: $c" "$c"
+  pdenied "A17 refused, plugin root set: $c" "$c" "$PROOT"
+done
+pallowed "A17 rm scr/*.tmp in scratch" 'rm scr/*.tmp'
+pallowed "A17 a pattern with no match passes as written" 'rm scr/nothing-*'
+pallowed "A17 mv scr/*.tmp scr/sub/" 'mv scr/*.tmp scr/sub/'
+PHOME=""
 echo "-- A15: xargs passes only with a reader; the arguments it is fed cannot be read first"
 ROLE=proj
 for c in 'xargs git < scr/plain.txt' 'xargs tmux < scr/plain.txt' 'xargs npm < scr/plain.txt' 'xargs curl < scr/plain.txt' 'xargs rm < scr/plain.txt' 'xargs -n 1 git < scr/plain.txt' 'echo "push origin main" | xargs git' 'ls | xargs -I {} git {}' 'sudo xargs hh-hub self'; do

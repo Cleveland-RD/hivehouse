@@ -126,6 +126,21 @@ fs_tree() {  # fs_tree <source> <dest> <cwd> <command>: every file under a sourc
 $out
 EOF
 }
+FS_GLOB_MAX=500
+fs_expand() {  # fs_expand <cwd> <word>: prints the word, or what bash would expand it to in the cwd (~ first); a brace pattern or an expansion the hook cannot do is refused
+  local cwd=$1 w=$2 m n=0
+  case "$w" in -*) printf '%s\n' "$w"; return 0 ;; esac
+  case "$w" in *\{*|*\}*) { printf "\001a brace pattern (%s) in a write operand cannot be checked while the owner is away\n" "$w"; return 0; } ;; esac
+  case "$w" in *[\*\?\[]*) ;; *) printf '%s\n' "$w"; return 0 ;; esac
+  case "$w" in "~") w=$HOME ;; "~/"*) w="$HOME/${w#\~/}" ;; esac
+  [ -d "$cwd" ] || { printf "\001the pattern %s in a write operand cannot be expanded (the call's folder is unknown), so it cannot be checked while the owner is away\n" "$w"; return 0; }
+  while IFS= read -r m; do
+    [ -n "$m" ] || continue
+    n=$((n + 1)); [ "$n" -le "$FS_GLOB_MAX" ] || { printf "\001the pattern %s matches more than %s paths, too many to check while the owner is away\n" "$w" "$FS_GLOB_MAX"; return 0; }
+    printf '%s\n' "$m"
+  done < <(cd -- "$cwd" 2>/dev/null && compgen -G "$w" 2>/dev/null)
+  [ "$n" -gt 0 ] || printf '%s\n' "$w"   # no match: bash passes the pattern on as written
+}
 fs_write_check() {  # fs_write_check <command> <cwd> <word>...: the words after rm, mv, cp, install or ln
   local cmd=$1 cwd=$2 w ddash="" tflag="" tdir="" link="" n d dest src
   local -a ops=() srcs=()
@@ -650,7 +665,14 @@ bash_text() {  # bash_text <command text> <cwd>: the rules for a command; a scri
         [ -n "$seen" ] || { case "$tok" in *=*) continue ;; esac; [ "$(bn "$tok")" != "$cmdw" ] || seen=1; continue; }
         fw+=("$tok")
       done
-      fs_write_check "$cmdw" "$cwd" ${fw[@]+"${fw[@]}"} ;;
+      local -a fx=(); local fe fm
+      for fe in ${fw[@]+"${fw[@]}"}; do
+        while IFS= read -r fm; do
+          case "$fm" in $'\001'*) deny "${fm#?}" ;; esac
+          fx+=("$fm")
+        done < <(fs_expand "$cwd" "$fe")
+      done
+      fs_write_check "$cmdw" "$cwd" ${fx[@]+"${fx[@]}"} ;;
     esac
     case "$cmdw" in ssh-keygen|tee|dd|sed|perl|python|python3|node|ruby|truncate|touch|chmod|chown|patch|sponge|scp|sftp|rsync) has_write=1 ;; esac
     [ -z "$kro" ] || has_write=""
