@@ -844,7 +844,7 @@ hh_delegate_check_list() {
   done
 }
 hh_delegate_read() {  # hh_delegate_read <path> <uid> [<now>]: prints "<hub><TAB><until><TAB><mcp>" when the file is valid; 1 when it is not
-  local f="$1" want="$2" now="${3:-}" d hub until mcp l1="" l2="" l3="" l4="" l5="" l6="" l7="" l8="" ver hosts="" allow="" want_lines
+  local f="$1" want="$2" now="${3:-}" d hub until mcp l1="" l2="" l3="" l4="" l5="" l6="" nl line dl ver hosts="" allow="" want_lines
   HH_DELEGATE_WHY=""; HH_DR_HUB=""; HH_DR_UNTIL=""; HH_DR_MCP=""; HH_DR_HOSTS=""; HH_DR_ALLOW=""; HH_DR_ABSENT=""
   [ -e "$f" ] || [ -L "$f" ] || HH_DR_ABSENT=1   # no file at all: not away, and nothing to explain
   [ -n "$now" ] || now=$(/bin/date +%s)
@@ -854,14 +854,17 @@ hh_delegate_read() {  # hh_delegate_read <path> <uid> [<now>]: prints "<hub><TAB
   d=${f%/*}; [ -n "$d" ] || d=/
   hh_path_trusted "$d" dir "$want" strict || return 1
   hh_chain_trusted "${d%/*}" "$want" || return 1
-  { IFS= read -r l1; IFS= read -r l2; IFS= read -r l3; IFS= read -r l4; IFS= read -r l5; IFS= read -r l6; IFS= read -r l7; IFS= read -r l8 && l8=x; } < "$f" 2>/dev/null
-  case "$l1$l2$l3$l4" in *$'\r'*) HH_DELEGATE_WHY="the content has carriage returns"; return 1 ;; esac
+  # up to 7 lines (one past the longest version), counted: a blank line is a line (comparing the text of the later lines to "" would let one through)
+  dl=(); nl=0
+  while [ "$nl" -lt 7 ] && { IFS= read -r line || [ -n "$line" ]; }; do dl[nl]=$line; nl=$((nl + 1)); line=""; done < "$f" 2>/dev/null
+  l1=${dl[0]-}; l2=${dl[1]-}; l3=${dl[2]-}; l4=${dl[3]-}; l5=${dl[4]-}; l6=${dl[5]-}
+  case "$l1$l2$l3$l4$l5$l6" in *$'\r'*) HH_DELEGATE_WHY="the content has carriage returns"; return 1 ;; esac
   ver=${l1#"$HH_DELEGATE_TAG "}
   case "$l1" in "$HH_DELEGATE_TAG "?*) ;; *) ver="" ;; esac
   case "$HH_DELEGATE_VERSIONS" in *" $ver "*) ;; *) HH_DELEGATE_WHY="the first line is not '$HH_DELEGATE_TAG <version>' with a version in:$HH_DELEGATE_VERSIONS"; return 1 ;; esac
   case "$ver" in 1) want_lines=4 ;; *) want_lines=6 ;; esac
   # the lines past the version's own count: none (a version 1 file has no fifth line, a version 2 file no seventh)
-  case "$want_lines" in 4) [ -z "$l5$l6$l7$l8" ] ;; *) [ -z "$l7$l8" ] ;; esac || { HH_DELEGATE_WHY="the content is more than $want_lines lines (a version $ver file has exactly $want_lines)"; return 1; }
+  [ "$nl" -le "$want_lines" ] || { HH_DELEGATE_WHY="the content is more than $want_lines lines (a version $ver file has exactly $want_lines)"; return 1; }
   hub=$l2; until=$l3
   case "$hub" in hub=/*) hub=${hub#hub=} ;; *) HH_DELEGATE_WHY="line 2 is not hub=<absolute path>"; return 1 ;; esac
   hh_is_typed_path "$hub" || { HH_DELEGATE_WHY="the hub path is not one hivehouse will type"; return 1; }

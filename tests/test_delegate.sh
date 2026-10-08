@@ -93,6 +93,16 @@ mkf; printf "$T_DELEGATE_LINE1"'\nhub=/work\nuntil=%s\nmcp=\nhosts=a\n' "$((NOW 
 mk2 "hosts=a" "allow="; printf '%s\r\n' x >> "$F"; ok_ && bad "carriage return in a v2 file is valid" || ok "a carriage return in a v2 file is invalid"
 mkf; printf "$T_DELEGATE_LINE2"'\r\nhub=/work\r\nuntil=%s\r\nmcp=\r\nhosts=\r\nallow=\r\n' "$((NOW + 60))" > "$F"; ok_ && bad "a v2 file with carriage returns in lines 5 and 6 is valid" || ok "carriage returns in a v2 file are refused"
 
+# a blank line past the version's count is a line (the content is exactly 4 or 6 lines, a blank one included)
+mkf; printf "$T_DELEGATE_LINE1"'\nhub=/work\nuntil=%s\nmcp=\n\n' "$((NOW + 60))" > "$F"; ok_ && bad "a v1 file with a blank 5th line is valid" || ok "a v1 file with a blank 5th line is refused"
+mk2 "hosts=" "allow="; printf '\n' >> "$F"; ok_ && bad "a v2 file with a blank 7th line is valid" || ok "a v2 file with a blank 7th line is refused"
+mkf; printf "$T_DELEGATE_LINE1"'\nhub=/work\nuntil=%s\nmcp=\n\n\n\n\n\n' "$((NOW + 60))" > "$F"; ok_ && bad "a v1 file with many blank lines is valid" || ok "...and with many blank lines"
+mk2 "hosts=" "allow="; ok_ && ok "(a v2 file of exactly 6 lines is still valid)" || bad "v2 refused: $HH_DELEGATE_WHY"
+mk2 "hosts=" "allow="; printf '%s' "$(cat "$F")" > "$F"; ok_ && ok "...and without a final newline" || bad "no final newline refused: $HH_DELEGATE_WHY"
+# a carriage return in line 5 or 6 reaches the carriage-return check first
+mkf; printf "$T_DELEGATE_LINE2"'\nhub=/work\nuntil=%s\nmcp=\nhosts=\r\nallow=\n' "$((NOW + 60))" > "$F"; ok_ && bad "a CR in hosts= is valid" || assert_contains "a carriage return in line 5 is refused as one" "$HH_DELEGATE_WHY" "carriage"
+mkf; printf "$T_DELEGATE_LINE2"'\nhub=/work\nuntil=%s\nmcp=\nhosts=\nallow=\r\n' "$((NOW + 60))" > "$F"; ok_ && bad "a CR in allow= is valid" || assert_contains "...and in line 6" "$HH_DELEGATE_WHY" "carriage"
+
 # ---- who can write it ----
 mkf; chmod 664 "$F"; ok_ && bad "a group-writable file is valid" || ok "a group-writable file is refused"
 mkf; chmod 666 "$F"; ok_ && bad "a world-writable file is valid" || ok "a world-writable file is refused"
