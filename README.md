@@ -85,3 +85,4 @@ optional i-have-adhd plugin unasked, or push anything.
 - [Customise hivehouse](docs/customise.md): roles, rules, options, and the optional i-have-adhd plugin.
 - [State and restarts](docs/state-and-restarts.md): where hivehouse keeps its files and what to do after a restart.
 - [Development](docs/development.md): running the tests and the evals.
+- [Security](SECURITY.md): the supported version and how to report a vulnerability privately.
