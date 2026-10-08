@@ -84,4 +84,20 @@ session "$r" implementer sH "$FIX"; reg "$r" implementer; SID=sH; out=$(stop "$r
 reg "$r" implementer; out=$(stop "$r"); assert_eq "...and the crossing is still told afterwards" "$(printf '%s' "$out" | jq -r .decision)" "block"
 # a record of another session is never read as this one's
 session "$r" implementer sG "$FIX"; reg "$r" implementer; SID=other; out=$(stop "$r"); assert_eq "a session whose record is another's is not told" "$out" ""
+# W2: a window nobody gave or measured is a guess: said once per session, never a request to rotate
+jq -nc '{agents:[{name:"implementer",pane:"%1"}]}' > "$r/$T_STATE/team.json"
+session "$r" implementer sJ "$FIX"; reg "$r" implementer; SID=sJ; out=$(stop "$r"); R=$(printf '%s' "$out" | jq -r .reason)
+assert_eq "a guessed window at the level: told once" "$(printf '%s' "$out" | jq -r .decision)" "block"
+assert_contains "...that the window is not known, guessed at the default" "$R" "not known (guessed at $T_WINDOW)"
+assert_contains "...with how to set it: hh-hub window" "$R" "hh-hub window"
+assert_contains "...and hh-spawn --self --window" "$R" "hh-spawn --self --agent implementer --window"
+case "$R" in *"ROTATE READY"*|*"hh-self-rotate"*|*"START HERE"*) bad "a guessed window is told to rotate" ;; *) ok "...and never asked to rotate" ;; esac
+reg "$r" implementer; out=$(stop "$r"); assert_eq "...not told twice for that session" "$out" ""
+reg "$r" implementer; out=$(stop "$r" 5); assert_eq "...below the level too: nothing" "$out" ""
+session "$r" implementer sK "$FIX"; reg "$r" implementer; SID=sK; out=$(stop "$r"); assert_eq "a new session is told once again" "$(printf '%s' "$out" | jq -r .decision)" "block"
+# a window Claude Code measured for this session is not a guess: it rotates as before
+jq -nc '{window:200000,used_percentage:50,session_id:"sK",at:"t"}' > "$r/$T_STATE/team/implementer/context.json"
+session "$r" implementer sL "$FIX"; jq -nc '{window:200000,used_percentage:50,session_id:"sL",at:"t"}' > "$r/$T_STATE/team/implementer/context.json"
+reg "$r" implementer; SID=sL; out=$(stop "$r"); assert_contains "a measured window rotates" "$(printf '%s' "$out" | jq -r .reason)" "ROTATE READY"
+rm -f "$r/$T_STATE/team/implementer/context.json"
 t_done

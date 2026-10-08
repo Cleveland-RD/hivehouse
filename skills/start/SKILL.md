@@ -106,7 +106,7 @@ again before adding an agent later. This approval is a plan confirmation, separa
 
 First register this pane as the orchestrator, once: `hh-spawn --self --agent orchestrator`, adding `--window <tokens>` when you
 know this session's context window (never a guess from the model name: without it hivehouse records the window Claude Code reported
-for the session, or none, and `hh-context` then reads "(window assumed 1000000)" until the tokens pass 1000000, and "(window unknown)" after). An agent name is bare (the
+for the session, or none, and `hh-context` then reads "(window assumed 1000000)" until the tokens pass 1000000, and "(window unknown)" after; on that guess the Stop hook says once that the window is not known and never asks to rotate, so give `--window` when you know it). An agent name is bare (the
 project is added where a name is shown), so never put the project in it. Step 8's `hh-context --all` and
 `hh-self-rotate` find you through it. It exits 4 when that name already belongs to a pane hivehouse spawned; tell the
 owner rather than choosing another name.

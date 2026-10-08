@@ -16,6 +16,16 @@ dir="$HK_PROJECT/$HH_STATE_DIR/team/$HK_AGENT"; marker="$dir/rotate-asked.json"
 [ "$(hh_json_get "$dir/session.json" .session_id)" = "$sid" ] || exit 0
 v=$(HH_PROJECT="$HK_PROJECT" "$(dirname "$0")/hh-context" "$HK_AGENT" 2>/dev/null) || exit 0
 level=${v%% *}; hh_is_number "$level" || exit 0
+# A window nobody gave and Claude Code did not measure is a guess (HH_WINDOW_DEFAULT): a level read against it is no ground to ask for a
+# rotation. The session is told so once, with how to set the window, and is never asked to rotate on it.
+if [ "$(HH_PROJECT="$HK_PROJECT" "$(dirname "$0")/hh-context" "$HK_AGENT" --source 2>/dev/null)" = guess ]; then
+  gm="$dir/window-guess-told.json"
+  [ "$(hh_json_get "$gm" .session_id)" != "$sid" ] || exit 0
+  [ -z "$(git -C "$HK_PROJECT" ls-files -- "$HH_STATE_DIR" 2>/dev/null)" ] || exit 0
+  jq -nc --arg s "$sid" --arg at "$(hh_now)" '{session_id:$s, at:$at}' > "$gm.tmp$$" 2>/dev/null && mv "$gm.tmp$$" "$gm" || { rm -f "$gm.tmp$$"; exit 0; }
+  jq -nc --arg r "This session's context window is not known (guessed at $HH_WINDOW_DEFAULT), Claude Code's default size, so hivehouse will not ask you to rotate on that reading. If your window is another size, say so once: the hub runs hh-hub window <project> $HK_AGENT <tokens>, or run hh-spawn --self --agent $HK_AGENT --window <tokens>." '{decision:"block", reason:$r}'
+  exit 0
+fi
 # "250000 tokens (window unknown)": over the window hivehouse assumed, so there is no percent, and a level that cannot be read is not one
 # below the limit: the session is told, once, like any other crossing
 unknown=0; case "$v" in *"(window unknown)"*) unknown=1 ;; esac
