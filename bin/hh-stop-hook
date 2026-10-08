@@ -26,7 +26,7 @@ if [ "$(HH_PROJECT="$HK_PROJECT" "$(dirname "$0")/hh-context" "$HK_AGENT" --sour
   jq -nc --arg r "This session's context window is not known (guessed at $HH_WINDOW_DEFAULT), Claude Code's default size, so hivehouse will not ask you to rotate on that reading. If your window is another size, say so once: the hub runs hh-hub window <project> $HK_AGENT <tokens>, or run hh-spawn --self --agent $HK_AGENT --window <tokens>." '{decision:"block", reason:$r}'
   exit 0
 fi
-# "250000 tokens (window unknown)": over the window hivehouse assumed, so there is no percent, and a level that cannot be read is not one
+# "1500000 tokens (window unknown)": over the window hivehouse assumed, so there is no percent, and a level that cannot be read is not one
 # below the limit: the session is told, once, like any other crossing
 unknown=0; case "$v" in *"(window unknown)"*) unknown=1 ;; esac
 if [ "$unknown" = 0 ] && [ "$level" -lt "$at" ]; then rm -f "$marker"; exit 0; fi   # below the level again: the next crossing is told
