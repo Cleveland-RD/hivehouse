@@ -40,6 +40,9 @@ HUB_REPLIES="HH-CLARIFY HH-PLAN BLOCKED DONE BACK"
 HUB_ASKS="TASK OWNER HUB PROGRESS RESPAWN RESTART"
 USAGE="usage: hh-hub init
        hh-hub self [--name <session name>]
+       hh-hub start                                   (no arguments: the hub itself, in a tmux session named after it)
+       hh-hub rotate [--still <s>] [--max <s>] [--settle <s>]   (the hub clears itself and picks up its handoff)
+       hh-hub context [--window <tokens>]             (the hub's own context level)
        hh-hub discover
        hh-hub add <project> --home <folder> [--repo <folder>]...
        hh-hub add <project> --repo <folder>...        (a project that exists: more folders)
@@ -490,16 +493,32 @@ hub_session_note() {  # hub_session_note <hub name>: a printed new-session line 
   echo "# A tmux session named $1 is running: exit the hub in it first (/exit). The line below starts a new session and never attaches to that one, which would not carry the change."
 }
 tmux_word() { if [ -n "${HH_TMUX_SOCKET:-}" ]; then printf 'tmux -S %q' "$HH_TMUX_SOCKET"; else printf 'tmux'; fi; }   # the tmux the printed lines name
-# The hub's own Claude, as hub.json records it: alive, and in the pane it recorded. Prints that pane's tmux session (nothing when no
-# pane was recorded). 0 running; 1 not.
-hub_running() {  # hub_running <hub root>
-  local f="$1/$HH_HUB_DIR/hub.json" sock pane
+# The hub's own Claude and pane, as hub.json records them: hub_pane_is is 0 only while that Claude is alive and in that very pane
+# (process and start time); hub_running is 0 while the Claude is alive and prints the pane's tmux session when it is also in its pane.
+hub_pane_is() {  # hub_pane_is <hub root>
+  local f="$1/$HH_HUB_DIR/hub.json" pane
   hh_claude_is "$(hh_json_get "$f" .claude_pid)" "$(hh_json_get "$f" .claude_started)" || return 1
-  sock=$(hh_json_get "$f" .socket); pane=$(hh_json_get "$f" .pane)
-  if [ -n "$pane" ] && hh_recorded_pane_is "$sock" "$pane" "$(hh_json_get "$f" .pane_pid)" "$(hh_json_get "$f" .pane_started)"; then
-    hh_tmux_on "$sock" display-message -p -t "$pane" '#{session_name}' 2>/dev/null
-  fi
+  pane=$(hh_json_get "$f" .pane); [ -n "$pane" ] || return 1
+  hh_recorded_pane_is "$(hh_json_get "$f" .socket)" "$pane" "$(hh_json_get "$f" .pane_pid)" "$(hh_json_get "$f" .pane_started)"
+}
+hub_running() {  # hub_running <hub root>
+  local f="$1/$HH_HUB_DIR/hub.json"
+  hh_claude_is "$(hh_json_get "$f" .claude_pid)" "$(hh_json_get "$f" .claude_started)" || return 1
+  if hub_pane_is "$1"; then hh_tmux_on "$(hh_json_get "$f" .socket)" display-message -p -t "$(hh_json_get "$f" .pane)" '#{session_name}' 2>/dev/null; fi
   return 0
+}
+# What a rotated hub is typed: the pickup line from hh-resolve's file (the hub folder's custom/ first, as HH_PROJECT follows it), its
+# {plugin}, {name} and {handoff} filled in. A custom line that is not one line of plain text is ignored with a note.
+hub_pickup_line() {  # hub_pickup_line <hub root> <hub name>
+  local f text own
+  own="$(cd "$HH_BIN/.." && pwd -P)/rules/hub-pickup.md"
+  f=$(hh_custom_file rules/hub-pickup.md 2>/dev/null) || f=$own
+  text=$(cat "$f" 2>/dev/null)
+  case "$text" in ''|*[[:cntrl:]]*) echo "$HH_PREFIX: ignoring $f: the pickup line is one line of plain text" >&2; text=$(cat "$own") ;; esac
+  [ "${#text}" -le 1000 ] || { echo "$HH_PREFIX: ignoring $f: the pickup line is at most 1000 characters" >&2; text=$(cat "$own"); }
+  local h="$1/$HH_HUB_DIR/memory/hub-handoff.md" n="$2" pl="$PLUGIN"
+  text=${text//\{plugin\}/$pl}; text=${text//\{name\}/$n}; text=${text//\{handoff\}/$h}
+  printf '%s' "$text"
 }
 hub_attach() {  # hub_attach <session>: attach from a terminal; inside tmux or with no terminal, say how
   local tm; tm=$(tmux_word)
@@ -568,6 +587,61 @@ self)
     > "$root/$HH_HUB_DIR/hub.json.tmp$$" && mv "$root/$HH_HUB_DIR/hub.json.tmp$$" "$root/$HH_HUB_DIR/hub.json"
   seal_hub "$root"
   echo "$name" ;;
+
+rotate)
+  still=15; max=900; settle=8; detached=0
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --detached) detached=1; shift ;;
+      --still|--max|--settle) [ $# -ge 2 ] || hh_die 64 "$USAGE"; hh_is_number "$2" || hh_die 64 "--still, --max and --settle are numbers"
+        case "$1" in --still) still=$2 ;; --max) max=$2 ;; *) settle=$2 ;; esac; shift 2 ;;
+      *) hh_die 64 "$USAGE" ;;
+    esac
+  done
+  root=$(hub_root) || exit $?
+  hf="$root/$HH_HUB_DIR/hub.json"; sock=$(hh_json_get "$hf" .socket); pane=$(hh_json_get "$hf" .pane)
+  [ -n "$pane" ] || hh_die 2 "the hub has not recorded its pane: start it with hh-hub start (hh-hub self records it inside tmux)"
+  hh_pane_pid "$sock" "$pane" >/dev/null || hh_die 2 "the hub's pane ($pane) is gone"   # display-message exits 0 for a pane that is not there
+  hh_is_typed_path "$root" || hh_die 4 "the hub's folder is not a path hivehouse will type: $root"
+  if [ "$detached" = 0 ]; then   # the hub's last act: return at once, the rotation runs on with all three streams redirected
+    HH_PROJECT="$root" nohup "$0" rotate --detached --still "$still" --max "$max" --settle "$settle" </dev/null >>"$root/$HH_HUB_DIR/rotate.out" 2>&1 &
+    exit 0
+  fi
+  export HH_PROJECT="$root"
+  hubn=$(hub_name "$root") || hubn=$(hub_chosen_name "$root") || exit $?
+  note() { printf '%s %s\n' "$(hh_now)" "$*" >> "$root/$HH_HUB_DIR/rotate.log"; }
+  verify() {
+    hub_pane_is "$root" && return 0
+    note "identity $hubn (nothing sent)"
+    echo "$HH_PREFIX: the pane $pane is not the one recorded for the hub (or its Claude is gone); nothing was typed" >&2; return 1
+  }
+  pickup() { hub_pickup_line "$root" "$hubn"; }
+  verify || exit 6
+  hh_rotate_pane "$pane" "$sock" "$still" "$max" "$settle" verify pickup; rc=$?
+  case "$rc" in
+    0) note "rotated $hubn" ;;
+    5) note "dialog $hubn (nothing sent)"; echo "$HH_PREFIX: a dialog is waiting in the hub's pane; nothing was typed" >&2; exit 5 ;;
+    6) exit 6 ;;
+    7) note "cleared-but-not-idle $hubn (pickup line not sent)"; echo "$HH_PREFIX: the hub was cleared but its pane did not go idle; the pickup line was not sent" >&2; exit 1 ;;
+    *) note "not-idle $hubn (nothing sent)"; echo "$HH_PREFIX: the hub's pane never went idle within ${max}s; nothing was sent" >&2; exit 1 ;;
+  esac ;;
+
+context)
+  # The hub's own level from its transcript, for the rotation check: a percent of --window, else of an assumed 200000 (said so).
+  win=""
+  while [ $# -gt 0 ]; do [ $# -ge 2 ] && [ "$1" = --window ] || hh_die 64 "$USAGE"; win=$2; shift 2; done
+  if [ -n "$win" ]; then case "$win" in ''|*[!0-9]*|0) hh_die 4 "--window must be a positive number: $win" ;; esac; fi
+  root=$(hub_root) || exit $?
+  hf="$root/$HH_HUB_DIR/hub.json"
+  sid=$(hh_session_record "$(hh_json_get "$hf" .claude_pid)" .sessionId); [ -n "$sid" ] || sid=$(hh_json_get "$hf" .session_id)
+  tp=$(hh_session_transcript "$sid") || hh_die 2 "no transcript is recorded for the hub's session: run hh-hub self"
+  used=$(jq -c 'select(.type == "assistant" and .message.model != "<synthetic>" and (.isSidechain // false) == false)
+      | .message.usage | (.input_tokens // 0) + (.cache_read_input_tokens // 0) + (.cache_creation_input_tokens // 0) + (.output_tokens // 0)
+      | select(. > 0)' "$tp" 2>/dev/null | tail -1)
+  [ -n "$used" ] || hh_die 2 "the hub's transcript has no usage line yet"
+  if [ -n "$win" ]; then echo $(( used * 100 / win ))
+  elif [ "$used" -gt 200000 ]; then echo "$used tokens (window unknown)"
+  else echo "$(( used * 100 / 200000 )) (window assumed 200000)"; fi ;;
 
 discover)
   [ $# -eq 0 ] || hh_die 64 "$USAGE"
