@@ -493,8 +493,25 @@ hh_write_session() {  # hh_write_session <project root> <agent> <session id> <tr
 # under the state folder. A recorded path that is not an absolute path hivehouse will type is ignored, never typed.
 hh_handoff_path() {  # hh_handoff_path <project root> <agent>
   local p; p=$(jq -r --arg a "$2" '[.agents[]? | select(.name == $a) | .handoff][0] // empty' "$1/$HH_STATE_DIR/team.json" 2>/dev/null)
-  case "$p" in /*) hh_is_typed_path "$p" && { printf '%s\n' "$p"; return 0; } ;; esac
+  [ -z "$p" ] || { p=$(hh_handoff_resolve "$1" "$p" 2>/dev/null) && { printf '%s\n' "$p"; return 0; }; }
   printf '%s/%s/handoffs/%s.md\n' "$1" "$HH_STATE_DIR" "$2"
+}
+# hh_handoff_resolve <project root> <path>: the handoff path as it is typed and recorded: absolute (a relative one is taken from the project
+# root), with no .., a path hivehouse will type, in a folder that exists, and inside the project (its root or one of its worktrees, links
+# resolved). Prints it, or fails with the reason in HH_HANDOFF_WHY.
+HH_HANDOFF_WHY=""; HH_HANDOFF_OUT=""
+hh_handoff_resolve() {
+  local root="$1" p="$2" dir real t
+  HH_HANDOFF_WHY=""; HH_HANDOFF_OUT=""
+  case "$p" in /*) ;; *) p="$root/$p" ;; esac
+  case "/$p/" in */../*|*/./*) HH_HANDOFF_WHY="a handoff path has no . or .. in it: $2"; return 1 ;; esac
+  hh_is_typed_path "$p" || { HH_HANDOFF_WHY="not a path hivehouse will type (letters, digits, / . _ - and space, at most 256): $p"; return 1; }
+  dir=${p%/*}; [ -d "$dir" ] || { HH_HANDOFF_WHY="the folder does not exist: $dir"; return 1; }
+  real="$(cd -P "$dir" && pwd -P)/${p##*/}"
+  while IFS= read -r t; do
+    case "$real" in "$t"/*) HH_HANDOFF_OUT=$real; printf '%s\n' "$real"; return 0 ;; esac
+  done < <(printf '%s\n' "$(cd -P "$root" && pwd -P)"; git -C "$root" worktree list --porcelain 2>/dev/null | sed -n 's/^worktree //p')
+  HH_HANDOFF_WHY="a handoff lives inside the project (its folder or one of its worktrees): $real"; return 1
 }
 # The hooks' one question: is this process the Claude hivehouse registered for the tmux pane it runs in? The project and agent come from the
 # registry hh-spawn wrote, never from the cwd. 0 with HK_PROJECT and HK_AGENT set; 1 otherwise, and nothing is said. The registry file must

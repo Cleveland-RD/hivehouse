@@ -31,8 +31,25 @@ hh-spawn --respawn kept --still 2 --max-wait 6 >/dev/null 2>&1; assert_eq "a res
 assert_eq "...leaves the file as it was" "$(cat "$AP")" "mine"
 assert_contains "...and sends the pickup line with it" "$(screen kept)" "Read $AP from the top"
 
+# a respawn whose recorded handoff folder is gone falls back to the default, with a note
+hh_tmux kill-pane -t "$(paneof kept)"; sleep 1
+mv "$r/notes" "$r/notes.away"
+out=$(hh-spawn --respawn kept --still 2 --max-wait 6 2>&1 >/dev/null); mv "$r/notes.away" "$r/notes"
+assert_contains "a respawn whose handoff folder is gone says so" "$out" "default"
+assert_eq "...and records the default" "$(getteam kept 'has("handoff")')" "false"
+
 # refused values
-out=$(spawn bad1 --handoff rel/path.md); assert_contains "a relative path" "$out" "absolute"
+out=$(spawn rel1 --handoff notes/rel.md | tail -1); assert_eq "a relative path is taken from the project root" "$(getteam rel1 .handoff)" "$r/notes/rel.md"
+assert_contains "...and the file is made there" "$(cat "$r/notes/rel.md" 2>/dev/null)" "## START HERE"
+(cd "$r/notes" && hh-spawn --agent rel2 --role "$T_TMP/impl.md" --rules "$T_TMP/RULES.md" --model sonnet --effort medium --mode auto --still 2 --max-wait 6 --handoff r2.md >/dev/null 2>&1)
+assert_eq "...whatever folder it is run from" "$(getteam rel2 .handoff)" "$r/r2.md"
+mkdir -p "$T_TMP/outside"; git -C "$r" worktree add -q "$T_TMP/proj-wt" -b wt1; mkdir -p "$T_TMP/proj-wt/notes"
+out=$(spawn wt1 --handoff "$T_TMP/proj-wt/notes/h.md" | tail -1); assert_eq "a folder of one of the project's worktrees is allowed" "$(getteam wt1 .handoff)" "$T_TMP/proj-wt/notes/h.md"
+out=$(spawn bad1 --handoff "$T_TMP/outside/h.md"); assert_contains "a path outside the project and its worktrees is refused" "$out" "inside the project"
+out=$(spawn bad1 --handoff "../outside/h.md"); assert_contains "a relative path that leaves the project is refused" "$out" "no . or .. in it"
+out=$(spawn bad1 --handoff "$r/notes/../../outside/h.md"); assert_contains "a .. that escapes the project is refused" "$out" "no . or .. in it"
+out=$(spawn bad1 --handoff "$r/notes/../notes/h2.md"); assert_contains "any .. is refused, even one that stays inside" "$out" "no . or .. in it"
+ln -s "$T_TMP/outside" "$r/linkdir"; out=$(spawn bad1 --handoff "$r/linkdir/h.md"); assert_contains "a folder that is a link out of the project is refused" "$out" "inside the project"
 out=$(spawn bad2 --handoff "$r/no;such.md"); assert_contains "a path hivehouse will not type" "$out" "type"
 out=$(spawn bad3 --handoff "$r/nofolder/h.md"); assert_contains "a path whose folder is missing" "$out" "folder does not exist"
 out=$(hh-spawn --respawn kept --handoff "$AP" 2>&1); assert_contains "--respawn takes no --handoff" "$out" "--respawn takes only"
@@ -54,9 +71,13 @@ selfrun "$T_TMP/o2.out" ""
 assert_eq "registering again without --handoff keeps it" "$(getteam orchestrator .handoff)" "$HP"
 selfrun "$T_TMP/o3.out" "--handoff $r/notes/other.md"
 assert_eq "registering again with another path replaces it" "$(getteam orchestrator .handoff)" "$r/notes/other.md"
-selfrun "$T_TMP/o4.out" "--handoff rel.md"
-assert_contains "a relative path is refused for --self too" "$(cat "$T_TMP/o4.out.err")" "absolute"
+selfrun "$T_TMP/o4.out" "--handoff notes/rel-o.md"
+assert_eq "--self takes a relative path from the project root too" "$(getteam orchestrator .handoff)" "$r/notes/rel-o.md"
+selfrun "$T_TMP/o5.out" "--handoff $T_TMP/outside/h.md"
+assert_contains "--self refuses a path outside the project" "$(cat "$T_TMP/o5.out.err")" "inside the project"
 # a record that is no longer a path hivehouse types falls back to the default
 jq '(.agents[] | select(.name == "orchestrator") | .handoff) = "/abs;x.md"' $T_STATE/team.json > $T_TMP/t.json && mv $T_TMP/t.json $T_STATE/team.json
 assert_contains "a bad recorded path is ignored" "$(hh_pickup_line proj "$r" orchestrator)" "Read $r/$T_STATE/handoffs/orchestrator.md from the top"
+jq --arg p "$T_TMP/outside/h.md" '(.agents[] | select(.name == "orchestrator") | .handoff) = $p' $T_STATE/team.json > $T_TMP/t.json && mv $T_TMP/t.json $T_STATE/team.json
+assert_contains "...and so is a recorded path outside the project" "$(hh_pickup_line proj "$r" orchestrator)" "Read $r/$T_STATE/handoffs/orchestrator.md from the top"
 t_done

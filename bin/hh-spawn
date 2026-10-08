@@ -65,12 +65,6 @@ if [ -n "$respawn" ]; then
   [ -z "$wt" ] || base=$("$HH_BIN/hh-manifest" list --kind worktree | jq -r --arg p "$wt" 'select(.path == $p) | .base // empty' | head -1)
 fi
 [ -n "$agent" ] || hh_die 64 "$USAGE"
-# --handoff: where the project keeps this agent's handoff, typed into its pickup line, so an absolute path hivehouse will type
-if [ -n "$handoff" ]; then
-  case "$handoff" in /*) ;; *) hh_die 4 "--handoff must be an absolute path: $handoff" ;; esac
-  hh_is_typed_path "$handoff" || hh_die 4 "--handoff is not a path hivehouse will type (letters, digits, / . _ - and space, at most 256): $handoff"
-  [ -d "${handoff%/*}" ] || hh_die 4 "--handoff's folder does not exist: ${handoff%/*}"
-fi
 hh_is_agent_name "$agent" || hh_die 4 "bad agent name: $agent"
 hh_is_number "$window" && [ "$window" -gt 0 ] || hh_die 4 "--window must be a positive number: $window"
 hh_is_number "$still" && hh_is_number "$maxwait" || hh_die 4 "--still and --max-wait must be numbers"
@@ -108,6 +102,13 @@ else
   export HH_PROJECT="$ROOT"
 fi
 STATE="$ROOT/$HH_STATE_DIR"; project=$(basename "$ROOT")
+# --handoff: where the project keeps this agent's handoff, typed into its pickup line (see hh_handoff_resolve). A respawn's recorded
+# one that no longer holds (its folder is gone) falls back to the default, said once; one given now is refused.
+if [ -n "$handoff" ]; then
+  if hh_handoff_resolve "$ROOT" "$handoff" >/dev/null; then handoff=$HH_HANDOFF_OUT
+  elif [ -n "$respawn" ]; then echo "$HH_PREFIX: $respawn's recorded handoff path no longer holds ($HH_HANDOFF_WHY); the default $HH_STATE_DIR/handoffs/$respawn.md is used" >&2; handoff=""
+  else hh_die 4 "--handoff: $HH_HANDOFF_WHY"; fi
+fi
 
 identify() {  # identify <pane> <socket>: the pane's identity, and for --self the Claude process that is registering it
   local ident
