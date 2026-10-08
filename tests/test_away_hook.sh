@@ -785,7 +785,7 @@ for c in 'find . -name x.tmp -delete' 'find scr -name "*.tmp" -delete' 'find . -
   case "$c" in 'find . -name x.tmp -delete'|'find . -name x -exec rm {} +') continue ;; esac
   pallowed "A18 stays allowed: $c" "$c"
 done
-pdenied "A18 find . -delete in the project root (it holds .hivehouse)" 'find . -name x.tmp -delete'
+pdenied "A18 find . -delete in the project root (it holds $T_STATE)" 'find . -name x.tmp -delete'
 pallowed "A18 find . -exec rm in the project root is read as a global-scope hit only" 'find . -name x -exec rm {} +'
 PHOME=""
 echo "-- A19: a link inside the destination folder leads into a protected folder"
@@ -808,8 +808,8 @@ echo "-- review S1, S2, S3: the tree bound, pathspecs, archive members, rsync"
 mkdir -p "$T_TMP/big"; i=0; while [ $i -lt 3001 ]; do : > "$T_TMP/big/f$i"; i=$((i + 1)); done
 pdenied "S1 a copied tree over the bound is refused" "cp -R $T_TMP/big $T_TMP/bigcopy"
 pdenied "S1 rsync of a tree over the bound is refused" "rsync -a $T_TMP/big/ $T_TMP/bigcopy/"
-for c in 'git checkout HEAD -- .claude/settings.json' 'git checkout abc123 -- .hivehouse/team.json' 'git restore .claude/settings.json' 'git restore --source=HEAD~1 .claude' 'git restore .hivehouse/team.json' 'git checkout -- .' 'git reset HEAD .claude/settings.json' 'git rm .claude/settings.json' 'git rm -r .hivehouse' 'git mv .claude/settings.json scr/' 'git stash push -- .claude/settings.json' 'tar xf bad.tar' 'tar -xf scr/bad.tar' 'tar -xzf scr/bad.tar -C scr/sub' 'tar xf -' 'tar xf missing.tar' 'unzip scr/bad.zip' 'unzip scr/bad.zip -d scr/sub' 'unzip missing.zip' \
-  'rsync -a scr/ ~/.claude/' 'rsync -a scr/ ~/.claude' 'rsync -avz scr ~/.claude/' 'rsync -rt scr/ ~/.claude/' 'rsync -a --delete tsrc/ ~/.claude/' 'rsync -a scr/ .claude/' 'rsync -a scr/ .hivehouse/'; do
+for c in 'git checkout HEAD -- .claude/settings.json' "git checkout abc123 -- $T_STATE/team.json" 'git restore .claude/settings.json' 'git restore --source=HEAD~1 .claude' "git restore $T_STATE/team.json" 'git checkout -- .' 'git reset HEAD .claude/settings.json' 'git rm .claude/settings.json' "git rm -r $T_STATE" 'git mv .claude/settings.json scr/' 'git stash push -- .claude/settings.json' 'tar xf bad.tar' 'tar -xf scr/bad.tar' 'tar -xzf scr/bad.tar -C scr/sub' 'tar xf -' 'tar xf missing.tar' 'unzip scr/bad.zip' 'unzip scr/bad.zip -d scr/sub' 'unzip missing.zip' \
+  'rsync -a scr/ ~/.claude/' 'rsync -a scr/ ~/.claude' 'rsync -avz scr ~/.claude/' 'rsync -rt scr/ ~/.claude/' 'rsync -a --delete tsrc/ ~/.claude/' 'rsync -a scr/ .claude/' "rsync -a scr/ $T_STATE/"; do
   case "$c" in 'tar xf bad.tar') c='tar xf scr/bad.tar' ;; esac
   pdenied "S2/S3 refused: $c" "$c"
 done

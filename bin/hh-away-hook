@@ -99,7 +99,7 @@ fs_hit() {  # fs_hit <path> <cwd>: 0 when the path is, or holds, a protected pat
   a=$(canon "$1" "$2")
   while :; do
     b=${a##*/}
-    case "$b" in .claude|.hivehouse) P_WHY="a folder named $b holds Claude Code's or hivehouse's protected files and cannot be removed, moved or copied over from an away session"; return 0 ;; esac
+    case "$b" in .claude|"$HH_STATE_DIR") P_WHY="a folder named $b holds Claude Code's or hivehouse's protected files and cannot be removed, moved or copied over from an away session"; return 0 ;; esac
     ri=0
     for r in ${FS_ROOTS[@]+"${FS_ROOTS[@]}"}; do
       ri=$((ri + 1)); [ -z "$FS_GLOBAL" ] || [ "$ri" -le "$FS_NG" ] || continue
