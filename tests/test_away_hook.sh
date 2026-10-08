@@ -593,18 +593,57 @@ denied "ssh-keygen -R edits known_hosts" "ssh-keygen -R night.example.org"
 denied "...also with the options first" "ssh-keygen -q -R night.example.org"
 denied "ssh-keygen -f into ~/.ssh" "ssh-keygen -t ed25519 -f ~/.ssh/id_x"
 allowed "ssh-keygen -l of a key in the project is a read" "ssh-keygen -l -f $proj/key.pub"
+echo "-- KI-25: the extra tools pass only when the owner's delegate file lists them (hh-hub away --tools)"
+TOOLS="Workflow WebFetch DesignSync ArtifactCheck PushNotification"
+tcall() { jq -nc --arg t "$1" '{tool_name:$t,cwd:"/",tool_input:{}}'; }
+for t in $TOOLS; do tool_denied "$t is refused with no delegate file" "$(tcall "$t")"; assert_contains "...and the message names --tools" "$ERR" "hh-hub away --tools"; done
+r=$(printf '%s' "$(tcall Workflow)" | env -u HH_AWAY_BYPASS "$HOOK" 2>&1); assert_status "an unmarked session keeps the fast path for Workflow" $? 0
+mkdgt() {  # mkdgt <tools> [hub dir] [version]: a valid delegate file naming this hub (or another)
+  local h="${2:-$hub}"
+  case "${3:-3}" in
+    3) printf "$T_DELEGATE_LINE3"'\nhub=%s\nuntil=%s\nmcp=\nhosts=\nallow=\ntools=%s\n' "$(cd "$h" && pwd -P)" "$((NOW + 3600))" "$1" > "$DGF" ;;
+    2) printf "$T_DELEGATE_LINE2"'\nhub=%s\nuntil=%s\nmcp=\nhosts=\nallow=\n' "$(cd "$h" && pwd -P)" "$((NOW + 3600))" > "$DGF" ;;
+    1) printf "$T_DELEGATE_LINE1"'\nhub=%s\nuntil=%s\nmcp=\n' "$(cd "$h" && pwd -P)" "$((NOW + 3600))" > "$DGF" ;;
+  esac
+  chmod 644 "$DGF"
+}
+mkdgt ""
+if hh_delegate_read "$DGF" "$(id -u)" "$NOW" >/dev/null 2>&1; then
+  SAVE_HOOK="$HOOK"; HOOK="$(t_delegate_bin "$DGF")/hh-away-hook"
+  for t in $TOOLS; do tool_denied "$t: an empty tools= lists none" "$(tcall "$t")"; assert_contains "...and the message names --tools" "$ERR" "hh-hub away --tools"; done
+  mkdgt "Workflow,WebFetch,DesignSync,ArtifactCheck,PushNotification"
+  for t in $TOOLS; do tool_allowed "$t passes when listed" "$(tcall "$t")"; done
+  mkdgt "WebFetch,PushNotification"
+  tool_allowed "a listed tool passes (WebFetch)" "$(tcall WebFetch)"
+  tool_denied "an unlisted tool is refused beside a listed one (Workflow)" "$(tcall Workflow)"; assert_contains "...and the message names --tools" "$ERR" "hh-hub away --tools"
+  tool_denied "...also DesignSync" "$(tcall DesignSync)"
+  ROLE=hub; tool_allowed "the hub's own session passes a listed tool the same way" "$(tcall PushNotification)"; tool_denied "...and is refused an unlisted one" "$(tcall ArtifactCheck)"; ROLE=proj
+  tool_denied "a name that only contains a listed one is no tool of the hook" "$(tcall WebFetchPlus)"
+  hub3="$T_TMP/hub3"; mkdir -p "$hub3/$T_HUB"; cp "$hub/$T_HUB/hub.json" "$hub/$T_HUB/projects.json" "$hub3/$T_HUB/"
+  mkdgt "Workflow,WebFetch" "$hub3"; hh_delegate_read "$DGF" "$(id -u)" "$NOW" >/dev/null 2>&1 && ok "(the other hub's file reads as valid)" || bad "the other hub's file is not valid: $HH_DELEGATE_WHY"
+  tool_denied "a valid file naming ANOTHER hub grants no tool here" "$(tcall Workflow)"
+  mkdgt "" "$hub" 2; tool_denied "a version 2 file means no tools" "$(tcall WebFetch)"
+  mkdgt "" "$hub" 1; tool_denied "a version 1 file means no tools" "$(tcall WebFetch)"
+  mkdgt "WebFetch"; chmod 666 "$DGF"; tool_denied "a delegate file anyone can write grants nothing" "$(tcall WebFetch)"
+  chmod 644 "$DGF"; mv "$DGF" "$DGF.off"; tool_denied "no delegate file grants nothing" "$(tcall WebFetch)"; mv "$DGF.off" "$DGF"
+  tool_allowed "(the file put back grants again)" "$(tcall WebFetch)"
+  HOOK="$SAVE_HOOK"
+else
+  hh_delegate_read "$DGF" "$(id -u)" "$NOW" >/dev/null 2>&1; echo "  SKIP the fixture folder is not eligible here: $HH_DELEGATE_WHY"
+fi
+
 echo "-- the env the Bash tool sees does not matter"
 r=$(printf '%s' "$(tc 'git push')" | HH_AWAY_BYPASS=1 HH_PROJECT="$other" HH_AWAY_HUB="$hub" HH_AWAY_MCP_ALLOW= "$HOOK" 2>&1 >/dev/null); assert_status "any project in the env: still refused" $? 2
 
 echo "-- wiring and the rule (A51, A72)"
 m=$(jq -r '.hooks.PreToolUse[]? | select(.hooks[]?.command | test("bin/hh-away-hook")) | .matcher' "$HH_REPO_ROOT/hooks/hooks.json")
 inner=${m#^(}; inner=${inner%)\$}
-for t in Bash 'mcp__.*' SendMessage Edit Write MultiEdit NotebookEdit Artifact ArtifactData ArtifactComments RemoteTrigger Agent; do case "|$inner|" in *"|$t|"*) ok "hooks.json matcher has $t" ;; *) bad "hooks.json matcher lacks $t: [$m]" ;; esac; done
+for t in Bash 'mcp__.*' SendMessage Edit Write MultiEdit NotebookEdit Artifact ArtifactData ArtifactComments RemoteTrigger Agent Workflow WebFetch DesignSync ArtifactCheck PushNotification; do case "|$inner|" in *"|$t|"*) ok "hooks.json matcher has $t" ;; *) bad "hooks.json matcher lacks $t: [$m]" ;; esac; done
 # Claude Code reads the matcher as a regular expression that is not anchored: unanchored, `Agent` matched inside ListAgents (and `Write`
 # inside TodoWrite), and the hook refused a tool it was never set up for. Compiled here as JavaScript compiles it.
 hit() { node -e 'process.stdout.write(new RegExp(process.argv[1]).test(process.argv[2]) ? "yes" : "no")' "$m" "$1"; }
-for t in Bash mcp__claude_ai_Gmail__send SendMessage Edit Write MultiEdit NotebookEdit Artifact ArtifactData ArtifactComments RemoteTrigger Agent; do assert_eq "the matcher, as a RegExp, matches $t" "$(hit "$t")" yes; done
-for t in ListAgents TodoWrite AgentOutput WriteLater BashOutput EditNotebook SendMessageNow ReadArtifact Read Grep; do assert_eq "...and does not match $t" "$(hit "$t")" no; done
+for t in Bash mcp__claude_ai_Gmail__send SendMessage Edit Write MultiEdit NotebookEdit Artifact ArtifactData ArtifactComments RemoteTrigger Agent Workflow WebFetch DesignSync ArtifactCheck PushNotification; do assert_eq "the matcher, as a RegExp, matches $t" "$(hit "$t")" yes; done
+for t in ListAgents TodoWrite AgentOutput WriteLater BashOutput EditNotebook SendMessageNow ReadArtifact Read Grep CronCreate ScheduleWakeup WorkflowX MyWebFetch PushNotifications; do assert_eq "...and does not match $t" "$(hit "$t")" no; done
 assert_eq "the hook command runs from the plugin's bin" "$(jq -r '.hooks.PreToolUse[0].hooks[0].command' "$HH_REPO_ROOT/hooks/hooks.json")" '"${CLAUDE_PLUGIN_ROOT}/bin/hh-away-hook"'
 [ -x "$HOOK" ] && ok "hh-away-hook is executable" || bad "hh-away-hook is not executable"
 grep -q 'HH_AWAY_BYPASS=1.*a message from anyone other than the session' <(tr '\n' ' ' < "$HH_REPO_ROOT/rules/RULES.md" | sed 's/  */ /g') && ok "RULES.md has the A51 line" || bad "RULES.md lacks the A51 line"

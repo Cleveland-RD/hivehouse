@@ -99,6 +99,17 @@ mcp_check() {
   deny "$tool is not allowed while the owner is away (the owner's away_mcp_allow lists what is)"
 }
 
+# KI-25: Workflow, WebFetch, DesignSync, ArtifactCheck and PushNotification pass only when the owner listed them with `hh-hub away --tools`, which
+# is the tools= line of the root-owned delegate file, read the way ssh_gate reads hosts=: never from the session's env, which it could not have set
+# for itself anyway. A file that is missing, invalid, or names another hub grants none. (CronCreate and ScheduleWakeup are not in the matcher at all.)
+tool_check() {
+  local e
+  hh_delegate_mine && [ "$HH_DG_HUB" = "$HUB" ] || deny "$tool is not allowed while the owner is away (no valid delegate file for this hub; the owner chooses extra tools with hh-hub away --tools)"
+  IFS=, read -ra es <<< "$HH_DG_TOOLS"
+  for e in ${es[@]+"${es[@]}"}; do [ "$tool" = "$e" ] && return 0; done
+  deny "$tool is not allowed while the owner is away (the owner chooses extra tools with hh-hub away --tools)"
+}
+
 # --- messages: only to the session's own hub and team, checked by name and by process
 declare -a ID_NAMES ID_PIDS ID_STARTS
 add_id() {  # add_id <name> <pid> <started>
@@ -507,6 +518,7 @@ main() {
     Bash) bash_check ;;
     mcp__*|Artifact|ArtifactData|ArtifactComments|RemoteTrigger) mcp_check ;;
     Agent) agent_check ;;
+    Workflow|WebFetch|DesignSync|ArtifactCheck|PushNotification) tool_check ;;
     SendMessage) msg_check ;;
     Edit|Write|MultiEdit|NotebookEdit) file_check ;;
     *) deny "$tool is not a tool this hook was set up for" ;;
