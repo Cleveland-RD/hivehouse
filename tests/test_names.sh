@@ -42,7 +42,7 @@ assert_eq "hooks/names.ts HUB_DIR is the helper's" "$(tsval hooks/names.ts HUB_D
 assert_eq "tests/names.ts HUB_DIR is the helper's" "$(tsval tests/names.ts HUB_DIR)" "$T_HUB"
 assert_eq "hooks/names.ts PANE is the helper's" "$(tsval hooks/names.ts PANE)" "$T_PANE"
 assert_eq "tests/names.ts PANE_ID is the helper's" "$(tsval tests/names.ts PANE_ID)" "$T_PANE"
-for pair in HH_PREFIX:T_PREFIX HH_STATE_DIR:T_STATE HH_HUB_DIR:T_HUB HH_HOME_DIR:T_HOMEDIR HH_MAC_BASE:T_MAC_BASE HH_LINUX_BASE:T_LINUX_BASE HH_LINUX_SLOT:T_LINUX_SLOT HH_DELEGATE_TAG:T_DELEGATE_TAG HH_WINDOW_DEFAULT:T_WINDOW; do
+for pair in HH_PREFIX:T_PREFIX HH_STATE_DIR:T_STATE HH_HUB_DIR:T_HUB HH_HOME_DIR:T_HOMEDIR HH_MAC_BASE:T_MAC_BASE HH_LINUX_BASE:T_LINUX_BASE HH_LINUX_SLOT:T_LINUX_SLOT HH_DELEGATE_TAG:T_DELEGATE_TAG HH_WINDOW_DEFAULT:T_WINDOW HH_PEER_LOG:T_PEER_LOG; do
   v=$(bash -c '. "$1/bin/hh-lib.sh"; eval "printf %s \"\$$2\""' _ "$HH_REPO_ROOT" "${pair%%:*}"); w=$(eval "printf %s \"\$${pair##*:}\"")
   assert_eq "${pair%%:*} is the helper ${pair##*:}" "$v" "$w"
 done

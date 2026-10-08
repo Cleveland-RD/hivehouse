@@ -28,7 +28,9 @@ T_LINUX_SLOT='/var/lib/hivehouse/slot'     # the machine slot on Linux
 T_DELEGATE_TAG='hivehouse-delegate'        # the delegate file's first word
 T_DELEGATE_LINE1="$T_DELEGATE_TAG 1"        # a version 1 file's first line (0.5.0 wrote it; still read)
 T_DELEGATE_LINE2="$T_DELEGATE_TAG 2"        # a version 2 file's first line (0.5.1 wrote it; still read)
-T_DELEGATE_LINE3="$T_DELEGATE_TAG 3"        # a version 3 file's first line (0.5.2 writes it)
+T_DELEGATE_LINE3="$T_DELEGATE_TAG 3"        # a version 3 file's first line (0.5.2 wrote it; still read)
+T_DELEGATE_LINE4="$T_DELEGATE_TAG 4"        # a version 4 file's first line (0.5.4 writes it: adds peers=)
+T_PEER_LOG='peers.jsonl'                  # the hub's audit log of sends to peers, in its folder
 T_PREFIX='hivehouse'                       # what a message begins with: "<prefix>: ..."
 T_PANE='hivehouse-hub'                     # the hub screen's pane
 T_PLUGIN=$(jq -r .name "$HH_REPO_ROOT/.claude-plugin/plugin.json")

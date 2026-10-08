@@ -108,6 +108,23 @@ mk3 "tools="; printf 'extra\n' >> "$F"; ok_ && bad "a v3 file with 8 lines is va
 mk3 "tools="; printf '\n' >> "$F"; ok_ && bad "a v3 file with a blank 8th line is valid" || ok "a v3 file with a blank 8th line is invalid"
 mkf; printf "$T_DELEGATE_LINE3"'\nhub=/work\nuntil=%s\nmcp=\nhosts=\nallow=\n' "$((NOW + 60))" > "$F"; ok_ && bad "a v3 file with 6 lines is valid" || ok "a v3 file with 6 lines is invalid"
 mk3 "tools=WebFetch"; sed -i.bak 's/$/\r/' "$F"; rm -f "$F.bak"; ok_ && bad "a v3 file with carriage returns is valid" || ok "a v3 file with carriage returns is invalid"
+# ---- version 4: peers= (0.5.4, S6) ----
+mk4() {  # mk4 <peers line> [until]: a version 4 file
+  mkf; printf "$T_DELEGATE_LINE4"'\nhub=/work\nuntil=%s\nmcp=\nhosts=\nallow=\ntools=\n%s\n' "${2:-$((NOW + 3600))}" "$1" > "$F"
+}
+mk4 "peers="; ok_ && ok "v4 with an empty peers= is valid" || bad "v4 empty is refused: $HH_DELEGATE_WHY"
+assert_eq "...and lists none" "$HH_DR_PEERS" ""
+mk4 "peers=far-orchestrator,far-agent.2_x"; ok_ && ok "v4 with two peers is valid" || bad "v4 with peers is refused: $HH_DELEGATE_WHY"
+assert_eq "...and lists both" "$HH_DR_PEERS" "far-orchestrator,far-agent.2_x"
+for w in "a b" "a,,b" ",a" "a," "far[x]" "far*" "a/b" "-x" "a\$b"; do
+  mk4 "peers=$w"; ok_ && bad "peers=$w is valid" || assert_contains "peers=$w makes the file invalid" "$HH_DELEGATE_WHY" "peers="
+done
+mk4 "peer=far"; ok_ && bad "line 8 not peers= is valid" || ok "line 8 that is not peers= is invalid"
+mk4 "peers="; printf 'extra\n' >> "$F"; ok_ && bad "a v4 file with 9 lines is valid" || ok "a v4 file with 9 lines is invalid"
+mk4 "peers="; printf '\n' >> "$F"; ok_ && bad "a v4 file with a blank 9th line is valid" || ok "a v4 file with a blank 9th line is invalid"
+mkf; printf "$T_DELEGATE_LINE4"'\nhub=/work\nuntil=%s\nmcp=\nhosts=\nallow=\ntools=\n' "$((NOW + 60))" > "$F"; ok_ && bad "a v4 file with 7 lines is valid" || ok "a v4 file with 7 lines is invalid"
+mk3 "tools="; printf 'peers=far\n' >> "$F"; ok_ && bad "a v3 file with a peers= line is valid" || ok "a v3 file with an eighth line (peers=) is invalid"
+mk3 "tools=WebFetch"; ok_ && assert_eq "a v3 file means no peers" "$HH_DR_PEERS" "" || bad "v3 refused: $HH_DELEGATE_WHY"
 mk2 "hosts=" "allow="; hh_delegate_read "$F" "$ME" "$NOW" >/dev/null; assert_eq "a v2 file allows no tools" "$HH_DR_TOOLS" ""
 mkf; hh_delegate_read "$F" "$ME" "$NOW" >/dev/null; assert_eq "a v1 file allows no tools" "$HH_DR_TOOLS" ""
 mk2 "hosts=" "allow="; printf 'tools=Workflow\n' >> "$F"; ok_ && bad "a v2 file with a tools= line is valid" || ok "a v2 file with a seventh line (tools=) is invalid"
