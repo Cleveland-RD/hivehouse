@@ -11,7 +11,7 @@
 # HUP) stops the running step's whole group and writes no line for it, so the header names a step the log lacks. With
 # the steps in their own groups (`set -m`), a SIGKILL to the gate's group no longer reaches them: the same trade as a
 # `kill -9` of `hh-slot run`.
-# Not pre-approved for agents (A16): it runs commands, so the whole command line goes through permission.
+# Not pre-approved for agents: it runs commands, so the whole command line goes through permission.
 # A busy slot is waited for (`hh-slot acquire --wait`, in the queue, nothing runs and no log is written meanwhile).
 # Exit: 0 every step 0, 1 any step failed, 64 usage, 129/130/143 interrupted.
 set -u

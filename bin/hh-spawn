@@ -12,7 +12,7 @@ USAGE="usage: hh-spawn --agent <n> --role <file> --rules <file> --model <m> --ef
        hh-spawn --self --agent <n> [--name <orchestrator session name>] [--hub <hub session name> | --no-hub] [--window <tokens>] [--handoff <abs path>]
        hh-spawn --respawn <n> [--mode <a stricter mode>] [--resume] [--still <s>] [--max-wait <s>]
        hh-spawn --close <n>"
-# The only commands an agent may run without asking (A16): nothing here runs an arbitrary command, writes a chosen path
+# The only commands an agent may run without asking: nothing here runs an arbitrary command, writes a chosen path
 # (no git: --output=<path> writes anywhere; Claude Code already runs the read-only forms unprompted) or edits the
 # manifest (a pre-approved `hh-manifest add` would let cleanup remove a path, pane or pid nobody named).
 ALLOWED='Bash(hh-slot status) Bash(hh-slot release *) Bash(hh-context *) Bash(hh-gate-verify *) Bash(hh-settings resolve *) Bash(hh-disk *)'

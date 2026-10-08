@@ -41,7 +41,7 @@ hh_option_value() {  # hh_option_value <key> [<value the skill passed>]
   hh_option_default "$k"
 }
 hh_die()  { echo "$HH_PREFIX: $2" >&2; exit "$1"; }
-# A session hivehouse launched in bypass while the owner is away carries HH_AWAY_BYPASS=1 (A31). Whatever leaves the machine or ends the
+# A session hivehouse launched in bypass while the owner is away carries HH_AWAY_BYPASS=1. Whatever leaves the machine or ends the
 # run for good is refused to it. This is a second layer: a Bash command can unset the variable for itself, so hh-away-hook is the guard.
 hh_refuse_away() {  # hh_refuse_away <what>: exit 4 when this process is in a marked session
   [ "${HH_AWAY_BYPASS:-}" != 1 ] || hh_die 4 "hivehouse's away mode refuses $1 while the owner is away (HH_AWAY_BYPASS is set); tell the owner what you needed"
@@ -191,7 +191,7 @@ hh_claude_ancestor() {  # hh_claude_ancestor [pid]: the nearest Claude process a
 hh_claude_is() {  # hh_claude_is <pid> <started>: that very process (not a reused pid), still Claude
   [ -n "$1" ] && [ -n "$2" ] && hh_alive "$1" && hh_lstart_is "$1" "$2" && hh_is_claude "$1"
 }
-# The one place hivehouse stops a process it did not just start: a Claude whose working line has not moved for 15 minutes (A10), by
+# The one place hivehouse stops a process it did not just start: a Claude whose working line has not moved for 15 minutes, by
 # `hh-hub recover`, while the owner's delegate file is valid and the hub carries the away marker. It is never a pattern or a name:
 # only the recorded pid, while that pid still has its recorded start time and is still Claude, and never a Claude above the caller
 # (the hub's own), and only a Claude that has the pane's own process at or above it: the screen read is the pane's, so a record that ties
@@ -261,7 +261,7 @@ hh_alive()  { /bin/ps -p "$1" >/dev/null 2>&1; }
 # ps prints a start time in the caller's locale (mar.  6 oct. in fr_FR, Tue Oct  6 in C): one fixed format, or a time recorded under
 # one locale never matches under another and a live session reads as gone
 hh_lstart() { local s; s=$(LC_ALL=C /bin/ps -o lstart= -p "$1" 2>/dev/null); s=${s#"${s%%[![:space:]]*}"}; printf '%s\n' "${s%"${s##*[![:space:]]}"}"; }   # built-ins only: the away checks read it
-# A83: a start time recorded by 0.2.0 is in the caller's locale, one recorded now is C. hh_lstart_local reads the caller's form;
+# A start time recorded by 0.2.0 is in the caller's locale, one recorded now is C. hh_lstart_local reads the caller's form;
 # hh_lstart_is <pid> <recorded>: 0 when the recorded time is that process's in the C form, else (one more ps, only then) in the
 # caller's form. Pid reuse still needs the same second, so this is no looser than one fixed form. Every comparison uses it.
 hh_lstart_local() { local s; s=$(/bin/ps -o lstart= -p "$1" 2>/dev/null); s=${s#"${s%%[![:space:]]*}"}; printf '%s\n' "${s%"${s##*[![:space:]]}"}"; }
@@ -765,7 +765,7 @@ hh_orchestrator_name() {  # hh_orchestrator_name <project root>
 }
 
 # A gate's step name, the one rule hh-gate's steps and hh-gate-verify's expected names and lines are read by: letters,
-# digits, '_', '.' and '-', with no '..' (A13). HH_STEP_NAME_CHARS is a bracket expression's contents, built from the lists
+# digits, '_', '.' and '-', with no '..'. HH_STEP_NAME_CHARS is a bracket expression's contents, built from the lists
 # above with '-' last, so no reader (grep -E, sed -E or a case) can take it as a range.
 HH_STEP_NAME_CHARS="${HH_UPPER}${HH_LOWER}${HH_DIGITS}_.-"
 HH_STEP_NAME_RULE="letters, digits, '_', '.' and '-' with no '..'"
@@ -1170,7 +1170,7 @@ hh_claude_trusts() {
 
 # ---- bypass: granted only while the owner is away -----------------------------------------------------------------------
 # bypassPermissions is started by hivehouse only when ALL of these hold: the owner's root-owned delegate file is valid, the project's
-# home is listed in the hub that file names (A6), and the caller's own Claude carries the away marker in its launch environment
+# home is listed in the hub that file names, and the caller's own Claude carries the away marker in its launch environment
 # (hh_away_caller). The owner's own unmarked sessions and a plain shell never get it. Nothing here is read from an argument or a
 # setting the caller can write.
 HH_DG_HUB=""; HH_DG_UNTIL=""; HH_DG_MCP=""; HH_DG_PROJECT=""
@@ -1216,7 +1216,7 @@ hh_check_mode() {  # hh_check_mode <mode> <who> [<project root>]: exits 4 unless
   case " $HH_PERMISSION_MODES " in *" $mode "*) return 0 ;; esac
   hh_die 4 "unknown permission mode: $mode"
 }
-# What a session started in bypass gets (A31, A40, A48, A62, A71): the marker and the hook's three variables, and only the MCP servers the
+# What a session started in bypass gets: the marker and the hook's three variables, and only the MCP servers the
 # owner allowed (a file written from the user's .claude.json and the project's .mcp.json, mode 0600), with no Chrome. Never for any other mode.
 HH_BP_ENVS=(); HH_BP_ARGS=(); HH_AWAY_MCP_MISSING=""
 hh_write_away_mcp() {  # hh_write_away_mcp <file> <allow list> <project root>: the servers of the list, found; HH_AWAY_MCP_MISSING names the others. Only "$HH_JQ" writes it (with none, nothing runs and it returns 1)

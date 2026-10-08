@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # The orchestrator's last act: rotate its own pane. Returns at once; the rotation runs detached, with all three streams
-# redirected so it survives the end of the tool call that started it (A12).
+# redirected so it survives the end of the tool call that started it.
 # hh-self-rotate <agent> [hh-rotate options]
 set -u
 . "$(dirname "$0")/hh-lib.sh"

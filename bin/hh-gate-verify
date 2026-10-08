@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Read a gate's result and a range's commits; never run anything. Pre-approved for agents (A16): it takes no command.
+# Read a gate's result and a range's commits; never run anything. Pre-approved for agents: it takes no command.
 #   hh-gate-verify log <file> [--expect <name>,<name>...] [--commit <commit>]
 #     GREEN (<n> steps) only when the file has at least one `<name> exit <n>` line, every one is `exit 0`, no name has
 #     two, and every step the hh-gate header names, and every --expect name, has one. A log with no header (a project's
