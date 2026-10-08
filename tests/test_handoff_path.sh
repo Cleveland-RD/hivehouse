@@ -52,6 +52,12 @@ out=$(spawn bad1 --handoff "$r/notes/../notes/h2.md"); assert_contains "any .. i
 ln -s "$T_TMP/outside/target.md" "$r/notes/dangling.md"; out=$(spawn bad1 --handoff "$r/notes/dangling.md"); assert_contains "a path whose last part is a link (dangling) is refused" "$out" "link"
 echo x > "$r/notes/real.md"; ln -s "$r/notes/real.md" "$r/notes/linked.md"; out=$(spawn bad1 --handoff "$r/notes/linked.md"); assert_contains "...and one that points at a file is refused too" "$out" "link"
 assert_eq "...nothing was written through the link" "$(ls "$T_TMP/outside" | wc -l | tr -d ' ')" "0"
+# a worktree whose recorded path is a link to its folder (/var is /private/var): its real path is accepted
+mkdir -p "$T_TMP/realwt"; ln -s "$T_TMP/realwt" "$T_TMP/linkwt"; git -C "$r" worktree add -q "$T_TMP/linkwt/wt2" -b wt2; mkdir -p "$T_TMP/realwt/wt2/notes"
+printf '%s\n' "$T_TMP/linkwt/wt2/.git" > "$r/.git/worktrees/wt2/gitdir"   # recent git resolves the link itself; an older one, or a moved folder, leaves it as typed
+assert_contains "(the worktree list shows the link path)" "$(git -C "$r" worktree list --porcelain)" "worktree $T_TMP/linkwt/wt2"
+out=$(spawn wtlink --handoff "$T_TMP/realwt/wt2/notes/h.md" | tail -1); assert_eq "a handoff in a worktree added through a link is accepted by its real path" "$(getteam wtlink .handoff)" "$T_TMP/realwt/wt2/notes/h.md"
+out=$(spawn wtlink2 --handoff "$T_TMP/linkwt/wt2/notes/h2.md" | tail -1); assert_eq "...and by the path of the link" "$(getteam wtlink2 .handoff)" "$T_TMP/realwt/wt2/notes/h2.md"
 ln -s "$T_TMP/outside" "$r/linkdir"; out=$(spawn bad1 --handoff "$r/linkdir/h.md"); assert_contains "a folder that is a link out of the project is refused" "$out" "inside the project"
 out=$(spawn bad2 --handoff "$r/no;such.md"); assert_contains "a path hivehouse will not type" "$out" "type"
 out=$(spawn bad3 --handoff "$r/nofolder/h.md"); assert_contains "a path whose folder is missing" "$out" "folder does not exist"
