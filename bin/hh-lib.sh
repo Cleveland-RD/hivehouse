@@ -489,11 +489,18 @@ hh_write_session() {  # hh_write_session <project root> <agent> <session id> <tr
     > "$dir/session.json.tmp$$" 2>/dev/null && mv "$dir/session.json.tmp$$" "$dir/session.json" || { rm -f "$dir/session.json.tmp$$"; return 1; }
 }
 
+# The handoff an agent is sent back to: the path hh-spawn recorded with --handoff (a project that keeps it elsewhere), else the default
+# under the state folder. A recorded path that is not an absolute path hivehouse will type is ignored, never typed.
+hh_handoff_path() {  # hh_handoff_path <project root> <agent>
+  local p; p=$(jq -r --arg a "$2" '[.agents[]? | select(.name == $a) | .handoff][0] // empty' "$1/$HH_STATE_DIR/team.json" 2>/dev/null)
+  case "$p" in /*) hh_is_typed_path "$p" && { printf '%s\n' "$p"; return 0; } ;; esac
+  printf '%s/%s/handoffs/%s.md\n' "$1" "$HH_STATE_DIR" "$2"
+}
 # The line that starts (hh-spawn) or restarts (hh-rotate) an agent from its handoff: one text, so they cannot drift. The
 # orchestrator itself (hh-self-rotate) reports to nobody, waits for nobody, and --self gives it no role or rules dir.
 hh_pickup_line() {  # hh_pickup_line <project name> <project root> <agent>
   if [ "$(hh_self_entry "$2" | jq -r '.name // empty' 2>/dev/null)" = "$3" ]; then
-    printf 'You are %s. Read %s/%s/handoffs/%s.md from the top: its START HERE block is your prompt.' "$(hh_orchestrator_name "$2")" "$2" "$HH_STATE_DIR" "$3"
+    printf 'You are %s. Read %s from the top: its START HERE block is your prompt.' "$(hh_orchestrator_name "$2")" "$(hh_handoff_path "$2" "$3")"
     # registered with --hub: the owner talks to it through the hub, which a /clear would otherwise forget
     local hub; hub=$(hh_self_entry "$2" | jq -r '.hub // empty' 2>/dev/null)
     if [ -n "$hub" ] && hh_is_session_name "$hub"; then
@@ -505,13 +512,13 @@ hh_pickup_line() {  # hh_pickup_line <project name> <project root> <agent>
     else echo "$HH_PREFIX: the i-have-adhd path is not one hivehouse will type, so the pickup line leaves it out: $style" >&2; fi
     return
   fi
-  printf 'You are %s-%s. Read %s/%s/handoffs/%s.md from the top: its START HERE block is your prompt, and %s/%s/team/%s/ holds your role and the rules. Report to %s. Wait for its first message before any work.' \
-    "$1" "$3" "$2" "$HH_STATE_DIR" "$3" "$2" "$HH_STATE_DIR" "$3" "$(hh_orchestrator_name "$2")"
+  printf 'You are %s-%s. Read %s from the top: its START HERE block is your prompt, and %s/%s/team/%s/ holds your role and the rules. Report to %s. Wait for its first message before any work.' \
+    "$1" "$3" "$(hh_handoff_path "$2" "$3")" "$2" "$HH_STATE_DIR" "$3" "$(hh_orchestrator_name "$2")"
 }
 # What an agent resumed with its own session (hh-spawn --respawn --resume) is typed instead of the pickup line: its session
 # already holds the work, so it is told only why it was restarted and where its handoff is.
 hh_resume_line() {  # hh_resume_line <project root> <agent>
-  printf 'You were restarted by hivehouse after your session stopped responding. Carry on where you were; your handoff is %s/%s/handoffs/%s.md.' "$1" "$HH_STATE_DIR" "$2"
+  printf 'You were restarted by hivehouse after your session stopped responding. Carry on where you were; your handoff is %s.' "$(hh_handoff_path "$1" "$2")"
 }
 
 # The ASCII letters and digits, listed and never written as a range: under bash 3.2 a bracket range follows the locale's
