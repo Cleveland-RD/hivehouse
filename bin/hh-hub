@@ -680,7 +680,7 @@ rotate)
   esac ;;
 
 context)
-  # The hub's own level from its transcript, for the rotation check: a percent of --window, else of an assumed 200000 (said so).
+  # The hub's own level from its transcript, for the rotation check: a percent of --window, else of an assumed $HH_WINDOW_DEFAULT (said so).
   win=""
   while [ $# -gt 0 ]; do [ $# -ge 2 ] && [ "$1" = --window ] || hh_die 64 "$USAGE"; win=$2; shift 2; done
   if [ -n "$win" ]; then case "$win" in ''|*[!0-9]*|0) hh_die 4 "--window must be a positive number: $win" ;; esac; fi
@@ -692,7 +692,7 @@ context)
   [ -n "$used" ] || hh_die 2 "the hub's transcript has no usage line yet"
   if [ -n "$win" ]; then echo $(( used * 100 / win ))
   else
-    rw=$(hh_json_get "$hf" .window); { hh_is_number "$rw" && [ "$rw" -gt 0 ]; } || rw=200000   # what hh-hub self recorded, else a guess
+    rw=$(hh_json_get "$hf" .window); { hh_is_number "$rw" && [ "$rw" -gt 0 ]; } || rw=$HH_WINDOW_DEFAULT   # what hh-hub self recorded, else a guess
     hh_assumed_level "$used" "$rw"
   fi
   # a rotation that sent nothing (never idle, a dialog, another pane) is told here, until one works: the hub cannot see rotate.log otherwise

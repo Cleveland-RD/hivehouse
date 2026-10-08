@@ -32,6 +32,7 @@ T_DELEGATE_LINE3="$T_DELEGATE_TAG 3"        # a version 3 file's first line (0.5
 T_PREFIX='hivehouse'                       # what a message begins with: "<prefix>: ..."
 T_PANE='hivehouse-hub'                     # the hub screen's pane
 T_PLUGIN=$(jq -r .name "$HH_REPO_ROOT/.claude-plugin/plugin.json")
+T_WINDOW=1000000                           # the one default context window (tokens): Claude Code's own
 FAILS=0
 T_TMP=""
 # A run's ledger: what it started, so that whatever ends it (an assertion, a signal, a kill) the next teardown can

@@ -16,6 +16,7 @@ HH_DELEGATE_VERSIONS=' 1 2 3 '        # the versions hh_delegate_read accepts (1
 HH_DELEGATE_TOOLS=' Workflow WebFetch DesignSync ArtifactCheck PushNotification '   # the only extra tools an away session may be given (tools=)
 HH_DELEGATE_WRITE=3                   # the version hh-hub away writes
 HH_CUSTOM_DIR='custom'                    # the user's overrides of the plugin's roles, rules and brief template: under a project's state folder and under the per-user home
+HH_WINDOW_DEFAULT=1000000                      # the one context window assumed when none was measured or given: Claude Code's own default, and plugin.json's three window_* defaults
 hh_plugin_name() {  # use as x=$(hh_plugin_name) || exit $?. The plugin's name, read with built-ins from .claude-plugin/plugin.json (its top-level "name" line)
   local f l n="" pre='  "name": "'; f="$(dirname "${BASH_SOURCE[0]}")/../.claude-plugin/plugin.json"
   while IFS= read -r l; do

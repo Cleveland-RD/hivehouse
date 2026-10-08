@@ -34,7 +34,7 @@ verify() {
   echo "$HH_PREFIX: the pane $pane is not the one recorded for $agent (or its Claude is gone); nothing was typed" >&2; return 1
 }
 verify || exit 6
-level() {  # "50%", or "50% (window assumed 200000)" when hh-context had to guess the window
+level() {  # "50%", or "50% (window assumed 1000000)" when hh-context had to guess the window
   local v; v=$("$(dirname "$0")/hh-context" "$agent" 2>/dev/null) || { echo '?'; return; }
   case "$v" in *"(window unknown)") echo "$v"; return ;; esac   # "250000 tokens (window unknown)" is no percent
   echo "${v%% *}%${v#"${v%% *}"}"

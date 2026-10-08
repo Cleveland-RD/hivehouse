@@ -3,8 +3,8 @@
 # hh-context <agent> [--window <tokens>] | --all.  Exit: 2 no project / no session or usable transcript, 3 .hivehouse
 # tracked, 4 bad window, 64 usage. The window is Claude Code's own (context.json, which hh-statusline keeps for a spawned
 # agent), when it was read for the agent's current session; else --window; else the agent's `window` in team.json (written
-# at spawn), default 200000. It is never inferred from a model name. A window that was not measured or given is a guess,
-# and the reading says so: "45 (window assumed 200000)", or, when the tokens exceed that guess, "250000 tokens (window unknown)": never a percent
+# at spawn), default $HH_WINDOW_DEFAULT. It is never inferred from a model name. A window that was not measured or given is a guess,
+# and the reading says so: "45 (window assumed 1000000)", or, when the tokens exceed that guess, "1500000 tokens (window unknown)": never a percent
 # over 100. An agent that is no longer running as recorded (after a restart,
 # say) keeps its last level and is marked: "45 (not running)"; one that cannot be told about is not.
 set -u
@@ -27,7 +27,7 @@ pct() {  # pct <agent> [window]
   fi
   [ -n "$win" ] && { echo $(( used * 100 / win )); return 0; }
   win=$(jq -r --arg a "$a" '[.agents[]? | select(.name == $a) | .window][0] // empty' "$STATE/team.json" 2>/dev/null)
-  case "$win" in ''|*[!0-9]*|0) win=200000 ;; esac
+  case "$win" in ''|*[!0-9]*|0) win=$HH_WINDOW_DEFAULT ;; esac
   hh_assumed_level "$used" "$win"
 }
 mark() { hh_team_agent_is "$ROOT" "$1"; [ $? -eq 1 ] && printf ' (not running)'; return 0; }   # mark <agent>
