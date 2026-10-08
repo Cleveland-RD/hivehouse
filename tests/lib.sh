@@ -49,8 +49,28 @@ t_outside_tmp() {  # t_outside_tmp -> a fresh dir under /tmp (not under $T_TMP),
   local d; d=$(mktemp -d /tmp/hhtest-out.XXXXXX) && d=$(cd "$d" && pwd -P) || return 1
   printf '%s\n' "$d" >> "$T_TMP/run.dirs"; printf '%s\n' "$d"
 }
-t_same() {  # t_same <pid> <recorded start>: 0 when the pid is alive with that start time
-  [ -n "$1" ] && [ -n "$2" ] && [ "$(t_lstart "$1")" = "$2" ]
+# The start time ps prints is written in the language of the caller's locale ("Thu Oct  8 ..." in C, "Thu  8 Oct ..." in en_GB, "jeu.  8 oct. ..."
+# in fr_FR), and a run is judged by a later run that may use another one: comparing the text would sweep a live run (KI-28). A start time is
+# reduced to the numbers every language shares, its HH:MM:SS, its year and its day, and the pid's own start time is read in C. The same
+# reduction as hh_lstart_fp in bin/hh-lib.sh, written out here so that the reaper still shares no code with what it tests.
+t_lstart_fp() {  # t_lstart_fp <start time text>: "HH:MM:SS YYYY D", or nothing when it does not hold exactly one of each
+  local w t="" y="" d="" nt=0 ny=0 nd=0 ws
+  IFS=' ' read -r -a ws <<< "$1"
+  for w in ${ws[@]+"${ws[@]}"}; do
+    case "$w" in
+      [0-9][0-9]:[0-9][0-9]:[0-9][0-9]) t=$w; nt=$((nt + 1)) ;;
+      [0-9][0-9][0-9][0-9]) y=$w; ny=$((ny + 1)) ;;
+      [0-9]|[0-9][0-9]) d=$((10#$w)); nd=$((nd + 1)) ;;
+    esac
+  done
+  [ "$nt" = 1 ] && [ "$ny" = 1 ] && [ "$nd" = 1 ] && printf '%s %s %s\n' "$t" "$y" "$d"
+}
+t_same() {  # t_same <pid> <recorded start>: 0 when the pid is alive with that start time, in whatever language it was recorded
+  local rec now
+  [ -n "$1" ] && [ -n "$2" ] || return 1
+  now=$(LC_ALL=C ps -o lstart= -p "$1" 2>/dev/null | sed 's/^ *//;s/ *$//'); [ -n "$now" ] || return 1
+  [ "$now" = "$2" ] && return 0
+  rec=$(t_lstart_fp "$2"); [ -n "$rec" ] && [ "$rec" = "$(t_lstart_fp "$now")" ]
 }
 t_guard() {  # sets T_ABOVE (this shell and everything above it) and T_OWN_PG (its group): never signalled
   # read from inside sh while it runs (bash 3.2 has no BASHPID, and a subshell's $$ is its parent's): sh's parent is this
@@ -115,9 +135,22 @@ t_allowlist_env() {
     esac
   done
 }
+# The test tmux server's socket is <TMPDIR>/hhtest.XXXXXX/tmux.sock, and a unix socket path holds at most 103 characters on macOS: past
+# that no tmux server starts and the hub, spawn and rotate tests fail as "unknown" or exit 2 with nothing wrong in the code (KI-30).
+t_check_socket_path() {
+  local base n
+  base=$(cd -P "${TMPDIR:-/tmp}" 2>/dev/null && pwd -P) || base=${TMPDIR:-/tmp}
+  n=$(( ${#base} + ${#T_SOCKET_TAIL} ))
+  if [ "$n" -gt 103 ]; then
+    echo "tests: TMPDIR is too long: the test tmux socket would be $n characters ($base$T_SOCKET_TAIL), over the 103 a socket path may have. Set a shorter one, e.g. TMPDIR=\$(getconf DARWIN_USER_TEMP_DIR)hh-test" >&2
+    exit 2
+  fi
+}
+T_SOCKET_TAIL="/hhtest.XXXXXX/tmux.sock"
 t_setup() {
   t_allowlist_env
   t_sweep_stale
+  t_check_socket_path
   T_TMP="$(mktemp -d "${TMPDIR:-/tmp}/hhtest.XXXXXX")"; T_TMP="$(cd "$T_TMP" && pwd -P)"
   printf '%s\t%s\n' "$$" "$(t_lstart $$)" > "$T_TMP/run.owner"
   export HIVEHOUSE_HOME="$T_TMP/home"; mkdir -p "$HIVEHOUSE_HOME"
