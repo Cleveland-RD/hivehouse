@@ -1310,6 +1310,8 @@ hh_rm_protected() {  # hh_rm_protected <canonical path>: 0 and the reason on std
   [ "$q" != / ] || { echo "the root folder"; return 0; }
   # the temp zones: a temp root is refused, anything inside one passes (tests make and delete temp repositories there)
   tz=""; [ -z "${TMPDIR:-}" ] || tz=$(hh_rm_map "$(hh_rm_canon "$TMPDIR" /)")
+  # $TMPDIR is the environment's word, so it is a zone only when it lies inside a system temp location (a wrong TMPDIR must not undo the guard)
+  case "$tz" in /private/var/folders/?*|/private/tmp|/private/tmp/*|/var/tmp|/var/tmp/*|/private/var/tmp|/private/var/tmp/*|/tmp|/tmp/*) ;; *) tz="" ;; esac
   for z in "$tz" /private/tmp /tmp /var/tmp /private/var/tmp; do
     [ -n "$z" ] || continue
     for c in "$z" "$(hh_rm_canon "$z" /)"; do
