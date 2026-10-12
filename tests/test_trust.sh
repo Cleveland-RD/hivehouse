@@ -30,7 +30,7 @@ echo '{not json' > "$CJ"; no "$T/plain" "an unreadable config trusts nothing"
 
 # hh-spawn: the warning before a launch into a worktree
 env -u HIVEHOUSE_HOME tmux -S "$HH_TMUX_SOCKET" new-session -d -s keep 'sleep 600'
-r=$(t_repo proj); cd "$r"; echo role > "$T_TMP/impl.md"; echo rules > "$T_TMP/RULES.md"
+r=$(t_repo proj); cd "$r" || exit 2; echo role > "$T_TMP/impl.md"; echo rules > "$T_TMP/RULES.md"
 spawn() { hh-spawn --agent "$1" --role "$T_TMP/impl.md" --rules "$T_TMP/RULES.md" --model sonnet --effort medium --mode auto --still 2 --max-wait 15 "${@:2}"; }
 rm -f "$CJ"
 spawn w1 --worktree "$T_TMP/proj-w1" --branch feat/w1 --base main >/dev/null 2>"$T_TMP/sp.err"; assert_status "spawn into a worktree of an untrusted main repository still runs" $? 0

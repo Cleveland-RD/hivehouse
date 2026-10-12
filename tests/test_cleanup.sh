@@ -20,7 +20,7 @@ mkdir "$T_TMP/norepo"; (cd "$T_TMP/norepo" && hh-cleanup --finish 2>/dev/null); 
 [ ! -e "$T_TMP/norepo/$T_STATE" ] && [ -z "$(find "$HIVEHOUSE_HOME" -type f)" ] && ok "outside a repo: nothing written" || bad "outside a repo: something was written"
 
 # ---- files and directories -----------------------------------------------------------------------------------------
-r=$(t_repo files); cd "$r"
+r=$(t_repo files); cd "$r" || exit 2
 mkdir -p "$TMPDIR/scratch/deep" "$r/$T_STATE/tmp"; echo x > "$TMPDIR/scratch/deep/f"; echo x > "$r/$T_STATE/tmp/t"
 realtmp=$(t_outside_tmp)
 mkdir "$T_TMP/out/keep"; echo x > "$T_TMP/out/keep/f"
@@ -83,7 +83,7 @@ cd /
 # All of it runs in one parent group, P (a subshell started under set -m), the cleanup included: P is the cleanup's own
 # group, so a group guard that failed could reach nothing outside it. P reaps what it started when it ends; teardown
 # kills each recorded group while its leader is still the one recorded, then every recorded pid.
-r=$(t_repo procs); cd "$r"
+r=$(t_repo procs); cd "$r" || exit 2
 set -m
 (
   from=1; [ -f "$T_TMP/run.ledger" ] && from=$(( $(wc -l < "$T_TMP/run.ledger") + 1 ))
@@ -135,7 +135,7 @@ if [ "$rc" -ge 128 ]; then bad "the process section was stopped (exit $rc)"; els
 cd /
 
 # ---- tmux panes ----------------------------------------------------------------------------------------------------
-r=$(t_repo panes); cd "$r"
+r=$(t_repo panes); cd "$r" || exit 2
 S="$HH_TMUX_SOCKET"
 track_tmux() { t_track "$(tmux -S "$S" display-message -p '#{pid}')" "$(tmux -S "$S" display-message -p -t "$1" '#{pane_pid}')"; }   # its server and pane
 tmux -S "$S" new-session -d -s a 'sleep 300'; pa=$(tmux -S "$S" display-message -p -t a '#{pane_id}'); track_tmux a
@@ -172,7 +172,7 @@ tmux -S "$S" kill-server 2>/dev/null
 cd /
 
 # ---- worktrees -----------------------------------------------------------------------------------------------------
-r=$(t_repo trees); cd "$r"
+r=$(t_repo trees); cd "$r" || exit 2
 git worktree add -q -b merged "$T_TMP/wt-merged" main
 git worktree add -q -b dirty "$T_TMP/wt-dirty" main; echo d > "$T_TMP/wt-dirty/new"
 git worktree add -q -b ahead "$T_TMP/wt-ahead" main; git -C "$T_TMP/wt-ahead" commit -q --allow-empty -m ahead

@@ -2,7 +2,7 @@
 . "$(dirname "$0")/lib.sh"
 . "$HH_REPO_ROOT/bin/hh-lib.sh"
 t_setup
-r=$(t_repo proj); cd "$r"; echo role > "$T_TMP/impl.md"; echo rules > "$T_TMP/RULES.md"
+r=$(t_repo proj); cd "$r" || exit 2; echo role > "$T_TMP/impl.md"; echo rules > "$T_TMP/RULES.md"
 # set-environment -g (below) is how a test hands the fake claude its behaviour: hh-spawn passes a pane only what it names
 # so the server's global environment is the one channel that is not production code.
 # the server starts WITHOUT the machine home, so a pane that has it got it from hh-spawn
@@ -156,7 +156,7 @@ assert_eq "...--session still wins" "$(jq -r '.agents[]|select(.name=="named").s
 # and the project's are quoted, so a space in either works
 echo '{"statusLine":{"type":"command","command":"echo OWNER; exit 4","padding":2}}' > "$CLAUDE_CONFIG_DIR/settings.json"
 mkdir -p "$T_TMP/plug in"; cp -R "$HH_REPO_ROOT/bin" "$T_TMP/plug in/"; t_plugin_beside "$T_TMP/plug in/bin"
-sp=$(t_repo "my proj"); cd "$sp"
+sp=$(t_repo "my proj"); cd "$sp" || exit 2
 spane=$("$T_TMP/plug in/bin/hh-spawn" --agent sl --role "$T_TMP/impl.md" --rules "$T_TMP/RULES.md" --model sonnet --effort medium --mode auto --still 2 --max-wait 15)
 assert_status "spawn with spaces in the plugin's and the project's paths" $? 0
 sset=$(hh_tmux capture-pane -p -J -S - -t "$spane" | grep '^ARGV: {"statusLine"' | sed 's/^ARGV: //')

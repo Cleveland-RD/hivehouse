@@ -3,7 +3,7 @@
 . "$(dirname "$0")/lib.sh"
 . "$HH_REPO_ROOT/bin/hh-lib.sh"
 t_setup
-r=$(t_repo proj); cd "$r"
+r=$(t_repo proj); cd "$r" || exit 2
 mkdir -p "$CLAUDE_CONFIG_DIR/sessions" "$CLAUDE_CONFIG_DIR/projects/-a-proj" "$CLAUDE_CONFIG_DIR/projects/-b-other"
 cp "$HH_REPO_ROOT/tests/fixtures/transcript.jsonl" "$CLAUDE_CONFIG_DIR/projects/-a-proj/sid-a.jsonl"
 # a Claude stand-in: writes its own session record as Claude Code does, runs hh-spawn --self below itself, then, once told
