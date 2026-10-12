@@ -104,6 +104,21 @@ for order in "A then B|$CA|$CB" "B then A|$CB|$CA"; do
   assert_eq "...a protected operand is still refused: exit 1" "$RC" "1"
   [ ! -e "$REALLOG" ] && ok "...and the real rm is not reached" || bad "the real rm was reached for a protected operand"
 done
+# copies without the marker (an older guard) cannot be passed over by name: the loop stop ends the call, in an error, within the limit
+for d in "$R/srv/c/oA" "$R/srv/c/oB"; do mkcopy "$d" nomark; done
+[ ! -e "$R/srv/c/oA/bin/guard/.hh-guard" ] && [ ! -e "$R/srv/c/oB/bin/guard/.hh-guard" ] && ok "the old copies hold no marker" || bad "the old copies hold a marker"
+rm -f "$REALLOG"; run_to 20 "$R/srv/c/oA/bin/guard:$R/srv/c/oB/bin/guard:$REALBIN:/usr/bin:/bin" rm "$FH/plain/file"
+assert_eq "two guards that cannot pass each other over: the loop stop ends it (exit 2), no hang" "$RC" "2"
+assert_contains "...saying more than one guard is on PATH" "$ERR" "more than one copy of bin/guard is on PATH"
+[ ! -e "$REALLOG" ] && ok "...and nothing was run" || bad "the real rm ran"
+for t in find rsync; do
+  run_to 20 "$R/srv/c/oA/bin/guard:$R/srv/c/oB/bin/guard:/usr/bin:/bin" "$t" "$FH/src" -name x
+  assert_eq "$t: the same loop stop (exit 2)" "$RC" "2"
+done
+# a real find runs rm by name (-exec rm): the guard of rm is not in a loop, so it is not stopped by find's own count
+rm -f "$REALLOG"; run_to 20 "$CA/bin/guard:$CB/bin/guard:$REALBIN:/usr/bin:/bin" find "$FH/plain/sub/deep" -type f -exec rm {} +
+assert_eq "find -exec rm under the guards: the call ends, exit 0" "$RC" "0"
+assert_contains "...and the guard of rm handed it on (the real rm was reached)" "$(cat "$REALLOG" 2>/dev/null)" "CALLED $FH/plain/sub/deep/f"
 # a guard with no real tool beyond it ends in an error; made with a tool name that has no real program, so that PATH can keep /usr/bin
 for d in "$R/srv/c/nA" "$R/srv/c/nB"; do mkcopy "$d"; sed -i.bak -e 's/hh_guard_real rm/hh_guard_real hhnotool/' -e 's/hh_guard_judge rm/hh_guard_judge hhnotool/' "$d/bin/guard/rm"; mv "$d/bin/guard/rm" "$d/bin/guard/hhnotool"; rm -f "$d/bin/guard/rm.bak"; done
 run_to 10 "$R/srv/c/nA/bin/guard:$R/srv/c/nB/bin/guard:/usr/bin:/bin" hhnotool "$FH/plain/file"

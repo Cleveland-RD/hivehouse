@@ -3,6 +3,7 @@
 # local path. Everything else goes to the real rsync unchanged.
 gd=$(cd "$(dirname "$0")" 2>/dev/null && pwd -P) || exit 2
 . "$gd/../hh-lib.sh" || exit 2
+hh_guard_enter rsync || exit 2
 dels=0; dest=""; have=0; skip=0
 for a in "$@"; do
   if [ "$skip" = 1 ]; then skip=0; continue; fi

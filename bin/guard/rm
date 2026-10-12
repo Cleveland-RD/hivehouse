@@ -3,6 +3,7 @@
 # bin/hh-lib.sh). Otherwise it hands the arguments, unchanged, to the real rm.
 gd=$(cd "$(dirname "$0")" 2>/dev/null && pwd -P) || exit 2
 . "$gd/../hh-lib.sh" || exit 2
+hh_guard_enter rm || exit 2
 ops=(); end=0
 for a in "$@"; do
   if [ "$end" = 0 ]; then

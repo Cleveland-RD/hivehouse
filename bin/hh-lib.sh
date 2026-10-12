@@ -1367,6 +1367,16 @@ hh_guard_launch() {  # hh_guard_launch: a shell prefix, `export PATH=<guard>:"$P
   local g; g=$(cd "$(dirname "${BASH_SOURCE[0]}")/guard" 2>/dev/null && pwd -P) || return 0
   printf 'export PATH=%q:"$PATH"; ' "$g"
 }
+hh_guard_enter() {  # hh_guard_enter <tool>: the loop stop. A guard counts the guards of its own tool the call has passed through (in the environment, which its exec
+  # hands on); the fifth refuses, so that two guards that hand the call to each other end in an error instead of running for ever
+  local v="HH_GUARD_DEPTH_$1" n
+  n=${!v:-0}; case "$n" in ''|*[!0-9]*) n=99 ;; esac
+  if [ "$n" -ge 5 ]; then
+    echo "$HH_PREFIX: $1 refused: the call has passed through $n guards in a row (more than one copy of bin/guard is on PATH, and one hands the call to another); nothing was run" >&2
+    return 1
+  fi
+  export "$v=$((n + 1))"
+}
 hh_guard_real() {  # hh_guard_real <tool> <the guard's own folder>: the program to run, the first on PATH that is in no guard folder (every copy of
   # bin/guard holds the marker file .hh-guard, so a second copy on PATH, from another install or an older version, is passed over too)
   local t="$1" gd="$2" d dd IFS=:
