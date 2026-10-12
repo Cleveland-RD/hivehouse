@@ -260,7 +260,7 @@ extra=(); [ -z "$resume_id" ] || extra=(--resume "$resume_id")
 HH_BP_ENVS=(); HH_BP_ARGS=()
 if [ "$mode" = bypassPermissions ]; then hh_bypass_launch "$ROOT" "$STATE/team/$agent/away-mcp.json" || hh_die 4 "cannot prepare the away MCP file for $agent"
 else rm -f "$STATE/team/$agent/away-mcp.json"; fi
-cmd="exec $(printf '%q ' claude ${extra[@]+"${extra[@]}"} --name "$project-$agent" --model "$model" --effort "$effort" --permission-mode "$mode" --allowedTools "$ALLOWED" --settings "$settings" ${HH_BP_ARGS[@]+"${HH_BP_ARGS[@]}"})"
+cmd="$(hh_guard_launch)exec $(printf '%q ' claude ${extra[@]+"${extra[@]}"} --name "$project-$agent" --model "$model" --effort "$effort" --permission-mode "$mode" --allowedTools "$ALLOWED" --settings "$settings" ${HH_BP_ARGS[@]+"${HH_BP_ARGS[@]}"})"
 envs=(-e "HH_AGENT=$agent" -e "HH_PROJECT=$ROOT" -e "HIVEHOUSE_HOME=$(hh_home)" ${HH_BP_ENVS[@]+"${HH_BP_ENVS[@]}"})
 [ -n "${HH_TMUX_SOCKET:-}" ] && envs+=(-e "HH_TMUX_SOCKET=$HH_TMUX_SOCKET")
 pane=$(hh_open_window "$session" "$agent" "$cwd" "$cmd" "${envs[@]}") || exit $?

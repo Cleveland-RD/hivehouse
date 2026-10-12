@@ -1358,6 +1358,10 @@ hh_guard_judge() {
   done
   return 0
 }
+hh_guard_launch() {  # hh_guard_launch: a shell prefix, `export PATH=<guard>:"$PATH"; `, for a pane's command: it runs after the user's shell startup files, which may rewrite PATH
+  local g; g=$(cd "$(dirname "${BASH_SOURCE[0]}")/guard" 2>/dev/null && pwd -P) || return 0
+  printf 'export PATH=%q:"$PATH"; ' "$g"
+}
 hh_guard_real() {  # hh_guard_real <tool> <the guard's own folder>: the program to run, the first on PATH that is not the guard
   local t="$1" gd="$2" d dd IFS=:
   if [ -n "${HH_GUARD_REAL:-}" ]; then printf '%s\n' "$HH_GUARD_REAL"; return 0; fi

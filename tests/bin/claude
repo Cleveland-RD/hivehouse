@@ -17,6 +17,7 @@ if [ "${1:-}" = plugin ] && [ "${2:-}" = list ]; then
   jq -nc --arg p "$(cd "$(dirname "$0")/../.." && pwd -P)" --arg v "${HH_FAKE_PLUGIN_VERSION:-0.1.0}" --arg n "$(jq -r .name "$(dirname "$0")/../../.claude-plugin/plugin.json")" '[{id:($n + "@" + $n),version:$v,installPath:$p}]'; exit 0
 fi
 for a in "$@"; do printf 'ARGV: %s\n' "$a"; done
+printf 'ENV: PATH0=%s\n' "${PATH%%:*}"
 printf 'ENV: HH_AGENT=%s HH_PROJECT=%s HIVEHOUSE_HOME=%s HH_TMUX_SOCKET=%s\n' "${HH_AGENT:-}" "${HH_PROJECT:-}" "${HIVEHOUSE_HOME:-}" "${HH_TMUX_SOCKET:-}"
 printf 'UMASK: %s\n' "$(umask)"
 printf 'ENV2: HH_AWAY_BYPASS=%s HH_AWAY_HUB=%s HH_AWAY_MCP_ALLOW=%s\n' "${HH_AWAY_BYPASS:-}" "${HH_AWAY_HUB:-}" "${HH_AWAY_MCP_ALLOW:-}"
