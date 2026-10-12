@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 . "$(dirname "$0")/lib.sh"
 t_setup
-r=$(t_repo proj); cd "$r"
+r=$(t_repo proj); cd "$r" || exit 2
 LOG="$T_TMP/gate.log"
 
 LOCK="$HIVEHOUSE_HOME/slot.lock"

@@ -7,7 +7,7 @@
 . "$(dirname "$0")/lib.sh"
 . "$HH_REPO_ROOT/bin/hh-lib.sh"
 t_setup
-r=$(t_repo proj); cd "$r"
+r=$(t_repo proj); cd "$r" || exit 2
 echo "-- hh-cleanup"
 for a in "--finish" "--finish --dry-run" "--dry-run --finish"; do
   HH_AWAY_BYPASS=1 hh-cleanup $a >"$T_TMP/out" 2>"$T_TMP/err"; assert_status "the away marker refuses: hh-cleanup $a" $? 4

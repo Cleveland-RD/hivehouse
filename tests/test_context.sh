@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 . "$(dirname "$0")/lib.sh"
 t_setup
-r=$(t_repo proj); cd "$r"; mkdir -p $T_STATE/team/impl $T_STATE/team/rev
+r=$(t_repo proj); cd "$r" || exit 2; mkdir -p $T_STATE/team/impl $T_STATE/team/rev
 jq -nc --arg t "$HH_REPO_ROOT/tests/fixtures/transcript.jsonl" '{session_id:"s",transcript_path:$t}' > $T_STATE/team/impl/session.json
 echo '{"agents":[{"name":"impl","model":"sonnet"},{"name":"rev","model":"opus","window":1000000}]}' > $T_STATE/team.json
 # the last real assistant line with usage is the one that counts: after it come a sidechain's line, a synthetic line with
