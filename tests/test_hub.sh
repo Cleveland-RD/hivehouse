@@ -132,6 +132,7 @@ assert_contains "...and told it works through the hub, which survives a rotation
 assert_contains "...told to register again" "$screen" "hh-spawn --self --agent orchestrator"
 assert_contains "...and to report to the hub" "$screen" "send hub one line"
 assert_eq "...in the project's tmux session" "$(hh_tmux display-message -p -t "$wp" '#{session_name}')" "app"
+assert_contains "...with the delete guard first in its PATH" "$screen" "PATH0=$HH_REPO_ROOT/bin/guard"
 assert_eq "...in its home" "$(hh_tmux display-message -p -t "$wp" '#{pane_current_path}')" "$H/back"
 rm "$S/settings.json"
 hub wake app --still 2 --max-wait 15 >/dev/null 2>&1; assert_status "never woken twice while the first is coming up" $? 4
@@ -153,6 +154,7 @@ sp=$(hub start two two-1 --still 2 --max-wait 15 2>"$T_TMP/start.err"); assert_s
 screen=$(hh_tmux capture-pane -p -J -S - -t "$sp")
 assert_contains "...a new orchestrator by name" "$screen" "ARGV: two-orchestrator"
 assert_contains "...started on the task's file" "$screen" "GOT: /$T_PLUGIN:start Task two-1: read $P/tasks/two-1.md"
+assert_contains "...with the delete guard first in its PATH" "$screen" "PATH0=$HH_REPO_ROOT/bin/guard"
 assert_eq "...in its home" "$(hh_tmux display-message -p -t "$sp" '#{pane_current_path}')" "$H/solo"
 scmd=$(printf '%s\n' "$screen" | grep '^ARGV: {"statusLine"' | sed 's/^ARGV: //' | jq -r '.statusLine.command')
 assert_contains "...with hh-statusline as its statusLine" "$scmd" "/hh-statusline"

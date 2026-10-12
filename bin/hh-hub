@@ -380,7 +380,7 @@ launch() {
   # made first (an orchestrator registered under another name than this one measures into the other folder: harmless)
   (HH_PROJECT="$cwd"; export HH_PROJECT; hh_ensure_state && mkdir -p "$cwd/$HH_STATE_DIR/team/$agent") || { rc=$?; rm -f "$mcpf"; exit $rc; }
   settings=$(hh_agent_settings "$HH_BIN" "$cwd" "$cwd/$HH_STATE_DIR/team/$agent") || { rc=$?; rm -f "$mcpf"; exit $rc; }
-  c="umask $HH_CALLER_UMASK; exec $(printf '%q ' claude "$@" --settings "$settings" ${HH_BP_ARGS[@]+"${HH_BP_ARGS[@]}"})"   # the pane's files are the caller's, not the hub's records
+  c="umask $HH_CALLER_UMASK; $(hh_guard_launch)exec $(printf '%q ' claude "$@" --settings "$settings" ${HH_BP_ARGS[@]+"${HH_BP_ARGS[@]}"})"   # the pane's files are the caller's, not the hub's records
   envs=(-e "HIVEHOUSE_HOME=$(hh_home)" -e "HH_PROJECT=$cwd" ${HH_BP_ENVS[@]+"${HH_BP_ENVS[@]}"})
   [ -n "${HH_TMUX_SOCKET:-}" ] && envs+=(-e "HH_TMUX_SOCKET=$HH_TMUX_SOCKET")
   pane=$(umask "$HH_CALLER_UMASK"; hh_open_window "$name" orchestrator "$cwd" "$c" "${envs[@]}") || { rc=$?; rm -f "$mcpf"; exit $rc; }
