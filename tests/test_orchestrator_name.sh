@@ -3,7 +3,7 @@
 . "$(dirname "$0")/lib.sh"
 . "$HH_REPO_ROOT/bin/hh-lib.sh"
 t_setup
-r=$(t_repo proj); cd "$r"; mkdir -p $T_STATE; echo role > "$T_TMP/impl.md"; echo rules > "$T_TMP/RULES.md"
+r=$(t_repo proj); cd "$r" || exit 2; mkdir -p $T_STATE; echo role > "$T_TMP/impl.md"; echo rules > "$T_TMP/RULES.md"
 env -u HIVEHOUSE_HOME tmux -S "$HH_TMUX_SOCKET" new-session -d -s keep 'sleep 600'
 # a Claude stand-in (an interpreter running a script named claude) that stays alive
 mkdir -p "$T_TMP/cl" "$CLAUDE_CONFIG_DIR/sessions"; printf '#!/usr/bin/env bash\nexec -a "$0" sleep 600\n' > "$T_TMP/cl/claude"

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 . "$(dirname "$0")/lib.sh"
 t_setup
-r=$(t_repo proj); cd "$r"
+r=$(t_repo proj); cd "$r" || exit 2
 id=$(hh-manifest add dir path="$T_TMP/scratch"); assert_status "add dir" $? 0
 assert_eq "one entry" "$(hh-manifest list | wc -l | tr -d ' ')" "1"
 assert_eq "kind recorded" "$(hh-manifest list | jq -r .kind)" "dir"

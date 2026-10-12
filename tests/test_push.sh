@@ -2,7 +2,7 @@
 # hh-push, against a local bare repository registered as the only remote. No network, no origin.
 . "$(dirname "$0")/lib.sh"
 t_setup
-r=$(t_repo proj); cd "$r"
+r=$(t_repo proj); cd "$r" || exit 2
 bare="$T_TMP/remote.git"; git init -q --bare -b main "$bare"
 git remote add up "$bare"
 git config remote.up.push 'refs/heads/*:refs/heads/*' 2>/dev/null   # a configured push refspec must not widen the push

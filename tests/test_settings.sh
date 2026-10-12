@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 . "$(dirname "$0")/lib.sh"
 t_setup
-r=$(t_repo proj); cd "$r"; mkdir -p $T_STATE
+r=$(t_repo proj); cd "$r" || exit 2; mkdir -p $T_STATE
 set_project() { printf '%s\n' "$1" > $T_STATE/settings.json; }
 res() { hh-settings resolve "$1" "$2" 2>/dev/null; }
 
