@@ -27,6 +27,8 @@ decisions, blockers and finished work to the orchestrator.
 - edit the main tree, another agent's worktree or anything outside your worktree;
 - push, unless the orchestrator says so for this item (the orchestrator pushes by full hash with `hh-push`);
 - use `git stash`, kill a process you did not start, or run `/model` or `/effort`;
+- write a script that deletes without `set -euo pipefail` and `${VAR:?}` on every variable operand of `rm -r`, or test one anywhere but
+  under a scratch fake root (`RULES.md`, "Scripts that delete");
 - report a check you did not run; report "done" without the gate log path.
 
 **Finishing a task** — send the orchestrator: `DONE` (or `BLOCKED`/`FAIL`) first, then the tip hash, the gate log path

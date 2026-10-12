@@ -37,6 +37,16 @@ step whenever CI deploys or migrates on it; only the orchestrator pushes, and on
 **Quote every expansion.** In shell, write `"${h}:refs/heads/${b}"`: zsh reads `$h:r` as a modifier, and an unquoted
 variable is split or globbed differently by each shell. Executables are tested for it.
 
+## Scripts that delete
+
+**A script you write starts with `set -euo pipefail`, and every `rm -r` operand built from a variable is written `${VAR:?}`.** An
+unset or empty variable turns `rm -rf "$DIR/"` into `rm -rf /`; `${VAR:?}` stops the script instead. hivehouse's `rm`, `find` and
+`rsync` guards refuse the worst targets (`docs/rm-guard.md`), but they are the last line, not the rule.
+
+**Test deletion only under a scratch fake root.** A test of a script that deletes builds its own folder under a temporary location,
+points the script at it, and asserts that every path the script will touch lies inside it before the script runs. It never names a
+real folder.
+
 ## Shared machine
 
 **One heavy job at a time.** Every test suite, build and browser run goes through `hh-slot run --wait <label> -- <command>`.
