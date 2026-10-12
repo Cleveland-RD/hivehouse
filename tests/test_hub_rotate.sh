@@ -138,6 +138,8 @@ assert_eq "context is a percent of the window it is given" "$(hub context --wind
 assert_eq "...and says when the window is only assumed" "$(hub context 2>/dev/null)" "10 (window assumed 1000000)"
 hub context --window x >/dev/null 2>&1; assert_status "a window that is no number" $? 4
 # S4: the window the hub recorded for itself (hh-hub self --window), as hh-spawn --self records an orchestrator's
+# the fake hub above is, for this test, an earlier one (its record no longer names a live process), so the next Claude may take the hub
+jq '.claude_started = "Mon Jan  1 00:00:00 2001"' "$P/hub.json" > "$P/hub.json.n" && mv "$P/hub.json.n" "$P/hub.json"
 mkdir -p "$T_TMP/cl2"; printf '#!/usr/bin/env bash\ncd "%s" && hh-hub self "$@"\n' "$H" > "$T_TMP/cl2/claude"
 bash "$T_TMP/cl2/claude" --name hub --window 400000 >/dev/null 2>&1; assert_status "self --window" $? 0
 assert_eq "...is recorded in hub.json" "$(jq -r .window "$P/hub.json")" "400000"

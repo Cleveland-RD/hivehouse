@@ -83,6 +83,8 @@ assert_eq "...says it once" "$(printf '%s\n' "$out" | grep -c 'hh-hub start')" "
 assert_eq "...and records no pane (a stale one is dropped)" "$(jq -r '.pane // "none"' "$P/hub.json")" "none"
 setfake hubself; hub start >/dev/null 2>&1; unsetfake; pane=$(paneof hub)
 i=0; while [ "$(jq -r '.pane // empty' "$P/hub.json" 2>/dev/null)" != "$pane" ] && [ "$i" -lt 20 ]; do sleep 0.5; i=$((i + 1)); done
+# the hub that started in that pane is, for this test, an earlier one: its record no longer names a live process, so the next Claude may take the hub
+jq '.claude_started = "Mon Jan  1 00:00:00 2001"' "$P/hub.json" > "$P/hub.json.n" && mv "$P/hub.json.n" "$P/hub.json"
 out=$(TMUX_PANE="$pane" TMUX=/nonexistent/sock,1,0 bash "$T_TMP/cl/claude" --name hub 2>&1 >/dev/null); assert_status "self from a pane of another server (TMUX names it)" $? 0
 assert_eq "...records no pane: the socket is the one TMUX names" "$(jq -r '.pane // "none"' "$P/hub.json")" "none"
 assert_contains "...and says it is a tmux server hivehouse does not use" "$out" "tmux server hivehouse does not use"

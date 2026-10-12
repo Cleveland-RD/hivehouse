@@ -36,7 +36,10 @@ assert_not "away: a custom pickup line is not typed" "$(screen hub)" "GOT: CUSTO
 assert_contains "...the plugin's own is" "$(screen hub)" "GOT: /$T_PLUGIN:hub You are hub."
 assert_contains "...and the log of the detached rotation says custom/ was ignored while away" "$(cat "$P/rotate.out" 2>/dev/null)" "the owner is away"
 NC=$(t_node_claude "$H"); NODEBIN=$(command -v node)   # a Claude whose environment can be read: unmarked, so hh-hub self accepts it
-asclaude() { "$NODEBIN" "$NC" hh-hub self --name hub >/dev/null 2>&1; }
+asclaude() {  # the hub already recorded is for these tests an earlier one: its record no longer names a live process, so this Claude may take the hub
+  jq '.claude_started = "Mon Jan  1 00:00:00 2001"' "$P/hub.json" > "$P/hub.json.n" 2>/dev/null && mv "$P/hub.json.n" "$P/hub.json"
+  "$NODEBIN" "$NC" hh-hub self --name hub >/dev/null 2>&1
+}
 rm -f "$P/memory/hub-handoff.md"; asclaude
 assert_contains "away: the handoff written when it is missing is the plugin's own template" "$(cat "$P/memory/hub-handoff.md" 2>/dev/null)" "## START HERE"
 assert_not "...not custom/'s" "$(cat "$P/memory/hub-handoff.md" 2>/dev/null)" "CUSTOM-TEMPLATE"
