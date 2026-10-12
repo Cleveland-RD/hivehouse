@@ -80,6 +80,12 @@ TMPDIR="$R/Users"; refused "TMPDIR=<the folder of homes>: the home is still refu
 TMPDIR="$FH/proj"; refused "TMPDIR=<a repository>: the repository is still refused" "$FH/proj"
 TMPDIR="$R/home"; refused "TMPDIR=<some other folder>: a folder two levels deep is still refused" "$R/home/other"
 unset TMPDIR
+echo "-- HH_GUARD_ROOT counts only inside a system temp location"
+assert_eq "a seam inside the scratch (a temp location) is honoured" "$(hh_rm_map "$R/Users")" "/Users"
+assert_eq "a seam at a folder that is no temp location is ignored" "$(HH_GUARD_ROOT=/usr hh_rm_map /usr/bin)" "/usr/bin"
+assert_eq "...so a judgement stays in real space (the real /usr/bin is not 'fake /bin')" "$(HH_GUARD_ROOT=/usr hh_rm_map /usr)" "/usr"
+(HH_GUARD_ROOT=/usr hh_rm_protected /usr >/dev/null); assert_status "...and the folder named as the seam is judged as a real folder (fewer than 3 levels), not as /" $? 0
+assert_eq "...with the real reason" "$(HH_GUARD_ROOT=/usr hh_rm_protected /usr)" "a folder fewer than 3 levels deep (/usr)"
 echo "-- no seam: the real names"
 ( unset HH_GUARD_ROOT; hh_rm_protected / >/dev/null ); assert_status "the real / is protected" $? 0
 ( unset HH_GUARD_ROOT; hh_rm_protected /private/tmp >/dev/null ); assert_status "the real /private/tmp is protected" $? 0

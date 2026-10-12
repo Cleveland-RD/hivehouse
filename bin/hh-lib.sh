@@ -1273,7 +1273,7 @@ hh_pane_question() {  # hh_pane_question <socket, or empty for hivehouse's own s
 # ---- the delete guard's one predicate: bin/guard/{rm,find,rsync} and the rm hook both ask these two ---------------------------------------
 # hh_rm_canon names a path one way: absolute, ~ and $HOME expanded, dot segments collapsed, every link resolved except the last, which is
 # resolved only when the operand ends in / (what rm and the shell do). An empty path stays empty. HH_GUARD_ROOT (a test seam) makes
-# hh_rm_protected judge paths as if that folder were /; nothing else reads it.
+# hh_rm_protected judge paths as if that folder were /, and is honoured only when it lies inside a system temp location; nothing else reads it.
 hh_rm_canon() {  # hh_rm_canon <path> <cwd>
   local p="$1" cur=/ queue seg next tgt trail="" n=0 last
   [ -n "$p" ] || { printf '\n'; return 0; }
@@ -1298,9 +1298,14 @@ hh_rm_canon() {  # hh_rm_canon <path> <cwd>
   done
   printf '%s\n' "$cur"
 }
-hh_rm_map() {  # hh_rm_map <canonical path>: the name it has when HH_GUARD_ROOT is taken as /
+hh_rm_system_temp() {  # hh_rm_system_temp <canonical path>: 0 when it is, or lies inside, a system temp location
+  case "$1" in /private/var/folders/?*|/private/tmp|/private/tmp/*|/var/tmp|/var/tmp/*|/private/var/tmp|/private/var/tmp/*|/tmp|/tmp/*) return 0 ;; esac
+  return 1
+}
+hh_rm_map() {  # hh_rm_map <canonical path>: the name it has when HH_GUARD_ROOT is taken as /; the seam counts only inside a system temp location
   local r p="$1"; [ -n "${HH_GUARD_ROOT:-}" ] || { printf '%s\n' "$p"; return 0; }
   r=$(hh_rm_canon "$HH_GUARD_ROOT" /)
+  hh_rm_system_temp "$r" || { printf '%s\n' "$p"; return 0; }
   case "$p" in "$r") printf '/\n' ;; "$r"/*) printf '%s\n' "${p#"$r"}" ;; *) printf '%s\n' "$p" ;; esac
 }
 hh_rm_protected() {  # hh_rm_protected <canonical path>: 0 and the reason on stdout when a delete may not touch it; 1 when it may
@@ -1311,7 +1316,7 @@ hh_rm_protected() {  # hh_rm_protected <canonical path>: 0 and the reason on std
   # the temp zones: a temp root is refused, anything inside one passes (tests make and delete temp repositories there)
   tz=""; [ -z "${TMPDIR:-}" ] || tz=$(hh_rm_map "$(hh_rm_canon "$TMPDIR" /)")
   # $TMPDIR is the environment's word, so it is a zone only when it lies inside a system temp location (a wrong TMPDIR must not undo the guard)
-  case "$tz" in /private/var/folders/?*|/private/tmp|/private/tmp/*|/var/tmp|/var/tmp/*|/private/var/tmp|/private/var/tmp/*|/tmp|/tmp/*) ;; *) tz="" ;; esac
+  hh_rm_system_temp "$tz" || tz=""
   for z in "$tz" /private/tmp /tmp /var/tmp /private/var/tmp; do
     [ -n "$z" ] || continue
     for c in "$z" "$(hh_rm_canon "$z" /)"; do
