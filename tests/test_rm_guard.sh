@@ -77,6 +77,39 @@ unset HH_GUARD_ROOT HH_GUARD_REAL; mkdir -p "$T_TMP/real"; : > "$T_TMP/real/f1";
 [ ! -e "$T_TMP/real/f1" ] && ok "...and the file is gone" || bad "...the file is still there"
 ( cd "$T_TMP/real" && "$G/find" "$T_TMP/real" -name f2 -delete ); assert_status "find -delete through the guard deletes a file in the scratch" $? 0
 [ ! -e "$T_TMP/real/f2" ] && ok "...and the file is gone" || bad "...the file is still there"
+echo "-- more than one copy of the guard on PATH"
+# a plugin update, a worktree or an export copy puts a second guard folder on PATH beside the first: each must pass over every guard folder
+# and reach the real tool once. The real rm here is a stub on PATH after both; each run has a time limit, so a regression fails instead of hanging.
+mkcopy() {  # mkcopy <dir> [nomark]: a plugin copy with bin/hh-lib.sh and bin/guard
+  mkdir -p "$1/bin/guard"; cp "$HH_REPO_ROOT/bin/hh-lib.sh" "$1/bin/"; cp "$HH_REPO_ROOT"/bin/guard/rm "$HH_REPO_ROOT"/bin/guard/find "$HH_REPO_ROOT"/bin/guard/rsync "$1/bin/guard/"
+  [ "${2:-}" = nomark ] || cp "$HH_REPO_ROOT/bin/guard/.hh-guard" "$1/bin/guard/"
+}
+run_to() {  # run_to <seconds> <PATH> <command>...: RC (124 when it ran past the limit and was killed) and ERR; the seam for the real tool is off
+  local secs="$1" pth="$2" pid i; shift 2
+  ( cd "$FH" && PATH="$pth" exec env -u HH_GUARD_REAL "$@" ) > /dev/null 2> "$T_TMP/rt.err" & pid=$!; t_track "$pid"
+  for ((i = 0; i < secs * 10; i++)); do kill -0 "$pid" 2>/dev/null || break; sleep 0.1; done
+  if kill -0 "$pid" 2>/dev/null; then kill -9 "$pid" 2>/dev/null; wait "$pid" 2>/dev/null; RC=124; else wait "$pid"; RC=$?; fi
+  ERR=$(cat "$T_TMP/rt.err")
+}
+CA="$R/srv/c/plugA"; CB="$R/srv/c/plugB"; mkcopy "$CA"; mkcopy "$CB"
+REALBIN="$T_TMP/realbin"; REALLOG="$T_TMP/real.log"; mkdir -p "$REALBIN"
+printf '#!/bin/sh\nprintf "CALLED %%s\\n" "$*" >> "%s"\n' "$REALLOG" > "$REALBIN/rm"; chmod +x "$REALBIN/rm"
+for order in "A then B|$CA|$CB" "B then A|$CB|$CA"; do
+  name=${order%%|*}; rest=${order#*|}; first=${rest%%|*}; second=${rest#*|}
+  P="$first/bin/guard:$second/bin/guard:$REALBIN:/usr/bin:/bin"; rm -f "$REALLOG"
+  run_to 10 "$P" rm "$FH/plain/file"
+  assert_eq "two guards on PATH ($name): the call ends (no hang), exit 0" "$RC" "0"
+  assert_eq "...and reaches the real rm once, with its operand" "$(cat "$REALLOG" 2>/dev/null)" "CALLED $FH/plain/file"
+  rm -f "$REALLOG"; run_to 10 "$P" rm -rf "$FH/proj"
+  assert_eq "...a protected operand is still refused: exit 1" "$RC" "1"
+  [ ! -e "$REALLOG" ] && ok "...and the real rm is not reached" || bad "the real rm was reached for a protected operand"
+done
+# a guard with no real tool beyond it ends in an error; made with a tool name that has no real program, so that PATH can keep /usr/bin
+for d in "$R/srv/c/nA" "$R/srv/c/nB"; do mkcopy "$d"; sed -i.bak -e 's/hh_guard_real rm/hh_guard_real hhnotool/' -e 's/hh_guard_judge rm/hh_guard_judge hhnotool/' "$d/bin/guard/rm"; mv "$d/bin/guard/rm" "$d/bin/guard/hhnotool"; rm -f "$d/bin/guard/rm.bak"; done
+run_to 10 "$R/srv/c/nA/bin/guard:$R/srv/c/nB/bin/guard:/usr/bin:/bin" hhnotool "$FH/plain/file"
+assert_eq "two guards and no real program: it ends in an error (127), not a hang" "$RC" "127"
+assert_contains "...saying there is no real tool beyond the guard" "$ERR" "is not on PATH beyond the guard"
+
 echo "-- the page"
 doc=$(tr '\n' ' ' < "$HH_REPO_ROOT/docs/rm-guard.md" | sed 's/  */ /g')
 assert_contains "README links the guard's page" "$(cat "$HH_REPO_ROOT/README.md")" "(docs/rm-guard.md)"

@@ -1367,13 +1367,14 @@ hh_guard_launch() {  # hh_guard_launch: a shell prefix, `export PATH=<guard>:"$P
   local g; g=$(cd "$(dirname "${BASH_SOURCE[0]}")/guard" 2>/dev/null && pwd -P) || return 0
   printf 'export PATH=%q:"$PATH"; ' "$g"
 }
-hh_guard_real() {  # hh_guard_real <tool> <the guard's own folder>: the program to run, the first on PATH that is not the guard
+hh_guard_real() {  # hh_guard_real <tool> <the guard's own folder>: the program to run, the first on PATH that is in no guard folder (every copy of
+  # bin/guard holds the marker file .hh-guard, so a second copy on PATH, from another install or an older version, is passed over too)
   local t="$1" gd="$2" d dd IFS=:
   if [ -n "${HH_GUARD_REAL:-}" ]; then printf '%s\n' "$HH_GUARD_REAL"; return 0; fi
   for d in $PATH; do
     [ -n "$d" ] || continue
     dd=$(cd "$d" 2>/dev/null && pwd -P) || continue
-    [ "$dd" != "$gd" ] || continue
+    [ "$dd" != "$gd" ] && [ ! -e "$dd/.hh-guard" ] || continue
     [ -f "$dd/$t" ] && [ -x "$dd/$t" ] && { printf '%s\n' "$dd/$t"; return 0; }
   done
   echo "$HH_PREFIX: $t is not on PATH beyond the guard" >&2; return 1
