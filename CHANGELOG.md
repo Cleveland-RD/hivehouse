@@ -2,7 +2,7 @@
 
 ## 0.5.6
 
-- **Option values are checked where they are used.** `plugin.json` no longer lists values for `commit_style`, `effort_builder`, `effort_reviewer` and `permission_mode_local`. `hh-spawn` and `hh-remote-sync start-agent` take an effort only as `low`, `medium`, `high`, `xhigh` or `max` (`max` is new: Claude Code takes it), `hh-gate-verify --style` only `conventional` or `free`, and `hh-settings option` and `resolve` refuse any other effort, style or permission mode, and bypass as a local mode, with exit 4 and the allowed values.
+- **Option values are checked where they are used.** `plugin.json` no longer lists values for `commit_style`, `effort_builder`, `effort_reviewer` and `permission_mode_local`. `hh-spawn`, `hh-remote-sync start-agent` and `hh-settings option` take an effort only as `low`, `medium`, `high`, `xhigh` or `max` (`max` is new: Claude Code takes it). `hh-gate-verify --style` and `hh-settings option` take a commit style only as `conventional` or `free`. `hh-settings option` and `hh-settings resolve` refuse any other permission mode, and bypass as a local mode (`resolve` checks only the permission mode). Each refusal exits 4 (64 for `hh-gate-verify`) and names the allowed values.
 - **Here-documents are gone from `bin/`.** Six of them, including the one in `bin/hh-lib.sh`, no longer write scripts or files through a here-document.
 - **The README says what `hooks/hub.tsx` runs.** The `hh-hub` subcommands it calls, the two slash commands it types with `hub_auto_start` on, the files it reads, that it sends nothing off the machine, and the edits and git writes it refuses in the hub session.
 - **A plugin icon.** `.claude-plugin/icon.png`, 1024 by 1024.
