@@ -1339,3 +1339,28 @@ hh_rm_protected() {  # hh_rm_protected <canonical path>: 0 and the reason on std
   if [ -d "$p/$HH_STATE_DIR" ]; then echo "a project home ($q)"; return 0; fi
   return 1
 }
+# ---- the delete guard's shared steps (bin/guard/rm, find and rsync) --------------------------------------------------------------------------
+# hh_guard_judge <tool> <operand>...: 0 when every operand may be touched; otherwise says which one may not, on stderr, and returns 1, so that
+# the whole call is refused and nothing is deleted. HH_GUARD_REAL (a test seam) is the program the guard hands a call to instead of the real one.
+hh_guard_judge() {
+  local tool="$1" op c why; shift
+  for op in "$@"; do
+    c=$(hh_rm_canon "$op" "$PWD")
+    if why=$(hh_rm_protected "$c"); then
+      printf "%s: %s refused: '%s' is %s; nothing was deleted. Name what you mean to delete, with its full path; if this really is the target, the owner runs it.\n" "$HH_PREFIX" "$tool" "$op" "$why" >&2
+      return 1
+    fi
+  done
+  return 0
+}
+hh_guard_real() {  # hh_guard_real <tool> <the guard's own folder>: the program to run, the first on PATH that is not the guard
+  local t="$1" gd="$2" d dd IFS=:
+  if [ -n "${HH_GUARD_REAL:-}" ]; then printf '%s\n' "$HH_GUARD_REAL"; return 0; fi
+  for d in $PATH; do
+    [ -n "$d" ] || continue
+    dd=$(cd "$d" 2>/dev/null && pwd -P) || continue
+    [ "$dd" != "$gd" ] || continue
+    [ -f "$dd/$t" ] && [ -x "$dd/$t" ] && { printf '%s\n' "$dd/$t"; return 0; }
+  done
+  echo "$HH_PREFIX: $t is not on PATH beyond the guard" >&2; return 1
+}

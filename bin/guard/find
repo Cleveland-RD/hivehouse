@@ -1,0 +1,25 @@
+#!/bin/bash
+# The delete guard for find: only a call that deletes (-delete, or -exec/-execdir/-ok/-okdir running rm) is judged, by its starting points
+# (the current folder when it names none). Everything else goes to the real find unchanged.
+gd=$(cd "$(dirname "$0")" 2>/dev/null && pwd -P) || exit 2
+. "$gd/../hh-lib.sh" || exit 2
+args=("$@"); n=${#args[@]}; i=0; starts=(); dels=0
+while [ "$i" -lt "$n" ]; do   # the options before the starting points
+  case "${args[$i]}" in -H|-L|-P|-E|-X|-x|-s|-O*) i=$((i + 1)) ;; -D) i=$((i + 2)) ;; -f) starts+=("${args[$((i + 1))]:-}"); i=$((i + 2)) ;; *) break ;; esac
+done
+while [ "$i" -lt "$n" ]; do   # the starting points: up to the first word of the expression
+  case "${args[$i]}" in -?*|'('|')'|'!'|',') break ;; esac
+  starts+=("${args[$i]}"); i=$((i + 1))
+done
+for ((j = i; j < n; j++)); do
+  case "${args[$j]}" in
+    -delete) dels=1 ;;
+    -exec|-execdir|-ok|-okdir) case "$(basename "${args[$((j + 1))]:-}")" in rm) dels=1 ;; esac ;;
+  esac
+done
+if [ "$dels" = 1 ]; then
+  [ "${#starts[@]}" -gt 0 ] || starts=(.)
+  hh_guard_judge find "${starts[@]}" || exit 1
+fi
+real=$(hh_guard_real find "$gd") || exit 127
+exec "$real" "$@"

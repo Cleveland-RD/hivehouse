@@ -1,0 +1,24 @@
+#!/bin/bash
+# The delete guard for rsync: only a call with a --delete option is judged, by its destination (the last operand), and only when that is a
+# local path. Everything else goes to the real rsync unchanged.
+gd=$(cd "$(dirname "$0")" 2>/dev/null && pwd -P) || exit 2
+. "$gd/../hh-lib.sh" || exit 2
+dels=0; dest=""; have=0; skip=0
+for a in "$@"; do
+  if [ "$skip" = 1 ]; then skip=0; continue; fi
+  case "$a" in
+    --delete|--delete-*|--del) dels=1 ;;
+    -e|-f|-B|-T|-M|-@|-[!-]*e) skip=1 ;;   # a short option, or a cluster ending in e, that takes its value as the next word
+    --exclude|--include|--exclude-from|--include-from|--filter|--files-from|--rsh|--rsync-path|--timeout|--port|--partial-dir|--backup-dir|--suffix|--log-file|--compare-dest|--copy-dest|--link-dest|--chmod|--chown|--usermap|--groupmap|--max-size|--min-size|--bwlimit|--temp-dir|--block-size|--compress-level|--skip-compress|--info|--debug|--out-format|--password-file|--address|--sockopts|--iconv|--read-batch|--write-batch|--only-write-batch|--max-delete|--modify-window|--checksum-choice|--protocol) skip=1 ;;
+    -?*) ;;
+    *) dest=$a; have=$((have + 1)) ;;
+  esac
+done
+if [ "$dels" = 1 ] && [ "$have" -ge 1 ]; then
+  pre=${dest%%:*}
+  if [ "$pre" = "$dest" ] || [ "${pre#*/}" != "$pre" ]; then   # no colon before a slash: not a remote destination
+    hh_guard_judge rsync "$dest" || exit 1
+  fi
+fi
+real=$(hh_guard_real rsync "$gd") || exit 127
+exec "$real" "$@"

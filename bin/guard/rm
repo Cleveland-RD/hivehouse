@@ -1,0 +1,16 @@
+#!/bin/bash
+# The delete guard for rm: refuses the whole call, deleting nothing, when any operand resolves to a protected path (hh_rm_protected in
+# bin/hh-lib.sh). Otherwise it hands the arguments, unchanged, to the real rm.
+gd=$(cd "$(dirname "$0")" 2>/dev/null && pwd -P) || exit 2
+. "$gd/../hh-lib.sh" || exit 2
+ops=(); end=0
+for a in "$@"; do
+  if [ "$end" = 0 ]; then
+    [ "$a" != -- ] || { end=1; continue; }
+    case "$a" in -?*) continue ;; esac
+  fi
+  ops+=("$a")
+done
+[ "${#ops[@]}" -eq 0 ] || hh_guard_judge rm "${ops[@]}" || exit 1
+real=$(hh_guard_real rm "$gd") || exit 127
+exec "$real" "$@"
