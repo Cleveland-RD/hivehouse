@@ -1,7 +1,7 @@
 {
   "name": "hivehouse",
   "version": "0.5.5",
-  "description": "Run a feature with a team of Claude sessions in tmux: plan, build, review, gate, rotate, overnight, clean up.",
+  "description": "An agent hub for Claude Code: one hub session passes each task to that project's team of Claude sessions in tmux, which plan, build, review and test on their own and leave pushes and spending to you.",
   "author": { "name": "Cleveland R&D" },
   "license": "MIT",
   "repository": "https://github.com/Cleveland-RD/hivehouse",
