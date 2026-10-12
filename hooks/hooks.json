@@ -3,7 +3,8 @@
   "hooks": {
     "SessionStart": [
       { "matcher": "startup|clear|resume",
-        "hooks": [ { "type": "command", "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/hh-session-hook\"" } ] }
+        "hooks": [ { "type": "command", "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/hh-session-hook\"" } ] },
+      { "hooks": [ { "type": "command", "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/hh-guard-env\"" } ] }
     ],
     "Stop": [
       { "hooks": [ { "type": "command", "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/hh-stop-hook\"" } ] }

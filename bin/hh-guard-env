@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+# SessionStart hook: puts bin/guard first in PATH for every Bash command of the session, by appending one export line to CLAUDE_ENV_FILE,
+# which Claude Code runs before each later Bash command (after /clear and --resume too, and inside a subagent). It never fails the session and
+# touches nothing else. The line is added only when the guard is not already first, so a resume (the same file again) adds no second copy.
+set -u
+cat >/dev/null
+[ -n "${CLAUDE_ENV_FILE:-}" ] || exit 0
+g=$(cd "$(dirname "$0")/guard" 2>/dev/null && pwd -P) || exit 0
+case "$g" in *[\"\$\`\\]*|*$'\n'*) exit 0 ;; esac   # a folder name the line could not quote
+case "$PATH" in "$g":*) exit 0 ;; esac
+line="export PATH=\"$g:\$PATH\""
+grep -qxF -- "$line" "$CLAUDE_ENV_FILE" 2>/dev/null && exit 0
+printf '%s\n' "$line" >> "$CLAUDE_ENV_FILE" 2>/dev/null
+exit 0
