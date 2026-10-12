@@ -6,7 +6,7 @@
 . "$(dirname "$0")/lib.sh"
 t_setup
 proj=$(t_repo proj); mkdir -p "$proj/$T_STATE"
-cd "$proj"
+cd "$proj" || exit 2
 PCUST="$proj/$T_STATE/$T_CUSTOM"; UCUST="$HIVEHOUSE_HOME/$T_CUSTOM"
 res() {  # res <hh-resolve args>: sets OUT (the path), ERR (the notes) and RC
   OUT=$(hh-resolve "$@" 2>"$T_TMP/err"); RC=$?; ERR=$(cat "$T_TMP/err")
