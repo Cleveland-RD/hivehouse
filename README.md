@@ -86,5 +86,6 @@ optional i-have-adhd plugin unasked, or push anything.
 - [Delegate mode (away)](docs/away-mode.md): what the hub does while you are away, what it guards and what you can allow.
 - [Customise hivehouse](docs/customise.md): roles, rules, options, and the optional i-have-adhd plugin.
 - [State and restarts](docs/state-and-restarts.md): where hivehouse keeps its files and what to do after a restart.
+- [The delete guard](docs/rm-guard.md): the `rm`, `find` and `rsync` guards that refuse to delete a root folder, and what they do not stop.
 - [Development](docs/development.md): running the tests and the evals.
 - [Security](SECURITY.md): the supported version and how to report a vulnerability privately.

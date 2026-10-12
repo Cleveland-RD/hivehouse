@@ -77,4 +77,11 @@ unset HH_GUARD_ROOT HH_GUARD_REAL; mkdir -p "$T_TMP/real"; : > "$T_TMP/real/f1";
 [ ! -e "$T_TMP/real/f1" ] && ok "...and the file is gone" || bad "...the file is still there"
 ( cd "$T_TMP/real" && "$G/find" "$T_TMP/real" -name f2 -delete ); assert_status "find -delete through the guard deletes a file in the scratch" $? 0
 [ ! -e "$T_TMP/real/f2" ] && ok "...and the file is gone" || bad "...the file is still there"
+echo "-- the page"
+doc=$(tr '\n' ' ' < "$HH_REPO_ROOT/docs/rm-guard.md" | sed 's/  */ /g')
+assert_contains "README links the guard's page" "$(cat "$HH_REPO_ROOT/README.md")" "(docs/rm-guard.md)"
+for w in "a git repository root" "synced cloud folder" "There is no switch" "What it does not stop" "HH_GUARD_ROOT" "bin/hh-guard-env"; do
+  case "$w" in "There is no switch") w="No switch" ;; esac
+  assert_contains "docs/rm-guard.md covers: $w" "$doc" "$w"
+done
 cd /; t_teardown; t_done
