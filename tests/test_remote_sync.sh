@@ -233,25 +233,25 @@ wpane=$(printf '%s\n' "$out" | grep -E '^%[0-9]+$' | tail -1)
 assert_eq "...the agent's pane runs in it" "$(cd "$(tmux -S "$HH_TMUX_SOCKET" display-message -p -t "$wpane" '#{pane_current_path}' 2>/dev/null)" 2>/dev/null && pwd -P)" "$(cd "$T_TMP/wt-agent" && pwd -P)"
 assert_contains "...and the folder-trust warning for its main repository comes back in the output" "$out" "folder-trust dialog"
 n=$(wc -l < "$HH_FAKE_LOG")
-sync "${SA[@]:0:4}" --model m --effort e --mode bypassPermissions >"$T_TMP/out" 2>"$T_TMP/err"; assert_status "start-agent --mode bypassPermissions is refused" $? 4
+sync "${SA[@]:0:4}" --model m --effort low --mode bypassPermissions >"$T_TMP/out" 2>"$T_TMP/err"; assert_status "start-agent --mode bypassPermissions is refused" $? 4
 assert_contains "...saying why" "$(cat "$T_TMP/err")" "never starts bypassPermissions"
 assert_eq "...before anything reached ssh" "$(wc -l < "$HH_FAKE_LOG")" "$n"
 refusedq() { local n; n=$(wc -l < "$HH_FAKE_LOG"); refused "$@"; assert_eq "......and nothing reached ssh (the remote hh-spawn would refuse it too, so the exit code alone proves nothing)" "$(wc -l < "$HH_FAKE_LOG")" "$n"; }
-LABEL="start-agent: a mode it does not pass on"; refusedq 4 start-agent testhost "$rra" impl1 --model m --effort e --mode yolo
-LABEL="start-agent: an agent name with a capital"; refusedq 4 start-agent testhost "$rra" Impl1 --model m --effort e --mode auto
-LABEL="start-agent: an agent name that is an option"; refusedq 4 start-agent testhost "$rra" -x --model m --effort e --mode auto
-LABEL="start-agent: a model with a ;"; refusedq 4 start-agent testhost "$rra" impl1 --model 'x;y' --effort e --mode auto
+LABEL="start-agent: a mode it does not pass on"; refusedq 4 start-agent testhost "$rra" impl1 --model m --effort low --mode yolo
+LABEL="start-agent: an agent name with a capital"; refusedq 4 start-agent testhost "$rra" Impl1 --model m --effort low --mode auto
+LABEL="start-agent: an agent name that is an option"; refusedq 4 start-agent testhost "$rra" -x --model m --effort low --mode auto
+LABEL="start-agent: a model with a ;"; refusedq 4 start-agent testhost "$rra" impl1 --model 'x;y' --effort low --mode auto
 LABEL="start-agent: an effort with a space"; refusedq 4 start-agent testhost "$rra" impl1 --model m --effort 'a b' --mode auto
-LABEL="start-agent: a relative remote root"; refusedq 4 start-agent testhost remote-agent impl1 --model m --effort e --mode auto
-LABEL="start-agent: a remote root with .."; refusedq 4 start-agent testhost "$rra/../x" impl1 --model m --effort e --mode auto
-LABEL="start-agent: a host with a leading -"; refusedq 4 start-agent -oProxyCommand=x "$rra" impl1 --model m --effort e --mode auto
-LABEL="start-agent: a host outside the allow-list"; HH_REMOTE_HOSTS="otherhost" refusedq 4 start-agent testhost "$rra" impl1 --model m --effort e --mode auto
-LABEL="start-agent: a worktree without branch and base"; refusedq 64 start-agent testhost "$rra" impl1 --model m --effort e --mode auto --worktree "$T_TMP/wt-x"
-LABEL="start-agent: a relative worktree"; refusedq 4 start-agent testhost "$rra" impl1 --model m --effort e --mode auto --worktree wt-x --branch b --base main
-LABEL="start-agent: a branch that is an option"; refusedq 4 start-agent testhost "$rra" impl1 --model m --effort e --mode auto --worktree "$T_TMP/wt-x" --branch -evil --base main
-LABEL="start-agent: no model"; refusedq 64 start-agent testhost "$rra" impl1 --effort e --mode auto
-LABEL="start-agent: an unknown option"; refusedq 64 start-agent testhost "$rra" impl1 --model m --effort e --mode auto --frob x
-LABEL="start-agent: role and rules not on the remote"; refused 4 start-agent testhost "$rra" nobody --model m --effort e --mode auto
+LABEL="start-agent: a relative remote root"; refusedq 4 start-agent testhost remote-agent impl1 --model m --effort low --mode auto
+LABEL="start-agent: a remote root with .."; refusedq 4 start-agent testhost "$rra/../x" impl1 --model m --effort low --mode auto
+LABEL="start-agent: a host with a leading -"; refusedq 4 start-agent -oProxyCommand=x "$rra" impl1 --model m --effort low --mode auto
+LABEL="start-agent: a host outside the allow-list"; HH_REMOTE_HOSTS="otherhost" refusedq 4 start-agent testhost "$rra" impl1 --model m --effort low --mode auto
+LABEL="start-agent: a worktree without branch and base"; refusedq 64 start-agent testhost "$rra" impl1 --model m --effort low --mode auto --worktree "$T_TMP/wt-x"
+LABEL="start-agent: a relative worktree"; refusedq 4 start-agent testhost "$rra" impl1 --model m --effort low --mode auto --worktree wt-x --branch b --base main
+LABEL="start-agent: a branch that is an option"; refusedq 4 start-agent testhost "$rra" impl1 --model m --effort low --mode auto --worktree "$T_TMP/wt-x" --branch -evil --base main
+LABEL="start-agent: no model"; refusedq 64 start-agent testhost "$rra" impl1 --effort low --mode auto
+LABEL="start-agent: an unknown option"; refusedq 64 start-agent testhost "$rra" impl1 --model m --effort low --mode auto --frob x
+LABEL="start-agent: role and rules not on the remote"; refused 4 start-agent testhost "$rra" nobody --model m --effort low --mode auto
 assert_contains "...says to send them first" "$(cat "$T_TMP/err")" "files first"
 HH_FAKE_SSH=down sync "${SA[@]}" >/dev/null 2>&1; assert_status "start-agent to a host that is down exits 5" $? 5
 rm -f "$r/$T_STATE/remote/testhost.json"; sync "${SA[@]}" >/dev/null 2>&1; assert_status "start-agent without a check record is refused" $? 4
@@ -267,7 +267,7 @@ git rm -qf --cached $T_STATE/leak
 grep -n 'ssh \|scp \|rsync ' "$HH_REPO_ROOT/bin/hh-remote-sync" | grep -vE '^[0-9]+:\s*#|hh_(ssh|scp|rsync)\(\)' | grep -E '(^[0-9]+:[[:space:]]*|[;&|({]|\$\()[[:space:]]*(ssh|scp|rsync) ' >/dev/null && bad "a bare ssh/scp/rsync call outside the hh_* functions" || ok "every ssh/scp/rsync goes through hh_ssh/hh_scp/hh_rsync"
 # ---- the away marker: a second layer behind hh-away-hook, which is the guard (a Bash command can unset the variable for itself)
 n=$(wc -l < "$HH_FAKE_LOG")
-for args in "check testhost --min-gb 0 --plugin-version 0.1.0" "branches testhost $rr" "files testhost $rr /dev/null" "memory testhost $T_TMP $T_TMP/m" "secret testhost $rr x" "start-agent testhost $rr impl1 --model m --effort e --mode auto" "" "bogus"; do
+for args in "check testhost --min-gb 0 --plugin-version 0.1.0" "branches testhost $rr" "files testhost $rr /dev/null" "memory testhost $T_TMP $T_TMP/m" "secret testhost $rr x" "start-agent testhost $rr impl1 --model m --effort low --mode auto" "" "bogus"; do
   HH_AWAY_BYPASS=1 hh-remote-sync $args >"$T_TMP/out" 2>"$T_TMP/err"; rc=$?
   [ "$rc" -eq 4 ] && ok "the away marker refuses: hh-remote-sync ${args:-<no arguments>}" || bad "hh-remote-sync $args: exit $rc, expected 4"
 done

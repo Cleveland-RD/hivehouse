@@ -19,7 +19,7 @@ check "hh-context" 2 hh-context impl
 check "hh-context --all" 2 hh-context --all
 check "hh-rotate" 2 hh-rotate impl
 check "hh-self-rotate" 2 hh-self-rotate impl
-check "hh-spawn" 2 hh-spawn --agent impl --role "$T_TMP/role.md" --rules "$T_TMP/RULES.md" --model m --effort e --mode auto
+check "hh-spawn" 2 hh-spawn --agent impl --role "$T_TMP/role.md" --rules "$T_TMP/RULES.md" --model m --effort low --mode auto
 check "hh-spawn --self" 2 hh-spawn --self --agent orchestrator
 check "hh-slot status (machine-wide)" 0 hh-slot status
 check "hh-disk (no project needed)" 0 hh-disk --path "$T_TMP" --min-gb 0
@@ -30,7 +30,7 @@ check "hh-manifest list with a missing HH_PROJECT" 2 hh-manifest list
 check "hh-context with a missing HH_PROJECT" 2 hh-context impl
 check "hh-rotate with a missing HH_PROJECT" 2 hh-rotate impl
 check "hh-settings with a missing HH_PROJECT" 2 hh-settings resolve files_per_commit 5
-check "hh-spawn with a missing HH_PROJECT" 2 hh-spawn --agent impl --role "$T_TMP/role.md" --rules "$T_TMP/RULES.md" --model m --effort e --mode auto
+check "hh-spawn with a missing HH_PROJECT" 2 hh-spawn --agent impl --role "$T_TMP/role.md" --rules "$T_TMP/RULES.md" --model m --effort low --mode auto
 unset HH_PROJECT
 # nothing was written anywhere
 [ ! -e "$out/$T_STATE" ] && [ ! -e /$T_STATE ] && ok "no $T_STATE in the cwd or at /" || bad "a $T_STATE appeared outside a repo"

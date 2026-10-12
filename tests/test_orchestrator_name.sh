@@ -87,7 +87,7 @@ SELF_NAME='bad"name' selfrun "$T_TMP/s3.out" --self --agent orchestrator
 assert_eq "a session name that is not typable is not recorded" "$(jq -r '.agents[]|select(.name=="orchestrator").name_full // "none"' $T_STATE/team.json)" "none"
 SELF_NAME="x" selfrun "$T_TMP/s4.out" --self --agent orchestrator --name 'bad"name'
 assert_contains "a --name that is not typable is refused" "$(cat "$T_TMP/s4.out")" "rc=4"
-hh-spawn --agent x --role "$T_TMP/impl.md" --rules "$T_TMP/RULES.md" --model m --effort e --mode auto --name n >/dev/null 2>&1
+hh-spawn --agent x --role "$T_TMP/impl.md" --rules "$T_TMP/RULES.md" --model m --effort low --mode auto --name n >/dev/null 2>&1
 assert_status "--name without --self is a usage error" $? 64
 # --hub: an orchestrator working through the owner's hub records it, and its pickup line names it every time, so a
 # rotation (hh-self-rotate, which clears it) does not lose who the owner talks through
@@ -102,6 +102,6 @@ assert_eq "registering again without --hub keeps it (a restart's re-register mus
 SELF_NAME="owner-orch" selfrun "$T_TMP/s8.out" --self --agent orchestrator --no-hub
 assert_eq "--no-hub drops it" "$(jq -r '.agents[]|select(.name=="orchestrator").hub // "none"' $T_STATE/team.json)" "none"
 case "$(hh_pickup_line proj "$r" orchestrator)" in *"through"*) bad "a line names a hub nobody recorded" ;; *) ok "...and its line names none" ;; esac
-hh-spawn --agent x --role "$T_TMP/impl.md" --rules "$T_TMP/RULES.md" --model m --effort e --mode auto --hub h >/dev/null 2>&1
+hh-spawn --agent x --role "$T_TMP/impl.md" --rules "$T_TMP/RULES.md" --model m --effort low --mode auto --hub h >/dev/null 2>&1
 assert_status "--hub without --self is a usage error" $? 64
 cd /; t_teardown; t_done

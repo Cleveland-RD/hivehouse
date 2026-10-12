@@ -50,7 +50,7 @@ for banned in hh-spawn hh-rotate hh-self-rotate hh-push hh-cleanup "hh-gate " "h
 done
 
 spawn x --mode yolo >/dev/null 2>&1; assert_status "unknown mode refused" $? 4
-hh-spawn --agent x --role "$T_TMP/impl.md" --rules "$T_TMP/RULES.md" --model m --effort e --mode bypassPermissions >/dev/null 2>&1
+hh-spawn --agent x --role "$T_TMP/impl.md" --rules "$T_TMP/RULES.md" --model m --effort low --mode bypassPermissions >/dev/null 2>&1
 assert_status "bypassPermissions refused" $? 4
 spawn x --worktree "$T_TMP/proj-x" --branch -evil --base main >/dev/null 2>&1; assert_status "branch starting with - refused" $? 4
 spawn x --worktree "$T_TMP/proj-x" --branch b --base -evil >/dev/null 2>&1; assert_status "base starting with - refused" $? 4
