@@ -10,6 +10,9 @@ delegate (away) mode alike, and it is separate from away mode's hook.
 (`bin/hh-guard-env`) appends one `export PATH=...` line to the file Claude Code runs before each Bash command, which also holds after
 `/clear`, after `--resume` and inside a subagent. Sessions that `hh-spawn` and the hub start get the same prefix in the command that
 launches Claude, because a shell's startup files can rewrite `PATH` before the command runs.
+That launch prefix is a POSIX `export`, so the shell tmux runs commands with must be a POSIX shell (bash or zsh), not fish. If more than one
+copy of the plugin is on `PATH` (an update beside the old version, a worktree beside the install), each guard passes over every guard folder
+and the real tool is reached once; a guard of an older version that does not know this stops the call with an error after five hand-overs.
 
 ## What it refuses
 
