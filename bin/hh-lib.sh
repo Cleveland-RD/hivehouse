@@ -1309,7 +1309,7 @@ hh_rm_map() {  # hh_rm_map <canonical path>: the name it has when HH_GUARD_ROOT 
   case "$p" in "$r") printf '/\n' ;; "$r"/*) printf '%s\n' "${p#"$r"}" ;; *) printf '%s\n' "$p" ;; esac
 }
 hh_rm_protected() {  # hh_rm_protected <canonical path>: 0 and the reason on stdout when a delete may not touch it; 1 when it may
-  local p="$1" q z c h r s pr tz
+  local p="$1" q z c h r s pr tz d b
   [ -n "$p" ] || { echo "an empty operand"; return 0; }
   q=$(hh_rm_map "$p")
   [ "$q" != / ] || { echo "the root folder"; return 0; }
@@ -1333,6 +1333,11 @@ hh_rm_protected() {  # hh_rm_protected <canonical path>: 0 and the reason on std
   [ "${#s}" -ge 3 ] || { echo "a folder fewer than 3 levels deep ($q)"; return 0; }
   h=$(hh_rm_map "$(hh_rm_canon "$HOME" /)")
   case "$h/" in "$q"/*) echo "the home folder, or a folder that holds it ($q)"; return 0 ;; esac
+  # the roots of synced cloud folders (standard macOS and Dropbox places): deleting one syncs the deletion to the cloud; what is inside stays deletable
+  d=${q%/*}; b=${q##*/}
+  if [ "$q" = "$h/Library/CloudStorage" ] || [ "$d" = "$h/Library/CloudStorage" ] || [ "$q" = "$h/Library/Mobile Documents" ] \
+    || [ "$q" = "$h/Library/Mobile Documents/com~apple~CloudDocs" ]; then echo "the root of a synced cloud folder ($q)"; return 0; fi
+  if [ "$d" = "$h" ]; then case "$b" in Dropbox|"Dropbox ("*) echo "the root of a synced cloud folder ($q)"; return 0 ;; esac; fi
   for r in "$h/.claude" "$(hh_rm_map "$(hh_rm_canon "${CLAUDE_CONFIG_DIR:-$HOME/.claude}" /)")"; do
     [ "$q" != "$r" ] || { echo "Claude Code's own folder ($q)"; return 0; }
   done
