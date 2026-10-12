@@ -2,7 +2,8 @@
 # tests/run.sh skips test_cleanup.sh unless HH_CLEANUP_TEST=1. Run against a copy of run.sh beside stub tests that
 # only print, so nothing here starts or signals a process of its own (no t_setup: its sweep could).
 . "$(dirname "$0")/lib.sh"
-stub=$(mktemp -d "${TMPDIR:-/tmp}/hmrun.XXXXXX"); trap 'rm -rf "$stub"' EXIT
+stub=$(mktemp -d "${TMPDIR:-/tmp}/hmrun.XXXXXX") || { echo "test_run: cannot make a scratch folder under ${TMPDIR:-/tmp}: mkdir -p it first" >&2; exit 2; }
+trap 'rm -rf "${stub:?}"' EXIT
 cp "$HH_REPO_ROOT/tests/run.sh" "$stub/run.sh"
 for n in a cleanup z; do printf 'echo "RAN %s"\n' "$n" > "$stub/test_$n.sh"; done
 SKIP="SKIP test_cleanup.sh (run by the owner: HH_CLEANUP_TEST=1)"

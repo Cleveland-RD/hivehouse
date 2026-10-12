@@ -19,7 +19,8 @@ out=$(bash -c '. "$1"; t_guard; printf "%s %s" "$T_OWN_PG" "$(ps -o pgid= -p $$ 
 assert_eq "under bash -c: that shell's own group" "${out% *}" "${out#* }"
 [ -n "${out% *}" ] && ok "...and it is not empty" || bad "under bash -c: no group read"
 # ---- the sweep never deletes the folder of a run whose process is alive, whatever language its start time was written in ----
-SW=$(mktemp -d "${TMPDIR:-/tmp}/hmsweep.XXXXXX"); SW=$(cd "$SW" && pwd -P); trap 'rm -f "$f"; rm -rf "$SW"' EXIT
+SW=$(mktemp -d "${TMPDIR:-/tmp}/hmsweep.XXXXXX") && SW=$(cd "$SW" && pwd -P) || { echo "test_testlib: cannot make a scratch folder under ${TMPDIR:-/tmp}: mkdir -p it first" >&2; exit 2; }
+trap 'rm -f "$f"; rm -rf "${SW:?}"' EXIT
 sleep 60 & live=$!
 mkrun() {  # mkrun <name> <start time as the run recorded it>: a run folder owned by the live process
   mkdir "$SW/$1" && printf '%s\t%s\n' "$live" "$2" > "$SW/$1/run.owner"
@@ -44,7 +45,8 @@ out=$(TMPDIR="$LONG" bash -c '. "$1"; t_setup; echo started' _ "$HH_REPO_ROOT/te
 assert_contains "...saying why and what to set" "$out" "TMPDIR"
 case "$out" in *started*) bad "...nothing runs after the refusal" ;; *) ok "...nothing runs after the refusal" ;; esac
 [ -z "$(ls -A "$LONG")" ] && ok "...and no folder was made there" || bad "the refused run left files in $LONG"
-SHORT=$(mktemp -d /tmp/hhs.XXXXXX); SHORT=$(cd "$SHORT" && pwd -P); trap 'rm -f "$f"; rm -rf "$SW" "$SHORT"' EXIT   # a fixed short folder, whatever TMPDIR the caller uses
+SHORT=$(mktemp -d /tmp/hhs.XXXXXX) && SHORT=$(cd "$SHORT" && pwd -P) || { echo "test_testlib: cannot make a scratch folder under /tmp" >&2; exit 2; }
+trap 'rm -f "$f"; rm -rf "${SW:?}" "${SHORT:?}"' EXIT   # a fixed short folder, whatever TMPDIR the caller uses
 out=$(TMPDIR="$SHORT" bash -c '. "$1"; t_setup; echo started; t_teardown' _ "$HH_REPO_ROOT/tests/lib.sh" 2>&1 </dev/null)
 assert_contains "a short TMPDIR starts" "$out" "started"
 assert_contains "the refusal names a TMPDIR that leaves room" "$(TMPDIR="$LONG" bash -c '. "$1"; t_setup' _ "$HH_REPO_ROOT/tests/lib.sh" 2>&1 </dev/null)" "/tmp/hh-test"

@@ -26,13 +26,13 @@ if ! hh_delegate_read "$DF" "$ME" "$NOW" >/dev/null 2>&1; then
 fi
 DB=$(t_delegate_bin "$DF"); dhub() { (cd "$H" && "$DB/hh-hub" "$@"); }   # the copy that sees the fixture
 mkcl() {  # mkcl <bin dir> [noself]: a stand-in for the hub's Claude: it records itself as the hub (hh-hub self), then runs that bin's hh-hub as its child
-  local d; d=$(mktemp -d "$T_TMP/cl.XXXXXX")
+  local d; d=$(mktemp -d "$T_TMP/cl.XXXXXX") || return 1
   if [ "${2:-}" = noself ]; then printf '#!/usr/bin/env bash\ncd "%s" && "%s/hh-hub" "$@"\n' "$H" "$1" > "$d/claude"
   else printf '#!/usr/bin/env bash\ncd "%s" && "%s/hh-hub" self --name hub >/dev/null && "%s/hh-hub" "$@"\n' "$H" "$1" "$1" > "$d/claude"; fi
   chmod +x "$d/claude"; printf '%s\n' "$d/claude"
 }
 mkcl_node() {  # mkcl_node <bin dir>: the same stand-in as a node script named claude, which ps -E can show the environment of
-  local d; d=$(mktemp -d "$T_TMP/cln.XXXXXX")
+  local d; d=$(mktemp -d "$T_TMP/cln.XXXXXX") || return 1
   local e; e=$(jq -nc --arg PATH "$PATH" --arg HOME "$HOME" --arg HIVEHOUSE_HOME "$HIVEHOUSE_HOME" --arg HH_TMUX_SOCKET "$HH_TMUX_SOCKET" --arg CLAUDE_CONFIG_DIR "$CLAUDE_CONFIG_DIR" --arg HH_MANAGED_SETTINGS "$HH_MANAGED_SETTINGS" '$ARGS.named')
   printf 'const { spawnSync } = require("child_process")\nconst env = Object.assign({}, %s, process.env)\nspawnSync(%s, ["self", "--name", "hub"], { cwd: %s, stdio: "ignore", env })\nconst r = spawnSync(%s, process.argv.slice(2), { cwd: %s, stdio: "inherit", env })\nprocess.exit(r.status === null ? 1 : r.status)\n' "$e" "\"$1/hh-hub\"" "\"$H\"" "\"$1/hh-hub\"" "\"$H\"" > "$d/claude"; printf '%s\n' "$d/claude"
 }

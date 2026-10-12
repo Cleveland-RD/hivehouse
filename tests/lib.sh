@@ -152,10 +152,16 @@ t_check_socket_path() {
 }
 T_SOCKET_TAIL="/hhtest.XXXXXX/tmux.sock"
 t_setup() {
+  local base; T_TMP=""
   t_allowlist_env
+  # the run folder is made under a TMPDIR that exists and holds it, and is checked to be exactly that: a failed mktemp must never leave T_TMP
+  # as the current folder, which the teardown would then remove
+  base=$(cd -P "${TMPDIR:-/tmp}" 2>/dev/null && pwd -P) || { echo "tests: TMPDIR=${TMPDIR:-/tmp} does not exist: mkdir -p it first" >&2; exit 2; }
   t_sweep_stale
   t_check_socket_path
-  T_TMP="$(mktemp -d "${TMPDIR:-/tmp}/hhtest.XXXXXX")"; T_TMP="$(cd "$T_TMP" && pwd -P)"
+  T_TMP=$(mktemp -d "$base/hhtest.XXXXXX" 2>/dev/null) || { T_TMP=""; echo "tests: TMPDIR=$base cannot be written: make a folder you can write and set TMPDIR to it" >&2; exit 2; }
+  T_TMP=$(cd "$T_TMP" 2>/dev/null && pwd -P) || { T_TMP=""; echo "tests: the run folder under TMPDIR=$base cannot be entered" >&2; exit 2; }
+  case "$T_TMP" in "$base"/hhtest.??????) [ -d "$T_TMP" ] ;; *) false ;; esac || { T_TMP=""; echo "tests: the run folder is not a hhtest.XXXXXX folder directly under TMPDIR=$base" >&2; exit 2; }
   printf '%s\t%s\n' "$$" "$(t_lstart $$)" > "$T_TMP/run.owner"
   export HIVEHOUSE_HOME="$T_TMP/home"; mkdir -p "$HIVEHOUSE_HOME"
   export HH_TMUX_SOCKET="$T_TMP/tmux.sock"
@@ -165,12 +171,15 @@ t_setup() {
   trap t_teardown EXIT
   trap 'exit 130' INT; trap 'exit 143' TERM; trap 'exit 129' HUP   # exit runs the EXIT trap, so a signal tears down too
 }
-t_teardown() {  # idempotent: called by the trap and by tests that end explicitly
+t_teardown() {  # idempotent: called by the trap and by tests that end explicitly; removes only a folder t_setup made
   [ -n "$T_TMP" ] || return 0
+  [ -e "$T_TMP" ] || [ -L "$T_TMP" ] || { T_TMP=""; return 0; }   # already gone
+  case "${T_TMP##*/}" in hhtest.??????) [ -d "$T_TMP" ] && [ ! -L "$T_TMP" ] && [ -O "$T_TMP" ] && [ -f "$T_TMP/run.owner" ] ;; *) false ;; esac || {
+    echo "tests: not removing $T_TMP: it is not a run folder (a real folder of yours, named hhtest.XXXXXX, holding run.owner)" >&2; T_TMP=""; return 0; }
   t_reap_groups "$T_TMP"; t_reap "$T_TMP"
   tmux -S "$HH_TMUX_SOCKET" kill-server 2>/dev/null || true
   t_remove_dirs "$T_TMP"
-  rm -rf "$T_TMP"; T_TMP=""
+  rm -rf -- "${T_TMP:?}"; T_TMP=""
 }
 t_plugin_beside() {  # t_plugin_beside <a copy of bin/>: plugin.json where bin/hh-lib.sh looks for it, one folder up (hh_plugin_name)
   mkdir -p "$1/../.claude-plugin" && cp "$HH_REPO_ROOT/.claude-plugin/plugin.json" "$1/../.claude-plugin/plugin.json"
@@ -249,7 +258,7 @@ t_env_probe() {  # t_env_probe <NAME=value> [argument]...: the arguments become 
 # (after `hh-hub self --name hub`, when a hh-hub is given), with this test's environment as defaults under whatever the launch gives
 # it. Launched as `[VAR=x] node <script> <command>...`, it is a Claude whose launch environment ps -E can show. Prints its path.
 t_node_claude() {
-  local d e; d=$(mktemp -d "$T_TMP/ncl.XXXXXX")
+  local d e; d=$(mktemp -d "$T_TMP/ncl.XXXXXX") || return 1
   e=$(jq -nc --arg PATH "$PATH" --arg HOME "$HOME" --arg HIVEHOUSE_HOME "${HIVEHOUSE_HOME:-}" --arg HH_TMUX_SOCKET "${HH_TMUX_SOCKET:-}" --arg CLAUDE_CONFIG_DIR "${CLAUDE_CONFIG_DIR:-}" --arg HH_MANAGED_SETTINGS "${HH_MANAGED_SETTINGS:-}" '$ARGS.named')
   if [ -n "${2:-}" ]; then
     printf 'const { spawnSync } = require("child_process")\nconst env = Object.assign({}, %s, process.env)\nspawnSync(%s, ["self", "--name", "hub"], { cwd: %s, stdio: "ignore", env })\nconst r = spawnSync(process.argv[2], process.argv.slice(3), { cwd: %s, stdio: "inherit", env })\nprocess.exit(r.status === null ? 1 : r.status)\n' "$e" "\"$2\"" "\"$1\"" "\"$1\"" > "$d/claude"
