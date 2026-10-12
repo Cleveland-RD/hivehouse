@@ -15,7 +15,7 @@ assert_eq "it appends exactly the export line" "$(cat "$E")" "$LINE"
 assert_eq "a Bash command that runs the file finds the guard's rm first" "$(PATH=/usr/bin:/bin bash -c ". '$E'; command -v rm")" "$G/rm"
 assert_eq "...and find, and rsync" "$(PATH=/usr/bin:/bin bash -c ". '$E'; command -v find rsync" | tr '\n' ' ')" "$G/find $G/rsync "
 run resume; run clear; assert_eq "a resume and a clear append nothing more" "$(wc -l < "$E" | tr -d ' ')" "1"
-: > "$E"; printf '{}' | PATH="$G:/usr/bin:/bin" CLAUDE_ENV_FILE="$E" "$HOOK"; assert_eq "with the guard already first in PATH it adds nothing" "$(wc -l < "$E" | tr -d ' ')" "0"
+: > "$E"; printf '{}' | PATH="$G:/usr/bin:/bin" CLAUDE_ENV_FILE="$E" "$HOOK"; assert_eq "with the guard already first in the hook's PATH the line is still written once (a Bash command's PATH is not the hook's)" "$(cat "$E")" "$LINE"
 printf 'export FOO=1\n' > "$E"; run; assert_eq "another line already there is kept, the guard's added after it" "$(cat "$E")" "export FOO=1
 $LINE"
 echo "-- it never fails the session"
