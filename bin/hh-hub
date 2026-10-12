@@ -616,6 +616,12 @@ self)
   root=$(hub_root) || exit $?
   pid=$(hh_claude_ancestor) || hh_die 2 "hh-hub self must run inside the Claude session that is the hub"
   only_the_marked_hub "$root" self
+  # a second Claude in the hub's folder never takes the hub over from a live one: the recorded hub is replaced only when its process is gone
+  # (or is no longer that process: another start time, or not Claude), and the same process may record itself again
+  rpid=$(hh_json_get "$root/$HH_HUB_DIR/hub.json" .claude_pid)
+  if [ -n "$rpid" ] && [ "$rpid" != "$pid" ] && hh_claude_is "$rpid" "$(hh_json_get "$root/$HH_HUB_DIR/hub.json" .claude_started)"; then
+    hh_die 4 "a hub already runs here: $(hh_json_get "$root/$HH_HUB_DIR/hub.json" .name) (process $rpid). Only that session is the hub, and this one is not: do not take its place. Tell the owner."
+  fi
   [ -n "$name" ] || name=$(hh_session_record "$pid" .name)
   hubn=$(hub_chosen_name "$root" 2>/dev/null) || hubn=hub
   [ -n "$name" ] || hh_die 4 "this session has no name: start the hub with claude --name $hubn /$PLUGIN:hub (or type /rename $hubn), or pass --name"

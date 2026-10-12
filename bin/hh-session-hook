@@ -10,6 +10,14 @@ input=$(cat)
 cwd=$(printf '%s' "$input" | jq -r '.cwd // empty' 2>/dev/null)
 if [ -n "$cwd" ] && [ -d "$cwd/$HH_HUB_DIR" ] && [ ! -L "$cwd/$HH_HUB_DIR" ]; then
   plugin=$(hh_plugin_name) || exit 0
+  # a hub is already recorded and its Claude is alive: a second Claude here is not the hub and must not take its place (hh-hub self refuses it too)
+  rpid=$(hh_json_get "$cwd/$HH_HUB_DIR/hub.json" .claude_pid 2>/dev/null) || rpid=""
+  mine=$(hh_claude_ancestor 2>/dev/null) || mine=""
+  if [ -n "$rpid" ] && [ "$rpid" != "$mine" ] && hh_claude_is "$rpid" "$(hh_json_get "$cwd/$HH_HUB_DIR/hub.json" .claude_started 2>/dev/null)"; then
+    printf 'A hub already runs in this folder: %s (process %s). This session is not the hub: do not invoke the %s:hub skill, do not run hh-hub self, and do not take its place. Tell the owner, and ask what they want this session to do.\n' \
+      "$(hh_json_get "$cwd/$HH_HUB_DIR/hub.json" .name 2>/dev/null)" "$rpid" "$plugin"
+    exit 0
+  fi
   printf 'This session is the owner'"'"'s hivehouse hub (%s/%s). Before anything else, invoke the %s:hub skill with the Skill tool and follow it.\n' "$cwd" "$HH_HUB_DIR" "$plugin"
   exit 0
 fi
