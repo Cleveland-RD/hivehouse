@@ -2,7 +2,7 @@
 . "$(dirname "$0")/lib.sh"
 . "$HH_REPO_ROOT/bin/hh-lib.sh"
 t_setup
-r=$(t_repo proj); cd "$r"; echo role > "$T_TMP/impl.md"; echo rules > "$T_TMP/RULES.md"
+r=$(t_repo proj); cd "$r" || exit 2; echo role > "$T_TMP/impl.md"; echo rules > "$T_TMP/RULES.md"
 env -u HIVEHOUSE_HOME tmux -S "$HH_TMUX_SOCKET" new-session -d -s keep 'sleep 600'
 spawn() { hh-spawn --agent "$1" --role "$T_TMP/impl.md" --rules "$T_TMP/RULES.md" --model sonnet --effort medium --mode auto --still 2 --max-wait 6 >/dev/null 2>&1; }
 paneof() { jq -r --arg a "$1" '.agents[]|select(.name==$a).pane' $T_STATE/team.json; }

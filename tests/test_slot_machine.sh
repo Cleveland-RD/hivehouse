@@ -4,7 +4,7 @@
 . "$(dirname "$0")/lib.sh"
 . "$HH_REPO_ROOT/bin/hh-lib.sh"
 t_setup
-r=$(t_repo proj); cd "$r"
+r=$(t_repo proj); cd "$r" || exit 2
 ME=$(id -u)
 M="$T_TMP/mach/base/slot"
 mkslot() {  # a valid fixture: slot/ and slot/queue/ mode 2775, the parents 755

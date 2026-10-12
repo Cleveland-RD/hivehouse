@@ -2,7 +2,7 @@
 . "$(dirname "$0")/lib.sh"
 . "$HH_REPO_ROOT/bin/hh-lib.sh"
 t_setup
-r=$(t_repo proj); cd "$r"
+r=$(t_repo proj); cd "$r" || exit 2
 LOCK="$HIVEHOUSE_HOME/slot.lock"
 assert_eq "free at start" "$(hh-slot status)" "free"
 out=$(hh-slot run gate -- bash -c 'hh-slot status'); assert_contains "held during run" "$out" '"label":"gate"'

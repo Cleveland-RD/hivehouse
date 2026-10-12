@@ -4,7 +4,7 @@
 . "$(dirname "$0")/lib.sh"
 . "$HH_REPO_ROOT/bin/hh-lib.sh"
 t_setup
-r=$(t_repo proj); cd "$r"; echo role > "$T_TMP/impl.md"; echo rules > "$T_TMP/RULES.md"
+r=$(t_repo proj); cd "$r" || exit 2; echo role > "$T_TMP/impl.md"; echo rules > "$T_TMP/RULES.md"
 env -u HIVEHOUSE_HOME tmux -S "$HH_TMUX_SOCKET" new-session -d -s keep 'sleep 600'
 # the repository is trusted in this run's own Claude config, so hh-spawn's folder-trust warning (a worktree stops at the dialog until its main repository is trusted) is not on stderr here
 jq -nc --arg p "$(cd "$r" && pwd -P)" '{projects:{($p):{hasTrustDialogAccepted:true}}}' > "$CLAUDE_CONFIG_DIR/.claude.json"

@@ -4,7 +4,7 @@
 . "$(dirname "$0")/lib.sh"
 . "$HH_REPO_ROOT/bin/hh-lib.sh"
 t_setup
-r=$(t_repo proj); cd "$r"
+r=$(t_repo proj); cd "$r" || exit 2
 rr=$(t_repo remote-proj)                      # the remote project root (a git repo, as a real one would be)
 export HH_FAKE_LOG="$T_TMP/fake.log"; : > "$HH_FAKE_LOG"
 sync() { hh-remote-sync "$@"; }
