@@ -14,7 +14,13 @@ HH_BIN=${0%/*}; [ "$HH_BIN" != "$0" ] || HH_BIN=.
 KEYS="permission_mode overnight_ceiling_usd allow_attribution files_per_commit"
 if [ "${1:-}" = option ] && [ $# -ge 2 ] && [ $# -le 3 ]; then
   hh_option_default "$2" >/dev/null || hh_die 4 "unknown option: $2"
-  hh_option_value "$2" "${3:-}" || hh_die 4 "unknown option: $2"
+  val=$(hh_option_value "$2" "${3:-}") || hh_die 4 "unknown option: $2"
+  case "$2" in   # plugin.json lists no values for these, so each is checked here
+    effort_builder|effort_reviewer) case "$val" in low|medium|high|xhigh|max) ;; *) hh_die 4 "bad value for $2: $val (one of low, medium, high, xhigh, max)" ;; esac ;;
+    commit_style) case "$val" in conventional|free) ;; *) hh_die 4 "bad value for $2: $val (conventional or free)" ;; esac ;;
+    permission_mode_local) hh_mode_rank "$val" >/dev/null && [ "$val" != bypassPermissions ] || hh_die 4 "bad value for $2: $val (one of plan, dontAsk, default, acceptEdits, auto)" ;;
+  esac
+  printf '%s\n' "$val"
   exit 0
 fi
 [ $# -eq 3 ] && [ "$1" = resolve ] || hh_die 64 "usage: hh-settings resolve <key> <owner value> | hh-settings option <key> [<value>]"

@@ -119,7 +119,7 @@ else
   for v in role rules model effort mode; do [ -n "${!v}" ] || hh_die 64 "$USAGE"; done
   [ -f "$role" ] && [ -f "$rules" ] || hh_die 4 "--role and --rules must be files"
   hh_is_model_name "$model" || hh_die 4 "bad model (a value starting with - would be read as an option): $model"
-  hh_is_model_name "$effort" || hh_die 4 "bad effort (a value starting with - would be read as an option): $effort"
+  case "$effort" in low|medium|high|xhigh|max) ;; *) hh_die 4 "bad effort: $effort (one of low, medium, high, xhigh, max)" ;; esac
   if [ -n "$wt" ]; then
     [ -n "$branch" ] && [ -n "$base" ] || hh_die 64 "--worktree needs --branch and --base"
     case "$wt" in /*) ;; *) hh_die 4 "--worktree must be an absolute path" ;; esac

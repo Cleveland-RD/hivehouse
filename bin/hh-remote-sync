@@ -258,7 +258,7 @@ start-agent)
   abs_ok "$rroot" || hh_die 4 "the remote root must be an absolute path without . or ..: $rroot"
   hh_is_agent_name "$agent" || hh_die 4 "bad agent name: $agent"
   hh_is_model_name "$model" || hh_die 4 "bad model: $model"
-  hh_is_model_name "$effort" || hh_die 4 "bad effort: $effort"
+  case "$effort" in low|medium|high|xhigh|max) ;; *) hh_die 4 "bad effort: $effort (one of low, medium, high, xhigh, max)" ;; esac
   if [ -n "$wt$branch$base" ]; then
     [ -n "$wt" ] && [ -n "$branch" ] && [ -n "$base" ] || hh_die 64 "--worktree needs --branch and --base"
     abs_ok "$wt" || hh_die 4 "--worktree must be an absolute path without . or ..: $wt"
