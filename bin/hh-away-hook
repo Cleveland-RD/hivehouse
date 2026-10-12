@@ -138,9 +138,7 @@ fs_tree() {  # fs_tree <source> <dest> <cwd> <command>: every file under a sourc
     rel=${f#"$a"/}
     fs_mapped "$d/$rel" && deny "$4 would put $rel under $2, a protected path: $P_WHY"
     fs_mapped "$d/$sb/$rel" && deny "$4 would put $sb/$rel under $2, a protected path: $P_WHY"
-  done <<EOF
-$out
-EOF
+  done < <(printf '%s\n' "$out")
 }
 FS_GLOB_MAX=500
 fs_expand() {  # fs_expand <cwd> <word>: prints the word, or what bash would expand it to in the cwd (~ first); a brace pattern or an expansion the hook cannot do is refused
@@ -296,9 +294,7 @@ fs_unpack_check() {  # fs_unpack_check <tar|unzip|ditto> <cwd> <word>...: where 
     n=$((n + 1)); [ "$n" -le "$FS_TREE_MAX" ] || deny "$c of an archive with more than $FS_TREE_MAX members cannot be checked while the owner is away"
     m=${m#./}; while [ "${m#/}" != "$m" ]; do m=${m#/}; done; while [ "${m%/}" != "$m" ]; do m=${m%/}; done; [ -n "$m" ] || continue
     fs_mapped "$d/$m" && deny "$c would unpack $m onto a protected path under ${dir:-$cwd}: $P_WHY"
-  done <<EOF
-$list
-EOF
+  done < <(printf '%s\n' "$list")
   return 0
 }
 fs_git_check() {  # fs_git_check <cwd> <word>...: a git command that rewrites the working tree acts on the repo of -C or the cwd; that repo may not be, or hold, Claude Code's or hivehouse's own files
@@ -971,9 +967,7 @@ bash_text() {  # bash_text <command text> <cwd>: the rules for a command; a scri
         protected "$tok" "$cwd" && deny "a command that writes is refused: $P_WHY"
       done
     fi
-  done <<EOF
-$segs
-EOF
+  done < <(printf '%s\n' "$segs")
   set +f
   [ -z "$have_git$have_push" ] || { [ -n "$have_git" ] && [ -n "$have_push" ] && deny "git push is not allowed while the owner is away (a quoted \"push\" beside git counts: rephrase)"; }
   [ -z "$pkgm" ] || [ -z "$have_pub" ] || deny "publishing a package is not allowed while the owner is away"

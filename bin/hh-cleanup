@@ -158,9 +158,7 @@ while IFS= read -r e <&3; do   # fd 3, so nothing an entry runs can read the lis
     remote)   say kept remote "$(g host):$(g path)" "$by" "remote cleanup arrives with hh-remote-sync" ;;
     *)        say skipped "${kind:-?}" "$id" "$by" "unknown kind" ;;
   esac
-done 3<<EOF
-$entries
-EOF
+done 3< <(printf '%s\n' "$entries")
 echo "free disk after: $(free_gb) GB"
 if [ -d "$STATE/trash" ]; then echo "trash: $(du -sh "$STATE/trash" | cut -f1) in $STATE/trash"; else echo "trash: empty"; fi
 exit 0
