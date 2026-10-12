@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.5.6
+
+- **Option values are checked where they are used.** `plugin.json` no longer lists values for `commit_style`, `effort_builder`, `effort_reviewer` and `permission_mode_local`. `hh-spawn` and `hh-remote-sync start-agent` take an effort only as `low`, `medium`, `high`, `xhigh` or `max` (`max` is new: Claude Code takes it), `hh-gate-verify --style` only `conventional` or `free`, and `hh-settings option` and `resolve` refuse any other effort, style or permission mode, and bypass as a local mode, with exit 4 and the allowed values.
+- **Here-documents are gone from `bin/`.** Six of them, including the one in `bin/hh-lib.sh`, no longer write scripts or files through a here-document.
+- **The README says what `hooks/hub.tsx` runs.** The `hh-hub` subcommands it calls, the two slash commands it types with `hub_auto_start` on, the files it reads, that it sends nothing off the machine, and the edits and git writes it refuses in the hub session.
+- **A plugin icon.** `.claude-plugin/icon.png`, 1024 by 1024.
+- **Tests.** New `test_option_values.sh`; `test_readme_sends.sh` pins the new README words; the spawn and start-agent tests use a real effort.
+
 ## 0.5.5
 
 - **A delete guard, always on.** `bin/guard/` holds `rm`, `find` and `rsync` programs that stand in front of the real ones. A call is refused whole, deleting nothing, when any operand resolves to `/`, an empty operand, a folder fewer than 3 levels deep, your home (or a folder that holds it), `~/.claude`, the root of a synced cloud folder (`~/Library/CloudStorage` and the folders in it, `~/Library/Mobile Documents`, iCloud Drive, `~/Dropbox` and `~/Dropbox (name)`), a git repository root, a hub folder, a project home, hivehouse's own plugin folder, or a temporary folder itself. Anything inside a temporary folder passes, and so does a linked worktree. `find` is judged only when it deletes, by its starting points; `rsync` only with `--delete`, by a local destination. Links are resolved first (a link is judged as itself unless the operand ends in `/`). `docs/rm-guard.md` has the list and what the guard does not stop.
