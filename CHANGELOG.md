@@ -3,10 +3,10 @@
 ## 0.5.6
 
 - **Option values are checked where they are used.** `plugin.json` no longer lists values for `commit_style`, `effort_builder`, `effort_reviewer` and `permission_mode_local`. `hh-spawn`, `hh-remote-sync start-agent` and `hh-settings option` take an effort only as `low`, `medium`, `high`, `xhigh` or `max` (`max` is new: Claude Code takes it). `hh-gate-verify --style` and `hh-settings option` take a commit style only as `conventional` or `free`. `hh-settings option` and `hh-settings resolve` refuse any other permission mode, and bypass as a local mode (`resolve` checks only the permission mode). Each refusal exits 4 (64 for `hh-gate-verify`) and names the allowed values.
-- **Here-documents are gone from `bin/`.** Six of them, including the one in `bin/hh-lib.sh`, no longer write scripts or files through a here-document.
+- **Here-documents are gone from `bin/`.** Six of them (three in `hh-away-hook`, one in `hh-cleanup`, two in `hh-lib.sh`): the loops read from `printf` through process substitution, and the Perl text in `hh-lib.sh` is a single-quoted string, byte for byte the same.
 - **The README says what `hooks/hub.tsx` runs.** The `hh-hub` subcommands it calls, the two slash commands it types with `hub_auto_start` on, the files it reads, that it sends nothing off the machine, and the edits and git writes it refuses in the hub session.
 - **A plugin icon.** `.claude-plugin/icon.png`, 1024 by 1024.
-- **Tests.** New `test_option_values.sh`; `test_readme_sends.sh` pins the new README words; the spawn and start-agent tests use a real effort.
+- **Tests.** New `test_option_values.sh`, `test_no_heredoc.sh` and `test_cleanup_dry.sh`; `test_readme_sends.sh` pins the new README words; the spawn and start-agent tests use a real effort.
 
 ## 0.5.5
 
