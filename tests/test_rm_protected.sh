@@ -1,0 +1,81 @@
+#!/usr/bin/env bash
+# R1, the shared predicate: hh_rm_canon <path> <cwd> gives one absolute, symlink-resolved name (a trailing / follows the link, otherwise the link
+# itself is judged) and hh_rm_protected <canonical path> says, with the reason on stdout, whether a delete may touch it. HH_GUARD_ROOT makes both
+# judge paths as if a scratch folder were /, so no case here names a real protected path and nothing is deleted.
+. "$(dirname "$0")/lib.sh"
+t_setup
+R="$T_TMP/root"; FH="$R/Users/me/dias"; PL="$R/srv/a/tools/plug"
+mkdir -p "$FH/.claude" "$FH/proj/.git" "$FH/plain/sub/deep" "$FH/wt" "$FH/hubdir/$T_HUB" "$FH/projhome/$T_STATE" "$PL/bin" \
+  "$R/private/tmp/x" "$R/private/tmp/repo/.git" "$R/tmp/y" "$R/var/folders/ab/T/z" "$R/var/folders/ab/T/trepo/.git" "$R/home/other/deep"
+cp "$HH_REPO_ROOT/bin/hh-lib.sh" "$PL/bin/hh-lib.sh"
+echo "gitdir: elsewhere" > "$FH/wt/.git"; : > "$FH/plain/file"
+ln -s "$FH/plain" "$FH/plain-link"; ln -s sub "$FH/plain/rel-link"; ln -s "$FH/plain-link" "$FH/chain"; ln -s "$R/nowhere" "$FH/dangling"
+ln -s "$FH/proj" "$FH/proj-link"
+export HOME="$FH" HH_GUARD_ROOT="$R"
+. "$PL/bin/hh-lib.sh"   # the copy: the plugin root it judges is $PL, inside the fake root
+cn() { hh_rm_canon "$1" "${2:-$FH}"; }
+prot() { local p; p=$(hh_rm_canon "$1" "$FH"); WHY=$(hh_rm_protected "$p"); RC=$?; }
+refused() { prot "$2"; [ "$RC" -eq 0 ] && [ -n "$WHY" ] && ok "$1" || bad "$1: rc=$RC why=[$WHY]"; }
+allowed() { prot "$2"; [ "$RC" -eq 1 ] && [ -z "$WHY" ] && ok "$1" || bad "$1: rc=$RC why=[$WHY]"; }
+
+echo "-- hh_rm_canon"
+assert_eq "an absolute path stays" "$(cn "$FH/plain/sub")" "$FH/plain/sub"
+assert_eq "a relative path takes the cwd" "$(cn sub "$FH/plain")" "$FH/plain/sub"
+assert_eq "dot segments collapse" "$(cn "$FH/plain/./sub/../sub//deep/")" "$FH/plain/sub/deep"
+assert_eq "~ is the home" "$(cn '~')" "$FH"
+assert_eq "~/x is under the home" "$(cn '~/plain')" "$FH/plain"
+assert_eq "\$HOME and \${HOME} are the home" "$(cn '$HOME/plain'):$(cn '${HOME}/plain')" "$FH/plain:$FH/plain"
+assert_eq "a link in the middle is resolved" "$(cn "$FH/plain-link/sub")" "$FH/plain/sub"
+assert_eq "a link at the end is judged as itself" "$(cn "$FH/plain-link")" "$FH/plain-link"
+assert_eq "...but a trailing / follows it" "$(cn "$FH/plain-link/")" "$FH/plain"
+assert_eq "a relative link in the middle resolves from its own folder" "$(cn "$FH/plain/rel-link/deep")" "$FH/plain/sub/deep"
+assert_eq "a chain of links is followed to the end by a trailing /" "$(cn "$FH/chain/")" "$FH/plain"
+assert_eq "..after a link goes up from the target, not the link" "$(cn "$FH/proj-link/..")" "$FH"
+assert_eq "a dangling link is kept as itself" "$(cn "$FH/dangling")" "$FH/dangling"
+assert_eq "a path that does not exist stays as written" "$(cn "$FH/plain/none/at/all")" "$FH/plain/none/at/all"
+assert_eq "an empty path stays empty" "$(cn "")" ""
+assert_eq "the root is /" "$(cn / /)" "/"
+
+echo "-- hh_rm_protected: refused"
+refused "the fake root itself" "$R"
+refused "a folder one level deep" "$R/Users"
+refused "a folder two levels deep" "$R/Users/me"
+refused "the home itself" "$FH"
+assert_contains "...and says it is the home" "$WHY" "the home folder"
+refused "another folder two levels deep" "$R/home/other"
+refused "the home through ~" '~'
+refused "a folder that holds the home" "$R/Users/"
+refused "the home through a trailing /" "$R/Users/me/plain-link/../"
+refused "~/.claude" "$FH/.claude"
+refused "a git repository root (.git is a directory)" "$FH/proj"
+refused "...reached through a link and a trailing /" "$FH/proj-link/"
+refused "a hub folder" "$FH/hubdir"
+refused "a project home" "$FH/projhome"
+refused "the plugin root" "$PL"
+refused "a folder that holds the plugin root" "$R/srv/a/tools"
+refused "an empty operand" ""
+assert_contains "...and says it is empty" "$WHY" "empty"
+refused "a temp root itself (/private/tmp)" "$R/private/tmp"
+refused "...(/tmp)" "$R/tmp"
+assert_contains "...and says it is a temporary folder" "$WHY" "temporary folder itself"
+echo "-- hh_rm_protected: allowed"
+allowed "a plain folder three levels deep" "$FH/plain"
+allowed "a folder four levels deep" "$FH/plain/sub/deep"
+allowed "a file" "$FH/plain/file"
+allowed "a file inside a repository" "$FH/proj/.git"
+allowed "a linked worktree (.git is a file)" "$FH/wt"
+allowed "a link, judged as itself (not the repository it points at)" "$FH/proj-link"
+allowed "a folder inside /private/tmp" "$R/private/tmp/x"
+allowed "a git repository inside /private/tmp" "$R/private/tmp/repo"
+allowed "a folder inside /tmp" "$R/tmp/y"
+echo "-- the temp zone of \$TMPDIR"
+TMPDIR="$R/var/folders/ab/T"
+allowed "a folder inside \$TMPDIR" "$R/var/folders/ab/T/z"
+allowed "a git repository inside \$TMPDIR" "$R/var/folders/ab/T/trepo"
+refused "\$TMPDIR itself" "$R/var/folders/ab/T"
+unset TMPDIR
+echo "-- no seam: the real names"
+( unset HH_GUARD_ROOT; hh_rm_protected / >/dev/null ); assert_status "the real / is protected" $? 0
+( unset HH_GUARD_ROOT; hh_rm_protected /private/tmp >/dev/null ); assert_status "the real /private/tmp is protected" $? 0
+( unset HH_GUARD_ROOT; hh_rm_protected /private/tmp/hh-nothing-here >/dev/null ); assert_status "a made-up folder inside the real /private/tmp is not" $? 1
+cd /; t_teardown; t_done

@@ -1270,3 +1270,70 @@ hh_pane_question() {  # hh_pane_question <socket, or empty for hivehouse's own s
   t=$(hh_tmux_on "$1" capture-pane -p -e -J -t "$2" 2>/dev/null) || return 1
   printf '%s\n' "$t" | hh_pane_idle_text; [ $? -eq 3 ]
 }
+# ---- the delete guard's one predicate: bin/guard/{rm,find,rsync} and the rm hook both ask these two ---------------------------------------
+# hh_rm_canon names a path one way: absolute, ~ and $HOME expanded, dot segments collapsed, every link resolved except the last, which is
+# resolved only when the operand ends in / (what rm and the shell do). An empty path stays empty. HH_GUARD_ROOT (a test seam) makes
+# hh_rm_protected judge paths as if that folder were /; nothing else reads it.
+hh_rm_canon() {  # hh_rm_canon <path> <cwd>
+  local p="$1" cur=/ queue seg next tgt trail="" n=0 last
+  [ -n "$p" ] || { printf '\n'; return 0; }
+  case "$p" in "~") p=$HOME ;; "~/"*) p="$HOME/${p#\~/}" ;; esac
+  p=${p//\$\{HOME\}/$HOME}; p=${p//\$HOME/$HOME}
+  case "$p" in /*) ;; *) p="${2:-/}/$p" ;; esac
+  case "$p" in */) trail=1 ;; esac
+  queue=${p#/}
+  while [ -n "$queue" ]; do
+    seg=${queue%%/*}
+    case "$queue" in */*) queue=${queue#*/} ;; *) queue="" ;; esac
+    case "$seg" in ''|.) continue ;; ..) cur=${cur%/*}; cur=${cur:-/}; continue ;; esac
+    next="${cur%/}/$seg"
+    last=0; case "$queue" in *[!/]*) ;; *) last=1 ;; esac
+    if [ -L "$next" ] && { [ "$last" = 0 ] || [ -n "$trail" ]; } && [ "$n" -lt 40 ]; then
+      n=$((n + 1)); tgt=$(readlink "$next")
+      case "$tgt" in /*) cur=/ ;; esac
+      queue="$tgt${queue:+/$queue}"; queue=${queue#/}
+      continue
+    fi
+    cur=$next
+  done
+  printf '%s\n' "$cur"
+}
+hh_rm_map() {  # hh_rm_map <canonical path>: the name it has when HH_GUARD_ROOT is taken as /
+  local r p="$1"; [ -n "${HH_GUARD_ROOT:-}" ] || { printf '%s\n' "$p"; return 0; }
+  r=$(hh_rm_canon "$HH_GUARD_ROOT" /)
+  case "$p" in "$r") printf '/\n' ;; "$r"/*) printf '%s\n' "${p#"$r"}" ;; *) printf '%s\n' "$p" ;; esac
+}
+hh_rm_protected() {  # hh_rm_protected <canonical path>: 0 and the reason on stdout when a delete may not touch it; 1 when it may
+  local p="$1" q z c h r s pr tz
+  [ -n "$p" ] || { echo "an empty operand"; return 0; }
+  q=$(hh_rm_map "$p")
+  [ "$q" != / ] || { echo "the root folder"; return 0; }
+  # the temp zones: a temp root is refused, anything inside one passes (tests make and delete temp repositories there)
+  tz=""; [ -z "${TMPDIR:-}" ] || tz=$(hh_rm_map "$(hh_rm_canon "$TMPDIR" /)")
+  for z in "$tz" /private/tmp /tmp /var/tmp /private/var/tmp; do
+    [ -n "$z" ] || continue
+    for c in "$z" "$(hh_rm_canon "$z" /)"; do
+      [ "$q" != "$c" ] || { echo "a temporary folder itself ($c)"; return 0; }
+    done
+  done
+  for z in "$tz" /private/tmp /tmp /var/tmp /private/var/tmp; do
+    [ -n "$z" ] || continue
+    for c in "$z" "$(hh_rm_canon "$z" /)"; do
+      case "$q" in "$c"/*) return 1 ;; esac
+    done
+  done
+  s=${q//[!\/]/}
+  [ "${#s}" -ge 3 ] || { echo "a folder fewer than 3 levels deep ($q)"; return 0; }
+  h=$(hh_rm_map "$(hh_rm_canon "$HOME" /)")
+  case "$h/" in "$q"/*) echo "the home folder, or a folder that holds it ($q)"; return 0 ;; esac
+  for r in "$h/.claude" "$(hh_rm_map "$(hh_rm_canon "${CLAUDE_CONFIG_DIR:-$HOME/.claude}" /)")"; do
+    [ "$q" != "$r" ] || { echo "Claude Code's own folder ($q)"; return 0; }
+  done
+  pr=$(hh_rm_map "$(hh_rm_canon "$(dirname "${BASH_SOURCE[0]}")/.." /)")
+  case "$pr/" in "$q"/*) echo "the plugin root, or a folder that holds it ($q)"; return 0 ;; esac
+  [ ! -L "$p" ] || return 1   # a link is judged as itself, not as what it points at
+  if [ -d "$p/.git" ]; then echo "a git repository root ($q)"; return 0; fi
+  if [ -d "$p/$HH_HUB_DIR" ]; then echo "a hub folder ($q)"; return 0; fi
+  if [ -d "$p/$HH_STATE_DIR" ]; then echo "a project home ($q)"; return 0; fi
+  return 1
+}
