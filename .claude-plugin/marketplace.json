@@ -8,7 +8,7 @@
       "name": "hivehouse",
       "source": "./",
       "description": "An agent hub for Claude Code: one hub session passes each task to that project's team of Claude sessions in tmux, which plan, build, review and test on their own and leave pushes and spending to you.",
-      "version": "0.5.6"
+      "version": "0.5.7"
     }
   ],
   "description": "An agent hub for Claude Code: one hub session passes each task to that project's team of Claude sessions in tmux, which plan, build, review and test on their own and leave pushes and spending to you."
