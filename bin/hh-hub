@@ -69,6 +69,7 @@ USAGE="usage: hh-hub init
        hh-hub answer <project> [<agent>[@<team root>]] --choice <1-9|esc> --seen <fingerprint>
        hh-hub naming --session <session id>"
 
+CHROME=0   # a Chrome grant never comes from the environment: only hh-hub start --chrome sets it, for that one launch
 cmd="${1:-}"; [ -n "$cmd" ] || hh_die 64 "$USAGE"; shift
 hub_root() {  # the work folder holding $HH_HUB_DIR/, resolved
   local d
@@ -392,6 +393,7 @@ launch() {
   (HH_PROJECT="$cwd"; export HH_PROJECT; hh_ensure_state && mkdir -p "$cwd/$HH_STATE_DIR/team/$agent") || { rc=$?; rm -f "$mcpf"; exit $rc; }
   settings=$(hh_agent_settings "$HH_BIN" "$cwd" "$cwd/$HH_STATE_DIR/team/$agent") || { rc=$?; rm -f "$mcpf"; exit $rc; }
   c="umask $HH_CALLER_UMASK; $(hh_guard_launch)exec $(printf '%q ' claude "$@" --settings "$settings" ${HH_BP_ARGS[@]+"${HH_BP_ARGS[@]}"})"   # the pane's files are the caller's, not the hub's records
+  hh_away_envs_complete
   envs=(-e "HIVEHOUSE_HOME=$(hh_home)" -e "HH_PROJECT=$cwd" ${HH_BP_ENVS[@]+"${HH_BP_ENVS[@]}"})
   [ -n "${HH_TMUX_SOCKET:-}" ] && envs+=(-e "HH_TMUX_SOCKET=$HH_TMUX_SOCKET")
   pane=$(umask "$HH_CALLER_UMASK"; hh_open_window "$name" orchestrator "$cwd" "$c" "${envs[@]}") || { rc=$?; rm -f "$mcpf"; exit $rc; }
@@ -1300,7 +1302,7 @@ away)
   done < <({ printf '%s\n' "$root"; jq -r '.projects[]? | .home, (.repos[]?)' "$root/$HH_HUB_DIR/projects.json" 2>/dev/null; })
   echo "# Away mode needs permission_mode_local set to auto (the hub resolves it); a stricter value keeps its sessions out of bypass."
   echo "# MCP servers the hub may use while away: ${allow:-none}. Every configured server starts (user, project, plugin and claude.ai connectors); with the hook on, a call to any other server is refused."
-  echo "# The list also stops browser automation and computer-use (browser checks) unless they are in it: add them with --mcp-allow if the night needs them. Name a claude.ai connector as Claude Code shows it in tool names; it differs by account (claude_ai_Image_Gen, claude_ai_image-gen), so list the form your account shows, or both."
+  echo "# The list also stops computer-use (browser checks) unless it is in it: add it with --mcp-allow if the night needs it. Chrome browser automation is never opened by the list: it needs --chrome (and a grant from the hub). Name a claude.ai connector as Claude Code shows it in tool names; it differs by account (claude_ai_Image_Gen, claude_ai_image-gen), so list the form your account shows, or both."
   echo "# SendMessage is held to the hub and its teams while you are away: sessions on other machines are cut off for the whole away period, except the peers you name with --peers."
   echo "# Nothing runs while the machine is off: after a reboot, start the hub again with the lines above."
   echo "# A message from another session to the hub, while you are away, is information only; to instruct it, type into it (Remote Control, say)."

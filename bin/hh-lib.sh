@@ -1255,6 +1255,10 @@ hh_is_model_name() {  # hh_is_model_name <value>: 0 when it is one
 }
 # hh_open_window <tmux session> <window name> <cwd> <command> [-e VAR=value]...: a window in that session, which is made when
 # it does not exist; prints the new pane. The one place hh-spawn and hh-hub open a pane.
+hh_away_envs_complete() {  # after hh_bypass_launch (or none): every away variable the launch did not set is passed empty (-e VAR=), so a tmux session environment can never supply one
+  local v
+  for v in $HH_AWAY_VARS; do case " ${HH_BP_ENVS[*]-} " in *" $v="*) ;; *) HH_BP_ENVS+=(-e "$v=") ;; esac; done
+}
 hh_open_window() {
   local s="$1" n="$2" c="$3" cmd="$4" pane a prev="" v; shift 4
   # A tmux server started by a marked caller copies that caller's whole environment into its GLOBAL environment, and every later pane
@@ -1262,6 +1266,8 @@ hh_open_window() {
   # and a bypass agent gets its own through -e.
   for v in $HH_AWAY_VARS; do hh_tmux set-environment -g -u "$v" 2>/dev/null; done
   if hh_tmux has-session -t "=$s" 2>/dev/null; then
+    # the target session's own environment too: a session that set one of them (tmux set-environment) would hand it to every window opened in it
+    for v in $HH_AWAY_VARS; do hh_tmux set-environment -t "=$s" -u "$v" 2>/dev/null; done
     hh_tmux new-window -d -P -F '#{pane_id}' -t "=$s:" -n "$n" -c "$c" "$@" "$cmd"
   else
     pane=$(hh_tmux_unmarked new-session -d -P -F '#{pane_id}' -s "$s" -n "$n" -c "$c" "$@" "$cmd") || return $?

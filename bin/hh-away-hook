@@ -389,11 +389,13 @@ allow=${HH_AWAY_MCP_ALLOW-}
 
 mcp_check() {
   local e es
-  # Chrome's tools pass when the owner turned Chrome on (Chrome in the root-owned delegate file's tools=) and this session was granted it (HH_AWAY_CHROME=1 in its launch env)
+  # Chrome's tools pass when the owner turned Chrome on (Chrome in the root-owned delegate file's tools=) and this session was granted it (HH_AWAY_CHROME=1 in its launch env);
+  # without both they are refused, even when mcp= lists the server (the list never opens Chrome)
   case "$tool" in mcp__claude-in-chrome__*)
     if [ "${HH_AWAY_CHROME-}" = 1 ] && hh_delegate_mine && [ "$HH_DG_HUB" = "$HUB" ]; then
       case ",$HH_DG_TOOLS," in *,Chrome,*) return 0 ;; esac
-    fi ;;
+    fi
+    deny "$tool is not allowed while the owner is away (Chrome needs the owner's switch, hh-hub away --chrome, and a session the hub granted it)" ;;
   esac
   IFS=, read -ra es <<< "$allow"
   for e in ${es[@]+"${es[@]}"}; do
@@ -926,9 +928,9 @@ bash_text() {  # bash_text <command text> <cwd>: the rules for a command; a scri
         curl) has_curl=1 ;;
         wget) has_wget=1 ;;
       esac
-      case "$tok" in new-window|neww|split-window|splitw|new-session|new|respawn-pane|respawnp|respawn-window|respawnw|run-shell|run|if-shell|if|display-popup|popup|pipe-pane|pipep|source-file|source|send-keys|send) has_start=1 ;; esac
+      case "$tok" in new-window|neww|split-window|splitw|new-session|new|respawn-pane|respawnp|respawn-window|respawnw|run-shell|run|if-shell|if|display-popup|popup|pipe-pane|pipep|source-file|source|send-keys|send|set-environment|setenv) has_start=1 ;; esac
     done
-    [ -z "$has_tmux" ] || [ -z "$has_start" ] || deny "tmux cannot start windows or sessions, run commands or type into panes from an away session; hh-spawn and hh-hub do those"
+    [ -z "$has_tmux" ] || [ -z "$has_start" ] || deny "tmux cannot start windows or sessions, run commands, type into panes or set a session's environment from an away session; hh-spawn and hh-hub do those"
     if [ -n "$has_rsync" ]; then
       for tok in ${toks[@]+"${toks[@]}"}; do
         case "$tok" in

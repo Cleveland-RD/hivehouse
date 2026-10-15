@@ -290,6 +290,7 @@ if [ "$chrome" = 1 ]; then
 fi
 if [ "$mode" = bypassPermissions ]; then hh_bypass_launch "$ROOT" "$chrome" || hh_die 4 "cannot prepare the away launch for $agent${HH_DELEGATE_WHY:+: $HH_DELEGATE_WHY}"; fi
 cmd="$(hh_guard_launch)exec $(printf '%q ' claude ${extra[@]+"${extra[@]}"} --name "$project-$agent" --model "$model" --effort "$effort" --permission-mode "$mode" --allowedTools "$ALLOWED" --settings "$settings" ${HH_BP_ARGS[@]+"${HH_BP_ARGS[@]}"})"
+hh_away_envs_complete
 envs=(-e "HH_AGENT=$agent" -e "HH_PROJECT=$ROOT" -e "HIVEHOUSE_HOME=$(hh_home)" ${HH_BP_ENVS[@]+"${HH_BP_ENVS[@]}"})
 [ -n "${HH_TMUX_SOCKET:-}" ] && envs+=(-e "HH_TMUX_SOCKET=$HH_TMUX_SOCKET")
 pane=$(hh_open_window "$session" "$agent" "$cwd" "$cmd" "${envs[@]}") || exit $?
