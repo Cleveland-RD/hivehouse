@@ -755,7 +755,7 @@ sed -i.bak 's/^HH_DEADLINE=20$/HH_DEADLINE=1.41/' "$DLBIN/hh-away-hook"; rm -f "
 SLBIN="$T_TMP/slow-bin"; rm -rf "$SLBIN"; mkdir -p "$SLBIN"; cp -R "$DLBIN/." "$SLBIN/"
 assert_eq "(the slow copy: the line after the inputs matches once)" "$(grep -c '^allow=${HH_AWAY_MCP_ALLOW-}$' "$SLBIN/hh-away-hook")" 1
 sed -i.bak 's/^allow=${HH_AWAY_MCP_ALLOW-}$/sleep 5.77; allow=${HH_AWAY_MCP_ALLOW-}/' "$SLBIN/hh-away-hook"; rm -f "$SLBIN/hh-away-hook.bak"
-strays() { ps -axo command | grep -cE '[s]leep (1\.41|5\.77)$' | tr -d ' '; }
+strays() { ps -axo command | grep -cE '[s]leep (1\.41|5\.77|7\.31)$' | tr -d ' '; }
 HOOK="$DLBIN/hh-away-hook"; allowed "inside the deadline a normal call is still allowed" "ls"
 assert_eq "...and no timer or sleep is left behind" "$(strays)" 0
 denied "...and a refusal is still the hook's own" "git push"
@@ -769,6 +769,39 @@ assert_contains "...and what to do" "$ERR" "Run smaller steps or a smaller scrip
 [ $((s1 - s0)) -le 4 ] && ok "...answered at the deadline, not when the slow part ended" || bad "answered after $((s1 - s0)) s"
 assert_eq "...and the check's own sleep and the timer are gone" "$(strays)" 0
 ERR=$(printf '%s' "$(tc ls)" | HH_DEADLINE=999 HH_AWAY_BYPASS=1 HH_PROJECT="$proj" HH_AWAY_HUB="$hub" HH_AWAY_MCP_ALLOW= "$SLBIN/hh-away-hook" 2>&1 >/dev/null); assert_status "the deadline is not read from the environment (HH_DEADLINE=999 changes nothing)" $? 2
+# the deadline holds for the pipes too: no descendant of the check, at any depth, may keep Claude Code's stdout or stderr open past the answer
+# (a reader waits for end of file, and the hook's own answer must come first)
+awk 'BEGIN { for (i = 0; i < 120000; i++) printf "echo a; " }' > "$T_TMP/big.cmd"
+jq -nc --rawfile c "$T_TMP/big.cmd" --arg d "$proj" '{tool_name:"Bash",cwd:$d,tool_input:{command:$c}}' > "$T_TMP/big.json"
+pipe_run() {  # pipe_run <hook> <input file> [<env assignment>]: the hook's stdout and stderr into one reader that notes when it reaches end of file; sets RC, PTIME (seconds to EOF) and POUT
+  local s0 s1; s0=$(date +%s)
+  POUT=$(env HH_AWAY_BYPASS=1 HH_PROJECT="$proj" HH_AWAY_HUB="$hub" HH_AWAY_MCP_ALLOW= ${3:+"$3"} bash -c '"$1" < "$2"; echo "rc=$?" >&3' _ "$1" "$2" 3>"$T_TMP/pipe.rc" 2>&1 | { cat; date +%s > "$T_TMP/pipe.eof"; })
+  s1=$(cat "$T_TMP/pipe.eof"); PTIME=$((s1 - s0)); RC=$(sed 's/rc=//' "$T_TMP/pipe.rc")
+}
+sleep 0.5; assert_eq "(nothing of an earlier run is left)" "$(ps -axo command | grep -c "[d]eadline-bin/hh-away-hook --check" | tr -d ' ')" 0
+pipe_run "$DLBIN/hh-away-hook" "$T_TMP/big.json"
+assert_eq "a large command (about 1 MB of echo a;) is refused at the lowered deadline" "$RC" 2
+assert_contains "...with the deadline's reason" "$POUT" "its check took longer than 1.41 seconds"
+[ "$PTIME" -le 4 ] && ok "...and the hook's stdout and stderr reach end of file within the deadline plus 2 s ($PTIME s)" || bad "end of file after $PTIME s: a descendant of the check still holds the pipe"
+sleep 0.3; assert_eq "...and no process of the check's group is left" "$(ps -axo command | grep -c "[d]eadline-bin/hh-away-hook --check" | tr -d ' ')" 0
+case "$POUT" in *Killed*) bad "the shell reported the killed check: $POUT" ;; *) ok "...with no shell job notice in the output" ;; esac
+# a check that ends normally but leaves a background process on the pipe: the group is cleared at the end
+LNBIN="$T_TMP/leak-bin"; rm -rf "$LNBIN"; mkdir -p "$LNBIN"; cp -R "$DLBIN/." "$LNBIN/"
+assert_eq "(the leaking copy: the line after the inputs matches once)" "$(grep -c '^allow=${HH_AWAY_MCP_ALLOW-}$' "$LNBIN/hh-away-hook")" 1
+sed -i.bak 's/^allow=${HH_AWAY_MCP_ALLOW-}$/sleep 7.31 \& allow=${HH_AWAY_MCP_ALLOW-}/' "$LNBIN/hh-away-hook"; rm -f "$LNBIN/hh-away-hook.bak"
+jq -nc --arg d "$proj" '{tool_name:"Bash",cwd:$d,tool_input:{command:"ls"}}' > "$T_TMP/ls.json"
+pipe_run "$LNBIN/hh-away-hook" "$T_TMP/ls.json"
+assert_eq "a normal check that leaves a background process holding the pipe still allows the call" "$RC" 0
+[ "$PTIME" -le 3 ] && ok "...and the pipe reaches end of file at once ($PTIME s)" || bad "end of file after $PTIME s: the leftover held the pipe"
+assert_eq "...and the leftover is killed with its group" "$(strays)" 0
+# a leftover that leaves the group (its own process group, as a job-control shell makes one) is out of the group kill's reach: only the private temp files keep it off Claude Code's pipes
+ESBIN="$T_TMP/escape-bin"; rm -rf "$ESBIN"; mkdir -p "$ESBIN"; cp -R "$DLBIN/." "$ESBIN/"
+assert_eq "(the escaping copy: the line after the inputs matches once)" "$(grep -c '^allow=${HH_AWAY_MCP_ALLOW-}$' "$ESBIN/hh-away-hook")" 1
+sed -i.bak 's/^allow=${HH_AWAY_MCP_ALLOW-}$/( set -m; sleep 4.13 \& ); allow=${HH_AWAY_MCP_ALLOW-}/' "$ESBIN/hh-away-hook"; rm -f "$ESBIN/hh-away-hook.bak"
+pipe_run "$ESBIN/hh-away-hook" "$T_TMP/ls.json"
+assert_eq "a check whose leftover is in a group of its own still allows the call" "$RC" 0
+[ "$PTIME" -le 2 ] && ok "...and the hook's pipes reach end of file at once, the leftover holding only a temp file ($PTIME s)" || bad "end of file after $PTIME s: the leftover held Claude Code's pipe"
+sleep 4.5
 HOOK="$SAVE_HOOK"
 
 echo "-- A14: a write operand that is or holds a protected path (rm, mv, cp, install, ln); A13: the team/ subtree"
