@@ -111,6 +111,35 @@ mkdel Chrome; rm -f "$DF"
 assert_contains "...says Chrome is only turned off for away launches" "$(cat "$T_TMP/hh.err")" "Chrome is only turned off for away launches"
 mkdel Chrome
 
+# ---- a tmux session's own environment cannot hand the grant or the marker down ----
+SESS="hh-$(hh_project_key "$H/app")"
+hh_tmux set-environment -t "=$SESS" HH_AWAY_CHROME 1; hh_tmux set-environment -t "=$SESS" HH_AWAY_BYPASS 1
+assert_contains "(the session environment holds the grant and the marker, as a session that ran tmux setenv would leave it)" "$(hh_tmux show-environment -t "=$SESS" HH_AWAY_CHROME 2>&1)" "HH_AWAY_CHROME=1"
+p=$(sp "$NCP" x1 bypassPermissions "${G[@]}" --); assert_status "a bypass agent spawned without --chrome into that session" $? 0
+sc=$(screen "$p")
+case "$sc" in *"ENV3: HH_AWAY_CHROME=1"*) bad "the session's HH_AWAY_CHROME reached an agent that was not granted Chrome" ;; *) ok "...carries no Chrome grant (it cannot pass --chrome on)" ;; esac
+assert_contains "...and keeps --no-chrome" "$sc" "ARGV: --no-chrome"
+hh_tmux set-environment -t "=$SESS" HH_AWAY_CHROME 1; hh_tmux set-environment -t "=$SESS" HH_AWAY_BYPASS 1
+p=$(sp "$NCP" x2 auto "${M[@]}" --); assert_status "an agent that is not in bypass, spawned into a session holding the marker" $? 0
+sc=$(screen "$p")
+assert_contains "...has no marker" "$sc" "ENV2: HH_AWAY_BYPASS= HH_AWAY_HUB= HH_AWAY_MCP_ALLOW="
+case "$sc" in *"ENV3: HH_AWAY_CHROME=1"*) bad "an agent not in bypass carries the grant" ;; *) ok "...and no grant" ;; esac
+hh_tmux new-session -d -s app 'sleep 600'; hh_tmux set-environment -t "=app" HH_AWAY_CHROME 1; hh_tmux set-environment -t "=app" HH_AWAY_BYPASS 1
+hp=$(hh "$NCH" start app "$t1" --mode auto --still 2 --max-wait 15); assert_status "the hub starts an orchestrator without --chrome into a session holding the grant" $? 0
+sc=$(screen "$hp")
+case "$sc" in *"ENV3: HH_AWAY_CHROME=1"*) bad "the hub's launch took the grant from the session environment" ;; *) ok "...it carries no grant" ;; esac
+hh_tmux kill-pane -t "$hp"; sleep 0.5
+hh_tmux set-environment -t "=app" HH_AWAY_BYPASS 1
+rm -f "$DF"
+hp=$( (cd "$H" && env node "$NCH" "$DB/hh-hub" start app "$t1" --mode auto --still 2 --max-wait 15 2>"$T_TMP/hh.err") ); assert_status "the owner back: the same start" $? 0
+assert_contains "...has no marker though the session held one" "$(screen "$hp")" "ENV2: HH_AWAY_BYPASS= HH_AWAY_HUB= HH_AWAY_MCP_ALLOW="
+hh_tmux kill-pane -t "$hp"; sleep 0.5; mkdel Chrome
+# hh_open_window itself clears the target session's variables, whatever the caller passed
+hh_tmux new-session -d -s oe 'sleep 600'; hh_tmux set-environment -t "=oe" HH_AWAY_CHROME 1; hh_tmux set-environment -t "=oe" HH_AWAY_BYPASS 1
+rm -f "$T_TMP/oe.env"; hh_open_window oe w "$H" "env > $T_TMP/oe.env; sleep 5" >/dev/null; for i in 1 2 3 4 5 6 7 8; do [ -s "$T_TMP/oe.env" ] && break; sleep 0.5; done
+assert_eq "a window opened in a session that holds the grant and the marker: neither reaches it" "$(grep -c '^HH_AWAY_CHROME=1\|^HH_AWAY_BYPASS=1' "$T_TMP/oe.env")" "0"
+HH_BP_ENVS=(); hh_away_envs_complete; assert_eq "every away variable is passed, empty, when none is set" "${HH_BP_ENVS[*]-}" "-e HH_AWAY_BYPASS= -e HH_AWAY_HUB= -e HH_AWAY_MCP_ALLOW= -e HH_AWAY_CHROME="
+HH_BP_ENVS=(-e HH_AWAY_BYPASS=1 -e HH_AWAY_CHROME=1); hh_away_envs_complete; assert_eq "...and one that is set keeps its value" "${HH_BP_ENVS[*]-}" "-e HH_AWAY_BYPASS=1 -e HH_AWAY_CHROME=1 -e HH_AWAY_HUB= -e HH_AWAY_MCP_ALLOW="
 # ---- the hub's own start never has it ----
 (cd "$H" && "$DB/hh-hub" away-args) > "$T_TMP/aa.out" 2>&1
 case "$(cat "$T_TMP/aa.out")" in *HH_AWAY_CHROME*) bad "the hub's own start carries the Chrome grant" ;; *) ok "the hub's own start (away-args) carries no grant" ;; esac

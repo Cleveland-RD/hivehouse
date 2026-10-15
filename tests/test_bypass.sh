@@ -194,6 +194,11 @@ sc=$(screen "$wp")
 assert_contains "...resumes its own conversation" "$sc" "ARGV: --resume"
 assert_contains "...in bypass" "$sc" "ARGV: bypassPermissions"
 assert_contains "...with the marker" "$sc" "ENV2: HH_AWAY_BYPASS=1 HH_AWAY_HUB=$H HH_AWAY_MCP_ALLOW=docs"
+assert_contains "...and --no-chrome" "$sc" "ARGV: --no-chrome"
+# a Chrome grant never comes from the environment: a wake starts without it, whatever CHROME the hub's shell holds
+hh_tmux kill-pane -t "$wp"; sleep 0.5
+wp=$(CHROME=1 hh "$NCH" wake app --mode auto --still 2 --max-wait 15); assert_status "a wake with CHROME=1 in the hub's environment is not a grant (and is not refused for one)" $? 0
+assert_contains "...it keeps --no-chrome" "$(screen "$wp")" "ARGV: --no-chrome"
 # while the owner is away the hub never answers a screen dialog
 hh "$NCH" answer app --choice 1 --seen aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa >/dev/null; assert_status "hh-hub answer while the owner is away" $? 4
 assert_contains "...is refused, the dialog being the owner's" "$(cat "$T_TMP/hh.err")" "owner is away"

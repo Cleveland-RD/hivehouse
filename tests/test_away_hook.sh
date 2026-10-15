@@ -130,6 +130,9 @@ echo "-- the way out of the marker"
 for c in 'claude' 'claude --permission-mode bypassPermissions' '/usr/local/bin/claude -p hi' 'env X=1 claude' 'nohup claude &' 'bash -c "claude"' \
   'tmux new-window claude' 'tmux split-window -h' 'tmux new-session -d' 'tmux respawn-pane -k' 'tmux respawn-window' 'tmux neww' 'tmux -S /x new-window'; do denied "way out: $c" "$c"; done
 for c in 'tmux run-shell "claude x"' 'tmux run x' 'tmux if-shell true x' 'tmux if x' 'tmux display-popup' 'tmux popup' 'tmux pipe-pane x' 'tmux pipep x' 'tmux source-file x' 'tmux source x' 'tmux send-keys -t %0 "hh-push x" Enter' 'tmux send x'; do denied "S2 tmux way out: $c" "$c"; done
+# a session's environment is handed to every window opened in it: setting it from an away session is a way to hand down the marker or the Chrome grant
+for c in 'tmux set-environment HH_AWAY_CHROME 1' 'tmux setenv HH_AWAY_CHROME 1' 'tmux setenv -g HH_AWAY_BYPASS 1' 'tmux -S /tmp/x.sock set-environment -t hh-x HH_AWAY_CHROME 1' 'tmux set-environment -t=a:0 HH_AWAY_BYPASS 1'; do denied "tmux session environment: $c" "$c"; done
+allowed "tmux show-environment is a read" 'tmux show-environment HH_AWAY_CHROME'
 allowed "tmux list-panes" 'tmux list-panes -a'
 allowed "which claude" 'which claude'
 allowed "hh-spawn" 'hh-spawn --agent x --role implementer'
@@ -713,7 +716,7 @@ if hh_delegate_read "$DGF" "$(id -u)" "$NOW" >/dev/null 2>&1; then
   # Chrome: the owner's switch (Chrome in tools=) AND the session's grant (HH_AWAY_CHROME=1 in its launch env) let the Chrome server's tools through
   chook() {  # chook <json> <grant 1|0>: the hook as a marked proj session, with or without the grant in its launch env
     local g=(); [ "$2" != 1 ] || g=(HH_AWAY_CHROME=1)
-    ERR=$(printf '%s' "$1" | env HH_AWAY_BYPASS=1 HH_PROJECT="$proj" HH_AWAY_HUB="$hub" HH_AWAY_MCP_ALLOW="" ${g[@]+"${g[@]}"} "$HOOK" 2>&1 >/dev/null); RC=$?
+    ERR=$(printf '%s' "$1" | env HH_AWAY_BYPASS=1 HH_PROJECT="$proj" HH_AWAY_HUB="$hub" HH_AWAY_MCP_ALLOW="$ALLOW" ${g[@]+"${g[@]}"} "$HOOK" 2>&1 >/dev/null); RC=$?
   }
   cok()  { chook "$2" "$3"; [ "$RC" -eq 0 ] && ok "$1" || bad "$1: exit $RC [$ERR]"; }
   cno()  { chook "$2" "$3"; [ "$RC" -eq 2 ] && [ -n "$ERR" ] && ok "$1" || bad "$1: exit $RC [$ERR]"; }
@@ -724,6 +727,12 @@ if hh_delegate_read "$DGF" "$(id -u)" "$NOW" >/dev/null 2>&1; then
   cno "...the grant opens no other server" "$(mcp mcp__other__navigate)" 1
   cno "...nor a server whose name only begins like Chrome's" "$(mcp mcp__claude-in-chrome-x__navigate)" 1
   cno "...and Chrome opens no extra tool: WebFetch stays refused" "$(tcall WebFetch)" 1
+  ALLOW="claude-in-chrome"; mkdgt "Chrome"
+  cno "mcp= listing the Chrome server does not open it without the grant" "$(mcp mcp__claude-in-chrome__navigate)" 0
+  cok "...with the switch and the grant it passes" "$(mcp mcp__claude-in-chrome__navigate)" 1
+  mkdgt ""; cno "...and with the grant but no switch the list does not open it either" "$(mcp mcp__claude-in-chrome__navigate)" 1
+  ALLOW="mcp__claude-in-chrome__navigate"; cno "...nor does a single-tool entry" "$(mcp mcp__claude-in-chrome__navigate)" 1
+  ALLOW=""; mkdgt "Chrome"
   mkdgt ""; cno "the grant without the owner's switch does not (empty tools=)" "$(mcp mcp__claude-in-chrome__navigate)" 1
   mkdgt "WebFetch"; cno "...nor a tools= list without Chrome" "$(mcp mcp__claude-in-chrome__navigate)" 1
   mkdgt "Chrome" "$hub3"; cno "...nor a file naming another hub" "$(mcp mcp__claude-in-chrome__navigate)" 1
