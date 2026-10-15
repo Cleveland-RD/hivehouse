@@ -60,7 +60,7 @@ USAGE="usage: hh-hub init
        hh-hub continue <project> [--still <s>] [--max-wait <s>]
        hh-hub dialog <project> [<agent>[@<team root>]]
        hh-hub window <project> <agent>[@<team root>] <tokens>   (sets the agent's context window in its team.json record; the hub only)
-       hh-hub away --until <time> [--mcp-allow <list>] [--remote-allow <ssh hosts>] [--tools <list>] [--peers <session names>] [--allow (reserved)]
+       hh-hub away --until <time> [--mcp-allow <list>] [--remote-allow <ssh hosts>] [--tools <list>] [--peers <session names>] [--no-hook] [--allow (reserved)]
        hh-hub back
        hh-hub decide <task id> --reason <one line>      (stdin: the question, a line === ANSWER ===, the answer)
        hh-hub hold <project> [--off]
@@ -1190,8 +1190,9 @@ away)
   # Prints what the owner pastes to turn delegate mode on: the sudo lines that make the root-owned delegate file, and the
   # hub's own start line (marked, in bypass, with only its allowed MCP servers). hivehouse never runs sudo itself, so a changed
   # script cannot take the password, and the owner sees what runs as root. The hub is found from the cwd alone.
-  until=""; allow=""; rhosts=""; rcmds=""; rtools=""; rpeers=""
+  until=""; allow=""; rhosts=""; rcmds=""; rtools=""; rpeers=""; hookv=on
   while [ $# -gt 0 ]; do
+    if [ "$1" = --no-hook ]; then hookv=off; shift; continue; fi
     [ $# -ge 2 ] || hh_die 64 "$USAGE"
     case "$1" in --until) until="$2" ;; --mcp-allow) allow="$2" ;; --remote-allow) rhosts="$2" ;; --tools) rtools="$2" ;; --peers) rpeers="$2" ;; --allow) rcmds="$2" ;; *) hh_die 64 "$USAGE" ;; esac
     shift 2
@@ -1260,7 +1261,7 @@ away)
   echo "# Away until $(epoch_local "$epoch") (at most 7 days). Paste these lines in a terminal: hivehouse never runs sudo, and what runs as root is only this."
   echo "# This file is for $(/usr/bin/id -un) (uid $(/usr/bin/id -u)): one file for each user, so another user on this machine is not away. The uid is written into the lines, so an administrator can paste these lines from another account."
   printf 'sudo mkdir -p -- %q\n' "$dir"
-  printf "printf '%%s\\\\n' %q %q %q %q %q %q %q %q | sudo tee -- %q > /dev/null\n" "$HH_DELEGATE_TAG $HH_DELEGATE_WRITE" "hub=$root" "until=$epoch" "mcp=$allow" "hosts=$rhosts" "allow=$rcmds" "tools=$rtools" "peers=$rpeers" "$file"
+  printf "printf '%%s\\\\n' %q %q %q %q %q %q %q %q %q | sudo tee -- %q > /dev/null\n" "$HH_DELEGATE_TAG $HH_DELEGATE_WRITE" "hub=$root" "until=$epoch" "mcp=$allow" "hosts=$rhosts" "allow=$rcmds" "tools=$rtools" "peers=$rpeers" "hook=$hookv" "$file"
   printf 'sudo chown -- root:%s %q %q %q\n' "$grp" "$base" "$dir" "$file"
   printf 'sudo chmod -- 0755 %q %q\n' "$base" "$dir"
   printf 'sudo chmod -- 0644 %q\n' "$file"
@@ -1297,6 +1298,8 @@ away)
   else echo "# No remote host is used while away: overnight work runs on this machine."; fi
   echo "# Extra tools allowed while away: ${rtools:-none} (Workflow, WebFetch, DesignSync, ArtifactCheck and PushNotification are refused unless listed with --tools; CronCreate and ScheduleWakeup always pass)."
   echo "# Peers the hub and its orchestrators may message while away: ${rpeers:-none} (sessions on other machines that you name; only the hub and a registered orchestrator of one of its projects may send to them, each send is logged in $HH_HUB_DIR/$HH_PEER_LOG, and nothing local may carry their names)."
+  if [ "$hookv" = off ]; then echo "# hook=off: hivehouse's away hook allows every tool call of the away sessions and does not check this user's away sessions; your own guard has to. Launching in bypass, hh-push, hh-remote-sync, hh-cleanup --finish and the hub's screen hook are unchanged."
+  else echo "# hook=on: hivehouse's away hook checks every tool call of the away sessions (--no-hook turns it off)."; fi
   echo "# When you are back, run hh-hub back." ;;
 
 back)

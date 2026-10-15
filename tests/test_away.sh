@@ -71,7 +71,7 @@ assert_contains "...a comment names the user and the uid" "$out" "# This file is
 assert_contains "...and says an administrator can paste the lines from another account" "$out" "an administrator can paste these lines from another account"
 assert_contains "...mode 0644" "$out" 'sudo chmod -- 0644 '
 assert_contains "...the content names this hub" "$out" "hub=$H"
-assert_contains "...and its MCP list (empty here) as the fourth line" "$out" "mcp= hosts= allow= tools= peers= | sudo tee"
+assert_contains "...and its MCP list (empty here) as the fourth line" "$out" "mcp= hosts= allow= tools= peers= hook=on | sudo tee"
 until_epoch=$(printf '%s\n' "$out" | sed -n 's/.*until=\([0-9]*\).*/\1/p' | head -1)
 [ "$until_epoch" -ge $((NOW + 7190)) ] && [ "$until_epoch" -le $((NOW + 7500)) ] && ok "...and the time asked for" || bad "until=$until_epoch is not about +2h"
 assert_contains "...the hub's start line is a tmux line, marked, in bypass, with only its allowed MCP servers" "$out" "tmux -S $HH_TMUX_SOCKET new-session -s hub -c $H -e HH_AWAY_BYPASS=1 -e HH_PROJECT=$H -e HH_AWAY_HUB=$H -e HH_AWAY_MCP_ALLOW='' claude --name hub --permission-mode bypassPermissions --no-chrome --strict-mcp-config --mcp-config $P/away-mcp.json /$T_PLUGIN:hub"
@@ -119,7 +119,7 @@ printf '{"mcpServers":{"docs":{"command":"docs-mcp","args":["--x"]}}}\n' > "$CLA
 out=$(hub away --until +1h --mcp-allow docs,nothere)
 assert_eq "an allowed server's definition is copied into the hub's MCP file" "$(jq -c '.mcpServers | keys' "$P/away-mcp.json")" '["docs"]'
 assert_contains "...one that is not found is said so" "$out" "Not found (not loaded): nothere"
-assert_contains "...and the list is the delegate file's fourth line" "$out" "mcp=docs\\,nothere hosts= allow= tools= peers= | sudo tee"
+assert_contains "...and the list is the delegate file's fourth line" "$out" "mcp=docs\\,nothere hosts= allow= tools= peers= hook=on | sudo tee"
 out=$(hub back); assert_status "back" $? 0
 assert_contains "...prints the line that removes the file" "$out" "sudo rm -f -- "
 assert_contains "......the user's own, under delegate.d" "$out" "/delegate.d/$REALUID"
@@ -135,12 +135,12 @@ out=$(cd "$H" && "$OBIN/hh-hub" away --until +1h); assert_status "away under a s
 t_run_printed "$(printf '%s\n' "$out" | grep -E '^sudo |\| sudo ')"; assert_status "...and each sudo line it printed runs (options before the owner and the mode)" $? 0
 # ---- version 2: --remote-allow and --allow (0.5.1) ----
 DFILE="$OB/delegate.d/$REALUID"
-assert_eq "the plain away writes a version 4 file: tag, hub, until, mcp, empty hosts, allow, tools and peers" "$(sed 's/until=[0-9]*/until=N/; s|^hub=.*|hub=H|' "$DFILE" | tr '\n' ' ')" "$T_DELEGATE_TAG 4 hub=H until=N mcp= hosts= allow= tools= peers= "
+assert_eq "the plain away writes a version 5 file: tag, hub, until, mcp, empty hosts, allow, tools, peers and hook=on" "$(sed 's/until=[0-9]*/until=N/; s|^hub=.*|hub=H|' "$DFILE" | tr '\n' ' ')" "$T_DELEGATE_TAG 5 hub=H until=N mcp= hosts= allow= tools= peers= hook=on "
 assert_contains "...and says no remote host is used" "$out" "No remote host"
 out=$(cd "$H" && "$OBIN/hh-hub" away --until +1h --remote-allow night.example.org,ops@10.0.0.7); assert_status "away with --remote-allow" $? 0
 t_run_printed "$(printf '%s\n' "$out" | grep -E '^sudo |\| sudo ')"; assert_status "...its sudo lines run" $? 0
 assert_eq "...the file holds hosts=, an EMPTY allow= and an EMPTY tools= as lines 5 to 7" "$(sed -n '5,7p' "$DFILE" | tr '\n' ' ')" "hosts=night.example.org,ops@10.0.0.7 allow= tools= "
-assert_eq "...in eight lines, with the tag naming version 4" "$(wc -l < "$DFILE" | tr -d ' ') $(head -1 "$DFILE")" "8 $T_DELEGATE_TAG 4"
+assert_eq "...in nine lines, with the tag naming version 5" "$(wc -l < "$DFILE" | tr -d ' ') $(head -1 "$DFILE")" "9 $T_DELEGATE_TAG 5"
 hh_delegate_read "$DFILE" "$ME" "$NOW" >/dev/null; assert_status "...and the file reads as valid" $? 0
 assert_contains "...the text names the hosts" "$out" "Remote hosts allowed while away: night.example.org,ops@10.0.0.7"
 case "$out" in *"Commands allowed"*) bad "a commands-allowed line is printed though allow= is reserved" ;; *) ok "...and no commands-allowed line (allow= is reserved)" ;; esac
@@ -164,6 +164,21 @@ assert_eq "...with the list exposed" "$HH_DR_PEERS" "far-orchestrator,far-agent"
 assert_contains "...the text names the peers" "$out" "Peers the hub and its orchestrators may message while away: far-orchestrator,far-agent"
 out=$(cd "$H" && "$OBIN/hh-hub" away --until +1h); assert_contains "no --peers: the text says none" "$out" "Peers the hub and its orchestrators may message while away: none"
 t_run_printed "$(printf '%s\n' "$out" | grep -E '^sudo |\| sudo ')"; assert_eq "...and the file's line 8 is an empty peers=" "$(sed -n 8p "$DFILE")" "peers="
+# ---- version 5: --no-hook (0.5.7) ----
+out=$(cd "$H" && "$OBIN/hh-hub" away --until +1h --no-hook); assert_status "away with --no-hook" $? 0
+assert_contains "--no-hook: the tee line ends with hook=off" "$out" "peers= hook=off | sudo tee"
+t_run_printed "$(printf '%s\n' "$out" | grep -E '^sudo |\| sudo ')"; assert_eq "...and the file's line 9 is hook=off" "$(sed -n 9p "$DFILE")" "hook=off"
+hh_delegate_read "$DFILE" "$ME" "$NOW" >/dev/null; assert_status "...which reads as valid" $? 0
+assert_eq "...with the hook off" "$HH_DR_HOOK" "off"
+assert_contains "...and the text says what hook=off means" "$out" "hook=off: hivehouse's away hook allows every tool call of the away sessions and does not check this user's away sessions"
+out=$(cd "$H" && "$OBIN/hh-hub" away --until +1h --no-hook --tools Workflow); assert_status "--no-hook among other options (first)" $? 0
+assert_contains "...keeps the other options" "$out" "tools=Workflow peers= hook=off | sudo tee"
+out=$(cd "$H" && "$OBIN/hh-hub" away --until +1h --tools Workflow --no-hook); assert_status "--no-hook last" $? 0
+assert_contains "...also writes hook=off" "$out" "tools=Workflow peers= hook=off | sudo tee"
+out=$(cd "$H" && "$OBIN/hh-hub" away --until +1h); assert_contains "without --no-hook the tee line says hook=on" "$out" "peers= hook=on | sudo tee"
+assert_contains "...and the text says the hook is on" "$out" "hook=on: hivehouse's away hook checks every tool call"
+t_run_printed "$(printf '%s\n' "$out" | grep -E '^sudo |\| sudo ')"; assert_eq "...and the file's line 9 is hook=on" "$(sed -n 9p "$DFILE")" "hook=on"
+hh_delegate_read "$DFILE" "$ME" "$NOW" >/dev/null; assert_eq "...read as on" "$HH_DR_HOOK" "on"
 for bad_tool in Bash CronCreate workflow "Workflow,Bash" "Workflow,,WebFetch" "Workflow WebFetch" 'a;b' mcp__x; do
   o=$(cd "$H" && "$OBIN/hh-hub" away --until +1h --tools "$bad_tool" 2>"$T_TMP/away.err"); rc=$?
   assert_status "--tools '$bad_tool' is refused" $rc 4

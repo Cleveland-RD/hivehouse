@@ -129,6 +129,32 @@ mk2 "hosts=" "allow="; hh_delegate_read "$F" "$ME" "$NOW" >/dev/null; assert_eq 
 mkf; hh_delegate_read "$F" "$ME" "$NOW" >/dev/null; assert_eq "a v1 file allows no tools" "$HH_DR_TOOLS" ""
 mk2 "hosts=" "allow="; printf 'tools=Workflow\n' >> "$F"; ok_ && bad "a v2 file with a tools= line is valid" || ok "a v2 file with a seventh line (tools=) is invalid"
 
+# ---- version 5: hook=on|off (0.5.7) ----
+mk5() {  # mk5 <hook line> [until]: a version 5 file
+  mkf; printf "$T_DELEGATE_LINE5"'\nhub=/work\nuntil=%s\nmcp=\nhosts=\nallow=\ntools=\npeers=\n%s\n' "${2:-$((NOW + 3600))}" "$1" > "$F"
+}
+mk5 "hook=on"; ok_ && ok "v5 with hook=on is valid" || bad "v5 hook=on is refused: $HH_DELEGATE_WHY"
+assert_eq "...and the hook is on" "$HH_DR_HOOK" "on"
+mk5 "hook=off"; ok_ && ok "v5 with hook=off is valid" || bad "v5 hook=off is refused: $HH_DELEGATE_WHY"
+assert_eq "...and the hook is off" "$HH_DR_HOOK" "off"
+for w in "hook=" "hook=ON" "hook=Off" "hook=yes" "hook=off " "hook=on,off" "hooks=off" "off" ""; do
+  mk5 "$w"; ok_ && bad "line 9 [$w] is valid" || assert_contains "line 9 [$w] makes the file invalid" "$HH_DELEGATE_WHY" "line 9 is not hook=on or hook=off"
+done
+mkf; printf "$T_DELEGATE_LINE5"'\nhub=/work\nuntil=%s\nmcp=\nhosts=\nallow=\ntools=\npeers=\n' "$((NOW + 60))" > "$F"; ok_ && bad "a v5 file with 8 lines is valid" || assert_contains "a v5 file with line 9 missing is invalid" "$HH_DELEGATE_WHY" "line 9"
+mk5 "hook=off"; printf 'extra\n' >> "$F"; ok_ && bad "a v5 file with a 10th line is valid" || assert_contains "a v5 file with a 10th line is invalid" "$HH_DELEGATE_WHY" "more than 9 lines"
+mk5 "hook=off"; printf '\n' >> "$F"; ok_ && bad "a v5 file with a blank 10th line is valid" || ok "a v5 file with a blank 10th line is invalid"
+mk5 "hook=off"; printf 'hook=on\n' >> "$F"; ok_ && bad "a v5 file with two hook lines is valid" || ok "a v5 file with a second hook line is invalid"
+mk5 "hook=off"; sed -i.bak 's/$/\r/' "$F"; rm -f "$F.bak"; ok_ && bad "a v5 file with carriage returns is valid" || ok "a v5 file with carriage returns is invalid"
+mk4 "peers="; printf 'hook=off\n' >> "$F"; ok_ && bad "a v4 file with a hook= line is valid" || ok "a v4 file with a ninth line (hook=off) is invalid"
+mk5 "hook=on"; sed -i.bak '1s/ 5$/ 4/' "$F"; rm -f "$F.bak"; ok_ && bad "a file tagged 4 with a hook= line is valid" || ok "...the tag decides the line count"
+mk5 "hook=off"; sed -i.bak '1s/ 5$/ 6/' "$F"; rm -f "$F.bak"; ok_ && bad "version 6 is valid" || ok "version 6 is not read"
+mk4 "peers="; ok_; assert_eq "a v4 file reads as hook on" "$HH_DR_HOOK" "on"
+mk3 "tools="; ok_; assert_eq "a v3 file reads as hook on" "$HH_DR_HOOK" "on"
+mk2 "hosts=" "allow="; ok_; assert_eq "a v2 file reads as hook on" "$HH_DR_HOOK" "on"
+mkf; ok_; assert_eq "a v1 file reads as hook on" "$HH_DR_HOOK" "on"
+mk5 "hook=off"; ok_; mk5 "hook=zzz"; ok_ || assert_eq "an invalid file leaves no hook value behind" "$HH_DR_HOOK" ""
+assert_eq "HH_DELEGATE_WRITE is 5" "$HH_DELEGATE_WRITE" "5"
+
 # a blank line past the version's count is a line (the content is exactly 4 or 6 lines, a blank one included)
 mkf; printf "$T_DELEGATE_LINE1"'\nhub=/work\nuntil=%s\nmcp=\n\n' "$((NOW + 60))" > "$F"; ok_ && bad "a v1 file with a blank 5th line is valid" || ok "a v1 file with a blank 5th line is refused"
 mk2 "hosts=" "allow="; printf '\n' >> "$F"; ok_ && bad "a v2 file with a blank 7th line is valid" || ok "a v2 file with a blank 7th line is refused"
