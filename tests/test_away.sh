@@ -53,6 +53,7 @@ hub away --until "$((NOW - 60))" >/dev/null 2>&1; assert_status "...in the futur
 hub away --until +8d >/dev/null 2>&1; assert_status "...at most 7 days" $? 4
 hub away --until +1h --mcp-allow 'x;y' >/dev/null 2>&1; assert_status "...an MCP list it can print safely" $? 4
 (cd "$T_TMP" && HH_HUB="$H" hh-hub away --until +1h >/dev/null 2>&1); assert_status "the hub is found from the cwd, never from HH_HUB" $? 2
+printf '{"mcpServers":{"docs":{}}}\n' > "$P/away-mcp.json"   # a file an earlier version wrote (it may hold server secrets)
 out=$(hub away --until +2h 2>"$T_TMP/away.err"); assert_status "away" $? 0
 assert_eq "...$T_PREFIX ran no sudo" "$(cat "$HH_SUDO_LOG")" ""
 assert_eq "...only mkdir, tee, chown and chmod are named after sudo" "$(printf '%s\n' "$out" | grep -o 'sudo [a-z]*' | sort -u | tr '\n' ' ')" "sudo chmod sudo chown sudo mkdir sudo tee "
@@ -74,7 +75,7 @@ assert_contains "...the content names this hub" "$out" "hub=$H"
 assert_contains "...and its MCP list (empty here) as the fourth line" "$out" "mcp= hosts= allow= tools= peers= hook=on | sudo tee"
 until_epoch=$(printf '%s\n' "$out" | sed -n 's/.*until=\([0-9]*\).*/\1/p' | head -1)
 [ "$until_epoch" -ge $((NOW + 7190)) ] && [ "$until_epoch" -le $((NOW + 7500)) ] && ok "...and the time asked for" || bad "until=$until_epoch is not about +2h"
-assert_contains "...the hub's start line is a tmux line, marked, in bypass, and in bypass" "$out" "tmux -S $HH_TMUX_SOCKET new-session -s hub -c $H -e HH_AWAY_BYPASS=1 -e HH_PROJECT=$H -e HH_AWAY_HUB=$H -e HH_AWAY_MCP_ALLOW='' claude --name hub --permission-mode bypassPermissions --no-chrome /$T_PLUGIN:hub"
+assert_contains "...the hub's start line is a tmux line, marked and in bypass" "$out" "tmux -S $HH_TMUX_SOCKET new-session -s hub -c $H -e HH_AWAY_BYPASS=1 -e HH_PROJECT=$H -e HH_AWAY_HUB=$H -e HH_AWAY_MCP_ALLOW='' claude --name hub --permission-mode bypassPermissions --no-chrome /$T_PLUGIN:hub"
 assert_contains "...with the hub's own project and hub folders for the away hook" "$out" "-e HH_PROJECT=$H -e HH_AWAY_HUB=$H"
 case "$out" in *"HH_AWAY_BYPASS=1 HH_PROJECT"*|*"cd $H"*) bad "the marker is set through the shell, or the line changes directory" ;; *) ok "...the marker goes through tmux -e, never through the shell" ;; esac
 case "$(printf '%s\n' "$out" | grep -v '^#')" in *" -A "*|*attach*) bad "the start line can attach to a running hub" ;; *) ok "...and never attaches to a running session" ;; esac
@@ -97,7 +98,7 @@ out2=$(hub away --until +1h)
 case "$out2" in *"one-time warning"*) bad "the bypass warning is asked for once it is accepted" ;; *) ok "...not asked again once it is accepted" ;; esac
 case "$out2" in *"not trusted by Claude Code yet"*) bad "a folder under a trusted one is called untrusted" ;; *) ok "...a folder under a trusted one is trusted" ;; esac
 rm -f "$CLAUDE_CONFIG_DIR/settings.json" "$CLAUDE_CONFIG_DIR/.claude.json"
-[ ! -e "$P/away-mcp.json" ] && ok "...no away-mcp.json is written" || bad "away wrote an away-mcp.json"
+[ ! -e "$P/away-mcp.json" ] && ok "...no away-mcp.json is written, and an earlier version's file is removed" || bad "away wrote an away-mcp.json, or left an earlier version's"
 case "$out" in *--strict-mcp-config*|*--mcp-config*) bad "the start line restricts the MCP servers" ;; *) ok "...and the start line has no strict or mcp-config flag" ;; esac
 assert_contains "...it says every configured server starts, and the hook refuses the rest" "$out" "Every configured server starts"
 assert_contains "...and that claude.ai connector names differ by account" "$out" "claude_ai_image-gen"

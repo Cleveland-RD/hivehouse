@@ -34,7 +34,7 @@ record (model, effort, permission mode, worktree and branch from `team.json`, ro
 orchestrator itself are never respawned. An agent recorded in bypass is refused (exit 4) once away has ended: add
 `--mode <a stricter mode>` (the owner's `permission_mode_local`). `--resume` brings the agent back in its own recorded
 conversation instead of from its handoff, when no live Claude already holds that conversation.
-A respawn uses the tmux server the agent was recorded on (`socket` in `team.json`), whatever server the caller's own `HH_TMUX_SOCKET` names. When the recorded socket is not an absolute path to an existing socket, it says so and uses the caller's server.
+A respawn uses the tmux server the agent was recorded on (`socket` in `team.json`), whatever server the caller's own `HH_TMUX_SOCKET` names. When the record holds no socket, the caller's server is used. When it holds a socket that is not an absolute path to an existing socket, it says so and uses the caller's server.
 
 An agent the orchestrator has ended for good is taken off the team with `hh-spawn --close <agent>`: its record leaves `team.json`, the pane
 registry and the manifest, so nothing lists it as "(not running)" again; its worktree, branch and handoff stay. It is refused while the

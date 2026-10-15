@@ -82,11 +82,14 @@ assert_eq "...and not on the caller's" "$(hh_tmux list-windows -a -F '#{window_n
 assert_eq "...the record still names the recorded server" "$(jq -r '.agents[] | select(.name == "sec") | .socket' "$S/team.json")" "$SOCK2"
 assert_contains "...its pane is told that server" "$(tmux -S "$SOCK2" capture-pane -p -J -S - -t "$np3")" "HH_TMUX_SOCKET=$SOCK2"
 tmux -S "$SOCK2" kill-server 2>/dev/null
-# a recorded socket that is not there (its server is gone), or no absolute path: the caller's server is used, and it is said
+# a recorded socket that is not there (its server is gone), or no absolute path (here a relative path that IS a live socket): the caller's server is used, and it is said
+mkdir -p rel; env -u HIVEHOUSE_HOME tmux -S rel/tmux.sock new-session -d -s relkeep 'sleep 600'
 for bad_sock in "$T_TMP/gone.sock" "rel/tmux.sock"; do
   jq --arg s "$bad_sock" '(.agents[] | select(.name == "rev") | .socket) = $s | (.agents[] | select(.name == "rev") | .pane_pid) = "999999"' "$S/team.json" > "$S/team.json.t" && mv "$S/team.json.t" "$S/team.json"
   hh-spawn --respawn rev --still 2 --max-wait 15 >/dev/null 2>"$T_TMP/respawn4.err"; assert_status "a recorded socket of $bad_sock: respawned on the caller's server" $? 0
   assert_contains "...and says so" "$(cat "$T_TMP/respawn4.err")" "respawning on the caller's tmux server"
   assert_eq "...the record names the caller's server again" "$(jq -r '.agents[] | select(.name == "rev") | .socket' "$S/team.json")" "$HH_TMUX_SOCKET"
 done
+assert_eq "...nothing was opened on the relative-path server" "$(tmux -S rel/tmux.sock list-windows -a -F '#{window_name}' | grep -c '^rev$')" "0"
+tmux -S rel/tmux.sock kill-server 2>/dev/null
 cd /; t_teardown; t_done
