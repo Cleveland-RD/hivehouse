@@ -61,6 +61,7 @@ USAGE="usage: hh-hub init
        hh-hub dialog <project> [<agent>[@<team root>]]
        hh-hub window <project> <agent>[@<team root>] <tokens>   (sets the agent's context window in its team.json record; the hub only)
        hh-hub away --until <time> [--mcp-allow <list>] [--remote-allow <ssh hosts>] [--tools <list>] [--peers <session names>] [--no-hook] [--allow (reserved)]
+       hh-hub away-args                               (the hub's away start, one item per line: env NAME=value, then arg <item>)
        hh-hub back
        hh-hub decide <task id> --reason <one line>      (stdin: the question, a line === ANSWER ===, the answer)
        hh-hub hold <project> [--off]
@@ -144,6 +145,17 @@ hub_chosen_name() {  # hub_chosen_name <hub root>: the name in $HH_HUB_DIR/name,
   [ -e "$1/$HH_HUB_DIR/name" ] && { IFS= read -r n < "$1/$HH_HUB_DIR/name" || true; }
   hh_is_agent_name "$n" || hh_die 4 "$1/$HH_HUB_DIR/name holds no usable name (lower-case letters, digits, '_' and '-'): run hh-hub name <name>"
   printf '%s\n' "$n"
+}
+away_start_line() {  # away_start_line <tmux word> <hub name> <hub root> <mcp allow> <session id or empty>: the hub's away start, from the items away-args prints
+  local kind rest line args=""
+  line="$1 new-session -s $(printf '%q' "$2") -c $(printf '%q' "$3")"
+  while IFS=' ' read -r kind rest; do
+    case "$kind" in
+      env) line="$line -e $(printf '%s=%q' "${rest%%=*}" "${rest#*=}")" ;;
+      arg) args="$args $(printf '%q' "$rest")" ;;
+    esac
+  done < <(hh_away_hub_items "$3" "$2" "$4" "$5" "$PLUGIN")
+  printf '%s claude%s' "$line" "$args"
 }
 LOCK=""
 lock() {  # lock <hub root>: the hub's one lock, around every write of projects.json and tasks.jsonl; released on exit
@@ -371,11 +383,10 @@ launch() {
   HH_BP_ENVS=(); HH_BP_ARGS=()
   lock "$root"
   refuse_pending "$root" "$name"
-  # bypass (MODE, resolved by project_mode): the marker, the hook's variables and only the MCP servers the owner allowed; nothing for any other mode.
-  # The MCP file may hold server secrets, so it is written only once the start is not refused, and removed if the window does not open.
+  # bypass (MODE, resolved by project_mode): the marker and the hook's variables; nothing for any other mode.
   mcpf="$root/$HH_HUB_DIR/panes/$name-mcp.json"
-  if [ "$MODE" = bypassPermissions ]; then mkdir -p "$root/$HH_HUB_DIR/panes"; hh_bypass_launch "$cwd" "$mcpf" || { rm -f "$mcpf"; hh_die 4 "cannot prepare the away MCP file for $name"; }
-  else rm -f "$mcpf"; fi   # an earlier bypass start's file may hold server secrets and is not this launch's
+  rm -f "$mcpf"   # an earlier version wrote an MCP file here, which may hold server secrets
+  if [ "$MODE" = bypassPermissions ]; then hh_bypass_launch "$cwd" || hh_die 4 "cannot prepare the away launch for $name"; fi
   # the measuring statusLine a spawned agent gets (one function, hh_agent_settings), so its window is read, never guessed; the agent's folder is
   # made first (an orchestrator registered under another name than this one measures into the other folder: harmless)
   (HH_PROJECT="$cwd"; export HH_PROJECT; hh_ensure_state && mkdir -p "$cwd/$HH_STATE_DIR/team/$agent") || { rc=$?; rm -f "$mcpf"; exit $rc; }
@@ -1188,7 +1199,7 @@ continue)
 
 away)
   # Prints what the owner pastes to turn delegate mode on: the sudo lines that make the root-owned delegate file, and the
-  # hub's own start line (marked, in bypass, with only its allowed MCP servers). hivehouse never runs sudo itself, so a changed
+  # hub's own start line (marked and in bypass). hivehouse never runs sudo itself, so a changed
   # script cannot take the password, and the owner sees what runs as root. The hub is found from the cwd alone.
   until=""; allow=""; rhosts=""; rcmds=""; rtools=""; rpeers=""; hookv=on
   while [ $# -gt 0 ]; do
@@ -1251,10 +1262,8 @@ away)
   file=$(hh_delegate_path) || hh_die 4 "this user's id cannot be read, so there is no delegate file to name"
   dir=${file%/*}; base=${dir%/*}; grp=root; [ ! -d /System/Library ] || grp=wheel
   hh_is_typed_path "$file" || hh_die 4 "the delegate file's path is not one hivehouse will print into a command: $file"
-  mcp="$root/$HH_HUB_DIR/away-mcp.json"
+  rm -f "$root/$HH_HUB_DIR/away-mcp.json"   # an earlier version wrote one, and it may hold server secrets
   cdir=$(hh_claude_dir); cj=$(hh_claude_json)
-  hh_write_away_mcp "$mcp" "$allow" "$root" || hh_die 1 "cannot write $mcp"
-  missing=$HH_AWAY_MCP_MISSING
   jq -nc --arg s "$(epoch_iso "$now")" --argjson u "$epoch" '{since:$s, until:$u}' > "$root/$HH_HUB_DIR/away.json"
   sid=$(hh_json_get "$root/$HH_HUB_DIR/hub.json" .session_id)
   case "$sid" in ''|*[!${HH_LOWER}${HH_UPPER}${HH_DIGITS}-]*) sid="" ;; esac
@@ -1265,14 +1274,10 @@ away)
   printf 'sudo chown -- root:%s %q %q %q\n' "$grp" "$base" "$dir" "$file"
   printf 'sudo chmod -- 0755 %q %q\n' "$base" "$dir"
   printf 'sudo chmod -- 0644 %q\n' "$file"
-  echo "# Then exit the running hub (so two do not share the folder) and start it in tmux with this line, pasted in a terminal outside tmux: marked, in bypass, with only its allowed MCP servers. The marker and its variables go to tmux with -e, never through the shell."
+  echo "# Then exit the running hub (so two do not share the folder) and start it in tmux with this line, pasted in a terminal outside tmux: marked and in bypass. The marker and its variables go to tmux with -e, never through the shell."
   hub_session_note "$hubn"
   tm=$(tmux_word)
-  if [ -n "$sid" ]; then
-    printf '%s new-session -s %q -c %q -e HH_AWAY_BYPASS=1 -e HH_PROJECT=%q -e HH_AWAY_HUB=%q -e HH_AWAY_MCP_ALLOW=%q claude --permission-mode bypassPermissions --no-chrome --strict-mcp-config --mcp-config %q --resume %q\n' "$tm" "$hubn" "$root" "$root" "$root" "$allow" "$mcp" "$sid"
-  else
-    printf '%s new-session -s %q -c %q -e HH_AWAY_BYPASS=1 -e HH_PROJECT=%q -e HH_AWAY_HUB=%q -e HH_AWAY_MCP_ALLOW=%q claude --name %q --permission-mode bypassPermissions --no-chrome --strict-mcp-config --mcp-config %q /%s:hub\n' "$tm" "$hubn" "$root" "$root" "$root" "$allow" "$hubn" "$mcp" "$PLUGIN"
-  fi
+  printf '%s\n' "$(away_start_line "$tm" "$hubn" "$root" "$allow" "$sid")"
   # what Claude Code asks once, by hand, before the owner leaves: nobody is there to answer it later
   if [ "$(jq -r '.skipDangerousModePermissionPrompt // false' "$cdir/settings.json" 2>/dev/null)" != true ]; then
     echo "# Before leaving: Claude Code shows a one-time warning the first time it runs in bypass mode. Start claude --permission-mode bypassPermissions once and choose 'Yes, I accept' (it then writes skipDangerousModePermissionPrompt to $cdir/settings.json): nobody can answer it while you are away."
@@ -1289,8 +1294,8 @@ away)
     printf '# Before leaving: %q is not trusted by Claude Code yet (it looks for %q in %q). Start claude in %q once and accept the folder-trust dialog: it shows for every untrusted folder.\n' "$t" "$HH_TRUST_KEY" "$cj" "$HH_TRUST_KEY"
   done < <({ printf '%s\n' "$root"; jq -r '.projects[]? | .home, (.repos[]?)' "$root/$HH_HUB_DIR/projects.json" 2>/dev/null; })
   echo "# Away mode needs permission_mode_local set to auto (the hub resolves it); a stricter value keeps its sessions out of bypass."
-  echo "# MCP servers allowed for the hub: ${allow:-none}.${missing:+ Not found (not loaded):$missing.}"
-  echo "# The MCP allowlist also stops browser automation and computer-use (browser checks) unless they are in it: add them with --mcp-allow if the night needs them."
+  echo "# MCP servers the hub may use while away: ${allow:-none}. Every configured server starts (user, project, plugin and claude.ai connectors); with the hook on, a call to any other server is refused."
+  echo "# The list also stops browser automation and computer-use (browser checks) unless they are in it: add them with --mcp-allow if the night needs them. Name a claude.ai connector as Claude Code shows it in tool names; it differs by account (claude_ai_Image_Gen, claude_ai_image-gen), so list the form your account shows, or both."
   echo "# SendMessage is held to the hub and its teams while you are away: sessions on other machines are cut off for the whole away period, except the peers you name with --peers."
   echo "# Nothing runs while the machine is off: after a reboot, start the hub again with the lines above."
   echo "# A message from another session to the hub, while you are away, is information only; to instruct it, type into it (Remote Control, say)."
@@ -1301,6 +1306,18 @@ away)
   if [ "$hookv" = off ]; then echo "# hook=off: after it has read the call and the session's launch variables, hivehouse's away hook allows every tool call of the away sessions and does not check this user's away sessions; your own guard has to. Launching in bypass, hh-push, hh-remote-sync, hh-cleanup --finish and the hub's screen hook are unchanged."
   else echo "# hook=on: hivehouse's away hook checks every tool call of the away sessions (--no-hook turns it off)."; fi
   echo "# When you are back, run hh-hub back." ;;
+
+away-args)
+  # The hub's away start as items, built by the function that builds the start line hh-hub away prints. It reads the owner's delegate file
+  # as it stands now: with none valid for this user and this hub there is nothing to start away.
+  [ $# -eq 0 ] || hh_die 64 "$USAGE"
+  root=$(hub_root_cwd) || exit $?
+  hh_delegate_mine || hh_die 4 "no away start: the owner's delegate file is not valid (${HH_DELEGATE_WHY:-it is absent}); hh-hub away prints how to make it"
+  [ "$HH_DG_HUB" = "$root" ] || hh_die 4 "no away start: the delegate file names another hub ($HH_DG_HUB), not $root"
+  hubn=$(hub_chosen_name "$root") || exit $?
+  sid=$(hh_json_get "$root/$HH_HUB_DIR/hub.json" .session_id)
+  case "$sid" in ''|*[!${HH_LOWER}${HH_UPPER}${HH_DIGITS}-]*) sid="" ;; esac
+  hh_away_hub_items "$root" "$hubn" "$HH_DG_MCP" "$sid" "$PLUGIN" ;;
 
 back)
   [ $# -eq 0 ] || hh_die 64 "$USAGE"

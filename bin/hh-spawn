@@ -186,14 +186,9 @@ if [ "$self" = 1 ]; then
     # no reading of this session: the window this agent's record already holds is kept, as its handoff is
     [ -n "$window" ] || window=$(jq -r --arg a "$agent" '[.agents[]? | select(.name == $a) | .window][0] // empty | select(type == "number" and . > 0)' "$STATE/team.json" 2>/dev/null)
   fi
-  # an orchestrator the hub launched in bypass was given an MCP file beside its pane record: it lives with the team from here. When the
-  # delegate file no longer says so (it expired before this registration) the file may hold server secrets and is removed from the hub's folder.
+  # an earlier version gave a hub-launched orchestrator an MCP file beside its pane record (it may hold server secrets): none is written now, and a stale one is removed
   if hh_delegate_for_project "$ROOT"; then
-    amf="$HH_DG_HUB/$HH_HUB_DIR/panes/$HH_DG_PROJECT-mcp.json"
-    if [ -f "$amf" ]; then
-      { mkdir -p "$STATE/team/$agent" && mv "$amf" "$STATE/team/$agent/away-mcp.json"; } \
-        || { rm -f "$amf"; echo "hh-spawn: could not move the hub's MCP file for $HH_DG_PROJECT into $STATE/team/$agent (removed it); the orchestrator has none" >&2; }
-    fi
+    rm -f "$HH_DG_HUB/$HH_HUB_DIR/panes/$HH_DG_PROJECT-mcp.json"   # an earlier version wrote an MCP file here
   elif [ -n "${HH_AWAY_HUB:-}" ] && [ -d "$HH_AWAY_HUB/$HH_HUB_DIR" ]; then
     amn=$(jq -r --arg h "$HH_AWAY_HUB" --arg r "$ROOT" '.projects[]? | select((.home | if startswith("/") then . else $h + "/" + . end) == $r) | .name' "$HH_AWAY_HUB/$HH_HUB_DIR/projects.json" 2>/dev/null | head -1)
     ! hh_is_agent_name "$amn" || rm -f "$HH_AWAY_HUB/$HH_HUB_DIR/panes/$amn-mcp.json"
@@ -256,10 +251,10 @@ if [ "$resume" = 1 ]; then
   hh_session_transcript "$sid" >/dev/null && ! hh_session_holder "$sid" >/dev/null && resume_id=$sid
 fi
 extra=(); [ -z "$resume_id" ] || extra=(--resume "$resume_id")
-# bypass: the marker and the hook's variables, and only the MCP servers the owner allowed; any other mode gets none of it (and no stale file)
+# bypass: the marker and the hook's variables; any other mode gets none of it
 HH_BP_ENVS=(); HH_BP_ARGS=()
-if [ "$mode" = bypassPermissions ]; then hh_bypass_launch "$ROOT" "$STATE/team/$agent/away-mcp.json" || hh_die 4 "cannot prepare the away MCP file for $agent"
-else rm -f "$STATE/team/$agent/away-mcp.json"; fi
+rm -f "$STATE/team/$agent/away-mcp.json"   # an earlier version wrote an MCP file here, which may hold server secrets
+if [ "$mode" = bypassPermissions ]; then hh_bypass_launch "$ROOT" || hh_die 4 "cannot prepare the away launch for $agent"; fi
 cmd="$(hh_guard_launch)exec $(printf '%q ' claude ${extra[@]+"${extra[@]}"} --name "$project-$agent" --model "$model" --effort "$effort" --permission-mode "$mode" --allowedTools "$ALLOWED" --settings "$settings" ${HH_BP_ARGS[@]+"${HH_BP_ARGS[@]}"})"
 envs=(-e "HH_AGENT=$agent" -e "HH_PROJECT=$ROOT" -e "HIVEHOUSE_HOME=$(hh_home)" ${HH_BP_ENVS[@]+"${HH_BP_ENVS[@]}"})
 [ -n "${HH_TMUX_SOCKET:-}" ] && envs+=(-e "HH_TMUX_SOCKET=$HH_TMUX_SOCKET")

@@ -1219,29 +1219,21 @@ hh_check_mode() {  # hh_check_mode <mode> <who> [<project root>]: exits 4 unless
   case " $HH_PERMISSION_MODES " in *" $mode "*) return 0 ;; esac
   hh_die 4 "unknown permission mode: $mode"
 }
-# What a session started in bypass gets: the marker and the hook's three variables, and only the MCP servers the
-# owner allowed (a file written from the user's .claude.json and the project's .mcp.json, mode 0600), with no Chrome. Never for any other mode.
-HH_BP_ENVS=(); HH_BP_ARGS=(); HH_AWAY_MCP_MISSING=""
-hh_write_away_mcp() {  # hh_write_away_mcp <file> <allow list> <project root>: the servers of the list, found; HH_AWAY_MCP_MISSING names the others. Only "$HH_JQ" writes it (with none, nothing runs and it returns 1)
-  local f="$1" allow="$2" root="$3" cj e srv def
-  hh_jq_resolve
-  cj=$(hh_claude_json); HH_AWAY_MCP_MISSING=""
-  ( umask 077; "$HH_JQ" -n '{mcpServers:{}}' > "$f.tmp$$" ) && mv "$f.tmp$$" "$f" && chmod 600 "$f" || return 1
-  [ -n "$allow" ] || return 0
-  for e in $(printf '%s' "$allow" | tr ',' ' '); do
-    srv=$e; case "$e" in mcp__*__*) srv=${e#mcp__}; srv=${srv%%__*} ;; esac
-    def=$("$HH_JQ" -c --arg s "$srv" --arg r "$root" '(.mcpServers[$s] // .projects[$r].mcpServers[$s]) // empty' "$cj" 2>/dev/null | head -1)
-    [ -n "$def" ] || def=$("$HH_JQ" -c --arg s "$srv" '.mcpServers[$s] // empty' "$root/.mcp.json" 2>/dev/null | head -1)
-    if [ -n "$def" ]; then
-      ( umask 077; "$HH_JQ" --arg s "$srv" --argjson d "$def" '.mcpServers[$s] = $d' "$f" > "$f.tmp$$" ) && mv "$f.tmp$$" "$f" && chmod 600 "$f" || return 1
-    else HH_AWAY_MCP_MISSING="$HH_AWAY_MCP_MISSING $srv"; fi
-  done
-}
-hh_bypass_launch() {  # hh_bypass_launch <project root> <mcp file>: HH_BP_ENVS (tmux -e) and HH_BP_ARGS (claude flags) for a bypass launch; call only after hh_check_mode
+# What a session started in bypass gets: the marker and the hook's three variables, and no Chrome. It starts with every MCP server
+# Claude Code is configured with (user, project, plugin and claude.ai connectors): the hook, when it is on, refuses the ones the owner's
+# mcp= list does not name. Never for any other mode.
+HH_BP_ENVS=(); HH_BP_ARGS=()
+hh_bypass_launch() {  # hh_bypass_launch <project root>: HH_BP_ENVS (tmux -e) and HH_BP_ARGS (claude flags) for a bypass launch; call only after hh_check_mode
   hh_delegate_for_project "$1" || return 1
-  hh_write_away_mcp "$2" "$HH_DG_MCP" "$1" || return 1
   HH_BP_ENVS=(-e "HH_AWAY_BYPASS=1" -e "HH_AWAY_HUB=$HH_DG_HUB" -e "HH_AWAY_MCP_ALLOW=$HH_DG_MCP")
-  HH_BP_ARGS=(--strict-mcp-config --mcp-config "$2" --no-chrome)
+  HH_BP_ARGS=(--no-chrome)
+}
+# The hub's own away start, as items: "env NAME=value" for each launch variable, then "arg <item>" for each claude argument, in order.
+# The one place the start line hh-hub away prints and hh-hub away-args are built from, so the two cannot drift.
+hh_away_hub_items() {  # hh_away_hub_items <hub root> <hub name> <mcp allow list> <session id or empty> <plugin name>
+  printf 'env HH_AWAY_BYPASS=1\nenv HH_PROJECT=%s\nenv HH_AWAY_HUB=%s\nenv HH_AWAY_MCP_ALLOW=%s\n' "$1" "$1" "$3"
+  if [ -n "$4" ]; then printf 'arg --permission-mode\narg bypassPermissions\narg --no-chrome\narg --resume\narg %s\n' "$4"
+  else printf 'arg --name\narg %s\narg --permission-mode\narg bypassPermissions\narg --no-chrome\narg /%s:hub\n' "$2" "$5"; fi
 }
 hh_is_number() { case "$1" in ''|*[!0-9]*) return 1 ;; esac; }   # hh_is_number <value>: digits only
 # A model or an effort as hivehouse passes one to claude: letters, digits, '.', '_', '[', ']' and '-', not starting with '-'.
