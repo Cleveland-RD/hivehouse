@@ -50,6 +50,7 @@ One Claude session in the owner's work folder, the folder above every project, i
   context window in its team.json entry (a name used in two team roots of the project needs the root, as `hh-hub dialog` does) and
   prints it. Only the hub runs it: while the owner is away every marked session but the hub's is refused; with the owner here any
   session may, as with `hh-hub self`.
+- **The hub's away start as items.** `hh-hub away-args` prints what the start line of `hh-hub away` runs, one item per line: `env NAME=value` for each launch variable, then `arg <item>` for each claude argument. It needs a valid delegate file for this user and this hub folder and exits 4 otherwise (format and example in [Away mode](away-mode.md)).
 - **The hub rotates like an orchestrator.** At `rotate_at_percent` (the same level every session uses) the hub updates
   its handoff, `.hivehouse-hub/memory/hub-handoff.md`, and runs `hh-hub rotate`: it waits until its pane is idle, checks
   it is still the recorded pane and process, types `/clear`, then its pickup line. `hh-hub context` shows its level. The

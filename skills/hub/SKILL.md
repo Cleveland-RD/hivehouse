@@ -179,7 +179,7 @@ from a file or an environment variable.
   ArtifactCheck); none is a fine answer. Add `--tools <their choice, comma-separated>` when they pick any. If the owner names sessions on other machines that the hub and its orchestrators may message while away (a remote orchestrator or agent), add `--peers <names, comma-separated>`: only the names they give, never a guess. Unlisted ones stay refused
   while away; CronCreate and ScheduleWakeup always pass. It prints the `sudo` lines that make the delegate
   file, which the owner pastes: hivehouse never runs sudo, and neither do you. It also prints the start line for this hub:
-  marked (`HH_AWAY_BYPASS=1`), in bypass, with only its allowed MCP servers. Tell the owner to exit this session and start
+  marked (`HH_AWAY_BYPASS=1`), in bypass. Tell the owner to exit this session and start
   the hub with it. A refusal is not an error to work round. `hh-hub away` checks the hub's records, each project home and
   each worktree team root first, and when one would be refused it prints no `sudo` line: it prints the reasons and, for
   a path the owner owns that the group or others can write, a `chmod -- go-w <path>` line (no sudo).

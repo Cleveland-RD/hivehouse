@@ -20,9 +20,9 @@
   `holds/<project>`.
 - `/Library/Application Support/hivehouse/delegate.d/<uid>` (macOS) or `/etc/hivehouse/delegate.d/<uid>` (Linux): the
   user's own root-owned delegate file, one for each user and the only record that gates bypass; hivehouse never writes it.
-- Files that may hold MCP server secrets, each mode 0600 and removed or replaced by the next start:
-  `.hivehouse/team/<agent>/away-mcp.json` (an agent started in bypass), `.hivehouse-hub/away-mcp.json` (the hub's) and
-  `.hivehouse-hub/panes/<project>-mcp.json` (an orchestrator the hub started, until it registers).
+- No MCP config is written for away sessions. Earlier versions wrote `.hivehouse/team/<agent>/away-mcp.json`,
+  `.hivehouse-hub/away-mcp.json` and `.hivehouse-hub/panes/<project>-mcp.json` (they may hold server secrets); the next
+  start, registration or `hh-hub away` removes a stale one.
 
 ## After a restart
 
