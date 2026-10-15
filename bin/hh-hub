@@ -54,13 +54,13 @@ USAGE="usage: hh-hub init
        hh-hub log <task id> <event> [--note <text>]    events: $HUB_EVENTS
        hh-hub tasks [<project>] [--open] [--json]
        hh-hub wake <project> [--mode <m>] [--still <s>] [--max-wait <s>]
-       hh-hub start <project> <task id> [--overnight] [--model <m>] [--mode <m>] [--still <s>] [--max-wait <s>]
+       hh-hub start <project> <task id> [--overnight] [--chrome] [--model <m>] [--mode <m>] [--still <s>] [--max-wait <s>]
        hh-hub run <project> overnight <task id> [--still <s>] [--max-wait <s>]
        hh-hub run <project> cleanup <task id> [--disk] [--still <s>] [--max-wait <s>]
        hh-hub continue <project> [--still <s>] [--max-wait <s>]
        hh-hub dialog <project> [<agent>[@<team root>]]
        hh-hub window <project> <agent>[@<team root>] <tokens>   (sets the agent's context window in its team.json record; the hub only)
-       hh-hub away --until <time> [--mcp-allow <list>] [--remote-allow <ssh hosts>] [--tools <list>] [--peers <session names>] [--no-hook] [--allow (reserved)]
+       hh-hub away --until <time> [--mcp-allow <list>] [--remote-allow <ssh hosts>] [--tools <list>] [--chrome] [--peers <session names>] [--no-hook] [--allow (reserved)]
        hh-hub away-args                               (the hub's away start, one item per line: env NAME=value, then arg <item>)
        hh-hub back
        hh-hub decide <task id> --reason <one line>      (stdin: the question, a line === ANSWER ===, the answer)
@@ -386,7 +386,7 @@ launch() {
   # bypass (MODE, resolved by project_mode): the marker and the hook's variables; nothing for any other mode.
   mcpf="$root/$HH_HUB_DIR/panes/$name-mcp.json"
   rm -f "$mcpf"   # an earlier version wrote an MCP file here, which may hold server secrets
-  if [ "$MODE" = bypassPermissions ]; then hh_bypass_launch "$cwd" || hh_die 4 "cannot prepare the away launch for $name"; fi
+  if [ "$MODE" = bypassPermissions ]; then hh_bypass_launch "$cwd" "${CHROME:-0}" || hh_die 4 "cannot prepare the away launch for $name${HH_DELEGATE_WHY:+: $HH_DELEGATE_WHY}"; fi
   # the measuring statusLine a spawned agent gets (one function, hh_agent_settings), so its window is read, never guessed; the agent's folder is
   # made first (an orchestrator registered under another name than this one measures into the other folder: harmless)
   (HH_PROJECT="$cwd"; export HH_PROJECT; hh_ensure_state && mkdir -p "$cwd/$HH_STATE_DIR/team/$agent") || { rc=$?; rm -f "$mcpf"; exit $rc; }
@@ -1017,8 +1017,8 @@ wake)
 start)
   [ $# -gt 0 ] || { hub_start; exit $?; }
   name="${1:-}"; id="${2:-}"; [ -n "$name" ] && [ -n "$id" ] || hh_die 64 "$USAGE"; shift 2
-  overnight=0; sargs=()
-  for a in "$@"; do if [ "$a" = --overnight ]; then overnight=1; else sargs+=("$a"); fi; done
+  overnight=0; sargs=(); CHROME=0
+  for a in "$@"; do if [ "$a" = --overnight ]; then overnight=1; elif [ "$a" = --chrome ]; then CHROME=1; else sargs+=("$a"); fi; done
   start_opts 1 ${sargs[@]+"${sargs[@]}"}
   root=$(hub_root) || exit $?
   need_project "$root" "$name"
@@ -1035,6 +1035,8 @@ start)
   tf="$root/$HH_HUB_DIR/tasks/$id.md"
   hh_is_typed_path "$tf" || hh_die 4 "the task's path is not one hivehouse will type: $tf"
   project_mode "$HOME_DIR"
+  # Chrome is granted down only by the hub (project_mode has just proven the caller is the recorded, marked hub) in an away launch, with the owner's switch on
+  [ "$CHROME" = 0 ] || [ "$MODE" = bypassPermissions ] || hh_die 4 "Chrome is only turned off for away launches: --chrome is for the hub's start while the owner is away"
   args=(--name "$name-orchestrator"); [ -z "$MODEL" ] || args+=(--model "$MODEL"); [ -z "$MODE" ] || args+=(--permission-mode "$MODE")
   if [ "$overnight" = 1 ]; then sline=$(overnight_line "$id" "$tf" "$hn"); else sline="/$PLUGIN:start Task $id: read $tf. It came from the owner through $hn."; fi
   launch "$root" "$name" start "$HOME_DIR" "$sline" "$id" orchestrator "${args[@]}" ;;
@@ -1201,9 +1203,10 @@ away)
   # Prints what the owner pastes to turn delegate mode on: the sudo lines that make the root-owned delegate file, and the
   # hub's own start line (marked and in bypass). hivehouse never runs sudo itself, so a changed
   # script cannot take the password, and the owner sees what runs as root. The hub is found from the cwd alone.
-  until=""; allow=""; rhosts=""; rcmds=""; rtools=""; rpeers=""; hookv=on
+  until=""; allow=""; rhosts=""; rcmds=""; rtools=""; rpeers=""; hookv=on; rchrome=0
   while [ $# -gt 0 ]; do
     if [ "$1" = --no-hook ]; then hookv=off; shift; continue; fi
+    if [ "$1" = --chrome ]; then rchrome=1; shift; continue; fi
     [ $# -ge 2 ] || hh_die 64 "$USAGE"
     case "$1" in --until) until="$2" ;; --mcp-allow) allow="$2" ;; --remote-allow) rhosts="$2" ;; --tools) rtools="$2" ;; --peers) rpeers="$2" ;; --allow) rcmds="$2" ;; *) hh_die 64 "$USAGE" ;; esac
     shift 2
@@ -1217,6 +1220,8 @@ away)
   hh_delegate_check_list hosts "$rhosts" || hh_die 4 "--remote-allow: $HH_DELEGATE_WHY"
   hh_delegate_check_list allow "$rcmds" || hh_die 4 "--allow: $HH_DELEGATE_WHY"
   hh_delegate_check_list tools "$rtools" || hh_die 4 "--tools: $HH_DELEGATE_WHY"
+  # --chrome is the owner's switch: Chrome joins the tools= list (it names no tool; the hook and the launches read it as the switch)
+  [ "$rchrome" = 0 ] || case ",$rtools," in *,Chrome,*) ;; *) rtools="${rtools:+$rtools,}Chrome" ;; esac
   hh_delegate_check_list peers "$rpeers" || hh_die 4 "--peers: $HH_DELEGATE_WHY"
   now=$(/bin/date +%s)
   case "$until" in
@@ -1302,6 +1307,8 @@ away)
   if [ -n "$rhosts" ]; then echo "# Remote hosts allowed while away: $rhosts (read-only commands over ssh; nothing else reaches them)."
   else echo "# No remote host is used while away: overnight work runs on this machine."; fi
   echo "# Extra tools allowed while away: ${rtools:-none} (Workflow, WebFetch, DesignSync, ArtifactCheck and PushNotification are refused unless listed with --tools; CronCreate and ScheduleWakeup always pass)."
+  case ",$rtools," in *,Chrome,*) echo "# Chrome is on for this away period (--chrome): the hub's own start never has it; the hub passes it to an orchestrator only with hh-hub start <project> <task id> --chrome, and an orchestrator to an agent only with hh-spawn --chrome." ;;
+    *) echo "# Chrome is off for every away session: --chrome turns it on, and it still reaches only the sessions the hub grants it." ;; esac
   echo "# Peers the hub and its orchestrators may message while away: ${rpeers:-none} (sessions on other machines that you name; only the hub and a registered orchestrator of one of its projects may send to them, each send is logged in $HH_HUB_DIR/$HH_PEER_LOG, and nothing local may carry their names)."
   if [ "$hookv" = off ]; then echo "# hook=off: after it has read the call and the session's launch variables, hivehouse's away hook allows every tool call of the away sessions and does not check this user's away sessions; your own guard has to. Launching in bypass, hh-push, hh-remote-sync, hh-cleanup --finish and the hub's screen hook are unchanged."
   else echo "# hook=on: hivehouse's away hook checks every tool call of the away sessions (--no-hook turns it off)."; fi

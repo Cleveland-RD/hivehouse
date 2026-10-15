@@ -8,7 +8,7 @@ set -u
 # found through this folder, never PATH.
 HH_BIN=${0%/*}; [ "$HH_BIN" != "$0" ] || HH_BIN=.
 . "$HH_BIN/hh-lib.sh"
-USAGE="usage: hh-spawn --agent <n> --role <file> --rules <file> --model <m> --effort <e> --mode <m> [--worktree <abs> --branch <b> --base <b>] [--session <s>] [--window <tokens>] [--still <s>] [--max-wait <s>]
+USAGE="usage: hh-spawn --agent <n> --role <file> --rules <file> --model <m> --effort <e> --mode <m> [--chrome] [--worktree <abs> --branch <b> --base <b>] [--session <s>] [--window <tokens>] [--still <s>] [--max-wait <s>]
        hh-spawn --self --agent <n> [--name <orchestrator session name>] [--hub <hub session name> | --no-hub] [--window <tokens>] [--handoff <abs path>]
        hh-spawn --respawn <n> [--mode <a stricter mode>] [--resume] [--still <s>] [--max-wait <s>]
        hh-spawn --close <n>"
@@ -18,13 +18,14 @@ USAGE="usage: hh-spawn --agent <n> --role <file> --rules <file> --model <m> --ef
 ALLOWED='Bash(hh-slot status) Bash(hh-slot release *) Bash(hh-context *) Bash(hh-gate-verify *) Bash(hh-settings resolve *) Bash(hh-disk *)'
 
 agent=""; role=""; rules=""; model=""; effort=""; mode=""; wt=""; branch=""; base=""; session=""; window=""
-handoff=""; close=""; still=5; maxwait=90; self=0; others=0; oname=""; respawn=""; settings=0; wgiven=0; hub=""; nohub=0; resume=0; modeset=0
+handoff=""; close=""; still=5; maxwait=90; self=0; others=0; oname=""; respawn=""; settings=0; wgiven=0; hub=""; nohub=0; resume=0; modeset=0; chrome=0; chromeasked=0
 while [ $# -gt 0 ]; do
-  [ $# -ge 2 ] || [ "$1" = --self ] || [ "$1" = --no-hub ] || [ "$1" = --resume ] || hh_die 64 "$USAGE"
+  [ $# -ge 2 ] || [ "$1" = --self ] || [ "$1" = --no-hub ] || [ "$1" = --resume ] || [ "$1" = --chrome ] || hh_die 64 "$USAGE"
   case "$1" in
     --self) self=1; shift; continue ;;
     --no-hub) nohub=1; shift; continue ;;
     --resume) resume=1; shift; continue ;;
+    --chrome) chrome=1; chromeasked=1; others=1; shift; continue ;;
     --agent) agent="$2" ;; --window) window="$2"; wgiven=1 ;; --name) oname="$2" ;; --respawn) respawn="$2" ;; --close) close="$2" ;; --hub) hub="$2" ;; --handoff) handoff="$2" ;;
     --role) role="$2"; others=1; settings=1 ;; --rules) rules="$2"; others=1; settings=1 ;; --model) model="$2"; others=1; settings=1 ;;
     --effort) effort="$2"; others=1; settings=1 ;; --mode) mode="$2"; modeset=1; others=1 ;; --worktree) wt="$2"; others=1; settings=1 ;;
@@ -70,6 +71,7 @@ fi
 if [ -n "$respawn" ]; then
   [ "$self" = 0 ] && [ "$settings" = 0 ] && [ -z "$agent" ] && [ -z "$oname" ] && [ -z "$hub" ] && [ "$nohub" = 0 ] && [ "$wgiven" = 0 ] && [ -z "$handoff" ] \
     || hh_die 64 "--respawn takes only --still, --max-wait, --resume and a stricter --mode: everything else comes from the agent's record"
+  [ "$chromeasked" = 0 ] || hh_die 64 "--respawn takes no --chrome: Chrome comes back only when this session holds the grant itself"
   hh_is_agent_name "$respawn" || hh_die 4 "bad agent name: $respawn"
   ROOT=$(hh_project_root) || exit $?
   hh_ensure_state || exit $?
@@ -97,6 +99,7 @@ if [ -n "$respawn" ]; then
     new=$(hh_mode_rank "$mode") && old=$(hh_mode_rank "$recmode") && [ "$new" -lt "$old" ] \
       || hh_die 4 "--mode must be a stricter mode than the recorded $recmode (plan, dontAsk, default, acceptEdits, auto, in that order): $mode"
   else mode=$recmode; fi
+  chrome=0; [ "$(rec chrome)" != true ] || chrome=1   # the record is a request, not a grant: it is checked below as a new one is
   handoff=$(rec handoff); agent="$respawn"; model=$(rec model); effort=$(rec effort); wt=$(rec worktree); branch=$(rec branch)
   [ -z "$(rec window)" ] || window=$(rec window)
   role="$ROOT/$HH_STATE_DIR/team/$agent/role.md"; rules="$ROOT/$HH_STATE_DIR/team/$agent/RULES.md"
@@ -263,7 +266,29 @@ extra=(); [ -z "$resume_id" ] || extra=(--resume "$resume_id")
 # bypass: the marker and the hook's variables; any other mode gets none of it
 HH_BP_ENVS=(); HH_BP_ARGS=()
 rm -f "$STATE/team/$agent/away-mcp.json"   # an earlier version wrote an MCP file here, which may hold server secrets
-if [ "$mode" = bypassPermissions ]; then hh_bypass_launch "$ROOT" || hh_die 4 "cannot prepare the away launch for $agent"; fi
+# Chrome: only for an away (bypass) launch, with the owner's switch on (Chrome in tools=) and the grant held by this very session (it carries
+# HH_AWAY_CHROME=1). A request made now that fails is refused; a respawn of an agent recorded with Chrome drops it, and says so (team.json
+# is not protected when the owner turns the hook off, so the record alone grants nothing).
+if [ "$chrome" = 1 ]; then
+  why=""
+  if [ "$mode" != bypassPermissions ]; then why="Chrome is only turned off for away launches"
+  else
+    hh_delegate_for_project "$ROOT" || why="the owner's delegate file is not valid for this project"
+    [ -n "$why" ] || hh_delegate_chrome_on || why="the owner's delegate file does not turn Chrome on (hh-hub away --chrome)"
+    if [ -z "$why" ]; then
+      hh_chrome_caller; case $? in
+        0) ;;
+        2) why="this session's launch environment cannot be read, so its Chrome grant cannot be checked" ;;
+        *) why="this session was not granted Chrome (it carries no HH_AWAY_CHROME=1), so it cannot pass Chrome on" ;;
+      esac
+    fi
+  fi
+  if [ -n "$why" ]; then
+    [ -z "$respawn" ] || [ "$chromeasked" = 1 ] || { echo "$HH_PREFIX: $agent is respawned without Chrome: $why" >&2; chrome=0; why=""; }
+    [ -z "$why" ] || hh_die 4 "$why"
+  fi
+fi
+if [ "$mode" = bypassPermissions ]; then hh_bypass_launch "$ROOT" "$chrome" || hh_die 4 "cannot prepare the away launch for $agent${HH_DELEGATE_WHY:+: $HH_DELEGATE_WHY}"; fi
 cmd="$(hh_guard_launch)exec $(printf '%q ' claude ${extra[@]+"${extra[@]}"} --name "$project-$agent" --model "$model" --effort "$effort" --permission-mode "$mode" --allowedTools "$ALLOWED" --settings "$settings" ${HH_BP_ARGS[@]+"${HH_BP_ARGS[@]}"})"
 envs=(-e "HH_AGENT=$agent" -e "HH_PROJECT=$ROOT" -e "HIVEHOUSE_HOME=$(hh_home)" ${HH_BP_ENVS[@]+"${HH_BP_ENVS[@]}"})
 [ -n "${HH_TMUX_SOCKET:-}" ] && envs+=(-e "HH_TMUX_SOCKET=$HH_TMUX_SOCKET")
@@ -272,8 +297,9 @@ socket=$(hh_tmux display-message -p -t "$pane" '#{socket_path}') || exit $?
 "$HH_BIN/hh-manifest" add tmux socket="$socket" pane="$pane" agent="$agent" >/dev/null || exit $?   # first: what is on the manifest can be cleaned up
 register "$pane" "$socket" || exit $?
 upsert_team "$(jq -nc --arg n "$agent" --arg p "$pane" --arg s "$socket" --arg m "$model" --arg e "$effort" --arg mode "$mode" \
-  --arg wt "$wt" --arg b "$branch" --arg sess "$session" --arg w "$window" --arg pp "$PANE_PID" --arg ps "$PANE_STARTED" --arg hf "$handoff" \
+  --arg wt "$wt" --arg b "$branch" --arg sess "$session" --arg w "$window" --arg pp "$PANE_PID" --arg ps "$PANE_STARTED" --arg hf "$handoff" --argjson ch "$([ "$chrome" = 1 ] && echo true || echo false)" \
   '{name:$n, pane:$p, socket:$s, model:$m, effort:$e, mode:$mode, worktree:$wt, branch:$b, session:$sess, pane_pid:$pp, pane_started:$ps}
+   + (if $ch then {chrome:true} else {} end)
    + (if $w != "" then {window:($w | tonumber)} else {} end)
    + (if $hf != "" then {handoff:$hf} else {} end)')"
 

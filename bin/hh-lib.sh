@@ -13,7 +13,7 @@ HH_LINUX_BASE='/etc/hivehouse'            # the delegate files' folder on Linux
 HH_LINUX_SLOT='/var/lib/hivehouse/slot'   # the machine slot on Linux
 HH_DELEGATE_TAG='hivehouse-delegate'  # the delegate file's first word; the first line is the tag, a space and a version
 HH_DELEGATE_VERSIONS=' 1 2 3 4 5 '    # the versions hh_delegate_read accepts (1: hub, until, mcp; 2: adds hosts and allow; 3: adds tools; 4: adds peers; 5: adds hook=on|off)
-HH_DELEGATE_TOOLS=' Workflow WebFetch DesignSync ArtifactCheck PushNotification '   # the only extra tools an away session may be given (tools=)
+HH_DELEGATE_TOOLS=' Workflow WebFetch DesignSync ArtifactCheck PushNotification Chrome '   # the only extra tools an away session may be given (tools=); Chrome names no tool, it is the owner's switch for browser access
 HH_DELEGATE_WRITE=5                   # the version hh-hub away writes
 HH_PEER_LOG='peers.jsonl'             # the hub's audit log of messages sent to a listed peer, in its $HH_HUB_DIR
 HH_CUSTOM_DIR='custom'                    # the user's overrides of the plugin's roles, rules and brief template: under a project's state folder and under the per-user home
@@ -163,8 +163,8 @@ hh_pane_key() {  # hh_pane_key <socket> <pane id> -> filename-safe key
   printf '%s' "$1|$2" | shasum | cut -c1-16
 }
 hh_tmux() { if [ -n "${HH_TMUX_SOCKET:-}" ]; then tmux -S "$HH_TMUX_SOCKET" "$@"; else tmux "$@"; fi; }
-HH_AWAY_VARS="HH_AWAY_BYPASS HH_AWAY_HUB HH_AWAY_MCP_ALLOW"
-hh_tmux_unmarked() { if [ -n "${HH_TMUX_SOCKET:-}" ]; then /usr/bin/env -u HH_AWAY_BYPASS -u HH_AWAY_HUB -u HH_AWAY_MCP_ALLOW tmux -S "$HH_TMUX_SOCKET" "$@"; else /usr/bin/env -u HH_AWAY_BYPASS -u HH_AWAY_HUB -u HH_AWAY_MCP_ALLOW tmux "$@"; fi; }   # a tmux call whose client environment (copied into a new server) lacks the away variables
+HH_AWAY_VARS="HH_AWAY_BYPASS HH_AWAY_HUB HH_AWAY_MCP_ALLOW HH_AWAY_CHROME"
+hh_tmux_unmarked() { if [ -n "${HH_TMUX_SOCKET:-}" ]; then /usr/bin/env -u HH_AWAY_BYPASS -u HH_AWAY_HUB -u HH_AWAY_MCP_ALLOW -u HH_AWAY_CHROME tmux -S "$HH_TMUX_SOCKET" "$@"; else /usr/bin/env -u HH_AWAY_BYPASS -u HH_AWAY_HUB -u HH_AWAY_MCP_ALLOW -u HH_AWAY_CHROME tmux "$@"; fi; }   # a tmux call whose client environment (copied into a new server) lacks the away variables
 # hh_tmux_on <socket, or empty for hivehouse's own server> <tmux args>...: the one way to reach a session's pane on the server
 # it was recorded on (team.json .socket), which is not always hivehouse's own
 hh_tmux_on() { local s="$1"; shift; if [ -n "$s" ]; then tmux -S "$s" "$@"; else hh_tmux "$@"; fi; }
@@ -1223,10 +1223,22 @@ hh_check_mode() {  # hh_check_mode <mode> <who> [<project root>]: exits 4 unless
 # Claude Code is configured with (user, project, plugin and claude.ai connectors): the hook, when it is on, refuses the ones the owner's
 # mcp= list does not name. Never for any other mode.
 HH_BP_ENVS=(); HH_BP_ARGS=()
-hh_bypass_launch() {  # hh_bypass_launch <project root>: HH_BP_ENVS (tmux -e) and HH_BP_ARGS (claude flags) for a bypass launch; call only after hh_check_mode
+# Chrome: off for every away launch (--no-chrome) unless the owner turned it on (Chrome in the delegate file's tools=) AND a session that holds the
+# grant passes it down (hh-hub start --chrome by the hub, hh-spawn --chrome by a session that carries HH_AWAY_CHROME=1). A granted launch gets
+# HH_AWAY_CHROME=1 in its launch environment and no --no-chrome. The hub's own start never has it.
+hh_delegate_chrome_on() { case ",$HH_DG_TOOLS," in *,Chrome,*) return 0 ;; esac; return 1; }   # after hh_delegate_for_project: the owner's switch
+hh_chrome_caller() {  # 0 the caller's Claude carries the Chrome grant (HH_AWAY_CHROME=1); 1 it does not (or no Claude); 2 its environment cannot be read
+  local pid; pid=$(hh_claude_ancestor) || return 1
+  hh_env_has "$pid" HH_AWAY_CHROME=1
+}
+hh_bypass_launch() {  # hh_bypass_launch <project root> [chrome: 1 grants it]: HH_BP_ENVS (tmux -e) and HH_BP_ARGS (claude flags) for a bypass launch; call only after hh_check_mode
   hh_delegate_for_project "$1" || return 1
   HH_BP_ENVS=(-e "HH_AWAY_BYPASS=1" -e "HH_AWAY_HUB=$HH_DG_HUB" -e "HH_AWAY_MCP_ALLOW=$HH_DG_MCP")
   HH_BP_ARGS=(--no-chrome)
+  if [ "${2:-0}" = 1 ]; then
+    hh_delegate_chrome_on || { HH_DELEGATE_WHY="the owner's delegate file does not turn Chrome on (hh-hub away --chrome)"; return 1; }
+    HH_BP_ENVS+=(-e "HH_AWAY_CHROME=1"); HH_BP_ARGS=()
+  fi
 }
 # The hub's own away start, as items: "env NAME=value" for each launch variable, then "arg <item>" for each claude argument, in order.
 # The one place the start line hh-hub away prints and hh-hub away-args are built from, so the two cannot drift.

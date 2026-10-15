@@ -389,6 +389,12 @@ allow=${HH_AWAY_MCP_ALLOW-}
 
 mcp_check() {
   local e es
+  # Chrome's tools pass when the owner turned Chrome on (Chrome in the root-owned delegate file's tools=) and this session was granted it (HH_AWAY_CHROME=1 in its launch env)
+  case "$tool" in mcp__claude-in-chrome__*)
+    if [ "${HH_AWAY_CHROME-}" = 1 ] && hh_delegate_mine && [ "$HH_DG_HUB" = "$HUB" ]; then
+      case ",$HH_DG_TOOLS," in *,Chrome,*) return 0 ;; esac
+    fi ;;
+  esac
   IFS=, read -ra es <<< "$allow"
   for e in ${es[@]+"${es[@]}"}; do
     e=${e// /}; [ -n "$e" ] || continue
