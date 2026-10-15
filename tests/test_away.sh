@@ -123,6 +123,24 @@ out=$(hub away --until +1h --mcp-allow docs,nothere)
 case "$out" in *"Not found"*) bad "away reports names as missing" ;; *) ok "...and no name is reported as missing" ;; esac
 assert_contains "...the list is said as the hub's own" "$out" "MCP servers the hub may use while away: docs,nothere"
 assert_contains "...and the list is the delegate file's fourth line" "$out" "mcp=docs\\,nothere hosts= allow= tools= peers= hook=on | sudo tee"
+# ---- --chrome: the owner's switch is Chrome in tools= (no new delegate line) ----
+hh_delegate_check_list tools "Chrome"; assert_status "Chrome is an accepted tools= value" $? 0
+hh_delegate_check_list tools "chrome" >/dev/null; assert_status "...spelled exactly (chrome is not)" $? 1
+outc=$(hub away --until +1h --chrome); assert_status "away --chrome" $? 0
+assert_contains "...writes Chrome as the tools= list" "$outc" "tools=Chrome peers= hook=on | sudo tee"
+assert_eq "...in the same 9 lines of a version 5 file (no new line for Chrome)" "$(printf '%s\n' "$outc" | grep -o "printf '%s.n' [^|]*" | grep -o ' hivehouse-delegate\\ [0-9]\| hub=\| until=\| mcp=\| hosts=\| allow=\| tools=\| peers=\| hook=' | wc -l | tr -d ' ')" "9"
+assert_contains "...and says Chrome is on, never for the hub's own start" "$outc" "Chrome is on for this away period"
+outc=$(hub away --chrome --until +1h --tools WebFetch); assert_contains "--chrome before the other options, with --tools: appended to the list" "$outc" "tools=WebFetch\\,Chrome peers="
+outc=$(hub away --until +1h --tools Chrome,WebFetch --chrome); assert_contains "...Chrome named twice is written once" "$outc" "tools=Chrome\\,WebFetch peers="
+outc=$(hub away --until +1h --tools WebFetch)
+case "$outc" in *"Chrome\\"*|*",Chrome"*|*"tools=Chrome"*) bad "without --chrome the tools= line holds Chrome" ;; *) ok "without --chrome the list has no Chrome" ;; esac
+assert_contains "...and the output says Chrome is off" "$outc" "Chrome is off for every away session"
+hub away --until +1h --chrome x >/dev/null 2>&1; assert_status "--chrome takes no value" $? 64
+case "$out" in *HH_AWAY_CHROME*) bad "the hub's own start line carries the Chrome grant" ;; *) ok "the hub's own start line never carries the grant" ;; esac
+case "$outc" in *"--no-chrome"*) ok "...and keeps --no-chrome" ;; *) bad "the hub's start line lost --no-chrome" ;; esac
+outc=$(hub away --until +1h --chrome); case "$outc" in *HH_AWAY_CHROME*) bad "away --chrome gives the hub's own start the grant" ;; *) ok "...also with --chrome" ;; esac
+assert_contains "......it still has --no-chrome" "$outc" "--no-chrome"
+
 # ---- away-args: the same start, as items ----
 printf 'lead\n' > "$P/name"; mkdel "$H" "" "docs"
 aa=$(dhub away-args); assert_status "away-args with a valid delegate file" $? 0

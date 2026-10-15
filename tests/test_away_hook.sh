@@ -710,6 +710,26 @@ if hh_delegate_read "$DGF" "$(id -u)" "$NOW" >/dev/null 2>&1; then
   mkdgt "WebFetch"; chmod 666 "$DGF"; tool_denied "a delegate file anyone can write grants nothing" "$(tcall WebFetch)"
   chmod 644 "$DGF"; mv "$DGF" "$DGF.off"; tool_denied "no delegate file grants nothing" "$(tcall WebFetch)"; mv "$DGF.off" "$DGF"
   tool_allowed "(the file put back grants again)" "$(tcall WebFetch)"
+  # Chrome: the owner's switch (Chrome in tools=) AND the session's grant (HH_AWAY_CHROME=1 in its launch env) let the Chrome server's tools through
+  chook() {  # chook <json> <grant 1|0>: the hook as a marked proj session, with or without the grant in its launch env
+    local g=(); [ "$2" != 1 ] || g=(HH_AWAY_CHROME=1)
+    ERR=$(printf '%s' "$1" | env HH_AWAY_BYPASS=1 HH_PROJECT="$proj" HH_AWAY_HUB="$hub" HH_AWAY_MCP_ALLOW="" ${g[@]+"${g[@]}"} "$HOOK" 2>&1 >/dev/null); RC=$?
+  }
+  cok()  { chook "$2" "$3"; [ "$RC" -eq 0 ] && ok "$1" || bad "$1: exit $RC [$ERR]"; }
+  cno()  { chook "$2" "$3"; [ "$RC" -eq 2 ] && [ -n "$ERR" ] && ok "$1" || bad "$1: exit $RC [$ERR]"; }
+  mkdgt "Chrome"
+  cok "Chrome: the switch and the grant let the Chrome server's tools through" "$(mcp mcp__claude-in-chrome__navigate)" 1
+  cok "...any of its tools" "$(mcp mcp__claude-in-chrome__tabs_context_mcp)" 1
+  cno "...the switch without the grant does not" "$(mcp mcp__claude-in-chrome__navigate)" 0
+  cno "...the grant opens no other server" "$(mcp mcp__other__navigate)" 1
+  cno "...nor a server whose name only begins like Chrome's" "$(mcp mcp__claude-in-chrome-x__navigate)" 1
+  cno "...and Chrome opens no extra tool: WebFetch stays refused" "$(tcall WebFetch)" 1
+  mkdgt ""; cno "the grant without the owner's switch does not (empty tools=)" "$(mcp mcp__claude-in-chrome__navigate)" 1
+  mkdgt "WebFetch"; cno "...nor a tools= list without Chrome" "$(mcp mcp__claude-in-chrome__navigate)" 1
+  mkdgt "Chrome" "$hub3"; cno "...nor a file naming another hub" "$(mcp mcp__claude-in-chrome__navigate)" 1
+  mkdgt "Chrome"; chmod 666 "$DGF"; cno "...nor a delegate file anyone can write" "$(mcp mcp__claude-in-chrome__navigate)" 1; chmod 644 "$DGF"
+  mkdgt "Chrome"; mv "$DGF" "$DGF.off"; cno "...nor no delegate file at all" "$(mcp mcp__claude-in-chrome__navigate)" 1; mv "$DGF.off" "$DGF"
+  mkdgt ""
   HOOK="$SAVE_HOOK"
 else
   hh_delegate_read "$DGF" "$(id -u)" "$NOW" >/dev/null 2>&1; echo "  SKIP the fixture folder is not eligible here: $HH_DELEGATE_WHY"

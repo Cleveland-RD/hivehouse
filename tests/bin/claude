@@ -21,6 +21,7 @@ printf 'ENV: PATH0=%s\n' "${PATH%%:*}"
 printf 'ENV: HH_AGENT=%s HH_PROJECT=%s HIVEHOUSE_HOME=%s HH_TMUX_SOCKET=%s\n' "${HH_AGENT:-}" "${HH_PROJECT:-}" "${HIVEHOUSE_HOME:-}" "${HH_TMUX_SOCKET:-}"
 printf 'UMASK: %s\n' "$(umask)"
 printf 'ENV2: HH_AWAY_BYPASS=%s HH_AWAY_HUB=%s HH_AWAY_MCP_ALLOW=%s\n' "${HH_AWAY_BYPASS:-}" "${HH_AWAY_HUB:-}" "${HH_AWAY_MCP_ALLOW:-}"
+printf 'ENV3: HH_AWAY_CHROME=%s\n' "${HH_AWAY_CHROME:-}"
 [ "${HH_FAKE_CLAUDE:-}" != hubself ] || { HH_FAKE_HUBSELF=1; HH_FAKE_CLAUDE=idle; }   # hubself: idle, as a hub's Claude
 [ -z "${HH_FAKE_HUBSELF:-}" ] || hh-hub self --name hub >/dev/null 2>&1   # a hub's Claude records itself and its pane, whatever it does next
 RULE='────────────────────────────── fake ──'
