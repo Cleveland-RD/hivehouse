@@ -354,6 +354,9 @@ cwd=$(printf '%s' "$input" | "$HH_JQ" -r '.cwd // empty | strings' 2>/dev/null) 
 [ -n "${HH_AWAY_HUB:-}" ] && [ -d "$HH_AWAY_HUB/$HH_HUB_DIR" ] || deny "the hub's folder (HH_AWAY_HUB) is missing or unreadable"
 HUB=$(cd -P "$HH_AWAY_HUB" && pwd -P) || deny "the hub's folder cannot be read"
 PROJ_REAL=$(cd -P "$HH_PROJECT" 2>/dev/null && pwd -P) || PROJ_REAL=""   # a project that cannot be read is no hub: the stricter reading
+# The owner's switch: a valid root-owned delegate file (version 5) for this hub that says hook=off turns every check below off. Anything that
+# fails in the read (no file, invalid, expired, another hub, no root-owned jq) keeps the hook on, and nothing in the environment is consulted.
+if hh_delegate_mine && [ "$HH_DG_HUB" = "$HUB" ] && [ "$HH_DG_HOOK" = off ]; then exit 0; fi
 allow=${HH_AWAY_MCP_ALLOW-}
 
 mcp_check() {

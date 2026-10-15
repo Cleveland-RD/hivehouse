@@ -715,6 +715,35 @@ else
   hh_delegate_read "$DGF" "$(id -u)" "$NOW" >/dev/null 2>&1; echo "  SKIP the fixture folder is not eligible here: $HH_DELEGATE_WHY"
 fi
 
+echo "-- 0.5.7: hook=off in the root-owned delegate file turns the hook off; nothing else can"
+mkdg5() {  # mkdg5 <hook line> [hub dir] [until]: a version 5 delegate file naming this hub (or another)
+  printf "$T_DELEGATE_LINE5"'\nhub=%s\nuntil=%s\nmcp=\nhosts=\nallow=\ntools=\npeers=\n%s\n' "$(cd "${2:-$hub}" && pwd -P)" "${3:-$((NOW + 3600))}" "$1" > "$DGF"; chmod 644 "$DGF"
+}
+mkdg5 "hook=off"
+if hh_delegate_read "$DGF" "$(id -u)" "$NOW" >/dev/null 2>&1; then
+  SAVE_HOOK="$HOOK"; HOOK="$(t_delegate_bin "$DGF")/hh-away-hook"
+  allowed "hook=off: a git push is allowed" "git push origin main"
+  tool_allowed "...a tool outside every allowlist is allowed" "$(tcall WebFetch)"
+  ROLE=hub; allowed "...the hub's own session too" "git push"; ROLE=proj
+  mkdg5 "hook=on"
+  denied "hook=on: the same git push is refused" "git push origin main"
+  tool_denied "...and the same tool" "$(tcall WebFetch)"
+  r=$(printf '%s' "$(tc 'git push')" | HH_AWAY_BYPASS=1 HH_DG_HOOK=off HH_DR_HOOK=off HH_PROJECT="$proj" HH_AWAY_HUB="$hub" HH_AWAY_MCP_ALLOW= "$HOOK" 2>&1 >/dev/null); assert_status "hook=on: HH_DG_HOOK=off and HH_DR_HOOK=off in the environment do not turn it off" $? 2
+  mkdg5 "hook=off" "$hub" "$((NOW - 10))"; denied "an expired hook=off file leaves the hook on" "git push origin main"
+  hub4="$T_TMP/hub4"; mkdir -p "$hub4/$T_HUB"; cp "$hub/$T_HUB/hub.json" "$hub/$T_HUB/projects.json" "$hub4/$T_HUB/"
+  mkdg5 "hook=off" "$hub4"; hh_delegate_read "$DGF" "$(id -u)" "$NOW" >/dev/null 2>&1 && ok "(the other hub's hook=off file reads as valid)" || bad "the other hub's file is not valid: $HH_DELEGATE_WHY"
+  denied "a valid hook=off file naming ANOTHER hub leaves the hook on" "git push origin main"
+  mkdg5 "hook=maybe"; denied "an invalid file (line 9 not on or off) leaves the hook on" "git push origin main"
+  mkdg5 "hook=off"; printf 'extra\n' >> "$DGF"; denied "...a 10th line too" "git push origin main"
+  mkdg5 "hook=off"; chmod 666 "$DGF"; denied "a hook=off file anyone can write leaves the hook on" "git push origin main"
+  chmod 644 "$DGF"; mv "$DGF" "$DGF.off"; denied "no delegate file leaves the hook on" "git push origin main"; mv "$DGF.off" "$DGF"
+  mkdg5 "hook=off"; allowed "(the hook=off file put back allows again)" "git push origin main"
+  HOOK="$SAVE_HOOK"
+else
+  hh_delegate_read "$DGF" "$(id -u)" "$NOW" >/dev/null 2>&1; echo "  SKIP the fixture folder is not eligible here: $HH_DELEGATE_WHY"
+fi
+r=$(printf '%s' "$(tc 'git push')" | HH_AWAY_BYPASS=1 HH_DG_HOOK=off HH_DR_HOOK=off HH_PROJECT="$proj" HH_AWAY_HUB="$hub" HH_AWAY_MCP_ALLOW= "$SAVE_HOOK" 2>&1 >/dev/null); assert_status "the production hook, no root-owned file: the environment cannot turn it off" $? 2
+
 echo "-- A14: a write operand that is or holds a protected path (rm, mv, cp, install, ln); A13: the team/ subtree"
 scr="$proj/scr"; mkdir -p "$scr/sub" "$proj/$T_STATE/team/impl"; : > "$scr/settings.json"; : > "$scr/team.json"; : > "$scr/plain.txt"; : > "$scr/sub/.mcp.json"
 mkdir -p "$T_TMP/anydir" "$T_TMP/src2" "$T_TMP/build"; : > "$T_TMP/src2/a.txt"

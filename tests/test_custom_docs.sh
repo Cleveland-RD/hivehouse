@@ -30,13 +30,19 @@ assert_contains "the pitch: it keeps pushes, deploys and spending for the owner"
 grep -qE '^#+ Customising what away mode allows' "$HH_REPO_ROOT/docs/away-mode.md" && ok "the delegate section has Customising what away mode allows" || bad "the delegate section has Customising what away mode allows"
 away=$(awk '/^#+ Customising what away mode allows/{f=1;next} /^#+ /{f=0} f' "$HH_REPO_ROOT/docs/away-mode.md" | tr '\n' ' ' | sed 's/  */ /g')
 for w in '--remote-allow' '--allow' 'sudo' 'by hand' 'settings'; do assert_contains "Customising what away mode allows mentions $w" "$away" "$w"; done
-assert_contains "the delegate file's version 4 is described" "$RD" "Line 1 is \`$T_DELEGATE_LINE4\`"
+assert_contains "the delegate file's version 4 is described" "$RD" "Line 1 is \`$T_DELEGATE_LINE5\`"
 assert_contains "...with its allowance lines" "$RD" "\`hosts=<list>\`"
 assert_contains "...and the tools line" "$RD" "\`tools=<list>\`"
 assert_contains "...and the peers line" "$RD" "\`peers=<list>\`"
+assert_contains "...and the hook line" "$RD" "\`hook=on\` or \`hook=off\` (line 9"
+assert_contains "...and a version 4 file is still read, with the hook on" "$RD" "version 4 file (0.5.4, the first eight lines) is still read, with the hook on"
+assert_contains "--no-hook is in the switching-on usage line" "$(grep '^\*\*Switching it on and off.\*\*' "$HH_REPO_ROOT/docs/away-mode.md")" "[--no-hook]"
+assert_contains "the docs say what hook=off turns off" "$RD" "makes none of its checks"
+assert_contains "...and what stays" "$RD" "bypass launches still need the valid delegate file"
+assert_contains "...and that the owner's own guard has to check" "$RD" "so the owner's own guard has to"
 assert_contains "the switching-on usage line names --tools" "$(grep '^\*\*Switching it on and off.\*\*' "$HH_REPO_ROOT/docs/away-mode.md")" "[--tools <list>]"
 assert_contains "...and version 1 is still read" "$RD" "is still read, with no hosts"
-assert_contains "...and a file is exactly the lines of its version" "$RD" "exactly the lines of its version (four for version 1, six for version 2, seven for version 3, eight for version 4)"
+assert_contains "...and a file is exactly the lines of its version" "$RD" "exactly the lines of its version (four for version 1, six for version 2, seven for version 3, eight for version 4, nine for version 5, whose line 9 must be exactly \`hook=on\` or \`hook=off\`)"
 assert_eq "...and no longer says the file is exactly four lines" "$(printf '%s' "$RD" | grep -c 'exactly those four lines')" 0
 for w in '`ssh -F none [-T] [-o ConnectTimeout=<digits>] [-o BatchMode=yes] <host> <command>`' 'names from your `~/.ssh/config` are not usable while away' \
          '`git status` and `git diff` are not allowed' 'its first word must be one of a read-only list' '`~/.ssh/` is protected in away sessions' \
