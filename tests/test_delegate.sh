@@ -152,7 +152,7 @@ mk4 "peers="; ok_; assert_eq "a v4 file reads as hook on" "$HH_DR_HOOK" "on"
 mk3 "tools="; ok_; assert_eq "a v3 file reads as hook on" "$HH_DR_HOOK" "on"
 mk2 "hosts=" "allow="; ok_; assert_eq "a v2 file reads as hook on" "$HH_DR_HOOK" "on"
 mkf; ok_; assert_eq "a v1 file reads as hook on" "$HH_DR_HOOK" "on"
-mk5 "hook=off"; ok_; mk5 "hook=zzz"; ok_ || assert_eq "an invalid file leaves no hook value behind" "$HH_DR_HOOK" ""
+mk5 "hook=off"; ok_; mk5 "hook=zzz"; ok_ && bad "(v5 hook=zzz is valid)" || assert_eq "an invalid file leaves no hook value behind" "$HH_DR_HOOK" ""
 assert_eq "HH_DELEGATE_WRITE is 5" "$HH_DELEGATE_WRITE" "5"
 
 # a blank line past the version's count is a line (the content is exactly 4 or 6 lines, a blank one included)
@@ -200,6 +200,26 @@ mine() { hh_delegate_mine; }   # never inside $(...): the point is that it sets 
 mkhub; mine; assert_status "a complete hub of this user's, named by a valid file" $? 0
 assert_eq "...sets the hub, resolved" "$HH_DG_HUB" "$(cd "$HB" && pwd -P)"
 assert_eq "...and when it ends" "$HH_DG_UNTIL" "$((NOW + 3600))"
+mk5hub() {  # mk5hub <hook line>: a version 5 file naming the hub of mkhub
+  printf "$T_DELEGATE_LINE5"'\nhub=%s\nuntil=%s\nmcp=\nhosts=\nallow=\ntools=\npeers=\n%s\n' "$HB" "$((NOW + 3600))" "$1" > "$F"; chmod 644 "$F"
+}
+mkhub; mk5hub "hook=off"; mine; assert_status "a v5 hook=off file for a complete hub is valid" $? 0
+assert_eq "...hh_delegate_mine sets HH_DG_HOOK to off" "$HH_DG_HOOK" "off"
+mkhub; mk5hub "hook=on"; mine; assert_eq "...a hook=on file sets it to on" "$HH_DG_HOOK" "on"
+mkhub; mine; assert_eq "...a v1 file sets it to on" "$HH_DG_HOOK" "on"
+mkhub; mk5hub "hook=off"; mine; mk5hub "hook=zzz"; mine; rc=$?
+assert_status "an invalid file after a hook=off one is refused" $rc 1
+assert_eq "...and leaves no HH_DG_HOOK behind" "$HH_DG_HOOK" ""
+mkhub; mk5hub "hook=off"; mine; rm -f "$F"; mine; rc=$?
+assert_status "an absent file after a hook=off one is refused" $rc 1
+assert_eq "...and leaves no HH_DG_HOOK behind" "$HH_DG_HOOK" ""
+mkhub; mk5hub "hook=off"; mine; hh_real_uid() { echo $((ME + 1)); }; mine; hh_real_uid() { /usr/bin/id -u; }
+assert_eq "...nor does a hub that belongs to another uid" "$HH_DG_HOOK" ""
+mkhub; mk5hub "hook=off"; hh_delegate_for_project "$HP/mine"; assert_eq "hh_delegate_for_project passes the switch on" "$HH_DG_HOOK" "off"
+hh_delegate_for_project "$HP/nowhere"; assert_status "...a folder that is no project is refused" $? 1
+assert_eq "...and clears the switch" "$HH_DG_HOOK" ""
+mkhub; mk5hub "hook=off"; mine; hh_delegate_for_project /usr; assert_eq "...a refused home also clears the switch" "$HH_DG_HOOK" ""
+assert_eq "a value from the environment is gone once hh-lib.sh is sourced" "$(HH_DG_HOOK=off HH_DR_HOOK=off bash -c ". '$HH_REPO_ROOT/bin/hh-lib.sh'; echo \"[\$HH_DG_HOOK][\$HH_DR_HOOK]\"")" "[][]"
 mkhub; mine >/dev/null; mkf "$((NOW - 1))" "hub=$HB"; mine; rc=$?
 assert_status "an expired file is refused" $rc 1
 assert_contains "...for its own reason, seen in this shell" "$HH_DELEGATE_WHY" "the file has expired"

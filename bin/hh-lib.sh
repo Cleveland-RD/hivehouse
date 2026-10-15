@@ -1176,13 +1176,13 @@ hh_claude_trusts() {
 # home is listed in the hub that file names, and the caller's own Claude carries the away marker in its launch environment
 # (hh_away_caller). The owner's own unmarked sessions and a plain shell never get it. Nothing here is read from an argument or a
 # setting the caller can write.
-HH_DG_HUB=""; HH_DG_UNTIL=""; HH_DG_MCP=""; HH_DG_PROJECT=""
+HH_DG_HUB=""; HH_DG_UNTIL=""; HH_DG_MCP=""; HH_DG_PROJECT=""; HH_DG_HOOK=""; HH_DR_HOOK=""   # set here as the library loads, whatever the environment held: the hook switch comes only from the file
 hh_delegate_for_project() {  # hh_delegate_for_project <project root>: 0 when delegate is valid and that root is a listed home or one of its team roots; sets HH_DG_*
   local hub r name home abs t
   HH_DG_PROJECT=""
   hh_delegate_mine || return 1
   hub=$HH_DG_HUB
-  r=$(cd "$1" 2>/dev/null && pwd -P) || { HH_DG_HUB=""; HH_DG_UNTIL=""; HH_DG_MCP=""; return 1; }
+  r=$(cd "$1" 2>/dev/null && pwd -P) || { HH_DG_HUB=""; HH_DG_UNTIL=""; HH_DG_MCP=""; HH_DG_HOOK=""; return 1; }
   while IFS=$'\t' read -r name home; do
     case "$home" in /*) abs=$home ;; *) abs="$hub/$home" ;; esac
     abs=$(cd "$abs" 2>/dev/null && pwd -P) || continue
@@ -1194,7 +1194,7 @@ hh_delegate_for_project() {  # hh_delegate_for_project <project root>: 0 when de
       HH_DG_PROJECT=$name; return 0
     done < <(hh_team_roots "$abs")
   done < <("$HH_JQ" -r '.projects[]? | [.name, .home] | @tsv' "$hub/$HH_HUB_DIR/projects.json" 2>/dev/null)
-  HH_DG_HUB=""; HH_DG_UNTIL=""; HH_DG_MCP=""
+  HH_DG_HUB=""; HH_DG_UNTIL=""; HH_DG_MCP=""; HH_DG_HOOK=""
   return 1
 }
 hh_away_caller() {  # 0 the caller's Claude carries the away marker; 1 it does not (or there is no Claude: a plain shell); 2 its environment cannot be read
