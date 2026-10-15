@@ -73,13 +73,11 @@ sp0() { local who=$1 a=$2 m=$3; shift 3; HH_PROJECT="$H/app" env node "$who" "$D
 p=$(sp "$NCP" b1 bypassPermissions); assert_status "hh-spawn in bypass, for a marked caller, while away" $? 0
 sc=$(screen "$p")
 assert_contains "...the agent runs in bypass" "$sc" "ARGV: bypassPermissions"
-assert_contains "...with only the MCP file the owner's list allows" "$sc" "ARGV: --strict-mcp-config"
-assert_contains "......its file" "$sc" "ARGV: $H/app/$T_STATE/team/b1/away-mcp.json"
+case "$sc" in *--strict-mcp-config*|*--mcp-config*) bad "an away launch restricts the MCP servers (claude.ai connectors would drop)" ;; *) ok "...with every configured MCP server: no strict or mcp-config flag" ;; esac
 assert_contains "...and no Chrome" "$sc" "ARGV: --no-chrome"
 assert_contains "...the marker and the hook's variables, in its launch environment" "$sc" "ENV2: HH_AWAY_BYPASS=1 HH_AWAY_HUB=$H HH_AWAY_MCP_ALLOW=docs"
 assert_contains "...its project" "$sc" "HH_PROJECT=$H/app"
-assert_eq "...the MCP file holds the allowed server and not the other" "$(jq -c '.mcpServers | keys' "$H/app/$T_STATE/team/b1/away-mcp.json")" '["docs"]'
-assert_eq "...at mode 0600" "$(stat -f '%Lp' "$H/app/$T_STATE/team/b1/away-mcp.json" 2>/dev/null || stat -c '%a' "$H/app/$T_STATE/team/b1/away-mcp.json")" "600"
+[ ! -e "$H/app/$T_STATE/team/b1/away-mcp.json" ] && ok "...and no away-mcp.json is written" || bad "an away-mcp.json was written for a bypass agent"
 sp "$NCP" b2 bypassPermissions >/dev/null 2>&1; true
 sp0 "$NCP" b3 bypassPermissions >/dev/null; assert_status "...an unmarked Claude is refused" $? 4
 assert_contains "......says why" "$(cat "$T_TMP/sp.err")" "away marker"
@@ -106,10 +104,11 @@ assert_contains "...with no marker and no hook variables" "$sc" "ENV2: HH_AWAY_B
 hh_tmux set-environment -g HH_AWAY_BYPASS 1; hh_tmux set-environment -g HH_AWAY_HUB "$H"; hh_tmux set-environment -g HH_AWAY_MCP_ALLOW docs
 p=$(sp0 "$NCP" g1 auto); assert_contains "a server that already holds the away variables: an agent opened on it still has none" "$(screen "$p")" "ENV2: HH_AWAY_BYPASS= HH_AWAY_HUB= HH_AWAY_MCP_ALLOW="
 assert_eq "...and the server's global environment is cleaned" "$(hh_tmux show-environment -g 2>/dev/null | grep -c '^HH_AWAY_')" "0"
-case "$sc" in *--strict-mcp-config*|*--no-chrome*) bad "a session not in bypass got the away MCP flags" ;; *) ok "...and no away MCP flags" ;; esac
+case "$sc" in *--strict-mcp-config*|*--mcp-config*|*--no-chrome*) bad "a session not in bypass got the away flags" ;; *) ok "...and no away flags" ;; esac
 [ ! -e "$H/app/$T_STATE/team/a1/away-mcp.json" ] && ok "...and no MCP file" || bad "a session not in bypass has an MCP file"
 # a respawn: out of bypass when the owner is back, the same bypass while away
 hh_tmux kill-pane -t "$(jq -r '.agents[] | select(.name=="b1") | .pane' "$H/app/$T_STATE/team.json")"; sleep 0.5
+printf '{"mcpServers":{}}\n' > "$H/app/$T_STATE/team/b1/away-mcp.json"   # a file an earlier version wrote
 mkdel "$((NOW - 10))"
 HH_PROJECT="$H/app" "${M[@]}" node "$NCP" "$DB/hh-spawn" --respawn b1 --still 2 --max-wait 15 >/dev/null 2>"$T_TMP/sp.err"; assert_status "respawning a bypass agent after away has ended is refused" $? 4
 rp=$(HH_PROJECT="$H/app" "${M[@]}" node "$NCP" "$DB/hh-spawn" --respawn b1 --mode auto --still 2 --max-wait 15 2>/dev/null); assert_status "...unless it comes back in a stricter mode" $? 0
@@ -120,11 +119,11 @@ mkdel
 p=$(sp "$NCP" c1 bypassPermissions); hh_tmux kill-pane -t "$p"; sleep 0.5
 rp=$(HH_PROJECT="$H/app" "${M[@]}" node "$NCP" "$DB/hh-spawn" --respawn c1 --still 2 --max-wait 15 2>/dev/null); assert_status "respawning a bypass agent while the owner is away" $? 0
 assert_contains "...carries the marker again" "$(screen "$rp")" "ENV2: HH_AWAY_BYPASS=1 HH_AWAY_HUB=$H HH_AWAY_MCP_ALLOW=docs"
-# a hub-launched orchestrator's MCP file moves under the team when it registers
+# an MCP file an earlier version left for a hub-launched orchestrator is removed when it registers, not moved into the team
 mkdir -p "$P/panes"; printf '{"mcpServers":{"docs":{}}}\n' > "$P/panes/app-mcp.json"; chmod 600 "$P/panes/app-mcp.json"
 kp=$(hh_tmux list-panes -t keep -F '#{pane_id}' | head -1)
 TMUX_PANE="$kp" HH_PROJECT="$H/app" "${M[@]}" node "$NCP" "$DB/hh-spawn" --self --agent orchestrator >/dev/null 2>"$T_TMP/sp.err"; assert_status "an orchestrator registering with --self" $? 0
-[ -f "$H/app/$T_STATE/team/orchestrator/away-mcp.json" ] && [ ! -e "$P/panes/app-mcp.json" ] && ok "...takes the MCP file the hub gave it into its team folder" || bad "the hub-launched orchestrator's MCP file did not move"
+[ ! -e "$H/app/$T_STATE/team/orchestrator/away-mcp.json" ] && [ ! -e "$P/panes/app-mcp.json" ] && ok "...removes the hub's MCP file and keeps none in the team folder" || bad "an old hub MCP file was moved or left"
 # the delegate file expired before it registered: the hub's copy (it may hold server secrets) is removed, not left behind
 printf '{"mcpServers":{"docs":{}}}\n' > "$P/panes/app-mcp.json"; chmod 600 "$P/panes/app-mcp.json"; mkdel "$((NOW - 10))"
 TMUX_PANE="$kp" HH_PROJECT="$H/app" HH_AWAY_HUB="$H" "${M[@]}" node "$NCP" "$DB/hh-spawn" --self --agent orchestrator >/dev/null 2>"$T_TMP/sp.err"; assert_status "registering with --self after the delegate file expired" $? 0
@@ -159,8 +158,8 @@ sc=$(screen "$hp")
 assert_contains "...in bypass" "$sc" "ARGV: bypassPermissions"
 assert_contains "...with the marker and the hook's variables" "$sc" "ENV2: HH_AWAY_BYPASS=1 HH_AWAY_HUB=$H HH_AWAY_MCP_ALLOW=docs"
 assert_contains "...its project, as every hub launch carries" "$sc" "HH_PROJECT=$H/app"
-assert_contains "...with only the allowed MCP servers, in a file beside its pane record" "$sc" "ARGV: $P/panes/app-mcp.json"
-assert_eq "......at mode 0600" "$(stat -f '%Lp' "$P/panes/app-mcp.json" 2>/dev/null || stat -c '%a' "$P/panes/app-mcp.json")" "600"
+case "$sc" in *--strict-mcp-config*|*--mcp-config*) bad "a hub-launched orchestrator restricts the MCP servers" ;; *) ok "...with every configured MCP server: no strict or mcp-config flag" ;; esac
+[ ! -e "$P/panes/app-mcp.json" ] && ok "...and no MCP file beside its pane record" || bad "an MCP file was written for the orchestrator"
 assert_contains "...and no Chrome" "$sc" "ARGV: --no-chrome"
 # a second start while that pane lives is refused, and writes no MCP file (it may hold server secrets)
 rm -f "$P/panes/app-mcp.json"

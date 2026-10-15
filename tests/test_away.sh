@@ -74,7 +74,7 @@ assert_contains "...the content names this hub" "$out" "hub=$H"
 assert_contains "...and its MCP list (empty here) as the fourth line" "$out" "mcp= hosts= allow= tools= peers= hook=on | sudo tee"
 until_epoch=$(printf '%s\n' "$out" | sed -n 's/.*until=\([0-9]*\).*/\1/p' | head -1)
 [ "$until_epoch" -ge $((NOW + 7190)) ] && [ "$until_epoch" -le $((NOW + 7500)) ] && ok "...and the time asked for" || bad "until=$until_epoch is not about +2h"
-assert_contains "...the hub's start line is a tmux line, marked, in bypass, with only its allowed MCP servers" "$out" "tmux -S $HH_TMUX_SOCKET new-session -s hub -c $H -e HH_AWAY_BYPASS=1 -e HH_PROJECT=$H -e HH_AWAY_HUB=$H -e HH_AWAY_MCP_ALLOW='' claude --name hub --permission-mode bypassPermissions --no-chrome --strict-mcp-config --mcp-config $P/away-mcp.json /$T_PLUGIN:hub"
+assert_contains "...the hub's start line is a tmux line, marked, in bypass, and in bypass" "$out" "tmux -S $HH_TMUX_SOCKET new-session -s hub -c $H -e HH_AWAY_BYPASS=1 -e HH_PROJECT=$H -e HH_AWAY_HUB=$H -e HH_AWAY_MCP_ALLOW='' claude --name hub --permission-mode bypassPermissions --no-chrome /$T_PLUGIN:hub"
 assert_contains "...with the hub's own project and hub folders for the away hook" "$out" "-e HH_PROJECT=$H -e HH_AWAY_HUB=$H"
 case "$out" in *"HH_AWAY_BYPASS=1 HH_PROJECT"*|*"cd $H"*) bad "the marker is set through the shell, or the line changes directory" ;; *) ok "...the marker goes through tmux -e, never through the shell" ;; esac
 case "$(printf '%s\n' "$out" | grep -v '^#')" in *" -A "*|*attach*) bad "the start line can attach to a running hub" ;; *) ok "...and never attaches to a running session" ;; esac
@@ -97,8 +97,10 @@ out2=$(hub away --until +1h)
 case "$out2" in *"one-time warning"*) bad "the bypass warning is asked for once it is accepted" ;; *) ok "...not asked again once it is accepted" ;; esac
 case "$out2" in *"not trusted by Claude Code yet"*) bad "a folder under a trusted one is called untrusted" ;; *) ok "...a folder under a trusted one is trusted" ;; esac
 rm -f "$CLAUDE_CONFIG_DIR/settings.json" "$CLAUDE_CONFIG_DIR/.claude.json"
-assert_eq "...its MCP file lets no server in" "$(jq -c . "$P/away-mcp.json")" '{"mcpServers":{}}'
-assert_eq "...at mode 0600" "$(stat -f '%Lp' "$P/away-mcp.json" 2>/dev/null || stat -c '%a' "$P/away-mcp.json")" "600"
+[ ! -e "$P/away-mcp.json" ] && ok "...no away-mcp.json is written" || bad "away wrote an away-mcp.json"
+case "$out" in *--strict-mcp-config*|*--mcp-config*) bad "the start line restricts the MCP servers" ;; *) ok "...and the start line has no strict or mcp-config flag" ;; esac
+assert_contains "...it says every configured server starts, and the hook refuses the rest" "$out" "Every configured server starts"
+assert_contains "...and that claude.ai connector names differ by account" "$out" "claude_ai_image-gen"
 assert_contains "...it says away is capped at 7 days" "$out" "at most 7 days"
 assert_contains "...that a reboot ends it" "$out" "after a reboot"
 assert_contains "...that messages to the hub are information only" "$out" "information only"
@@ -114,12 +116,41 @@ rm -f "$P/name"
 jq '.session_id = "sess-hub-1"' "$P/hub.json" > "$P/hub.json.t" && mv "$P/hub.json.t" "$P/hub.json"
 out=$(hub away --until +1d)
 case "$(printf '%s\n' "$out" | grep -v '^#')" in *" -A "*|*attach*) bad "the resuming start line can attach to a running hub" ;; *) ok "the resuming start line never attaches either" ;; esac
-assert_contains "with a session recorded, the hub is resumed" "$out" "claude --permission-mode bypassPermissions --no-chrome --strict-mcp-config --mcp-config $P/away-mcp.json --resume sess-hub-1"
+assert_contains "with a session recorded, the hub is resumed" "$out" "claude --permission-mode bypassPermissions --no-chrome --resume sess-hub-1"
 printf '{"mcpServers":{"docs":{"command":"docs-mcp","args":["--x"]}}}\n' > "$CLAUDE_CONFIG_DIR/.claude.json"
 out=$(hub away --until +1h --mcp-allow docs,nothere)
-assert_eq "an allowed server's definition is copied into the hub's MCP file" "$(jq -c '.mcpServers | keys' "$P/away-mcp.json")" '["docs"]'
-assert_contains "...one that is not found is said so" "$out" "Not found (not loaded): nothere"
+[ ! -e "$P/away-mcp.json" ] && ok "an allowed server writes no MCP file" || bad "an MCP file was written for an allowed server"
+case "$out" in *"Not found"*) bad "away reports names as missing" ;; *) ok "...and no name is reported as missing" ;; esac
+assert_contains "...the list is said as the hub's own" "$out" "MCP servers the hub may use while away: docs,nothere"
 assert_contains "...and the list is the delegate file's fourth line" "$out" "mcp=docs\\,nothere hosts= allow= tools= peers= hook=on | sudo tee"
+# ---- away-args: the same start, as items ----
+printf 'lead\n' > "$P/name"; mkdel "$H" "" "docs"
+aa=$(dhub away-args); assert_status "away-args with a valid delegate file" $? 0
+assert_eq "...prints the env items, then the claude arguments, one per line (session recorded: resumed)" "$aa" "env HH_AWAY_BYPASS=1
+env HH_PROJECT=$H
+env HH_AWAY_HUB=$H
+env HH_AWAY_MCP_ALLOW=docs
+arg --permission-mode
+arg bypassPermissions
+arg --no-chrome
+arg --resume
+arg sess-hub-1"
+jq 'del(.session_id)' "$P/hub.json" > "$P/hub.json.t" && mv "$P/hub.json.t" "$P/hub.json"
+aa=$(dhub away-args)
+assert_eq "...with no session recorded: named, and the hub skill typed" "$(printf '%s\n' "$aa" | grep '^arg' | tr '\n' ' ')" "arg --name arg lead arg --permission-mode arg bypassPermissions arg --no-chrome arg /$T_PLUGIN:hub "
+# the start line of hh-hub away carries the same items after claude, in the same order
+mkdel "$H" "" "docs"; sl=$(cd "$H" && "$DB/hh-hub" away --until +1h --mcp-allow docs | grep ' new-session ')
+rebuilt=$(printf '%s\n' "$aa" | sed -n 's/^env \(HH_[A-Z_]*\)=\(.*\)$/-e \1=\2/p; s/^arg \(.*\)$/\1/p' | tr '\n' ' ')
+assert_contains "the start line holds the env items in order" "$sl" "-e HH_AWAY_BYPASS=1 -e HH_PROJECT=$H -e HH_AWAY_HUB=$H -e HH_AWAY_MCP_ALLOW=docs claude"
+assert_eq "...and the claude arguments of away-args, in order, after claude" "${sl#* claude }" "$(printf '%s\n' "$aa" | sed -n 's/^arg //p' | tr '\n' ' ' | sed 's/ $//')"
+rm -f "$DF"; dhub away-args >/dev/null 2>"$T_TMP/aa.err"; assert_status "away-args with no delegate file is refused" $? 4
+assert_contains "...says why" "$(cat "$T_TMP/aa.err")" "no away start"
+H2="$T_TMP/work2"; mkdir -p "$H2/$T_HUB"; H2=$(cd "$H2" && pwd -P); printf '{"projects":[]}\n' > "$H2/$T_HUB/projects.json"; printf '{"name":"hub2"}\n' > "$H2/$T_HUB/hub.json"
+mkdel "$H2"; dhub away-args >/dev/null 2>"$T_TMP/aa.err"; assert_status "...a valid delegate file naming another hub is refused" $? 4
+assert_contains "......says which" "$(cat "$T_TMP/aa.err")" "names another hub"
+mkdel "$H" "$((NOW - 10))"; dhub away-args >/dev/null 2>&1; assert_status "...an expired one is refused" $? 4
+mkdel; rm -f "$P/name"
+jq '.session_id = "sess-hub-1"' "$P/hub.json" > "$P/hub.json.t" && mv "$P/hub.json.t" "$P/hub.json"
 out=$(hub back); assert_status "back" $? 0
 assert_contains "...prints the line that removes the file" "$out" "sudo rm -f -- "
 assert_contains "......the user's own, under delegate.d" "$out" "/delegate.d/$REALUID"

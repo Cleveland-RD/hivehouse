@@ -40,7 +40,7 @@ else echo "  SKIP no root-owned file under a group-writable folder to use as a c
 body() {  # body <function>: its code in hh-lib.sh, comments dropped
   awk -v f="$1" '$0 ~ "^"f"\\(\\) \\{" {p=1} p {print} p && /^}/ {p=0}' "$HH_REPO_ROOT/bin/hh-lib.sh" | sed 's/#.*//; s/"[^"]*"//g'   # comments and quoted text (messages) are no call
 }
-for f in hh_delegate_mine hh_delegate_for_project hh_hub_records_trusted hh_write_away_mcp hh_check_mode hh_bypass_launch hh_team_roots hh_repo_home hh_self_entry hh_session_record; do
+for f in hh_delegate_mine hh_delegate_for_project hh_hub_records_trusted hh_check_mode hh_bypass_launch hh_team_roots hh_repo_home hh_self_entry hh_session_record; do
   [ -n "$(body $f)" ] || { bad "$f was not found in hh-lib.sh"; continue; }
   assert_eq "no bare jq in $f" "$(body $f | grep -cE '(^|[^A-Za-z_$"-])jq[[:space:]]')" "0"
 done
@@ -48,9 +48,6 @@ done
 FP="$T_TMP/fakeproj"; mkdir -p "$FP"
 printf '#!/bin/sh\ncase "$*" in *projects*) printf "fake\\t%%s\\n" "$FAKE_HOME" ;; esac\n' > "$FP/jq"; chmod +x "$FP/jq"
 # ---- no root-owned jq: the hook denies and bypass is refused ----
-r=$(. "$NB/hh-lib.sh"; hh_write_away_mcp "$T_TMP/mcp.json" docs "$proj" 2>&1); rc=$?; assert_status "the MCP file a bypass session gets is not written with no root-owned jq" $rc 1
-[ ! -e "$T_TMP/mcp.json" ] && ok "...and no file is left" || bad "an MCP file was written without a root-owned jq"
-r=$(. "$HH_REPO_ROOT/bin/hh-lib.sh"; hh_write_away_mcp "$T_TMP/mcp.json" "" "$proj" 2>&1); assert_status "...while with one it is" $? 0
 # a complete fixture hub and a valid file, read as this user (the seam t_delegate_bin gives the executables): only the jq differs
 DG="$T_TMP/dg/area"; mkdir -p "$DG" "$T_TMP/fh/$T_HUB"; chmod 755 "$T_TMP/dg" "$DG" "$T_TMP/fh" "$T_TMP/fh/$T_HUB"
 printf '{"projects":[]}\n' > "$T_TMP/fh/$T_HUB/projects.json"; printf '{"name":"hub"}\n' > "$T_TMP/fh/$T_HUB/hub.json"; chmod 644 "$T_TMP/fh/$T_HUB/"*.json
