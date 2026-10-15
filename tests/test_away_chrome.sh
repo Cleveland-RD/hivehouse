@@ -16,9 +16,9 @@ H="$T_TMP/work"; mkdir -p "$H"; H=$(cd "$H" && pwd -P); P="$H/$T_HUB"
 mk() { local d="$H/$1"; mkdir -p "$d"; git -C "$d" init -q -b main; git -C "$d" config user.email t@t; git -C "$d" config user.name t
        echo x > "$d/README"; git -C "$d" add README; git -C "$d" commit -qm init; }
 DD="$T_TMP/dg/area"; DF="$DD/delegate"
-mkdel() {  # mkdel [tools list]: a version 4 delegate file naming this hub, with that tools= line
+mkdel() {  # mkdel [tools list]: a version 5 delegate file (9 lines, hook=on) naming this hub, with that tools= line
   mkdir -p "$DD"; chmod 755 "$DD" "$T_TMP/dg"
-  printf '%s 4\nhub=%s\nuntil=%s\nmcp=\nhosts=\nallow=\ntools=%s\npeers=\n' "$T_DELEGATE_TAG" "$H" "$((NOW + 3600))" "${1:-}" > "$DF"; chmod 644 "$DF"
+  printf '%s 5\nhub=%s\nuntil=%s\nmcp=\nhosts=\nallow=\ntools=%s\npeers=\nhook=on\n' "$T_DELEGATE_TAG" "$H" "$((NOW + 3600))" "${1:-}" > "$DF"; chmod 644 "$DF"
 }
 mkdel Chrome
 if ! hh_delegate_read "$DF" "$ME" "$NOW" >/dev/null 2>&1; then hh_delegate_read "$DF" "$ME" "$NOW" >/dev/null 2>&1; echo "  SKIP the fixture folder is not eligible here: $HH_DELEGATE_WHY"; t_done; exit 0; fi
