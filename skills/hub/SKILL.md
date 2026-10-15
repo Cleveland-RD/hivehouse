@@ -176,7 +176,7 @@ from a file or an environment variable.
   may run it for them, on their word, and show its lines word for word). Before it runs, ask the owner which extra tools the
   away sessions may use, in one AskUserQuestion call with two multi-select questions (a question holds at most four
   options): "Web and notices" (WebFetch, PushNotification) and "Workflows and design" (Workflow, DesignSync,
-  ArtifactCheck); none is a fine answer. Add `--tools <their choice, comma-separated>` when they pick any. If the owner names sessions on other machines that the hub and its orchestrators may message while away (a remote orchestrator or agent), add `--peers <names, comma-separated>`: only the names they give, never a guess. Unlisted ones stay refused
+  ArtifactCheck); none is a fine answer. Add `--tools <their choice, comma-separated>` when they pick any. Add `--chrome` only when the owner asks for browser (Chrome) access: it is off otherwise, and even then it reaches only the sessions you pass it to with `hh-hub start <project> <task id> --chrome`. If the owner names sessions on other machines that the hub and its orchestrators may message while away (a remote orchestrator or agent), add `--peers <names, comma-separated>`: only the names they give, never a guess. Unlisted ones stay refused
   while away; CronCreate and ScheduleWakeup always pass. It prints the `sudo` lines that make the delegate
   file, which the owner pastes: hivehouse never runs sudo, and neither do you. It also prints the start line for this hub:
   marked (`HH_AWAY_BYPASS=1`), in bypass. Tell the owner to exit this session and start
