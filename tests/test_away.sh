@@ -170,7 +170,7 @@ assert_contains "--no-hook: the tee line ends with hook=off" "$out" "peers= hook
 t_run_printed "$(printf '%s\n' "$out" | grep -E '^sudo |\| sudo ')"; assert_eq "...and the file's line 9 is hook=off" "$(sed -n 9p "$DFILE")" "hook=off"
 hh_delegate_read "$DFILE" "$ME" "$NOW" >/dev/null; assert_status "...which reads as valid" $? 0
 assert_eq "...with the hook off" "$HH_DR_HOOK" "off"
-assert_contains "...and the text says what hook=off means" "$out" "hook=off: hivehouse's away hook allows every tool call of the away sessions and does not check this user's away sessions"
+assert_contains "...and the text says what hook=off means" "$out" "hook=off: after it has read the call and the session's launch variables, hivehouse's away hook allows every tool call of the away sessions and does not check this user's away sessions"
 out=$(cd "$H" && "$OBIN/hh-hub" away --until +1h --no-hook --tools Workflow); assert_status "--no-hook among other options (first)" $? 0
 assert_contains "...keeps the other options" "$out" "tools=Workflow peers= hook=off | sudo tee"
 out=$(cd "$H" && "$OBIN/hh-hub" away --until +1h --tools Workflow --no-hook); assert_status "--no-hook last" $? 0

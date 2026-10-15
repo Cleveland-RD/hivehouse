@@ -1298,7 +1298,7 @@ away)
   else echo "# No remote host is used while away: overnight work runs on this machine."; fi
   echo "# Extra tools allowed while away: ${rtools:-none} (Workflow, WebFetch, DesignSync, ArtifactCheck and PushNotification are refused unless listed with --tools; CronCreate and ScheduleWakeup always pass)."
   echo "# Peers the hub and its orchestrators may message while away: ${rpeers:-none} (sessions on other machines that you name; only the hub and a registered orchestrator of one of its projects may send to them, each send is logged in $HH_HUB_DIR/$HH_PEER_LOG, and nothing local may carry their names)."
-  if [ "$hookv" = off ]; then echo "# hook=off: hivehouse's away hook allows every tool call of the away sessions and does not check this user's away sessions; your own guard has to. Launching in bypass, hh-push, hh-remote-sync, hh-cleanup --finish and the hub's screen hook are unchanged."
+  if [ "$hookv" = off ]; then echo "# hook=off: after it has read the call and the session's launch variables, hivehouse's away hook allows every tool call of the away sessions and does not check this user's away sessions; your own guard has to. Launching in bypass, hh-push, hh-remote-sync, hh-cleanup --finish and the hub's screen hook are unchanged."
   else echo "# hook=on: hivehouse's away hook checks every tool call of the away sessions (--no-hook turns it off)."; fi
   echo "# When you are back, run hh-hub back." ;;
 
