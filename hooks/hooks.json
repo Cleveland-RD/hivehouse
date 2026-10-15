@@ -11,7 +11,7 @@
     ],
     "PreToolUse": [
       { "matcher": "^(Bash|mcp__.*|SendMessage|Edit|Write|MultiEdit|NotebookEdit|Artifact|ArtifactData|ArtifactComments|RemoteTrigger|Agent|Workflow|WebFetch|DesignSync|ArtifactCheck|PushNotification)$",
-        "hooks": [ { "type": "command", "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/hh-away-hook\"" } ] }
+        "hooks": [ { "type": "command", "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/hh-away-hook\"", "timeout": 30 } ] }
     ]
   }
 }

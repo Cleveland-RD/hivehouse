@@ -14,6 +14,24 @@ set -u
 # Any exit that is not 0 or an explicit denial (a bash error, an unset variable, a missing library) is a denial too: Claude Code
 # treats exit 1 as "no decision" and would let the tool run.
 trap 'rc=$?; [ "$rc" -eq 0 ] || { [ -n "${DENIED:-}" ] || echo "Refused by hivehouse away mode: the check itself failed, which counts as a denial. Tell the owner." >&2; exit 2; }' EXIT
+# A hook that answers after its "timeout" does not stop the call: Claude Code runs the tool (proven with claude 2.1.300, Bash, exit 2 after the
+# timeout). So the check runs as a child of this process (`$0 --check`, same input and environment) and this process answers within DEADLINE
+# seconds, wherever the time goes: past it the child is killed and the call is refused. hooks/hooks.json gives the hook a timeout above it.
+HH_DEADLINE=20
+if [ "${1:-}" != --check ]; then
+  TIMEUP=""; trap 'TIMEUP=1' USR1
+  "$0" --check <&0 & child=$!
+  ( sleep "$HH_DEADLINE" & nap=$!; trap 'kill "$nap" 2>/dev/null; exit 0' TERM; wait "$nap"; kill -USR1 "$$" ) >/dev/null 2>&1 </dev/null & timer=$!
+  wait "$child"; rc=$?
+  if [ -n "$TIMEUP" ] && kill -0 "$child" 2>/dev/null; then
+    kill -STOP "$child" 2>/dev/null; pkill -KILL -P "$child" 2>/dev/null; kill -KILL "$child" 2>/dev/null   # stopped first so it starts nothing more; its own children only (by parent pid), never by name
+    kill "$timer" 2>/dev/null; wait "$timer" 2>/dev/null
+    DENIED=1; printf 'Refused by hivehouse away mode (the owner is away; this is not a permission prompt): its check took longer than %s seconds, so the call is refused. Run smaller steps or a smaller script. Do not try to change settings, hooks or permissions to get round it.\n' "$HH_DEADLINE" >&2; exit 2
+  fi
+  trap '' USR1   # a late signal from a timer already on its way ends nothing
+  kill "$timer" 2>/dev/null; wait "$timer" 2>/dev/null
+  case "$rc" in 0) exit 0 ;; 2) DENIED=1; exit 2 ;; *) exit "$rc" ;; esac   # anything else is a failed check: the trap above turns it into a denial
+fi
 : "${HOME:?HOME is not set}"
 HH_BIN=${0%/*}; [ "$HH_BIN" != "$0" ] || HH_BIN=.   # parameter expansion, never dirname: an executable on PATH by that name would be run instead
 . "$HH_BIN/hh-lib.sh" || exit 2

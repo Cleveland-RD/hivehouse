@@ -744,6 +744,33 @@ else
 fi
 r=$(printf '%s' "$(tc 'git push')" | HH_AWAY_BYPASS=1 HH_DG_HOOK=off HH_DR_HOOK=off HH_PROJECT="$proj" HH_AWAY_HUB="$hub" HH_AWAY_MCP_ALLOW= "$SAVE_HOOK" 2>&1 >/dev/null); assert_status "the production hook, no root-owned file: the environment cannot turn it off" $? 2
 
+echo "-- 0.5.7: the hook answers within its own deadline (a late answer does not stop the call), and hooks.json gives it a timeout above that"
+SAVE_HOOK="$HOOK"; HOOK="$HH_REPO_ROOT/bin/hh-away-hook"
+assert_eq "the deadline is one constant in the hook" "$(grep -c '^HH_DEADLINE=20$' "$HOOK")" 1
+assert_eq "...of 20 seconds, and hooks.json gives the away hook a timeout of 30" "$(jq -r '.hooks.PreToolUse[0].hooks[0].timeout' "$HH_REPO_ROOT/hooks/hooks.json")" 30
+assert_eq "...for the entry that runs the away hook" "$(jq -r '.hooks.PreToolUse[0].hooks[0].command' "$HH_REPO_ROOT/hooks/hooks.json" | grep -c 'bin/hh-away-hook')" 1
+DLBIN="$T_TMP/deadline-bin"; rm -rf "$DLBIN"; mkdir -p "$DLBIN"; cp -R "$HH_REPO_ROOT/bin/." "$DLBIN/"; t_plugin_beside "$DLBIN"
+assert_eq "(the lowered copy: the constant matches once)" "$(grep -c '^HH_DEADLINE=20$' "$DLBIN/hh-away-hook")" 1
+sed -i.bak 's/^HH_DEADLINE=20$/HH_DEADLINE=1.41/' "$DLBIN/hh-away-hook"; rm -f "$DLBIN/hh-away-hook.bak"
+SLBIN="$T_TMP/slow-bin"; rm -rf "$SLBIN"; mkdir -p "$SLBIN"; cp -R "$DLBIN/." "$SLBIN/"
+assert_eq "(the slow copy: the line after the inputs matches once)" "$(grep -c '^allow=${HH_AWAY_MCP_ALLOW-}$' "$SLBIN/hh-away-hook")" 1
+sed -i.bak 's/^allow=${HH_AWAY_MCP_ALLOW-}$/sleep 5.77; allow=${HH_AWAY_MCP_ALLOW-}/' "$SLBIN/hh-away-hook"; rm -f "$SLBIN/hh-away-hook.bak"
+strays() { ps -axo command | grep -cE '[s]leep (1\.41|5\.77)$' | tr -d ' '; }
+HOOK="$DLBIN/hh-away-hook"; allowed "inside the deadline a normal call is still allowed" "ls"
+assert_eq "...and no timer or sleep is left behind" "$(strays)" 0
+denied "...and a refusal is still the hook's own" "git push"
+assert_contains "...with its own reason, not the deadline's" "$ERR" "git push"
+assert_eq "...and no timer is left behind after it" "$(strays)" 0
+HOOK="$SLBIN/hh-away-hook"; s0=$(date +%s)
+denied "a call whose check runs past the deadline is refused (exit 2)" "ls"
+s1=$(date +%s)
+assert_contains "...saying the check took longer than the deadline" "$ERR" "its check took longer than 1.41 seconds, so the call is refused"
+assert_contains "...and what to do" "$ERR" "Run smaller steps or a smaller script"
+[ $((s1 - s0)) -le 4 ] && ok "...answered at the deadline, not when the slow part ended" || bad "answered after $((s1 - s0)) s"
+assert_eq "...and the check's own sleep and the timer are gone" "$(strays)" 0
+ERR=$(printf '%s' "$(tc ls)" | HH_DEADLINE=999 HH_AWAY_BYPASS=1 HH_PROJECT="$proj" HH_AWAY_HUB="$hub" HH_AWAY_MCP_ALLOW= "$SLBIN/hh-away-hook" 2>&1 >/dev/null); assert_status "the deadline is not read from the environment (HH_DEADLINE=999 changes nothing)" $? 2
+HOOK="$SAVE_HOOK"
+
 echo "-- A14: a write operand that is or holds a protected path (rm, mv, cp, install, ln); A13: the team/ subtree"
 scr="$proj/scr"; mkdir -p "$scr/sub" "$proj/$T_STATE/team/impl"; : > "$scr/settings.json"; : > "$scr/team.json"; : > "$scr/plain.txt"; : > "$scr/sub/.mcp.json"
 mkdir -p "$T_TMP/anydir" "$T_TMP/src2" "$T_TMP/build"; : > "$T_TMP/src2/a.txt"

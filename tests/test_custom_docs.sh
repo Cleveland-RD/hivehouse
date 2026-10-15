@@ -34,6 +34,8 @@ assert_contains "the delegate file's version 4 is described" "$RD" "Line 1 is \`
 assert_contains "...with its allowance lines" "$RD" "\`hosts=<list>\`"
 assert_contains "...and the tools line" "$RD" "\`tools=<list>\`"
 assert_contains "...and the peers line" "$RD" "\`peers=<list>\`"
+assert_contains "the docs state the hook's time limit and why" "$RD" "its check took longer than 20 seconds, so the call is refused"
+assert_contains "...and that a late hook does not stop the call" "$RD" "a hook that answers after its \`timeout\` does not stop the call"
 assert_contains "...and the hook line" "$RD" "\`hook=on\` or \`hook=off\` (line 9"
 assert_contains "...and a version 4 file is still read, with the hook on" "$RD" "version 4 file (0.5.4, the first eight lines) is still read, with the hook on"
 assert_contains "--no-hook is in the switching-on usage line" "$(grep '^\*\*Switching it on and off.\*\*' "$HH_REPO_ROOT/docs/away-mode.md")" "[--no-hook]"
