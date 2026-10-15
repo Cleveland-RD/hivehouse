@@ -71,4 +71,22 @@ hh-spawn --respawn impl --still 2 --max-wait 15 >/dev/null 2>&1; assert_status "
 np2=$(hh-spawn --respawn rev --still 2 --max-wait 15 2>/dev/null); assert_status "an agent without a worktree is respawned" $? 0
 assert_eq "...in the project" "$(hh_tmux display-message -p -t "$np2" '#{pane_current_path}')" "$(cd "$r" && pwd -P)"
 assert_eq "the worktree is still the one hivehouse made" "$(hh-manifest list --kind worktree | jq -r .path)" "$T_TMP/proj-impl"
+# ---- a respawn goes to the tmux server the agent was recorded on, not the caller's ----
+SOCK2="$T_TMP/second.sock"; env -u HIVEHOUSE_HOME tmux -S "$SOCK2" new-session -d -s keep2 'sleep 600'
+p3=$(HH_TMUX_SOCKET="$SOCK2" spawn sec); assert_status "an agent spawned on a second tmux server" $? 0
+assert_eq "...is recorded there" "$(jq -r '.agents[] | select(.name == "sec") | .socket' "$S/team.json")" "$SOCK2"
+tmux -S "$SOCK2" kill-pane -t "$p3"; sleep 1
+np3=$(hh-spawn --respawn sec --still 2 --max-wait 15 2>"$T_TMP/respawn3.err"); assert_status "respawned by a caller whose own server is another one" $? 0
+assert_eq "...its window is on the recorded server" "$(tmux -S "$SOCK2" list-windows -a -F '#{window_name}' | grep -c '^sec$')" "1"
+assert_eq "...and not on the caller's" "$(hh_tmux list-windows -a -F '#{window_name}' | grep -c '^sec$')" "0"
+assert_eq "...the record still names the recorded server" "$(jq -r '.agents[] | select(.name == "sec") | .socket' "$S/team.json")" "$SOCK2"
+assert_contains "...its pane is told that server" "$(tmux -S "$SOCK2" capture-pane -p -J -S - -t "$np3")" "HH_TMUX_SOCKET=$SOCK2"
+tmux -S "$SOCK2" kill-server 2>/dev/null
+# a recorded socket that is not there (its server is gone), or no absolute path: the caller's server is used, and it is said
+for bad_sock in "$T_TMP/gone.sock" "rel/tmux.sock"; do
+  jq --arg s "$bad_sock" '(.agents[] | select(.name == "rev") | .socket) = $s | (.agents[] | select(.name == "rev") | .pane_pid) = "999999"' "$S/team.json" > "$S/team.json.t" && mv "$S/team.json.t" "$S/team.json"
+  hh-spawn --respawn rev --still 2 --max-wait 15 >/dev/null 2>"$T_TMP/respawn4.err"; assert_status "a recorded socket of $bad_sock: respawned on the caller's server" $? 0
+  assert_contains "...and says so" "$(cat "$T_TMP/respawn4.err")" "respawning on the caller's tmux server"
+  assert_eq "...the record names the caller's server again" "$(jq -r '.agents[] | select(.name == "rev") | .socket' "$S/team.json")" "$HH_TMUX_SOCKET"
+done
 cd /; t_teardown; t_done

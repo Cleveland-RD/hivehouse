@@ -82,6 +82,15 @@ if [ -n "$respawn" ]; then
     2) hh_die 4 "cannot tell whether $respawn is running (its process is alive but no tmux answers for its pane); not respawned" ;;
     3) hh_die 4 "$respawn was recorded with no identity, so nothing proves it stopped; not respawned" ;;
   esac
+  # every tmux call of this respawn goes to the server the agent was recorded on (team.json .socket), not the caller's own: the agents of a
+  # project may live on a second tmux server. A record that is no absolute path to an existing socket (its server is gone) leaves the caller's.
+  rsock=$(rec socket)
+  case "$rsock" in
+    /*) if [ -S "$rsock" ]; then export HH_TMUX_SOCKET="$rsock"
+        else echo "$HH_PREFIX: $respawn's recorded tmux socket $rsock is not there; respawning on the caller's tmux server" >&2; fi ;;
+    '') ;;
+    *) echo "$HH_PREFIX: $respawn's recorded tmux socket is not an absolute path; respawning on the caller's tmux server" >&2 ;;
+  esac
   # --mode may only tighten what was recorded (a restart out of bypass, say): a looser or equal mode, or one hivehouse does not know, is refused
   recmode=$(rec mode)
   if [ "$modeset" = 1 ]; then
