@@ -129,7 +129,7 @@ hh_delegate_check_list tools "Chrome"; assert_status "Chrome is an accepted tool
 hh_delegate_check_list tools "chrome" >/dev/null; assert_status "...spelled exactly (chrome is not)" $? 1
 outc=$(hub away --until +1h --chrome); assert_status "away --chrome" $? 0
 assert_contains "...writes Chrome as the tools= list" "$outc" "tools=Chrome peers= hook=on | sudo tee"
-assert_eq "...in the same 9 lines of a version 5 file (no new line for Chrome)" "$(printf '%s\n' "$outc" | grep -o "printf '%s.n' [^|]*" | grep -o ' hivehouse-delegate\\ [0-9]\| hub=\| until=\| mcp=\| hosts=\| allow=\| tools=\| peers=\| hook=' | wc -l | tr -d ' ')" "9"
+assert_eq "...the version 5 file's 8 key lines after its version line, none new for Chrome" "$(printf '%s\n' "$outc" | grep -o "printf '%s.n' [^|]*" | grep -o ' hub=\| until=\| mcp=\| hosts=\| allow=\| tools=\| peers=\| hook=' | wc -l | tr -d ' ')" "8"
 assert_contains "...and says Chrome is on, never for the hub's own start" "$outc" "Chrome is on for this away period"
 outc=$(hub away --chrome --until +1h --tools WebFetch); assert_contains "--chrome before the other options, with --tools: appended to the list" "$outc" "tools=WebFetch\\,Chrome peers="
 outc=$(hub away --until +1h --tools Chrome,WebFetch --chrome); assert_contains "...Chrome named twice is written once" "$outc" "tools=Chrome\\,WebFetch peers="
