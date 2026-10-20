@@ -113,6 +113,23 @@ assert_contains "...and what is stopped" "$t" "stopped"
 hub wake two >/dev/null 2>&1; assert_status "wake with no orchestrator recorded" $? 2
 hub wake app --model opus >/dev/null 2>&1; assert_status "a resumed session keeps its own model" $? 64
 hub wake app --mode bypassPermissions >/dev/null 2>&1; assert_status "never in bypass" $? 4
+# O199: a window is opened only on the tmux server the hub runs on and with the home it registered with (hub.json socket and home); a call from
+# the default server or another home starts nothing, and never touches the default server (TMUX_TMPDIR points "default" at a scratch folder)
+cp "$P/hub.json" "$T_TMP/hub.json.keep"; nwin=$(hh_tmux list-windows -a | wc -l)
+mkdir -p "$T_TMP/deftmp"
+jq --arg s "$HH_TMUX_SOCKET" '.socket = $s' "$P/hub.json" > "$T_TMP/hub.json.n" && cp "$T_TMP/hub.json.n" "$P/hub.json"
+(cd "$H" && env -u HH_TMUX_SOCKET -u TMUX TMUX_TMPDIR="$T_TMP/deftmp" hh-hub wake app >/dev/null 2>"$T_TMP/o199.err"); assert_status "wake from the default server, the hub on another, is refused" $? 4
+assert_contains "...it names both servers" "$(cat "$T_TMP/o199.err")" "the hub runs on $HH_TMUX_SOCKET"
+assert_eq "...no window was opened" "$(hh_tmux list-windows -a | wc -l)" "$nwin"
+[ ! -e "$P/panes/app.json" ] && ok "...and no start was recorded" || bad "a pane record was made"
+[ ! -e "$T_TMP/deftmp/tmux-$(id -u)" ] && ok "...and the default server was not reached" || bad "the default server was started"
+jq '.socket = "/private/tmp/no-such-server"' "$P/hub.json" > "$T_TMP/hub.json.n" && cp "$T_TMP/hub.json.n" "$P/hub.json"
+hub wake app >/dev/null 2>&1; assert_status "wake from a server other than the one the hub records is refused" $? 4
+jq --arg s "$HH_TMUX_SOCKET" '.socket = $s | .home = "/nowhere/home"' "$P/hub.json" > "$T_TMP/hub.json.n" && cp "$T_TMP/hub.json.n" "$P/hub.json"
+hub wake app >/dev/null 2>"$T_TMP/o199.err"; assert_status "wake with a home other than the hub's is refused" $? 4
+assert_contains "...it says which" "$(cat "$T_TMP/o199.err")" "registered with HOME=/nowhere/home"
+assert_eq "...no window was opened" "$(hh_tmux list-windows -a | wc -l)" "$nwin"
+cp "$T_TMP/hub.json.keep" "$P/hub.json"
 # the project's own settings make the owner's mode stricter on a wake too (hh-settings)
 echo '{"permission_mode":"plan"}' > "$S/settings.json"
 wp=$(hub wake app --mode auto --still 2 --max-wait 15 2>"$T_TMP/wake.err"); assert_status "wake" $? 0

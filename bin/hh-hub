@@ -374,6 +374,26 @@ refuse_pending() {  # refuse_pending <hub root> <project>: under the lock, exits
     2) hh_die 4 "cannot tell whether the pane this hub started for $2 is still there; nothing was started" ;;
   esac
 }
+# canon_socket <path>: the socket path with its folder resolved (/tmp is /private/tmp), so two spellings of one server compare equal
+canon_socket() { local d; d=$(cd "$(dirname "$1")" 2>/dev/null && pwd -P) && printf '%s/%s\n' "$d" "$(basename "$1")" || printf '%s\n' "$1"; }
+# caller_socket: the tmux server a plain tmux call here would reach: HH_TMUX_SOCKET, else the one $TMUX names, else the default server
+caller_socket() {
+  if [ -n "${HH_TMUX_SOCKET:-}" ]; then canon_socket "$HH_TMUX_SOCKET"
+  elif [ -n "${TMUX:-}" ]; then canon_socket "${TMUX%%,*}"
+  else canon_socket "${TMUX_TMPDIR:-/tmp}/tmux-$(id -u)/default"; fi
+}
+# hub_server_check <hub root> <project>: a window is opened only on the tmux server the hub runs on and with the home folder it was registered
+# with (hub.json: socket, home). A caller on another server or home (the default server, the real HOME) would start the orchestrator there, in
+# a place the hub does not look at: refused, nothing started. A hub that records no socket (not in tmux) is left as it was.
+hub_server_check() {
+  local f="$1/$HH_HUB_DIR/hub.json" hs hh cs
+  hs=$(hh_json_get "$f" .socket); hh=$(hh_json_get "$f" .home)
+  if [ -n "$hs" ]; then
+    cs=$(caller_socket)
+    [ "$(canon_socket "$hs")" = "$cs" ] || hh_die 4 "$2 is not started: this call would open its window on the tmux server $cs, but the hub runs on $hs; run it from the hub's own pane or with HH_TMUX_SOCKET=$hs"
+  fi
+  [ -z "$hh" ] || [ "$hh" = "${HOME:-}" ] || hh_die 4 "$2 is not started: this call has HOME=${HOME:-} but the hub was registered with HOME=$hh; run it as the hub does"
+}
 # launch <hub root> <project> <kind> <cwd> <line> <task> <claude args>...: under the hub's lock (so a press of Resume and a
 # wake from the conversation cannot both pass the check), a new window in the project's own tmux session, recorded with the
 # line it is to be sent; then finish. The pane is the owner's, like the one an orchestrator registers with --self, so it is
@@ -381,6 +401,7 @@ refuse_pending() {  # refuse_pending <hub root> <project>: under the lock, exits
 launch() {
   local root="$1" name="$2" kind="$3" cwd="$4" line="$5" task="$6" agent="$7" c pane socket ident envs mcpf rc settings
   shift 7
+  hub_server_check "$root" "$name"
   HH_BP_ENVS=(); HH_BP_ARGS=()
   lock "$root"
   refuse_pending "$root" "$name"
@@ -653,8 +674,8 @@ self)
   # the window the hub was told it has (the hub skill passes the orchestrator window option); registering again keeps it
   [ -n "$win" ] || win=$(hh_json_get "$root/$HH_HUB_DIR/hub.json" .window)
   jq -nc --arg n "$name" --arg p "$pid" --arg s "$(hh_lstart "$pid")" --arg sid "$(hh_session_record "$pid" .sessionId)" --arg at "$(hh_now)" \
-    --arg ts "$psock" --arg tp "$ppane" --arg tpp "$ppid" --arg tps "$pstarted" --arg w "$win" \
-    '{name:$n, claude_pid:$p, claude_started:$s, at:$at} + (if $sid != "" then {session_id:$sid} else {} end) + (if $w != "" then {window:($w | tonumber)} else {} end)
+    --arg ts "$psock" --arg tp "$ppane" --arg tpp "$ppid" --arg tps "$pstarted" --arg w "$win" --arg hm "${HOME:-}" \
+    '{name:$n, claude_pid:$p, claude_started:$s, at:$at} + (if $hm != "" then {home:$hm} else {} end) + (if $sid != "" then {session_id:$sid} else {} end) + (if $w != "" then {window:($w | tonumber)} else {} end)
      + (if $tp != "" then {socket:$ts, pane:$tp, pane_pid:$tpp, pane_started:$tps} else {} end)' \
     > "$root/$HH_HUB_DIR/hub.json.tmp$$" && mv "$root/$HH_HUB_DIR/hub.json.tmp$$" "$root/$HH_HUB_DIR/hub.json"
   # the hub's handoff, from the template (a custom/ file first), when there is none: hh-hub rotate needs one to send the hub back to
