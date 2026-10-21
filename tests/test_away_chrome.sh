@@ -111,6 +111,36 @@ mkdel Chrome; rm -f "$DF"
 assert_contains "...says Chrome is only turned off for away launches" "$(cat "$T_TMP/hh.err")" "Chrome is only turned off for away launches"
 mkdel Chrome
 
+# ---- hh-hub wake --chrome (O227): decided at each wake, with start --chrome's checks; nothing remembers an earlier grant ----
+S="$H/app/$T_STATE"; mkdir -p "$S/team/orchestrator"
+kp=$(hh_tmux list-panes -t keep -F '#{pane_id}' | head -1); ki=$(hh_pane_identity "$HH_TMUX_SOCKET" "$kp")
+jq -nc --arg k "$HH_TMUX_SOCKET" --arg kp "$kp" --arg p "${ki%%$'\t'*}" --arg s "${ki#*$'\t'}" '{agents:[{name:"orchestrator", pane:$kp, socket:$k, pane_pid:$p, pane_started:$s, claude_pid:"99999", claude_started:"Mon Jan  1 00:00:00 2001", name_full:"app-orchestrator"}]}' > "$S/team.json"
+jq -nc --arg t "$HH_REPO_ROOT/tests/fixtures/transcript.jsonl" '{session_id:"sess-x", transcript_path:$t}' > "$S/team/orchestrator/session.json"
+nwin() { hh_tmux list-windows -a -F '#{window_name}' 2>/dev/null | grep -c '^orchestrator$'; }
+wp=$(hh "$NCH" wake app --mode auto --chrome --still 2 --max-wait 15); assert_status "the hub wakes a stopped orchestrator with --chrome, the switch on and the owner away" $? 0
+wsc=$(screen "$wp")
+case "$wsc" in *"ARGV: --no-chrome"*) bad "the woken orchestrator has --no-chrome" ;; *) ok "...without --no-chrome" ;; esac
+assert_contains "...with the grant in its launch environment" "$wsc" "ENV3: HH_AWAY_CHROME=1"
+assert_contains "...resuming its own conversation" "$wsc" "ARGV: --resume"
+assert_contains "...in bypass" "$wsc" "ARGV: bypassPermissions"
+hh_tmux kill-pane -t "$wp"; sleep 0.5
+wp=$(hh "$NCH" wake app --mode auto --still 2 --max-wait 15); assert_status "the next wake, without --chrome" $? 0
+wsc=$(screen "$wp")
+assert_contains "...has --no-chrome: nothing remembers the earlier grant" "$wsc" "ARGV: --no-chrome"
+case "$wsc" in *"ENV3: HH_AWAY_CHROME=1"*) bad "a wake without --chrome carries the grant" ;; *) ok "...and no grant" ;; esac
+hh_tmux kill-pane -t "$wp"; sleep 0.5
+mkdel ""
+hh "$NCH" wake app --mode auto --chrome --still 2 --max-wait 15 >/dev/null; assert_status "wake --chrome without the owner's switch: refused" $? 4
+assert_contains "...says the file does not turn Chrome on" "$(cat "$T_TMP/hh.err")" "does not turn Chrome on"
+assert_eq "...nothing was launched" "$(nwin)" "0"
+mkdel Chrome
+hh "$NCP" wake app --mode auto --chrome --still 2 --max-wait 15 >/dev/null; assert_status "a marked session that is not the hub cannot wake with Chrome" $? 4
+assert_eq "...nothing was launched" "$(nwin)" "0"
+rm -f "$DF"
+(cd "$H" && env node "$NCH" "$DB/hh-hub" wake app --mode auto --chrome --still 2 --max-wait 15 >/dev/null 2>"$T_TMP/hh.err"); assert_status "outside away mode wake --chrome is refused" $? 4
+assert_contains "...says Chrome is only turned off for away launches" "$(cat "$T_TMP/hh.err")" "Chrome is only turned off for away launches"
+assert_eq "...nothing was launched" "$(nwin)" "0"
+mkdel Chrome; rm -rf "${S:?}/team.json" "${S:?}/team/orchestrator"
 # ---- a tmux session's own environment cannot hand the grant or the marker down ----
 SESS="hh-$(hh_project_key "$H/app")"
 hh_tmux set-environment -t "=$SESS" HH_AWAY_CHROME 1; hh_tmux set-environment -t "=$SESS" HH_AWAY_BYPASS 1

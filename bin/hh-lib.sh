@@ -1224,7 +1224,7 @@ hh_check_mode() {  # hh_check_mode <mode> <who> [<project root>]: exits 4 unless
 # mcp= list does not name. Never for any other mode.
 HH_BP_ENVS=(); HH_BP_ARGS=()
 # Chrome: off for every away launch (--no-chrome) unless the owner turned it on (Chrome in the delegate file's tools=) AND a session that holds the
-# grant passes it down (hh-hub start --chrome by the hub, hh-spawn --chrome by a session that carries HH_AWAY_CHROME=1). A granted launch gets
+# grant passes it down (hh-hub start --chrome or wake --chrome by the hub, hh-spawn --chrome by a session that carries HH_AWAY_CHROME=1). A granted launch gets
 # HH_AWAY_CHROME=1 in its launch environment and no --no-chrome. The hub's own start never has it.
 hh_delegate_chrome_on() { case ",$HH_DG_TOOLS," in *,Chrome,*) return 0 ;; esac; return 1; }   # after hh_delegate_for_project: the owner's switch
 hh_chrome_caller() {  # 0 the caller's Claude carries the Chrome grant (HH_AWAY_CHROME=1); 1 it does not (or no Claude); 2 its environment cannot be read

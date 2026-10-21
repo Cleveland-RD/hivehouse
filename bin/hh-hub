@@ -53,7 +53,7 @@ USAGE="usage: hh-hub init
        hh-hub task <project> [--text <text>]          (no --text: the text is read from stdin)
        hh-hub log <task id> <event> [--note <text>]    events: $HUB_EVENTS
        hh-hub tasks [<project>] [--open] [--json]
-       hh-hub wake <project> [--mode <m>] [--still <s>] [--max-wait <s>]
+       hh-hub wake <project> [--chrome] [--mode <m>] [--still <s>] [--max-wait <s>]
        hh-hub start <project> <task id> [--overnight] [--chrome] [--model <m>] [--mode <m>] [--still <s>] [--max-wait <s>]
        hh-hub run <project> overnight <task id> [--still <s>] [--max-wait <s>]
        hh-hub run <project> cleanup <task id> [--disk] [--still <s>] [--max-wait <s>]
@@ -69,7 +69,7 @@ USAGE="usage: hh-hub init
        hh-hub answer <project> [<agent>[@<team root>]] --choice <1-9|esc> --seen <fingerprint>
        hh-hub naming --session <session id>"
 
-CHROME=0   # a Chrome grant never comes from the environment: only hh-hub start --chrome sets it, for that one launch
+CHROME=0   # a Chrome grant never comes from the environment: only the --chrome argument of hh-hub start or wake sets it, for that one launch (nothing is remembered between launches)
 cmd="${1:-}"; [ -n "$cmd" ] || hh_die 64 "$USAGE"; shift
 hub_root() {  # the work folder holding $HH_HUB_DIR/, resolved
   local d
@@ -332,6 +332,10 @@ is_orchestrator_entry() {
   [ -n "$cpid" ] || return 1
   { [ "$cpid" = "$O_CPID" ] && [ "$cstart" = "$O_CSTART" ]; } || [ "$2" = "$O_AGENT" ]
 }
+# take_chrome <args>...: CHROME=1 when --chrome is among them, TAKEN the other words. chrome_away_only <verb>: after project_mode, the one rule of start and wake: Chrome is only
+# for an away (bypass) launch; the owner's switch is checked by hh_bypass_launch (hh_delegate_chrome_on) when the pane is opened, and the caller is the marked hub (project_mode).
+take_chrome() { local a; CHROME=0; TAKEN=(); for a in "$@"; do if [ "$a" = --chrome ]; then CHROME=1; else TAKEN+=("$a"); fi; done; }
+chrome_away_only() { [ "$CHROME" = 0 ] || [ "$MODE" = bypassPermissions ] || hh_die 4 "Chrome is only turned off for away launches: --chrome is for the hub's $1 while the owner is away"; }
 start_opts() {  # start_opts <model allowed 0|1> [--model m] [--mode m] [--still s] [--max-wait s]: MODEL, MODE, STILL, MAXWAIT
   local allow="$1"; shift
   MODEL=""; MODE=""; STILL=5; MAXWAIT=90
@@ -1014,7 +1018,8 @@ tasks)
 
 wake)
   name="${1:-}"; [ -n "$name" ] || hh_die 64 "$USAGE"; shift
-  start_opts 0 "$@"
+  take_chrome "$@"   # a woken orchestrator gets Chrome back only when the hub asks for it again, as in start
+  start_opts 0 ${TAKEN[@]+"${TAKEN[@]}"}
   root=$(hub_root) || exit $?
   need_project "$root" "$name"
   hn=$(need_hub_name "$root") || exit $?
@@ -1031,6 +1036,7 @@ wake)
   # conversation means it is running, and a second process on it would fork it
   if holder=$(hh_session_holder "$O_SID"); then who=${O_NAME:-$name}; hh_die 4 "$who's conversation is already open in a live session (pid $holder): it is running; nothing was started."; fi
   project_mode "$HOME_DIR"
+  chrome_away_only wake
   hh_is_session_name "$O_NAME" || hh_die 4 "$name's orchestrator name is not one hivehouse will type"
   args=(--resume "$O_SID" --name "$O_NAME"); [ -z "$MODE" ] || args+=(--permission-mode "$MODE")
   launch "$root" "$name" wake "$O_ROOT" \
@@ -1040,9 +1046,10 @@ wake)
 start)
   [ $# -gt 0 ] || { hub_start; exit $?; }
   name="${1:-}"; id="${2:-}"; [ -n "$name" ] && [ -n "$id" ] || hh_die 64 "$USAGE"; shift 2
-  overnight=0; sargs=(); CHROME=0
-  for a in "$@"; do if [ "$a" = --overnight ]; then overnight=1; elif [ "$a" = --chrome ]; then CHROME=1; else sargs+=("$a"); fi; done
-  start_opts 1 ${sargs[@]+"${sargs[@]}"}
+  overnight=0; sargs=()
+  for a in "$@"; do if [ "$a" = --overnight ]; then overnight=1; else sargs+=("$a"); fi; done
+  take_chrome ${sargs[@]+"${sargs[@]}"}
+  start_opts 1 ${TAKEN[@]+"${TAKEN[@]}"}
   root=$(hub_root) || exit $?
   need_project "$root" "$name"
   hn=$(need_hub_name "$root") || exit $?
@@ -1058,8 +1065,7 @@ start)
   tf="$root/$HH_HUB_DIR/tasks/$id.md"
   hh_is_typed_path "$tf" || hh_die 4 "the task's path is not one hivehouse will type: $tf"
   project_mode "$HOME_DIR"
-  # Chrome is granted down only by the hub (project_mode has just proven the caller is the recorded, marked hub) in an away launch, with the owner's switch on
-  [ "$CHROME" = 0 ] || [ "$MODE" = bypassPermissions ] || hh_die 4 "Chrome is only turned off for away launches: --chrome is for the hub's start while the owner is away"
+  chrome_away_only start   # Chrome is granted down only by the hub (project_mode has just proven the caller is the recorded, marked hub), here and in wake
   args=(--name "$name-orchestrator"); [ -z "$MODEL" ] || args+=(--model "$MODEL"); [ -z "$MODE" ] || args+=(--permission-mode "$MODE")
   if [ "$overnight" = 1 ]; then sline=$(overnight_line "$id" "$tf" "$hn"); else sline="/$PLUGIN:start Task $id: read $tf. It came from the owner through $hn."; fi
   launch "$root" "$name" start "$HOME_DIR" "$sline" "$id" orchestrator "${args[@]}" ;;
@@ -1330,7 +1336,7 @@ away)
   if [ -n "$rhosts" ]; then echo "# Remote hosts allowed while away: $rhosts (read-only commands over ssh; nothing else reaches them)."
   else echo "# No remote host is used while away: overnight work runs on this machine."; fi
   echo "# Extra tools allowed while away: ${rtools:-none} (Workflow, WebFetch, DesignSync, ArtifactCheck and PushNotification are refused unless listed with --tools; CronCreate and ScheduleWakeup always pass)."
-  case ",$rtools," in *,Chrome,*) echo "# Chrome is on for this away period (--chrome): the hub's own start never has it; the hub passes it to an orchestrator only with hh-hub start <project> <task id> --chrome, and an orchestrator to an agent only with hh-spawn --chrome." ;;
+  case ",$rtools," in *,Chrome,*) echo "# Chrome is on for this away period (--chrome): the hub's own start never has it; the hub passes it to an orchestrator only with hh-hub start <project> <task id> --chrome or hh-hub wake <project> --chrome (a wake keeps nothing from the start), and an orchestrator to an agent only with hh-spawn --chrome." ;;
     *) echo "# Chrome is off for every away session: --chrome turns it on, and it still reaches only the sessions the hub grants it." ;; esac
   echo "# Peers the hub and its orchestrators may message while away: ${rpeers:-none} (sessions on other machines that you name; only the hub and a registered orchestrator of one of its projects may send to them, each send is logged in $HH_HUB_DIR/$HH_PEER_LOG, and nothing local may carry their names)."
   if [ "$hookv" = off ]; then echo "# hook=off: after it has read the call and the session's launch variables, hivehouse's away hook allows every tool call of the away sessions and does not check this user's away sessions; your own guard has to. Launching in bypass, hh-push, hh-remote-sync, hh-cleanup --finish and the hub's screen hook are unchanged."
