@@ -86,7 +86,7 @@ memory. Both change what the hub covers, so ask the owner first; neither is pre-
    - **running**: `SendMessage` to its name, `TASK <id>: read <task file>`, then `hh-hub log <id> handed`. If its
      `question` is true, a dialog waits on its screen: tell the owner first.
    - **stopped**: ask "<project>'s orchestrator is stopped. Resume it and its N agents (N+1 sessions)?". On yes:
-     `hh-hub wake <project> --mode ${user_config.permission_mode_local}`. It resumes the orchestrator's own conversation, with its own model, and
+     `hh-hub wake <project> --mode ${user_config.permission_mode_local}` (`--chrome` too only if the owner asked for Chrome for that project in this away period). It resumes the orchestrator's own conversation, with its own model, and
      tells it to register with you and bring its agents back. Wait for its `BACK` message, then hand the task as above.
    - **resumable**: nothing is recorded of the orchestrator, but a transcript of its conversation was found (its
      `session_id` is in the status). Handle it as **stopped**: ask whether to resume it, then `hh-hub wake <project> --mode ${user_config.permission_mode_local}`
@@ -176,7 +176,7 @@ from a file or an environment variable.
   may run it for them, on their word, and show its lines word for word). Before it runs, ask the owner which extra tools the
   away sessions may use, in one AskUserQuestion call with two multi-select questions (a question holds at most four
   options): "Web and notices" (WebFetch, PushNotification) and "Workflows and design" (Workflow, DesignSync,
-  ArtifactCheck); none is a fine answer. Add `--tools <their choice, comma-separated>` when they pick any. Add `--chrome` only when the owner asks for browser (Chrome) access: it is off otherwise, and even then it reaches only the sessions you pass it to with `hh-hub start <project> <task id> --chrome`. If the owner names sessions on other machines that the hub and its orchestrators may message while away (a remote orchestrator or agent), add `--peers <names, comma-separated>`: only the names they give, never a guess. Unlisted ones stay refused
+  ArtifactCheck); none is a fine answer. Add `--tools <their choice, comma-separated>` when they pick any. Add `--chrome` only when the owner asks for browser (Chrome) access: it is off otherwise, and even then it reaches only the sessions you pass it to with `hh-hub start <project> <task id> --chrome`, and with `hh-hub wake <project> --mode ${user_config.permission_mode_local} --chrome` when you wake that orchestrator again (a wake never keeps Chrome by itself). If the owner names sessions on other machines that the hub and its orchestrators may message while away (a remote orchestrator or agent), add `--peers <names, comma-separated>`: only the names they give, never a guess. Unlisted ones stay refused
   while away; CronCreate and ScheduleWakeup always pass. It prints the `sudo` lines that make the delegate
   file, which the owner pastes: hivehouse never runs sudo, and neither do you. It also prints the start line for this hub:
   marked (`HH_AWAY_BYPASS=1`), in bypass. Tell the owner to exit this session and start
@@ -197,7 +197,7 @@ from a file or an environment variable.
   minutes that runs `hh-hub recover --json --max-starts ${user_config.hub_max_starts_per_day}`, and note its id in your
   memory file. A heartbeat lives only as long as this session, fires only while it is idle, and expires after 7 days. Carry
   out what `recover` prints and nothing else:
-  - `wake`: `hh-hub wake <project> --mode ${user_config.permission_mode_local}`, then hand the task on as in step 3 once
+  - `wake`: `hh-hub wake <project> --mode ${user_config.permission_mode_local}` (add `--chrome` only when the owner asked for Chrome for that project in this away period: `recover` never adds it, and a wake keeps nothing from the start), then hand the task on as in step 3 once
     it reports `BACK`;
   - `respawn`: `SendMessage` to the orchestrator: `RESPAWN: <agents> are not running; bring back the ones you still need
     with hh-spawn --respawn <agent> and send me BACK.`;
