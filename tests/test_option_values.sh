@@ -39,9 +39,9 @@ assert_eq "...for the style" "$(opt commit_style '${user_config.commit_style}')"
 
 echo "-- hh-gate-verify --style and hh-settings resolve"
 base=$(git rev-parse HEAD); echo x > f.txt; git add f.txt; git -c user.name=t -c user.email=t@example.org commit -qm "feat: add f" || exit 2
-hh-gate-verify commits "$base..HEAD" --max-files 5 --style loose --attribution deny >/dev/null 2>&1; assert_status "style loose refused" $? 64
-hh-gate-verify commits "$base..HEAD" --max-files 5 --style Free --attribution deny >/dev/null 2>&1; assert_status "style Free refused" $? 64
-for s in conventional free; do hh-gate-verify commits "$base..HEAD" --max-files 5 --style "$s" --attribution deny >/dev/null 2>&1; assert_status "style $s accepted" $? 0; done
+hh-gate-verify commits "$base..HEAD" --style loose --attribution deny >/dev/null 2>&1; assert_status "style loose refused" $? 64
+hh-gate-verify commits "$base..HEAD" --style Free --attribution deny >/dev/null 2>&1; assert_status "style Free refused" $? 64
+for s in conventional free; do hh-gate-verify commits "$base..HEAD" --style "$s" --attribution deny >/dev/null 2>&1; assert_status "style $s accepted" $? 0; done
 hh-settings resolve permission_mode yolo >/dev/null 2>&1; assert_status "resolve refuses an unknown mode" $? 4
 hh-settings resolve permission_mode bypassPermissions >/dev/null 2>&1; assert_status "resolve refuses bypass as the owner's value" $? 4
 cd /; t_teardown; t_done

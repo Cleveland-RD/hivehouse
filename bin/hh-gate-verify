@@ -6,12 +6,11 @@
 #     own gate script) needs --expect. With --commit, the header must name that commit and a clean tree: a log left from
 #     an earlier run, or a run on uncommitted changes, vouches for nothing. A gate that wrote no step line did not run,
 #     so it is red, not green. An hh-gate log read without --commit is GREEN with a note on stderr: it vouches for no commit.
-#   hh-gate-verify commits <base>..<tip> --max-files <n> --style conventional|free --attribution allow|deny [--no-body]
+#   hh-gate-verify commits <base>..<tip> --style conventional|free --attribution allow|deny [--no-body]
 #     Every flag but --no-body is required, so nothing is loosened by leaving one out. Per commit: a subject, the
-#     conventional form when asked, at most <n> files against its first parent (for a merge, only the files where it
-#     differs from the merge git itself computes of its two parents, its own content, since the merged commits are each
-#     checked in the same range), and under deny no attribution line. A body is a warning, and a violation with
-#     --no-body. An empty range is red: nothing checked is not a pass.
+#     conventional form when asked, and under deny no attribution line. A body is a warning, and a violation with
+#     --no-body. There is no file count: one purpose per commit is read in the diff. --max-files <n> is still accepted
+#     for one release, ignored, and said once as a WARN line. An empty range is red: nothing checked is not a pass.
 # Exit: 0 green or ok, 1 red or a violation, 4 a refused range, 64 usage.
 set -u
 . "$(dirname "$0")/hh-lib.sh"
@@ -72,16 +71,16 @@ verify_log() {
 }
 
 verify_commits() {
-  local USAGE="usage: hh-gate-verify commits <base>..<tip> --max-files <n> --style conventional|free --attribution allow|deny [--no-body]"
-  local range="${1:-}" max="" style="" attribution="" nobody=0 base tip commits c msg subject body files bad=0 n=0
+  local USAGE="usage: hh-gate-verify commits <base>..<tip> --style conventional|free --attribution allow|deny [--no-body]"
+  local range="${1:-}" maxfiles=0 style="" attribution="" nobody=0 base tip commits c msg subject body bad=0 n=0
   [ -n "$range" ] || hh_die 64 "$USAGE"
   case "$range" in -*) hh_die 4 "a range may not start with '-': $range" ;; esac
   shift
   while [ $# -gt 0 ]; do case "$1" in
-    --max-files) max="${2:-}"; shift 2 ;; --style) style="${2:-}"; shift 2 ;;
+    --max-files) [ $# -ge 2 ] || hh_die 64 "$USAGE"; maxfiles=1; shift 2 ;; --style) style="${2:-}"; shift 2 ;;
     --attribution) attribution="${2:-}"; shift 2 ;; --no-body) nobody=1; shift ;;
     *) hh_die 64 "$USAGE" ;; esac; done
-  printf '%s' "$max" | grep -Eq '^[1-9][0-9]*$' || hh_die 64 "$USAGE"
+  [ "$maxfiles" -eq 0 ] || echo "WARN --max-files is ignored: commits have no file count (one purpose per commit); drop the flag, it goes in the next release"
   case "$style" in conventional|free) ;; *) hh_die 64 "$USAGE" ;; esac
   case "$attribution" in allow|deny) ;; *) hh_die 64 "$USAGE" ;; esac
   case "$range" in *...*|..*|*..) hh_die 64 "$USAGE" ;; *..*) ;; *) hh_die 64 "$USAGE" ;; esac
@@ -96,24 +95,6 @@ verify_commits() {
     [ -n "$subject" ] || { echo "$short subject: empty"; bad=1; }
     if [ "$style" = conventional ] && ! printf '%s\n' "$subject" | grep -Eq "$CONVENTIONAL"; then
       echo "$short subject: not conventional: $subject"; bad=1; fi
-    # A merge brings in commits the range holds and checks one by one, so a merge counts only its own content: the files
-    # where it differs from git's own merge of its two parents, recomputed (`merge-tree --write-tree`, git 2.38). A clean
-    # merge has none; a hand edit, a resolved conflict or a side's change undone each count. merge-tree exits 1 on a
-    # conflict but still prints the tree it would leave, which is read either way. An octopus merge, or a git without
-    # --write-tree, falls back to `--cc` (the files it differs from every parent in), which is near and not exact.
-    parents=$(git rev-list --parents -n 1 "$c" | wc -w)
-    if [ "$parents" -le 2 ]; then
-      files=$(git diff-tree -r --root --no-commit-id --name-only -m --first-parent "$c" | grep -c .)
-    else
-      merged=""
-      [ "$parents" -eq 3 ] && merged=$(git merge-tree --write-tree "$c^1" "$c^2" 2>/dev/null | head -1)
-      if printf '%s' "$merged" | grep -Eq '^[0-9a-f]{40,64}$'; then
-        files=$(git diff --name-only "$merged" "$c" | grep -c .)
-      else
-        files=$(git diff-tree -r --cc --no-commit-id --name-only "$c" | grep -c .)
-      fi
-    fi
-    [ "$files" -le "$max" ] || { echo "$short files: $files, more than $max"; bad=1; }
     if [ "$attribution" = deny ]; then
       if printf '%s\n' "$msg" | grep -iEq "$ATTRIBUTION"; then
         echo "$short attribution: an attribution line is not allowed"; bad=1; fi

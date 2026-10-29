@@ -136,70 +136,40 @@ git reset -q --hard "$head_now"
 # ---- hh-gate-verify commits ----------------------------------------------------------------------------------------
 base=$(git rev-parse HEAD)
 c() { local msg="$1"; shift; for f in "$@"; do echo "$RANDOM" > "$f"; done; git add -A; git commit -qm "$msg"; }
-COMMON="--max-files 5 --style conventional --attribution deny"
+COMMON="--style conventional --attribution deny"
 c "feat(gate): one good commit" f1
 hh-gate-verify commits "$base..HEAD" $COMMON >/dev/null; assert_status "a good commit passes" $? 0
 assert_eq "it says how many" "$(hh-gate-verify commits "$base..HEAD" $COMMON)" "OK (1 commits)"
 good=$(git rev-parse HEAD)
 c "$(printf 'fix: a fix\n\nCo-Authored-By: Someone <x@y>')" f2
 out=$(hh-gate-verify commits "$good..HEAD" $COMMON 2>&1); assert_status "a Co-Authored-By trailer fails under deny" $? 1; assert_contains "named as attribution" "$out" "attribution"
-hh-gate-verify commits "$good..HEAD" --max-files 5 --style conventional --attribution allow >/dev/null 2>&1; assert_status "and passes under allow" $? 0
+hh-gate-verify commits "$good..HEAD" --style conventional --attribution allow >/dev/null 2>&1; assert_status "and passes under allow" $? 0
 for trailer in 'co-authored-by: x' 'Co-authored-by : x' 'Claude-Session: abc' 'Generated with [Claude Code](https://claude.com/claude-code)' 'Generated with Claude Code'; do
   git reset -q --hard "$good"; c "$(printf 'fix: a fix\n\n%s' "$trailer")" f2
   hh-gate-verify commits "$good..HEAD" $COMMON >/dev/null 2>&1; assert_status "deny refuses: $trailer" $? 1
 done
-git reset -q --hard "$good"; c "fix: six files" g1 g2 g3 g4 g5 g6
-out=$(hh-gate-verify commits "$good..HEAD" $COMMON 2>&1); assert_status "a 6-file commit fails --max-files 5" $? 1; assert_contains "named as files" "$out" "files"
-# a merge's own file count is not counted; its subject and the merged commits are checked in the same range
+# no file count: a commit of any size passes on style and attribution alone
+git reset -q --hard "$good"; c "fix: forty files" $(for k in $(seq 1 40); do echo "w$k"; done)
+assert_eq "the commit holds 40 files" "$(git diff --name-only "$good" HEAD | grep -c .)" "40"
+out=$(hh-gate-verify commits "$good..HEAD" $COMMON 2>&1); assert_status "a 40-file commit passes" $? 0; assert_eq "with no warning" "$out" "OK (1 commits)"
+# --max-files is still accepted for one release: ignored, and said once
+out=$(hh-gate-verify commits "$good..HEAD" --max-files 5 $COMMON 2>&1); assert_status "--max-files 5 is accepted" $? 0
+assert_contains "and warned of" "$out" "WARN --max-files is ignored"
+assert_eq "once" "$(printf '%s\n' "$out" | grep -c 'WARN --max-files')" "1"
+hh-gate-verify commits "$good..HEAD" --max-files nonsense $COMMON >/dev/null 2>&1; assert_status "its value is ignored too" $? 0
+# a merge is judged on its subject, and the merged commits in the same range
 git reset -q --hard "$good"; git checkout -q -b side
 for k in 1 2 3 4 5 6 7 8; do c "feat: part $k" m${k}a m${k}b m${k}c m${k}d m${k}e; done
 git checkout -q -; git merge -q --no-ff -m "chore(join): merge side" side
 assert_eq "the merge brings in 40 files" "$(git diff --name-only "$good" HEAD | grep -c .)" "40"
-out=$(hh-gate-verify commits "$good..HEAD" $COMMON 2>&1); assert_status "a merge of 40 files passes --max-files 5" $? 0
+out=$(hh-gate-verify commits "$good..HEAD" $COMMON 2>&1); assert_status "a merge of 40 files passes" $? 0
 assert_eq "and every commit in the range is checked" "$out" "OK (9 commits)"
 git reset -q --hard "$good"; git merge -q --no-ff -m "merge side" side
 hh-gate-verify commits "$good..HEAD" $COMMON >/dev/null 2>&1; assert_status "a merge's free subject still fails conventional" $? 1
-git reset -q --hard "$good"; git checkout -q side; c "fix: six files" s1 s2 s3 s4 s5 s6; git checkout -q -
-git merge -q --no-ff -m "chore(join): merge side" side
-out=$(hh-gate-verify commits "$good..HEAD" $COMMON 2>&1); assert_status "a merged branch's own 6-file commit still fails" $? 1
-assert_contains "named as files" "$out" "files: 6"
-git reset -q --hard "$good"; git merge -q --no-ff --no-commit side >/dev/null 2>&1; for k in 1 2 3 4 5 6; do echo "$k" > own$k; done
-git add -A; git commit -qm "chore(join): merge side"
-out=$(hh-gate-verify commits "$good..HEAD" $COMMON 2>&1); assert_status "a merge carrying 6 files of its own fails --max-files 5" $? 1
-assert_contains "the merge itself is named, by its own 6 files" "$out" "$(git rev-parse --short HEAD) files: 6"
-# a merge that undoes 6 of the side's files counts them: --cc saw nothing there
-git reset -q --hard "$good"; git branch -q -D side; git checkout -q -b side
-c "feat: six on the side" u1 u2 u3 u4 u5 u6; git checkout -q -
-git merge -q --no-ff --no-commit side >/dev/null 2>&1; git checkout -q "$good" -- . 2>/dev/null; rm -f u1 u2 u3 u4 u5 u6
-git add -A; git commit -qm "chore(join): merge side"
-out=$(hh-gate-verify commits "$good..HEAD" $COMMON 2>&1); assert_status "a merge that undoes 6 of the side's files fails" $? 1
-assert_contains "the merge itself is named, by the 6 it undid" "$out" "$(git rev-parse --short HEAD) files: 6"
-# both sides edit the same 6 files, cleanly: git's own merge, nothing of the merge's own (--cc counted all 6)
-git reset -q --hard "$good"; git branch -q -D side
-for k in 1 2 3 4 5 6; do printf 'a\nb\nc\nd\ne\n' > both$k; done; c "feat: six shared files"; shared=$(git rev-parse HEAD)
-git checkout -q -b side   # each side's edits in two commits of 3, so only the merge is judged on 6
-for half in "1 2 3" "4 5 6"; do for k in $half; do printf 'A\nb\nc\nd\ne\n' > both$k; done; git commit -qam "feat: the side's first lines"; done
-git checkout -q -
-for half in "1 2 3" "4 5 6"; do for k in $half; do printf 'a\nb\nc\nd\nE\n' > both$k; done; git commit -qam "feat: our last lines"; done
-git merge -q --no-ff -m "chore(join): merge side" side >/dev/null 2>&1
-assert_eq "both sides' edits are in the merge" "$(cat both6)" "$(printf 'A\nb\nc\nd\nE')"
-assert_eq "and --cc would count all 6" "$(git diff-tree -r --cc --no-commit-id --name-only HEAD | grep -c .)" "6"
-out=$(hh-gate-verify commits "$shared..HEAD" $COMMON 2>&1); assert_status "a clean merge where both sides edit 6 files passes" $? 0
-assert_eq "with every commit checked" "$out" "OK (5 commits)"
-# 6 conflicts resolved by taking our side: the resolutions are the merge's own (--cc saw none of them)
-git reset -q --hard "$shared"; git branch -q -D side; git checkout -q -b side
-for half in "1 2 3" "4 5 6"; do for k in $half; do echo theirs > both$k; done; git commit -qam "feat: theirs"; done
-git checkout -q -
-for half in "1 2 3" "4 5 6"; do for k in $half; do echo ours > both$k; done; git commit -qam "feat: ours"; done
-git merge -q --no-ff side >/dev/null 2>&1; git checkout -q --ours -- both1 both2 both3 both4 both5 both6
-git add -A; git commit -qm "chore(join): merge side"
-assert_eq "--cc counts no resolution taken whole from one side" "$(git diff-tree -r --cc --no-commit-id --name-only HEAD | grep -c .)" "0"
-out=$(hh-gate-verify commits "$shared..HEAD" $COMMON 2>&1); assert_status "a merge resolving 6 conflicts by hand fails" $? 1
-assert_contains "the merge itself is named, by its 6 resolutions" "$out" "$(git rev-parse --short HEAD) files: 6"
 git reset -q --hard "$good"; git branch -q -D side
 git reset -q --hard "$good"; c "update stuff" f3
 hh-gate-verify commits "$good..HEAD" $COMMON >/dev/null 2>&1; assert_status "a free subject fails conventional" $? 1
-hh-gate-verify commits "$good..HEAD" --max-files 5 --style free --attribution deny >/dev/null 2>&1; assert_status "and passes free" $? 0
+hh-gate-verify commits "$good..HEAD" --style free --attribution deny >/dev/null 2>&1; assert_status "and passes free" $? 0
 for loc in C en_US.UTF-8; do   # a scope is lower-case ASCII under any locale
   git reset -q --hard "$good"; c "fix(gaté): a scope with é" f5
   (export LC_ALL=$loc; hh-gate-verify commits "$good..HEAD" $COMMON >/dev/null 2>&1); assert_status "a non-ASCII scope fails conventional under $loc" $? 1
@@ -215,8 +185,7 @@ assert_contains "as an option, before git sees it" "$out" "may not start with '-
 [ ! -e "$T_TMP/x..HEAD" ] && [ ! -e "$T_TMP/x" ] && ok "and writes nothing" || bad "and writes nothing"
 hh-gate-verify commits "HEAD" $COMMON >/dev/null 2>&1; assert_status "a range must be base..tip" $? 64
 hh-gate-verify commits "nope..HEAD" $COMMON >/dev/null 2>&1; assert_status "an unknown base is refused" $? 4
-hh-gate-verify commits "$good..HEAD" --max-files 5 --style conventional >/dev/null 2>&1; assert_status "every flag is required" $? 64
-hh-gate-verify commits "$good..HEAD" --max-files 0 --style conventional --attribution deny >/dev/null 2>&1; assert_status "max-files must be a positive number" $? 64
-hh-gate-verify commits "$good..HEAD" --max-files 5 --style loose --attribution deny >/dev/null 2>&1; assert_status "an unknown style is refused" $? 64
+hh-gate-verify commits "$good..HEAD" --style conventional >/dev/null 2>&1; assert_status "every flag is required" $? 64
+hh-gate-verify commits "$good..HEAD" --style loose --attribution deny >/dev/null 2>&1; assert_status "an unknown style is refused" $? 64
 hh-gate-verify nothing 2>/dev/null; assert_status "an unknown mode is a usage error" $? 64
 t_done
