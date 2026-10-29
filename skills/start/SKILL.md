@@ -97,7 +97,6 @@ only where the task needs it. At most 6 agents besides you; more only on the own
 Resolve the settings you will use, each on its own call, so a project cannot loosen the owner's safety values:
 
 - `hh-settings resolve permission_mode ${user_config.permission_mode_local}`
-- `hh-settings resolve files_per_commit ${user_config.files_per_commit}`
 - `hh-settings resolve allow_attribution ${user_config.allow_attribution}`
 
 Write `HH-PLAN:` and then show: each agent's role, model, effort, and one line why; the order of work; where heavy
@@ -137,7 +136,7 @@ A new agent waits for its first message. Send it its brief with `SendMessage`, f
   gate log yourself: `hh-gate-verify log <file> --commit <tip>` for a log `hh-gate` wrote, whose header names its steps;
   a project's own gate script writes no header, so name the steps its log must hold: `hh-gate-verify log <file> --expect
   <name>,<name>`. Then
-  `hh-gate-verify commits <base>..<tip> --max-files <resolved files_per_commit> --style ${user_config.commit_style} --attribution <allow|deny from the resolved setting>`.
+  `hh-gate-verify commits <base>..<tip> --style ${user_config.commit_style} --attribution <allow|deny from the resolved setting>`.
   Never call anything green without the log path.
 - Land on the owner's word, then push by full hash with `hh-push <remote> <40-hex hash> <branch>`. A push is an outward
   step whenever CI deploys or migrates on it; ask for that item unless the owner has already said otherwise for it.

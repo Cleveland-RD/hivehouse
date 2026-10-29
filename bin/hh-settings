@@ -11,7 +11,7 @@ set -u
 # Privileged mode: no BASH_ENV, no functions from the environment, and a fixed bash (the away check below decides bypass).
 HH_BIN=${0%/*}; [ "$HH_BIN" != "$0" ] || HH_BIN=.
 . "$HH_BIN/hh-lib.sh"
-KEYS="permission_mode overnight_ceiling_usd allow_attribution files_per_commit"
+KEYS="permission_mode overnight_ceiling_usd allow_attribution"
 if [ "${1:-}" = option ] && [ $# -ge 2 ] && [ $# -le 3 ]; then
   hh_option_default "$2" >/dev/null || hh_die 4 "unknown option: $2"
   val=$(hh_option_value "$2" "${3:-}") || hh_die 4 "unknown option: $2"
@@ -32,20 +32,18 @@ mode_rank() {  # hh_mode_rank, but bypassPermissions is never a local value (a p
   [ "$1" != bypassPermissions ] && hh_mode_rank "$1"
 }
 is_num()  { printf '%s' "$1" | grep -Eq '^[0-9]+(\.[0-9]+)?$'; }
-is_int()  { printf '%s' "$1" | grep -Eq '^[1-9][0-9]*$'; }
 is_bool() { [ "$1" = true ] || [ "$1" = false ]; }
 valid() {  # valid <value>
   case "$key" in
     permission_mode) mode_rank "$1" >/dev/null ;;
     overnight_ceiling_usd) is_num "$1" ;;
     allow_attribution) is_bool "$1" ;;
-    files_per_commit) is_int "$1" ;;
   esac
 }
 stricter() {  # stricter <project> <owner>: 0 when the project value is strictly tighter than the owner's
   case "$key" in
     permission_mode) [ "$(mode_rank "$1")" -lt "$(mode_rank "$2")" ] ;;
-    overnight_ceiling_usd|files_per_commit) awk -v a="$1" -v b="$2" 'BEGIN { exit !(a + 0 < b + 0) }' ;;
+    overnight_ceiling_usd) awk -v a="$1" -v b="$2" 'BEGIN { exit !(a + 0 < b + 0) }' ;;
     allow_attribution) [ "$1" = false ] && [ "$2" = true ] ;;
   esac
 }
@@ -72,8 +70,10 @@ emit() {  # emit <value>: print it; permission_mode left at the owner's auto bec
 if [ ! -f "$file" ]; then emit "$owner"; exit 0; fi
 
 jq -e 'type == "object"' "$file" >/dev/null 2>&1 || hh_die 4 "$file is not a JSON object"
+RETIRED="files_per_commit"   # settings an older project file may still carry: ignored, with one note
 for k in $(jq -r 'keys[]' "$file"); do
-  case " $KEYS " in *" $k "*) ;; *) hh_die 4 "unknown setting in $file: $k" ;; esac
+  case " $KEYS " in *" $k "*) continue ;; esac
+  case " $RETIRED " in *" $k "*) echo "$HH_PREFIX: $file sets $k, which no longer exists (commits have no file count); ignored" >&2 ;; *) hh_die 4 "unknown setting in $file: $k" ;; esac
 done
 [ "$(jq -r --arg k "$key" 'has($k)' "$file")" = true ] || { emit "$owner"; exit 0; }
 proj=$(jq -r --arg k "$key" '.[$k] | tostring' "$file") || exit 4

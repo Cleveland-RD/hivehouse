@@ -14,7 +14,7 @@ check() {  # check <label> <expected status> <command...>
 }
 check "hh-manifest list" 2 hh-manifest list
 check "hh-manifest add" 2 hh-manifest add dir path="$T_TMP/x"
-check "hh-settings resolve" 2 hh-settings resolve files_per_commit 5
+check "hh-settings resolve" 2 hh-settings resolve overnight_ceiling_usd 50
 check "hh-context" 2 hh-context impl
 check "hh-context --all" 2 hh-context --all
 check "hh-rotate" 2 hh-rotate impl
@@ -29,7 +29,7 @@ export HH_PROJECT="$T_TMP/nope"
 check "hh-manifest list with a missing HH_PROJECT" 2 hh-manifest list
 check "hh-context with a missing HH_PROJECT" 2 hh-context impl
 check "hh-rotate with a missing HH_PROJECT" 2 hh-rotate impl
-check "hh-settings with a missing HH_PROJECT" 2 hh-settings resolve files_per_commit 5
+check "hh-settings with a missing HH_PROJECT" 2 hh-settings resolve overnight_ceiling_usd 50
 check "hh-spawn with a missing HH_PROJECT" 2 hh-spawn --agent impl --role "$T_TMP/role.md" --rules "$T_TMP/RULES.md" --model m --effort low --mode auto
 unset HH_PROJECT
 # nothing was written anywhere

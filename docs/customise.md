@@ -15,7 +15,7 @@ Ask Claude to customise anything: roles, rules, skills' behaviour, options. The 
 - **A skill's behaviour.** A skill's own text is the plugin's, and an update replaces it. Everything a skill does is bound by the rules it reads first, so a change in how skills behave goes into `custom/rules/RULES.md` (or a role); a fact about one project goes in that project's `CLAUDE.md`.
 - **Roles and rules for a team you spawn by hand.** `hh-spawn --role <file> --rules <file>` takes any two files: point them at your own copies.
 - **Options.** The plugin options below, set in Claude Code's plugin settings.
-- **Project safety settings.** `<project>/.hivehouse/settings.json` may tighten `permission_mode`, `overnight_ceiling_usd`, `allow_attribution` and `files_per_commit`, never loosen them.
+- **Project safety settings.** `<project>/.hivehouse/settings.json` may tighten `permission_mode`, `overnight_ceiling_usd` and `allow_attribution`, never loosen them. A file that still sets `files_per_commit`, which no longer exists, is ignored with a note.
 - **What away mode allows.** `hh-hub away --until <time> [--mcp-allow <list>] [--remote-allow <hosts>] [--tools <list>] [--peers <session names>]` prints the lines that write the delegate file (`--allow` is reserved and refuses; see [Customising what away mode allows](away-mode.md#customising-what-away-mode-allows)). When you ask Claude to loosen away mode, it prints those lines for you to paste and never edit anything to get round it.
 
 **Every plugin option** (`.claude-plugin/plugin.json`, `userConfig`)
@@ -24,7 +24,6 @@ Ask Claude to customise anything: roles, rules, skills' behaviour, options. The 
 |---|---|---|
 | `commit_style` | Commit subject style: conventional (type(scope): summary) or free | `conventional` |
 | `allow_attribution` | Allow AI attribution trailers in commits: When off, gates refuse commits carrying Co-Authored-By or similar trailers | `false` |
-| `files_per_commit` | Most files per commit: Gates warn or refuse commits touching more files than this | `5` |
 | `model_orchestrator` | Orchestrator model: Model alias for the orchestrator session | `opus` |
 | `model_builder` | Implementer/fixer model: Model alias for builder agents | `sonnet` |
 | `model_reviewer` | Reviewer/architect/product model: Model alias for reviewing agents | `opus` |

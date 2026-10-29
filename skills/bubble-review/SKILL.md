@@ -38,7 +38,7 @@ If no depth is stated, ask; if you cannot ask, take standard and say so.
 3. **Gate log.** For a log `hh-gate` wrote: `hh-gate-verify log <file> --commit <tip>`. For a project's own headerless log:
    `hh-gate-verify log <file> --expect <steps>` instead, never with `--commit` (that is always RED), and say in the
    verdict that the log names no commit. Then the commit rules with
-   `hh-gate-verify commits <base>..<tip> --max-files <n> --style <style> --attribution <allow|deny>`, each value from
+   `hh-gate-verify commits <base>..<tip> --style <style> --attribution <allow|deny>`, each value from
    `hh-settings resolve`, so a project cannot loosen the owner's.
 4. **Changed tests only,** through `hh-slot run --wait <label> -- <command>`. Do not run the whole suite unless asked.
 5. **Break each new guard** with one change: count that the change matched exactly once, confirm the test fails, restore

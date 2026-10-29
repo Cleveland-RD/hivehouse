@@ -54,17 +54,15 @@ on. On failure the command names the steps; report those, not a summary.
 
 ## 5. Verify the commits
 
-Resolve the safety values first, each on its own call, so a project cannot loosen the owner's:
+Resolve the safety value first, so a project cannot loosen the owner's:
 
-- `hh-settings resolve files_per_commit ${user_config.files_per_commit}`
 - `hh-settings resolve allow_attribution ${user_config.allow_attribution}`
 
-Then: `hh-gate-verify commits <base>..<tip> --max-files <resolved files_per_commit> --style ${user_config.commit_style} --attribution <deny, or allow when the resolved allow_attribution is true>`
+Then: `hh-gate-verify commits <base>..<tip> --style ${user_config.commit_style} --attribution <deny, or allow when the resolved allow_attribution is true>`
 
-All three flags are required, so nothing is loosened by leaving one out. Add `--no-body` when the rules say one-line
-subjects only (a body is otherwise a warning). It checks the subject style, the files per commit against the first
-parent (a merge counts only the files where it differs from git's own merge of its parents, its own content) and any
-attribution trailer. An empty range is red: nothing checked is not a pass. Report each violation with its commit.
+Both flags are required, so nothing is loosened by leaving one out. Add `--no-body` when the rules say one-line
+subjects only (a body is otherwise a warning). It checks the subject style and any attribution trailer; it counts no
+files, because one purpose per commit is read in the diff. An empty range is red: nothing checked is not a pass. Report each violation with its commit.
 
 ## 6. Report
 

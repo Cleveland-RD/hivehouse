@@ -10,7 +10,6 @@
   "userConfig": {
     "commit_style": { "type": "string", "title": "Commit subject style", "description": "conventional (type(scope): summary) or free", "default": "conventional" },
     "allow_attribution": { "type": "boolean", "title": "Allow AI attribution trailers in commits", "description": "When off, gates refuse commits carrying Co-Authored-By or similar trailers", "default": false },
-    "files_per_commit": { "type": "number", "title": "Most files per commit", "description": "Gates warn or refuse commits touching more files than this", "default": 5, "min": 1 },
     "model_orchestrator": { "type": "string", "title": "Orchestrator model", "description": "Model alias for the orchestrator session", "default": "opus" },
     "model_builder": { "type": "string", "title": "Implementer/fixer model", "description": "Model alias for builder agents", "default": "sonnet" },
     "model_reviewer": { "type": "string", "title": "Reviewer/architect/product model", "description": "Model alias for reviewing agents", "default": "opus" },
