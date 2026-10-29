@@ -77,8 +77,9 @@ verify_commits() {
   case "$range" in -*) hh_die 4 "a range may not start with '-': $range" ;; esac
   shift
   while [ $# -gt 0 ]; do case "$1" in
-    --max-files) [ $# -ge 2 ] || hh_die 64 "$USAGE"; maxfiles=1; shift 2 ;; --style) style="${2:-}"; shift 2 ;;
-    --attribution) attribution="${2:-}"; shift 2 ;; --no-body) nobody=1; shift ;;
+    --max-files) [ $# -ge 2 ] || hh_die 64 "$USAGE"; maxfiles=1; shift 2 ;;   # a value flag with no value is usage: shift 2 fails on one word and the loop would not end
+    --style) [ $# -ge 2 ] || hh_die 64 "$USAGE"; style="$2"; shift 2 ;;
+    --attribution) [ $# -ge 2 ] || hh_die 64 "$USAGE"; attribution="$2"; shift 2 ;; --no-body) nobody=1; shift ;;
     *) hh_die 64 "$USAGE" ;; esac; done
   [ "$maxfiles" -eq 0 ] || echo "WARN --max-files is ignored: commits have no file count (one purpose per commit); drop the flag, it goes in the next release"
   case "$style" in conventional|free) ;; *) hh_die 64 "$USAGE" ;; esac

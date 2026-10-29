@@ -187,5 +187,10 @@ hh-gate-verify commits "HEAD" $COMMON >/dev/null 2>&1; assert_status "a range mu
 hh-gate-verify commits "nope..HEAD" $COMMON >/dev/null 2>&1; assert_status "an unknown base is refused" $? 4
 hh-gate-verify commits "$good..HEAD" --style conventional >/dev/null 2>&1; assert_status "every flag is required" $? 64
 hh-gate-verify commits "$good..HEAD" --style loose --attribution deny >/dev/null 2>&1; assert_status "an unknown style is refused" $? 64
+# a value flag with no value is a usage error, not a loop (a 3 second alarm turns a hang into a failure)
+for f in --max-files --style --attribution; do
+  case "$f" in --style) rest="--attribution deny" ;; --attribution) rest="--style conventional" ;; *) rest="--style conventional --attribution deny" ;; esac
+  perl -e 'alarm 3; exec @ARGV' hh-gate-verify commits "$good..HEAD" $rest $f >/dev/null 2>&1; assert_status "a trailing $f with no value exits 64" $? 64
+done
 hh-gate-verify nothing 2>/dev/null; assert_status "an unknown mode is a usage error" $? 64
 t_done
