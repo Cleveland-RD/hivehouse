@@ -22,7 +22,8 @@ file first.
 2. Run only the tests the change touched, through `hh-slot run --wait <label> -- <command>`. Do not run the whole suite unless
    asked.
 3. Break each new guard with one change, count that it matched once, confirm the test fails, restore by copy.
-4. Check every commit against the rules (subject style, files per commit, attribution) with `hh-gate-verify commits`.
+4. Check every commit against the rules (subject style, attribution) with `hh-gate-verify commits`, and read the diff of each for one purpose per commit
+   (a change with its own tests and docs; two purposes are two commits).
 5. Scan the nine bubble categories: breaks existing functionality; architecturally incorrect; duplication; unnecessary
    overhead; security or auth gaps; silent failure or data corruption; API contract drift; convention drift; stale or
    misleading names, comments or labels.

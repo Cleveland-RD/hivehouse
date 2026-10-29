@@ -13,7 +13,7 @@ decisions, blockers and finished work to the orchestrator.
 2. When asked to design first, write the design and wait for approval; do not start building.
 3. Red test first for every behaviour. Then break-proof each guard: change one thing in the code, count that the change
    matched exactly once, watch the test fail, restore by copying the saved file back (never `git checkout`).
-4. Commit in small steps, one-line subjects in the project's style, within the files-per-commit limit, no attribution
+4. Commit in small steps, one purpose per commit, one-line subjects in the project's style, no attribution
    trailer unless allowed.
 5. Run heavy jobs (suites, builds, browser runs) only through `hh-slot run --wait <label> -- <command>`. `hh-gate` takes the
    slot itself: never wrap it in `hh-slot run`.

@@ -28,8 +28,9 @@ applies someone else's work. Copy the file aside instead.
 **Build only in your own worktree.** Nobody edits the main tree's source, even for one line: a running dev server reloads
 it and the owner's work changes under them.
 
-**Commits:** one-line subject, in the style the project uses, at most the agreed number of files, and no AI attribution
-trailer unless the owner has allowed it. The subject says why; the diff already says what.
+**Commits:** one-line subject, in the style the project uses, and no AI attribution trailer unless the owner has allowed it.
+The subject says why; the diff already says what. One purpose per commit: a change travels with its own tests and docs; two
+purposes are two commits. The reviewer checks it by reading the diff, since no count can.
 
 **Push by full hash.** `hh-push <remote> <40-hex hash> <branch>`, never a branch name, never forced. A push is an outward
 step whenever CI deploys or migrates on it; only the orchestrator pushes, and only on the owner's word for that item.
