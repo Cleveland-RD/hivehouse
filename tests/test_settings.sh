@@ -75,8 +75,9 @@ hh-settings option no_such_key 5 >/dev/null 2>&1; assert_status "option: an unkn
 hh-settings option >/dev/null 2>&1; assert_status "option: usage" $? 64
 # KI-59: with no value passed, `option` reads what Claude Code saved in settings.json (pluginConfigs, user and managed), then the default
 UF="$CLAUDE_CONFIG_DIR/settings.json"; MF="$HH_MANAGED_SETTINGS"; rm -f "$UF" "$MF"
-saved() { printf '%s\n' "$1" > "$UF"; }
-saved '{"pluginConfigs":{"hivehouse@hh-market":{"options":{"rotate_at_percent":37,"hub_auto_start":false,"commit_style":"free"}}}}'
+pcfg() { jq -nc --arg id "$T_PLUGIN@hh-market" --argjson o "$1" '{pluginConfigs: {($id): {options: $o}}}'; }   # settings.json as Claude Code saves a plugin's options
+saved() { case "$1" in '{"pluginConfigs"'*|'{not'*) printf '%s\n' "$1" > "$UF" ;; *) pcfg "$1" > "$UF" ;; esac; }
+saved '{"rotate_at_percent":37,"hub_auto_start":false,"commit_style":"free"}'
 assert_eq "saved: no value passed gives the saved number" "$(opt rotate_at_percent)" "37"
 assert_eq "saved: ...a placeholder left as written" "$(opt rotate_at_percent '${user_config.rotate_at_percent}')" "37"
 assert_eq "saved: ...an empty value" "$(opt rotate_at_percent '')" "37"
@@ -88,20 +89,20 @@ saved '{"pluginConfigs":{"otherplugin@hh-market":{"options":{"rotate_at_percent"
 assert_eq "saved: another plugin's options are not read" "$(opt rotate_at_percent)" "$(def rotate_at_percent)"
 saved '{not json'
 assert_eq "saved: an unreadable settings file gives the default" "$(opt rotate_at_percent)" "$(def rotate_at_percent)"
-saved '{"pluginConfigs":{"hivehouse@hh-market":{"options":{"rotate_at_percent":37}}}}'
-printf '%s\n' '{"pluginConfigs":{"hivehouse@hh-market":{"options":{"rotate_at_percent":12}}}}' > "$MF"
+saved '{"rotate_at_percent":37}'
+pcfg '{"rotate_at_percent":12}' > "$MF"
 assert_eq "saved: managed settings beat the user's" "$(opt rotate_at_percent)" "12"
 rm -f "$MF"
 # a sensitive option is never read from settings.json: run a copy of the plugin whose manifest declares one
 cp -R "$HH_REPO_ROOT/bin" "$T_TMP/pl-bin"; mkdir -p "$T_TMP/pl/.claude-plugin"; mv "$T_TMP/pl-bin" "$T_TMP/pl/bin"
 jq '.userConfig.secret_key = {type:"string",title:"s",description:"s",sensitive:true,default:"dflt"}' "$PL" > "$T_TMP/pl/.claude-plugin/plugin.json"
-saved '{"pluginConfigs":{"hivehouse@hh-market":{"options":{"secret_key":"LEAK","rotate_at_percent":37}}}}'
+saved '{"secret_key":"LEAK","rotate_at_percent":37}'
 assert_eq "sensitive: a saved sensitive option is not read" "$("$T_TMP/pl/bin/hh-settings" option secret_key 2>/dev/null)" "dflt"
 assert_eq "sensitive: the same copy still reads a plain one" "$("$T_TMP/pl/bin/hh-settings" option rotate_at_percent 2>/dev/null)" "37"
 cd "$r"; rm -f $T_STATE/settings.json
 rm -f "$UF"
 assert_eq "saved: resolve with nothing saved reads the default" "$(res overnight_ceiling_usd '${user_config.overnight_ceiling_usd}')" "$(def overnight_ceiling_usd)"
-saved '{"pluginConfigs":{"hivehouse@hh-market":{"options":{"overnight_ceiling_usd":8}}}}'
+saved '{"overnight_ceiling_usd":8}'
 assert_eq "saved: ...(a saved ceiling)" "$(res overnight_ceiling_usd '${user_config.overnight_ceiling_usd}')" "8"
 rm -f "$UF"
 assert_eq "resolve: a placeholder as the owner's value is the default (number)" "$(res overnight_ceiling_usd '${user_config.overnight_ceiling_usd}')" "$(def overnight_ceiling_usd)"
