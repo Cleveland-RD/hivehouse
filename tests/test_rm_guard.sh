@@ -10,6 +10,8 @@ mkdir -p "$FH/.claude" "$FH/proj/.git" "$FH/proj/src" "$FH/host:/.git" "$FH/plai
   "$R/private/var/folders/ab/T/z" "$R/home/other" "$PL/bin/guard" "$R/Users/other"
 cp "$HH_REPO_ROOT/bin/hh-lib.sh" "$PL/bin/hh-lib.sh"; cp "$HH_REPO_ROOT"/bin/guard/* "$G/"
 echo "gitdir: elsewhere" > "$FH/wt/.git"; ln -s "$FH/proj" "$FH/proj-link"; : > "$FH/plain/file"; : > "$FH/plain/sub/deep/f"
+# The test's own clean-up calls /bin/rm by its full path: with a guard on PATH, a bare rm here would be the guard's, which hands the call to the stub
+# (HH_GUARD_REAL) and leaves the stub log behind.
 STUB="$T_TMP/stub"; STUBLOG="$T_TMP/stub.log"
 printf '#!/bin/sh\nprintf "%%s\\n" "$@" > "%s"\n' "$STUBLOG" > "$STUB"; chmod +x "$STUB"
 export HOME="$FH" HH_GUARD_ROOT="$R" HH_GUARD_REAL="$STUB"
@@ -17,7 +19,7 @@ assert_eq "the real tool is the stub (a test that would reach a real rm fails in
 
 inside() { local a; for a in "$@"; do case "$a" in /bin/rm|"$T_TMP"/*) ;; /*) return 1 ;; esac; done; }   # every absolute word lies in the scratch (/bin/rm only names a command inside -exec)
 run() {  # run <guard> <args>...: ERR and RC; STUBLOG shows whether the stub was reached
-  rm -f "$STUBLOG"; inside "${@:2}" || { bad "not run: an operand outside the scratch folder: $*"; RC=99; return 1; }
+  /bin/rm -f "$STUBLOG"; inside "${@:2}" || { bad "not run: an operand outside the scratch folder: $*"; RC=99; return 1; }
   ERR=$(cd "${RUNCWD:-$FH}" && "$G/$1" "${@:2}" 2>&1 >/dev/null); RC=$?
 }
 refused() {  # refused <label> <guard> <args>...
@@ -96,18 +98,18 @@ REALBIN="$T_TMP/realbin"; REALLOG="$T_TMP/real.log"; mkdir -p "$REALBIN"
 printf '#!/bin/sh\nprintf "CALLED %%s\\n" "$*" >> "%s"\n' "$REALLOG" > "$REALBIN/rm"; chmod +x "$REALBIN/rm"
 for order in "A then B|$CA|$CB" "B then A|$CB|$CA"; do
   name=${order%%|*}; rest=${order#*|}; first=${rest%%|*}; second=${rest#*|}
-  P="$first/bin/guard:$second/bin/guard:$REALBIN:/usr/bin:/bin"; rm -f "$REALLOG"
+  P="$first/bin/guard:$second/bin/guard:$REALBIN:/usr/bin:/bin"; /bin/rm -f "$REALLOG"
   run_to 10 "$P" rm "$FH/plain/file"
   assert_eq "two guards on PATH ($name): the call ends (no hang), exit 0" "$RC" "0"
   assert_eq "...and reaches the real rm once, with its operand" "$(cat "$REALLOG" 2>/dev/null)" "CALLED $FH/plain/file"
-  rm -f "$REALLOG"; run_to 10 "$P" rm -rf "$FH/proj"
+  /bin/rm -f "$REALLOG"; run_to 10 "$P" rm -rf "$FH/proj"
   assert_eq "...a protected operand is still refused: exit 1" "$RC" "1"
   [ ! -e "$REALLOG" ] && ok "...and the real rm is not reached" || bad "the real rm was reached for a protected operand"
 done
 # copies without the marker (an older guard) cannot be passed over by name: the loop stop ends the call, in an error, within the limit
 for d in "$R/srv/c/oA" "$R/srv/c/oB"; do mkcopy "$d" nomark; done
 [ ! -e "$R/srv/c/oA/bin/guard/.hh-guard" ] && [ ! -e "$R/srv/c/oB/bin/guard/.hh-guard" ] && ok "the old copies hold no marker" || bad "the old copies hold a marker"
-rm -f "$REALLOG"; run_to 20 "$R/srv/c/oA/bin/guard:$R/srv/c/oB/bin/guard:$REALBIN:/usr/bin:/bin" rm "$FH/plain/file"
+/bin/rm -f "$REALLOG"; run_to 20 "$R/srv/c/oA/bin/guard:$R/srv/c/oB/bin/guard:$REALBIN:/usr/bin:/bin" rm "$FH/plain/file"
 assert_eq "two guards that cannot pass each other over: the loop stop ends it (exit 2), no hang" "$RC" "2"
 assert_contains "...saying more than one guard is on PATH" "$ERR" "more than one copy of bin/guard is on PATH"
 [ ! -e "$REALLOG" ] && ok "...and nothing was run" || bad "the real rm ran"
@@ -116,11 +118,11 @@ for t in find rsync; do
   assert_eq "$t: the same loop stop (exit 2)" "$RC" "2"
 done
 # a real find runs rm by name (-exec rm): the guard of rm is not in a loop, so it is not stopped by find's own count
-rm -f "$REALLOG"; run_to 20 "$CA/bin/guard:$CB/bin/guard:$REALBIN:/usr/bin:/bin" find "$FH/plain/sub/deep" -type f -exec rm {} +
+/bin/rm -f "$REALLOG"; run_to 20 "$CA/bin/guard:$CB/bin/guard:$REALBIN:/usr/bin:/bin" find "$FH/plain/sub/deep" -type f -exec rm {} +
 assert_eq "find -exec rm under the guards: the call ends, exit 0" "$RC" "0"
 assert_contains "...and the guard of rm handed it on (the real rm was reached)" "$(cat "$REALLOG" 2>/dev/null)" "CALLED $FH/plain/sub/deep/f"
 # a guard with no real tool beyond it ends in an error; made with a tool name that has no real program, so that PATH can keep /usr/bin
-for d in "$R/srv/c/nA" "$R/srv/c/nB"; do mkcopy "$d"; sed -i.bak -e 's/hh_guard_real rm/hh_guard_real hhnotool/' -e 's/hh_guard_judge rm/hh_guard_judge hhnotool/' "$d/bin/guard/rm"; mv "$d/bin/guard/rm" "$d/bin/guard/hhnotool"; rm -f "$d/bin/guard/rm.bak"; done
+for d in "$R/srv/c/nA" "$R/srv/c/nB"; do mkcopy "$d"; sed -i.bak -e 's/hh_guard_real rm/hh_guard_real hhnotool/' -e 's/hh_guard_judge rm/hh_guard_judge hhnotool/' "$d/bin/guard/rm"; mv "$d/bin/guard/rm" "$d/bin/guard/hhnotool"; /bin/rm -f "$d/bin/guard/rm.bak"; done
 run_to 10 "$R/srv/c/nA/bin/guard:$R/srv/c/nB/bin/guard:/usr/bin:/bin" hhnotool "$FH/plain/file"
 assert_eq "two guards and no real program: it ends in an error (127), not a hang" "$RC" "127"
 assert_contains "...saying there is no real tool beyond the guard" "$ERR" "is not on PATH beyond the guard"
