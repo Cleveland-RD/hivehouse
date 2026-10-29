@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Shared by every hh-* executable. bash 3.2 compatible. Never reads plugin variables: settings arrive as arguments
-# or HH_* environment set by hh-spawn.
+# Shared by every hh-* executable. bash 3.2 compatible. Reads no plugin variables: settings arrive as arguments
+# or HH_* environment set by hh-spawn. The one exception is hh_option_saved, which reads an option's saved value from Claude Code's
+# settings.json when a skill passed none.
 # A command substitution does not stop its caller: write x=$(hh_project_root) || exit $?, never a bare x=$(...).
 # ---- the names: each is spelled here and nowhere else in bin/ (tests/test_names.sh holds it to that); hooks/names.ts is the
 # twin for the hub screen ------------------------------------------------------------------------------------------------

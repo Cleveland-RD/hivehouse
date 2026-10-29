@@ -3,8 +3,9 @@
 # .hivehouse/settings.json may make a safety value stricter than the owner's, never looser. permission_mode alone can come back as
 # bypassPermissions, and only for a marked caller (hh_away_caller) while the owner's delegate file is valid for this project and the
 # owner's own value is auto and the project did not tighten it. Takes no command to run.
-# `hh-settings option <key> [<value>]` prints the value a skill passed for a plugin option, or plugin.json's default when it is missing or
-# still the literal ${user_config.<key>} (Claude Code leaves a placeholder unfilled when no value was saved); resolve treats an owner
+# `hh-settings option <key> [<value>]` prints the value a skill passed for a plugin option; when it is missing or still the literal ${user_config.<key>}
+# (Claude Code leaves a placeholder unfilled when no value was saved) the value saved in Claude Code's settings.json (hh_option_saved), else
+# plugin.json's default; resolve treats an owner
 # value that is such a placeholder the same way.
 # Exit: 2 no project, 3 .hivehouse tracked by git, 4 refused value or key, 64 usage.
 set -u
