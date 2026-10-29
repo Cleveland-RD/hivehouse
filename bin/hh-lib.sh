@@ -28,16 +28,33 @@ hh_plugin_name() {  # use as x=$(hh_plugin_name) || exit $?. The plugin's name, 
 }
 # A skill's ${user_config.X} reaches the session as written when no value of X was ever saved (Claude Code fills a placeholder only from a
 # saved value, never from the plugin's default). hh_option_default is plugin.json's default for an option; hh_option_value is the value a
-# skill passed, or that default when the value is missing, empty or still the placeholder. The one place either is decided.
+# skill passed, or the value saved in settings.json, or that default when the value is missing, empty or still the placeholder. The one
+# place either is decided.
 hh_option_default() {  # hh_option_default <key>: prints the default; 4 when plugin.json declares no such option
   local f; f="$(dirname "${BASH_SOURCE[0]}")/../.claude-plugin/plugin.json"
   jq -e --arg k "$1" '.userConfig | has($k)' "$f" >/dev/null 2>&1 || return 4
   jq -r --arg k "$1" '.userConfig[$k] | if has("default") then (.default | tostring) else "" end' "$f"
 }
-hh_option_value() {  # hh_option_value <key> [<value the skill passed>]
+# The value saved for an option: Claude Code keeps a non-sensitive one in settings.json under pluginConfigs["<plugin>@<marketplace>"].options,
+# read from user and managed settings only (settings-reference, pluginConfigs: Scope "User or managed"; checked 29 Oct 2026). Managed is
+# read first, being the higher level. A sensitive option lives in the credential store and is never read here. Prints nothing and returns 1
+# when no value is saved; the marketplace is not named, so any "<plugin>@*" entry counts.
+hh_option_saved() {  # hh_option_saved <key>
+  local k="$1" f name v pj; pj="$(dirname "${BASH_SOURCE[0]}")/../.claude-plugin/plugin.json"
+  name=$(hh_plugin_name) || return 1
+  jq -e --arg k "$k" '.userConfig[$k].sensitive != true' "$pj" >/dev/null 2>&1 || return 1
+  for f in "$(hh_managed_settings)" "$(hh_claude_dir)/settings.json"; do
+    [ -f "$f" ] || continue
+    v=$(jq -r --arg k "$k" --arg p "$name@" '[(.pluginConfigs // {}) | to_entries[] | select(.key | startswith($p)) | .value.options | select(type == "object" and has($k)) | .[$k] | select(. != null) | tostring] | first // empty' "$f" 2>/dev/null)
+    [ -z "$v" ] || { printf '%s\n' "$v"; return 0; }
+  done
+  return 1
+}
+hh_option_value() {  # hh_option_value <key> [<value the skill passed>]: the passed value, else the saved one, else plugin.json's default
   local k="$1" v="${2:-}"
   case "$v" in '${user_config.'*'}') k=${v#'${user_config.'}; k=${k%'}'}; v="" ;; esac
   [ -z "$v" ] || { printf '%s\n' "$v"; return 0; }
+  hh_option_saved "$k" && return 0
   hh_option_default "$k"
 }
 hh_die()  { echo "$HH_PREFIX: $2" >&2; exit "$1"; }

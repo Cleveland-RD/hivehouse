@@ -9,7 +9,7 @@ allowed-tools: Bash(hh-resolve *) Bash(hh-settings option *) Bash(hh-spawn *) Ba
 
 # hivehouse: overnight
 
-Claude Code fills a `${user_config.X}` below only when a value of X was saved; when one still reads literally, run `hh-settings option X` and use what it prints (the plugin's default).
+Claude Code fills a `${user_config.X}` below only when a value of X was saved; only when one still reads literally, as `${user_config.X}`, run `hh-settings option X` and use what it prints (the value saved in Claude Code's settings, else the plugin's default); a filled value is used as it is.
 
 You run a queue of work while the owner is away. The work: $ARGUMENTS
 
