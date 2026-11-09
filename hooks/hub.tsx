@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
-import type { HubAgent, HubDialog, HubProject, HubTask, HubView } from '../types'
+import type { HubAgent, HubDialog, HubProject, HubTask, HubView } from './types'
 import { HUB_DIR, PANE, PLUGIN, PREFIX } from './names'
 
 // The owner's hub (bin/hh-hub, skills/hub): in the session started in the hub's own folder, and only there, a screen of

@@ -18,7 +18,7 @@ trap 'rc=$?; [ "$rc" -eq 0 ] || { [ -n "${DENIED:-}" ] || echo "Refused by hiveh
 # timeout). So the check runs as a child of this process (`$0 --check`, same input and environment) and this process answers within DEADLINE
 # seconds, wherever the time goes: past it the child's whole process group is killed and the call is refused. The child gets its own process
 # group (so no descendant of it, at any depth, outlives the answer) and writes to private temp files that this process relays and removes
-# (so this process alone holds Claude Code's pipes). hooks/hooks.json gives the hook a timeout above the deadline.
+# (so this process alone holds Claude Code's pipes). The plugin's hook wiring gives the hook a timeout above the deadline.
 HH_DEADLINE=20
 if [ "${1:-}" != --check ]; then
   TMPO=""; TMPE=""

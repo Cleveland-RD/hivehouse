@@ -19,7 +19,7 @@ assert_eq "bin/ and hooks/ spell no folder, path or command name outside their c
 tests=$(stray tests/test_*.sh tests/*.test.ts tests/bin/* | grep -v '^tests/test_names.sh:')
 assert_eq "the tests spell none outside tests/lib.sh and tests/names.ts" "$tests" ""
 # the one other place the plugin's name is a literal: the key of the atoms' types, which TypeScript cannot take from a constant
-assert_eq "types/index.d.ts keys the atoms by the plugin's name" "$(sed -n 's/^    \([a-z-]*\): { hubView.*/\1/p' types/index.d.ts)" "$T_PLUGIN"
+assert_eq "hooks/types.d.ts keys the atoms by the plugin's name" "$(sed -n 's/^    \([a-z-]*\): { hubView.*/\1/p' hooks/types.d.ts)" "$T_PLUGIN"
 # ...and the atoms' plugin, a literal the engine reads from the source of hooks/hub.tsx
 assert_eq "hooks/hub.tsx declares 3 atoms" "$(grep -c "atom({ plugin: '" hooks/hub.tsx)" "3"
 assert_eq "...each in the plugin's name" "$(grep -o "atom({ plugin: '[^']*'" hooks/hub.tsx | sort -u)" "atom({ plugin: '$T_PLUGIN'"

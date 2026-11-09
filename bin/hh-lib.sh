@@ -3,8 +3,8 @@
 # or HH_* environment set by hh-spawn. The one exception is hh_option_saved, which reads an option's saved value from Claude Code's
 # settings.json when a skill passed none.
 # A command substitution does not stop its caller: write x=$(hh_project_root) || exit $?, never a bare x=$(...).
-# ---- the names: each is spelled here and nowhere else in bin/ (tests/test_names.sh holds it to that); hooks/names.ts is the
-# twin for the hub screen ------------------------------------------------------------------------------------------------
+# ---- the names: each is spelled here and nowhere else in bin/ (tests/test_names.sh holds it to that); the hub screen has a twin of them
+# ---------------------------------------------------------------------------------------------------------------------
 HH_PREFIX='hivehouse'                     # what a message to the user begins with: "<prefix>: ..."
 HH_STATE_DIR='.hivehouse'                 # a project's state folder, under its root
 HH_HUB_DIR='.hivehouse-hub'               # the hub's folder, under its work folder
