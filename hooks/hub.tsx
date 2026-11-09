@@ -6,8 +6,9 @@ import { HUB_DIR, PANE, PLUGIN, PREFIX } from './names'
 
 // The owner's hub (bin/hh-hub, skills/hub): in the session started in the hub's own folder, and only there, a screen of
 // what waits on the owner and of every project's orchestrator, and a guard that keeps the hub off the projects' files.
-// Everything shown is read from hh-hub; the only things done here are the Resume and Continue presses, which run
-// `hh-hub wake` and `hh-hub continue`.
+// Everything shown is read from hh-hub; the only things done here are the Resume and Continue presses (`hh-hub wake` and
+// `hh-hub continue`), the answer to a dialog (`hh-hub answer`), the hub's naming (`hh-hub name` and `naming`) and, with
+// hub_auto_start on, typing /rename and then the hub skill's command at the first turn of the session.
 // The command that opens the screen. Never a skill's name: Claude Code refuses a command named as one of the plugin's own
 // skills (/hub is the skill, /hivehouse:hub), and tests/test_hub_screen.sh holds it to that.
 const COMMAND = 'hub-screen'
