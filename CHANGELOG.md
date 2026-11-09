@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.9
+
+- **`plugin.json` drops the `types` field.** Claude Code does not recognize it, and the plugin directory flagged it.
+- **The hub screen's types sit beside it.** `types/index.d.ts` is now `hooks/types.d.ts`, imported by `hooks/hub.tsx` as `./types`, so the module's files are in one folder. `tests/test_names.sh` reads the new path; the `bin/` comments no longer name `hooks/` files.
+- **The README says what each hook runs.** The section "What hivehouse runs and sends" now describes the four hooks in `hooks/hooks.json` (what each does, when, and why), the hub screen's subcommands and slash commands, and every program hivehouse starts and what leaves the machine.
+
 ## 0.5.8
 
 - **No file count per commit.** `hh-gate-verify commits` no longer counts files, a merge's recount included, and the `files_per_commit` option is gone from `plugin.json`, `docs/customise.md`, the README and the gate, start and bubble-review skills. The rule is now one purpose per commit: a change travels with its own tests and docs, and two purposes are two commits (`rules/RULES.md`, the implementer and brief template say so; the reviewer role checks it by reading the diff). `--max-files <n>` is still accepted for this one release, ignored, and printed as one `WARN` line; drop it from any script. A project `.hivehouse/settings.json` that still sets `files_per_commit` is ignored with exit 0 and one stderr note naming the file, instead of exit 4; any other unknown key still exits 4.
