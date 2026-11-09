@@ -2,8 +2,7 @@
 
 ## 0.5.9
 
-- **`plugin.json` drops the `types` field.** Claude Code does not recognize it, and the plugin directory flagged it.
-- **The hub screen's types sit beside it.** `types/index.d.ts` is now `hooks/types.d.ts`, imported by `hooks/hub.tsx` as `./types`, so the module's files are in one folder. `tests/test_names.sh` reads the new path; the `bin/` comments no longer name `hooks/` files.
+- **The hub screen's types sit beside it.** `types/index.d.ts` is now `hooks/types.d.ts`, imported by `hooks/hub.tsx` as `./types`, so the module's files are in one folder, and the `types` field of `plugin.json` points at `./hooks/types.d.ts`. `tests/test_names.sh` reads the new path; the `bin/` comments no longer name `hooks/` files.
 - **The README says what each hook runs.** The section "What hivehouse runs and sends" now describes the four hooks in `hooks/hooks.json` (what each does, when, and why), the hub screen's subcommands and slash commands, and every program hivehouse starts and what leaves the machine.
 
 ## 0.5.8

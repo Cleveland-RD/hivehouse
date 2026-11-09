@@ -5,6 +5,7 @@
   "author": { "name": "Cleveland R&D" },
   "license": "MIT",
   "repository": "https://github.com/Cleveland-RD/hivehouse",
+  "types": "./hooks/types.d.ts",
   "keywords": ["orchestration", "tmux", "agents", "review", "workflow"],
   "userConfig": {
     "commit_style": { "type": "string", "title": "Commit subject style", "description": "conventional (type(scope): summary) or free", "default": "conventional" },
