@@ -16,10 +16,8 @@ sid=$(printf '%s' "$input" | jq -r '.session_id // empty' 2>/dev/null); [ -n "$s
 at=$(hh_option_value rotate_at_percent "${CLAUDE_PLUGIN_OPTION_ROTATE_AT_PERCENT:-}"); hh_is_number "$at" && [ "$at" -gt 0 ] || exit 0   # unset: plugin.json's default
 if [ "$mode" = hub ]; then
   proj=$HK_HUB_ROOT; dir="$proj/$HH_HUB_DIR"; state=$HH_HUB_DIR
-  hf="$dir/hub.json"
-  # the hub's own session: the record of its Claude (a /clear changes the id), else the id hh-hub self recorded
-  hs=$(hh_session_record "$(hh_json_get "$hf" .claude_pid)" .sessionId); [ -n "$hs" ] || hs=$(hh_json_get "$hf" .session_id)
-  [ "$hs" = "$sid" ] || exit 0
+  # the hub's own session (the record of its Claude, else the id hh-hub self recorded)
+  [ "$(hh_hub_session "$proj")" = "$sid" ] || exit 0
   v=$(hh_hub_level "$proj") || exit 0
   wsrc=$(hh_hub_window "$proj"); wsrc=${wsrc%% *}; [ "$wsrc" = guess ] || wsrc=""
 else

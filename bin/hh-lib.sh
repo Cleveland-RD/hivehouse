@@ -643,13 +643,20 @@ hh_hub_window() {  # hh_hub_window <hub root>: "<recorded|guess> <window>"
   local rw; rw=$(hh_json_get "$1/$HH_HUB_DIR/hub.json" .window)
   if hh_is_number "$rw" && [ "$rw" -gt 0 ]; then echo "recorded $rw"; else echo "guess $HH_WINDOW_DEFAULT"; fi
 }
+# The hub's own session id: the session record of the recorded Claude (a /clear changes the id there), else the id hh-hub self recorded. The one
+# place it is decided; the level and the Stop hook's "is this the hub's own session" both ask it.
+hh_hub_session() {  # hh_hub_session <hub root>
+  local hf="$1/$HH_HUB_DIR/hub.json" sid
+  sid=$(hh_session_record "$(hh_json_get "$hf" .claude_pid)" .sessionId); [ -n "$sid" ] || sid=$(hh_json_get "$hf" .session_id)
+  printf '%s' "$sid"
+}
 # The hub's own level, the one reading `hh-hub context` and the Stop hook share: its session's transcript (the session record of the recorded
 # Claude, else the session id hh-hub self recorded), as a percent of <window> when one is given, else of hh_hub_window's. Prints "<n>" for a
 # given window, else what hh_assumed_level prints. Fails with the reason in HH_HUB_WHY.
 hh_hub_level() {  # hh_hub_level <hub root> [window]
   local hf="$1/$HH_HUB_DIR/hub.json" sid tp used w
   HH_HUB_WHY=""
-  sid=$(hh_session_record "$(hh_json_get "$hf" .claude_pid)" .sessionId); [ -n "$sid" ] || sid=$(hh_json_get "$hf" .session_id)
+  sid=$(hh_hub_session "$1")
   tp=$(hh_session_transcript "$sid") || { HH_HUB_WHY="no transcript is recorded for the hub's session: run hh-hub self"; return 1; }
   used=$(hh_transcript_used "$tp")
   [ -n "$used" ] || { HH_HUB_WHY="the hub's transcript has no usage line yet"; return 1; }
