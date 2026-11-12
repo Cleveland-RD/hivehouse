@@ -19,6 +19,9 @@ cat > "$T_TMP/cl/claude" <<'CL'
 . "$HH_REPO_ROOT/bin/hh-lib.sh"
 # "self" in hub.json is this process: the pid, and the start time when that says "self" too (a wrong one stays wrong)
 jq 'if .claude_pid == "self" then .claude_pid = $c | (if .claude_started == "self" then .claude_started = $t else . end) else . end' --arg c "$$" --arg t "$(hh_lstart $$)" "$HF" > "$HF.n" 2>/dev/null && mv "$HF.n" "$HF"
+# REC: Claude Code's own record of this running session (<config dir>/sessions/<pid>.json), which names the hub's session before hub.json does
+if [ -n "${REC:-}" ]; then mkdir -p "$CLAUDE_CONFIG_DIR/sessions"; jq -nc --argjson p "$$" --arg s "$REC" '{pid:$p, sessionId:$s}' > "$CLAUDE_CONFIG_DIR/sessions/$$.json"; fi
+trap 'rm -f "$CLAUDE_CONFIG_DIR/sessions/$$.json"' EXIT
 # NEST: a second Claude (a claude -p from the hub's own Bash) between the recorded one and the hook
 if [ -n "${NEST:-}" ]; then bash "$T_TMP/cl2/claude"
 else cd "$WORK" && printf '%s' "$INPUT" | TMUX="${TMUXV:-$HH_TMUX_SOCKET,1,0}" TMUX_PANE="${TPANE:-$TP}" CLAUDE_PLUGIN_OPTION_ROTATE_AT_PERCENT="${LEVEL:-50}" hh-stop-hook; fi
@@ -53,8 +56,11 @@ rm -f "$MARK"
 hub; out=$(stop 50 true); assert_eq "a stop this hook already continued is not blocked again" "$out" ""
 # the hook input's session must be the hub's own
 hub; out=$(SID=other stop); assert_eq "a session that is not the recorded hub session is not told" "$out" ""
-# /clear: the session record of the recorded Claude names the new session, and the old id in hub.json is stale
-hub '.session_id = "stale"'; out=$(stop); assert_eq "a recorded id that is not this session's is not told" "$out" ""
+# hub.json's own id is only the fallback: the session record of the recorded Claude comes first (a /clear changes the id there)
+hub '.session_id = "stale"'; out=$(stop); assert_eq "no record and a hub.json id that is not this session's: not told" "$out" ""
+hub '.session_id = "stale"'; out=$(REC=hs1 stop); assert_eq "a record naming this session wins over a stale hub.json id: told" "$(printf '%s' "$out" | jq -r .decision)" "block"
+rm -f "$MARK"; hub; out=$(REC=other stop); assert_eq "a record naming another session wins over hub.json's id: not told" "$out" ""
+rm -f "$MARK"
 # not proven: another process, another pane, another tmux server, a pane that was restarted
 hub '.claude_pid = "1" | .claude_started = "x"'; out=$(stop); assert_eq "another process than the recorded one is not told" "$out" ""
 hub '.claude_started = "Mon Jan  1 00:00:00 2001"'; out=$(stop); assert_eq "a recorded pid with another start time (a reused pid) is not told" "$out" ""
