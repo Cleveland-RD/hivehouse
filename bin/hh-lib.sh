@@ -621,6 +621,58 @@ hh_hook_session() {
   anc=$(hh_claude_ancestor) && [ "$anc" = "$cpid" ] || { HK_PROJECT=""; HK_AGENT=""; return 1; }
   return 0
 }
+# The hub's work folder (the one holding $HH_HUB_DIR/): $HH_HUB when set, else the nearest folder above the cwd that holds one. Prints it, or fails
+# with the reason in HH_HUB_WHY. hh-hub and the Stop hook both find the hub here.
+HH_HUB_WHY=""
+hh_hub_find() {
+  local d; HH_HUB_WHY=""
+  if [ -n "${HH_HUB:-}" ]; then
+    [ -d "$HH_HUB/$HH_HUB_DIR" ] || { HH_HUB_WHY="HH_HUB holds no $HH_HUB_DIR/: $HH_HUB"; return 1; }
+    (cd "$HH_HUB" && pwd -P); return
+  fi
+  d=$(pwd -P)
+  while :; do
+    [ -d "$d/$HH_HUB_DIR" ] && [ ! -L "$d/$HH_HUB_DIR" ] && { printf '%s\n' "$d"; return 0; }
+    [ "$d" = / ] && break; d=${d%/*}; [ -n "$d" ] || d=/
+  done
+  HH_HUB_WHY="no hub here: run hh-hub init in your work folder"; return 1
+}
+# The window the hub's level is read against: hub.json's, which hh-hub self recorded (printed with "recorded"), else the assumed
+# $HH_WINDOW_DEFAULT (printed with "guess"). The one place that is decided: the level and the Stop hook's "a guess never asks" both use it.
+hh_hub_window() {  # hh_hub_window <hub root>: "<recorded|guess> <window>"
+  local rw; rw=$(hh_json_get "$1/$HH_HUB_DIR/hub.json" .window)
+  if hh_is_number "$rw" && [ "$rw" -gt 0 ]; then echo "recorded $rw"; else echo "guess $HH_WINDOW_DEFAULT"; fi
+}
+# The hub's own level, the one reading `hh-hub context` and the Stop hook share: its session's transcript (the session record of the recorded
+# Claude, else the session id hh-hub self recorded), as a percent of <window> when one is given, else of hh_hub_window's. Prints "<n>" for a
+# given window, else what hh_assumed_level prints. Fails with the reason in HH_HUB_WHY.
+hh_hub_level() {  # hh_hub_level <hub root> [window]
+  local hf="$1/$HH_HUB_DIR/hub.json" sid tp used w
+  HH_HUB_WHY=""
+  sid=$(hh_session_record "$(hh_json_get "$hf" .claude_pid)" .sessionId); [ -n "$sid" ] || sid=$(hh_json_get "$hf" .session_id)
+  tp=$(hh_session_transcript "$sid") || { HH_HUB_WHY="no transcript is recorded for the hub's session: run hh-hub self"; return 1; }
+  used=$(hh_transcript_used "$tp")
+  [ -n "$used" ] || { HH_HUB_WHY="the hub's transcript has no usage line yet"; return 1; }
+  if [ -n "${2:-}" ]; then echo $(( used * 100 / $2 )); return 0; fi
+  w=$(hh_hub_window "$1")
+  hh_assumed_level "$used" "${w#* }"
+}
+# The Stop hook's question for a session that is in no registry: is this process the hub hh-hub self recorded? 0 with HK_HUB_ROOT set when the
+# Claude above the hook is the recorded process (same start time, still Claude) and the pane and tmux server are the recorded ones; anything
+# else, or a tmux that cannot answer, is 1 and nothing is said.
+HK_HUB_ROOT=""
+hh_hook_hub() {
+  local root hf
+  HK_HUB_ROOT=""
+  [ -n "${TMUX:-}" ] && [ -n "${TMUX_PANE:-}" ] || return 1
+  root=$(hh_hub_find) || return 1; hf="$root/$HH_HUB_DIR/hub.json"
+  [ -f "$hf" ] || return 1
+  [ "$(hh_json_get "$hf" .socket)" = "${TMUX%%,*}" ] && [ "$(hh_json_get "$hf" .pane)" = "$TMUX_PANE" ] || return 1
+  hh_pane_is "${TMUX%%,*}" "$TMUX_PANE" "$(hh_json_get "$hf" .pane_pid)" "$(hh_json_get "$hf" .pane_started)" || return 1
+  hh_claude_is "$(hh_json_get "$hf" .claude_pid)" "$(hh_json_get "$hf" .claude_started)" || return 1
+  [ "$(hh_claude_ancestor)" = "$(hh_json_get "$hf" .claude_pid)" ] || return 1
+  HK_HUB_ROOT=$root
+}
 # The line that starts (hh-spawn) or restarts (hh-rotate) an agent from its handoff: one text, so they cannot drift. The
 # orchestrator itself (hh-self-rotate) reports to nobody, waits for nobody, and --self gives it no role or rules dir.
 hh_pickup_line() {  # hh_pickup_line <project name> <project root> <agent>

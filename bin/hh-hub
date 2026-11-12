@@ -72,17 +72,7 @@ USAGE="usage: hh-hub init
 CHROME=0   # a Chrome grant never comes from the environment: only the --chrome argument of hh-hub start or wake sets it, for that one launch (nothing is remembered between launches)
 cmd="${1:-}"; [ -n "$cmd" ] || hh_die 64 "$USAGE"; shift
 hub_root() {  # the work folder holding $HH_HUB_DIR/, resolved
-  local d
-  if [ -n "${HH_HUB:-}" ]; then
-    [ -d "$HH_HUB/$HH_HUB_DIR" ] || hh_die 2 "HH_HUB holds no $HH_HUB_DIR/: $HH_HUB"
-    (cd "$HH_HUB" && pwd -P); return
-  fi
-  d=$(pwd -P)
-  while :; do
-    [ -d "$d/$HH_HUB_DIR" ] && [ ! -L "$d/$HH_HUB_DIR" ] && { printf '%s\n' "$d"; return 0; }
-    [ "$d" = / ] && break; d=${d%/*}; [ -n "$d" ] || d=/
-  done
-  hh_die 2 "no hub here: run hh-hub init in your work folder"
+  hh_hub_find || hh_die 2 "$HH_HUB_WHY"
 }
 hub_root_cwd() {  # the work folder holding $HH_HUB_DIR/, found from the cwd alone: HH_HUB is never consulted for away mode
   local d; d=$(pwd -P)
@@ -740,16 +730,7 @@ context)
   while [ $# -gt 0 ]; do [ $# -ge 2 ] && [ "$1" = --window ] || hh_die 64 "$USAGE"; win=$2; shift 2; done
   if [ -n "$win" ]; then case "$win" in ''|*[!0-9]*|0) hh_die 4 "--window must be a positive number: $win" ;; esac; fi
   root=$(hub_root) || exit $?
-  hf="$root/$HH_HUB_DIR/hub.json"
-  sid=$(hh_session_record "$(hh_json_get "$hf" .claude_pid)" .sessionId); [ -n "$sid" ] || sid=$(hh_json_get "$hf" .session_id)
-  tp=$(hh_session_transcript "$sid") || hh_die 2 "no transcript is recorded for the hub's session: run hh-hub self"
-  used=$(hh_transcript_used "$tp")
-  [ -n "$used" ] || hh_die 2 "the hub's transcript has no usage line yet"
-  if [ -n "$win" ]; then echo $(( used * 100 / win ))
-  else
-    rw=$(hh_json_get "$hf" .window); { hh_is_number "$rw" && [ "$rw" -gt 0 ]; } || rw=$HH_WINDOW_DEFAULT   # what hh-hub self recorded, else a guess
-    hh_assumed_level "$used" "$rw"
-  fi
+  hh_hub_level "$root" "$win" || hh_die 2 "$HH_HUB_WHY"
   # a rotation that sent nothing (never idle, a dialog, another pane) is told here, until one works: the hub cannot see rotate.log otherwise
   last=$(tail -1 "$root/$HH_HUB_DIR/rotate.log" 2>/dev/null)
   case "$last" in ''|*" rotated "*) ;; *) echo "last rotate: $last" ;; esac ;;

@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- **The Stop hook's rotation check covers the hub (KI-75).** The hub has no pane registry file (only `hh-spawn` writes one), so `bin/hh-stop-hook` left it at once on every turn and the hub rotated only when asked. When no registered session is found, the hook now asks `hh_hook_hub` (`bin/hh-lib.sh`) whether this is the hub `hub.json` records: the Claude above the hook is the recorded process with its recorded start time, the pane and tmux server are the recorded ones, and the hook input's session is the hub's own session. Anything not proven exits 0, silent. The hub is held to every rule of the agent path (a stop already continued, a guessed window told once and never a request, once per crossing with `rotate-asked.json` under `.hivehouse-hub/`, dropped below the level, "window unknown" counts as at or above, nothing written when git tracks the folder). Its reason says to update the START HERE block of `.hivehouse-hub/memory/hub-handoff.md` and run `hh-hub rotate` as the last act of the turn.
+- **One reading of the hub's level.** `hh_hub_level`, `hh_hub_window` and `hh_hub_find` in `bin/hh-lib.sh` are now the only code that finds the hub's folder, its window (recorded, else guessed) and its level; `hh-hub context` and `hh-hub`'s folder lookup call them, so their output and exit codes are unchanged. `tests/test_stop_hook_hub.sh` pins the hub cases, including the other-pid, reused-pid, nested-Claude, other-pane, other-server and other-session refusals.
+
 ## 0.5.9
 
 - **The hub screen's types sit beside it.** `types/index.d.ts` is now `hooks/types.d.ts`, imported by `hooks/hub.tsx` as `./types`, so the module's files are in one folder, and the `types` field of `plugin.json` points at `./hooks/types.d.ts`. `tests/test_names.sh` reads the new path; the `bin/` comments no longer name `hooks/` files.

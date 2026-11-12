@@ -246,6 +246,8 @@ from a file or an environment variable.
 
 ## 5b. Rotating yourself
 
+The Stop hook now checks your level too, at the end of every turn: at or above `${user_config.rotate_at_percent}`% it blocks the stop once for each crossing and tells you to finish, update the handoff and run `hh-hub rotate` (it needs the hub to run in tmux with `hh-hub self` recorded, and says nothing otherwise). The check below stays as the fallback and is still the way to read the level.
+
 Check your own level after each task you hand on and on every beat while the owner is away: `hh-hub context` prints a percent;
 "(window assumed N)" is the window `hh-hub self --window` recorded, not one Claude Code measured, and "window unknown" means the tokens
 used are over that window: tell the owner once, and rotate at once, since a level you cannot read is not a level below the limit. When an orchestrator's or agent's level reads wrong for a window that is not its real size, set it: `hh-hub window <project> <agent>[@<team root>] <tokens>` (the real size of that session's window; the hub only). A second

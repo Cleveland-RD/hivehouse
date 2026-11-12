@@ -1,29 +1,45 @@
 #!/usr/bin/env bash
-# Stop hook. A session hivehouse registered (an agent, or the --self orchestrator) that has reached the plugin's rotation level is told, once
-# for each crossing of it, to update its handoff and rotate: an orchestrator runs hh-self-rotate, an agent says ROTATE READY to its
-# orchestrator. The level is read by hh-context, the same reading everything else uses. Silent and harmless anywhere else: every path exits 0,
+# Stop hook. A session hivehouse registered (an agent, or the --self orchestrator) or the hub (hh-hub self recorded it) that has reached the
+# plugin's rotation level is told, once for each crossing of it, to update its handoff and rotate: an orchestrator runs hh-self-rotate, an
+# agent says ROTATE READY to its orchestrator, the hub runs hh-hub rotate. The level is read by hh-context, or for the hub by hh_hub_level
+# (what hh-hub context prints), the same reading everything else uses. The hub has no registry file: it is proven from hub.json (the Claude
+# above the hook is the recorded process, in the recorded pane and tmux server, and the hook input's session is the hub's own). Silent and harmless anywhere else: every path exits 0,
 # and an unregistered session (no tmux, no registry file) is out before anything is read. It never blocks a stop it already continued.
 set -u
 [ -n "${TMUX:-}" ] && [ -n "${TMUX_PANE:-}" ] || { cat >/dev/null; exit 0; }   # before the library is read: most sessions are not in tmux
 . "$(dirname "$0")/hh-lib.sh"
 input=$(cat)
-hh_hook_session || exit 0
+mode=agent
+if ! hh_hook_session; then hh_hook_hub || exit 0; mode=hub; fi
 [ "$(printf '%s' "$input" | jq -r '.stop_hook_active // false' 2>/dev/null)" != true ] || exit 0
 sid=$(printf '%s' "$input" | jq -r '.session_id // empty' 2>/dev/null); [ -n "$sid" ] || exit 0
 at=$(hh_option_value rotate_at_percent "${CLAUDE_PLUGIN_OPTION_ROTATE_AT_PERCENT:-}"); hh_is_number "$at" && [ "$at" -gt 0 ] || exit 0   # unset: plugin.json's default
-dir="$HK_PROJECT/$HH_STATE_DIR/team/$HK_AGENT"; marker="$dir/rotate-asked.json"
-# only the recorded session's own reading: a record of another session would be read as this one's
-[ "$(hh_json_get "$dir/session.json" .session_id)" = "$sid" ] || exit 0
-v=$(HH_PROJECT="$HK_PROJECT" "$(dirname "$0")/hh-context" "$HK_AGENT" 2>/dev/null) || exit 0
+if [ "$mode" = hub ]; then
+  proj=$HK_HUB_ROOT; dir="$proj/$HH_HUB_DIR"; state=$HH_HUB_DIR
+  hf="$dir/hub.json"
+  # the hub's own session: the record of its Claude (a /clear changes the id), else the id hh-hub self recorded
+  hs=$(hh_session_record "$(hh_json_get "$hf" .claude_pid)" .sessionId); [ -n "$hs" ] || hs=$(hh_json_get "$hf" .session_id)
+  [ "$hs" = "$sid" ] || exit 0
+  v=$(hh_hub_level "$proj") || exit 0
+  wsrc=$(hh_hub_window "$proj"); wsrc=${wsrc%% *}; [ "$wsrc" = guess ] || wsrc=""
+else
+  proj=$HK_PROJECT; dir="$proj/$HH_STATE_DIR/team/$HK_AGENT"; state=$HH_STATE_DIR
+  # only the recorded session's own reading: a record of another session would be read as this one's
+  [ "$(hh_json_get "$dir/session.json" .session_id)" = "$sid" ] || exit 0
+  v=$(HH_PROJECT="$proj" "$(dirname "$0")/hh-context" "$HK_AGENT" 2>/dev/null) || exit 0
+  wsrc=$(HH_PROJECT="$proj" "$(dirname "$0")/hh-context" "$HK_AGENT" --source 2>/dev/null)
+fi
+marker="$dir/rotate-asked.json"
 level=${v%% *}; hh_is_number "$level" || exit 0
 # A window nobody gave and Claude Code did not measure is a guess (HH_WINDOW_DEFAULT): a level read against it is no ground to ask for a
 # rotation. The session is told so once, with how to set the window, and is never asked to rotate on it.
-if [ "$(HH_PROJECT="$HK_PROJECT" "$(dirname "$0")/hh-context" "$HK_AGENT" --source 2>/dev/null)" = guess ]; then
+if [ "$wsrc" = guess ]; then
   gm="$dir/window-guess-told.json"
   [ "$(hh_json_get "$gm" .session_id)" != "$sid" ] || exit 0
-  [ -z "$(git -C "$HK_PROJECT" ls-files -- "$HH_STATE_DIR" 2>/dev/null)" ] || exit 0
+  [ -z "$(git -C "$proj" ls-files -- "$state" 2>/dev/null)" ] || exit 0
   jq -nc --arg s "$sid" --arg at "$(hh_now)" '{session_id:$s, at:$at}' > "$gm.tmp$$" 2>/dev/null && mv "$gm.tmp$$" "$gm" || { rm -f "$gm.tmp$$"; exit 0; }
-  jq -nc --arg r "This session's context window is not known (guessed at $HH_WINDOW_DEFAULT), Claude Code's default size, so hivehouse will not ask you to rotate on that reading. If your window is another size, say so once: the hub runs hh-hub window <project> $HK_AGENT <tokens>, or run hh-spawn --self --agent $HK_AGENT --window <tokens>." '{decision:"block", reason:$r}'
+  if [ "$mode" = hub ]; then fix="say so once: run hh-hub self --window <tokens> to record it."; else fix="say so once: the hub runs hh-hub window <project> $HK_AGENT <tokens>, or run hh-spawn --self --agent $HK_AGENT --window <tokens>."; fi
+  jq -nc --arg r "This session's context window is not known (guessed at $HH_WINDOW_DEFAULT), Claude Code's default size, so hivehouse will not ask you to rotate on that reading. If your window is another size, $fix" '{decision:"block", reason:$r}'
   exit 0
 fi
 # "1500000 tokens (window unknown)": over the window hivehouse assumed, so there is no percent, and a level that cannot be read is not one
@@ -31,7 +47,7 @@ fi
 unknown=0; case "$v" in *"(window unknown)"*) unknown=1 ;; esac
 if [ "$unknown" = 0 ] && [ "$level" -lt "$at" ]; then rm -f "$marker"; exit 0; fi   # below the level again: the next crossing is told
 [ "$(hh_json_get "$marker" .session_id)" != "$sid" ] || exit 0   # this crossing was told already
-[ -z "$(git -C "$HK_PROJECT" ls-files -- "$HH_STATE_DIR" 2>/dev/null)" ] || exit 0
+[ -z "$(git -C "$proj" ls-files -- "$state" 2>/dev/null)" ] || exit 0
 jq -nc --arg s "$sid" --arg at "$(hh_now)" --argjson l "$level" '{session_id:$s, level:$l, at:$at}' > "$marker.tmp$$" 2>/dev/null && mv "$marker.tmp$$" "$marker" || { rm -f "$marker.tmp$$"; exit 0; }
 if [ "$unknown" = 1 ]; then where="Your context holds ${level} tokens, past the window hivehouse can measure (window unknown), so it counts as at or above the rotation level (${at}%)."
 else
@@ -39,7 +55,9 @@ else
   case "$v" in *"(window assumed "*) w=${v#*"(window assumed "}; where="$where of a recorded ${w%)}-token window" ;; esac   # a guess never gets here
   where="$where, at or above the rotation level (${at}%)."
 fi
-if [ -n "$(hh_self_entry "$HK_PROJECT" | jq -r --arg a "$HK_AGENT" 'select(.name == $a) | .name' 2>/dev/null)" ]; then
+if [ "$mode" = hub ]; then
+  reason="$where Finish or park the task in hand, update the START HERE block of $HH_HUB_DIR/memory/hub-handoff.md, and run hh-hub rotate as the last act of this turn. Never in the middle of a message to the owner."
+elif [ -n "$(hh_self_entry "$HK_PROJECT" | jq -r --arg a "$HK_AGENT" 'select(.name == $a) | .name' 2>/dev/null)" ]; then
   reason="$where Finish or park the task in hand, update the START HERE block of your handoff, and run hh-self-rotate $HK_AGENT as the last act of this turn."
 else
   reason="$where Finish or park the task in hand, update the START HERE block of your handoff, then send $(hh_orchestrator_name "$HK_PROJECT") the words ROTATE READY and stop: it clears you next."
