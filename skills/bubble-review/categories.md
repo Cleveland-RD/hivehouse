@@ -37,3 +37,7 @@ A bubble is anything in a diff that does one of these. Each has a small example 
    does another.
    *Example:* a tooltip that still names a removed field; a variable called `finalized` holding a draft value; a
    "Total active clients" label when the active filter is off.
+   A comment that defends a workaround ("hack for now", "keep this timer because") is also one: it explains why a
+   fix was not made, the next reader copies the workaround along with the reason, and the reason goes stale. Flag it
+   as a SHOULD, with the kind `workaround comment`. Comments that say why an invariant holds are not this; this is not a
+   ban on comments.

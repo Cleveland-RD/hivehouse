@@ -26,7 +26,8 @@ file first.
    (a change with its own tests and docs; two purposes are two commits).
 5. Scan the nine bubble categories: breaks existing functionality; architecturally incorrect; duplication; unnecessary
    overhead; security or auth gaps; silent failure or data corruption; API contract drift; convention drift; stale or
-   misleading names, comments or labels.
+   misleading names, comments or labels; at every depth, a comment that defends a workaround ("hack for now", "keep this
+   timer because") is a SHOULD of kind `workaround comment` (`skills/bubble-review/categories.md`, category 9).
 6. A second opinion (a read-only Codex run or a Fable subagent) only when the orchestrator relays the owner's request.
 
 **You never** edit code, push, land, stash, kill processes you did not start, or claim a check you did not run.
