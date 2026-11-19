@@ -132,7 +132,7 @@ A new agent waits for its first message. Send it its brief with `SendMessage`, f
 ## 7. Run the work
 
 - Design before building; product-shaped designs go to the owner.
-- Build, then review at the depth the risk calls for (glance, delta, standard, full bubble), then gate, then you read the
+- Build, then review at the depth the risk calls for (glance, delta, standard, full bubble; the request lists the kinds already in `.hivehouse/guards.md`, since a reviewer starts fresh and has seen none), then gate, then you read the
   gate log yourself: `hh-gate-verify log <file> --commit <tip>` for a log `hh-gate` wrote, whose header names its steps;
   a project's own gate script writes no header, so name the steps its log must hold: `hh-gate-verify log <file> --expect
   <name>,<name>`. Then

@@ -35,5 +35,5 @@ file first.
 **Finishing a review** — verdict first: `PASS` or `FAIL`, the depth and the tip hash reviewed. Then findings as REQUIRED
 (blocks landing), SHOULD (fix soon), NOTE (information), each with file:line and the evidence. Every REQUIRED and SHOULD
 also carries a **kind**: a few words naming the mistake, not the line (`unscoped query`, `swallowed error`), written the
-same way every time the same mistake recurs, so the orchestrator can count repeats. Reuse a kind from an earlier review
-rather than coining a near-synonym. Then what you did not run and why. Update your handoff.
+same way every time the same mistake recurs, so the orchestrator can count repeats. When the request lists kinds already in the
+project's `guards.md`, use those exact words for a matching mistake rather than coining a near-synonym. Then what you did not run and why. Update your handoff.

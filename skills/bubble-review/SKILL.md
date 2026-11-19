@@ -59,6 +59,7 @@ file:line and the evidence, as:
 
 Every REQUIRED and SHOULD also carries a **kind**: a few words naming the mistake, not the line (`unscoped query`,
 `swallowed error`), written the same way every time the same mistake recurs, so the orchestrator can count repeats.
-Reuse a kind from an earlier review rather than coining a near-synonym. A NOTE needs none.
+When the request lists kinds already in the project's `guards.md`, use those exact words for a matching mistake rather
+than coining a near-synonym. A NOTE needs none.
 
 Then what you did not run and why (unrun checks are never implied). FAIL if any REQUIRED exists.
