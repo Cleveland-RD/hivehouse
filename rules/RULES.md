@@ -20,7 +20,7 @@ not run and why. A fact that was wrong once belongs in something a compiler or t
 correction, a bug in production), the orchestrator opens a task for the cheapest deterministic check that catches it: a type
 or API change, a rule in the project's linter, or a small test that reads the files, run by the project's gate and failing
 on the real past mistake first. A prose rule that a guard enforces names that guard; every other rule here is advice, not
-enforcement, and a reader should not count on it holding. Once is a fix, twice is a pattern.
+enforcement. A rule no guard enforces still binds; nothing catches its breach, so it is never counted as enforced. Once is a fix, twice is a pattern.
 
 **Free means proven free.** A run said to cost nothing reads spend after its first item and stops if it moved.
 
