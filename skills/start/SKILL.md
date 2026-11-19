@@ -52,7 +52,7 @@ owner then talks to you only through the hub:
 ## 1. Read before doing anything
 
 Read the task, `CLAUDE.md`, `CLAUDE.local.md`, the memory index, `git status` and `.hivehouse/` (handoffs, `team.json`,
-`manifest.jsonl`). If `.hivehouse/team.json` has a team, resume it (`ListAgents`, `hh-context --all`) instead of
+`manifest.jsonl`, `guards.md`). If `.hivehouse/team.json` has a team, resume it (`ListAgents`, `hh-context --all`) instead of
 starting again. After a restart (the machine's or tmux's) the team's panes are gone: `hh-context --all` marks each such
 session "(not running)", yours included. Register yourself again first, `hh-spawn --self --agent orchestrator` (step
 6's form; a hub you were registered with is kept, `--no-hub` drops it), then `hh-spawn --respawn <agent>` for each agent marked "(not running)": it starts the agent again from its
@@ -140,6 +140,18 @@ A new agent waits for its first message. Send it its brief with `SendMessage`, f
   Never call anything green without the log path.
 - Land on the owner's word, then push by full hash with `hh-push <remote> <40-hex hash> <branch>`. A push is an outward
   step whenever CI deploys or migrates on it; ask for that item unless the owner has already said otherwise for it.
+- **Turn a repeated mistake into a guard.** Keep `.hivehouse/guards.md`, private state that is never committed (create it
+  at the first finding; read it at the start of each task). One row per mistake kind, as a table with the columns
+  `kind | seen (date, where) | guard`. A kind is the few words a reviewer gives a REQUIRED or SHOULD
+  (`skills/bubble-review/SKILL.md`); "where" is a review finding, an owner correction, or a bug in production. Add a
+  dated entry each time you meet the kind, using the reviewer's exact words for it so repeats add up.
+  The SECOND time a kind is seen, or at once when the owner says "again", open a guard task for an implementer. The
+  guard is the cheapest deterministic check that catches it, in this order: (1) a type or API change that makes the
+  mistake impossible; (2) a rule in the project's own linter; (3) a small test that reads the files, the way
+  `tests/test_no_heredoc.sh` does. Its message says what to do instead. It must fail on the real past mistake (that
+  diff is its fixture), then pass on the fix, and it runs in the project's own gate, so `hh-gate` and `hh-gate-verify`
+  already cover it. When it lands, write its name in the row's `guard` column; from then on a reviewer need not look for
+  that kind by eye. Once is a fix, twice is a pattern.
 - Agents message each other directly for technical questions; decisions and finished work come to you; only you talk to
   the owner. Answers to the owner are short and plain. End every message to the owner with either
   "Nothing needed from you." or one short sentence saying what you need from them.
