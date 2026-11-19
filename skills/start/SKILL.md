@@ -147,8 +147,8 @@ A new agent waits for its first message. Send it its brief with `SendMessage`, f
   dated entry each time you meet the kind, using the reviewer's exact words for it so repeats add up.
   The SECOND time a kind is seen, or at once when the owner says "again", open a guard task for an implementer. The
   guard is the cheapest deterministic check that catches it, in this order: (1) a type or API change that makes the
-  mistake impossible; (2) a rule in the project's own linter; (3) a small test that reads the files, the way
-  `tests/test_no_heredoc.sh` does. Its message says what to do instead. It must fail on the real past mistake (that
+  mistake impossible; (2) a rule in the project's own linter; (3) a small test that reads the files (it greps the
+  source for the banned pattern and fails with the message). Its message says what to do instead. It must fail on the real past mistake (that
   diff is its fixture), then pass on the fix, and it runs in the project's own gate, so `hh-gate` and `hh-gate-verify`
   already cover it. When it lands, write its name in the row's `guard` column; from then on a reviewer need not look for
   that kind by eye. Once is a fix, twice is a pattern.
