@@ -84,6 +84,13 @@ err=$(hub rename alpha gamma 2>&1 >/dev/null); assert_status "a running team age
 assert_contains "...naming the agent" "$err" "agent impl is running"
 unchanged "running agent"
 rm -f "$H/alpha/$T_STATE/team.json"
+# an orchestrator started outside hivehouse has no team.json entry: only its Claude Code session record shows it
+UP=$(live alpha-orchestrator "$H/alpha")
+assert_eq "(the fixture) status reports it unregistered" "$(hub status alpha --json | jq -r '.projects[0].orchestrator.state')" "unregistered"
+err=$(hub rename alpha gamma 2>&1 >/dev/null); assert_status "a live session outside hivehouse refuses the rename" $? 4
+assert_contains "...saying so" "$err" "outside hivehouse"
+unchanged "unregistered orchestrator"
+kill "$UP"; rm -f "$CLAUDE_CONFIG_DIR/sessions/$UP.json"; sleep 0.3
 sleep 30 & lp=$!; t_track $lp
 mkdir "$P/lock"; hh_holder_json "$lp" > "$P/lock/holder.json"
 hub rename alpha gamma >/dev/null 2>&1; assert_status "rename waits for the hub's lock and gives up" $? 4; unchanged "locked"
