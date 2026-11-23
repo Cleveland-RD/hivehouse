@@ -67,10 +67,12 @@ folders). Add only what the owner confirmed: `hh-hub add <project> --home <folde
 To add a folder to a project that exists: `hh-hub add <project> --repo <folder>`; to take one out: `hh-hub drop <project>
 <folder>` (never its home; `hh-hub remove` drops the whole project). Neither touches the project's tasks, task files or
 memory. Both change what the hub covers, so ask the owner first; neither is pre-approved.
-To give a project a new name: `hh-hub rename <project> <new name>` (never while the owner is away, and not while a session
-this hub started for it is still coming up). Its tasks keep their ids (`alpha-12` stays `alpha-12` under the new name) and
-task files keep their names; new tasks use the new name and continue the count. Its notes, hold and recovery counts move
-with it. A session already running for the project keeps its own name until it restarts. Ask the owner first.
+To give a project a new name: `hh-hub rename <project> <new name>`. It is refused while the owner is away, while the project's
+orchestrator or any session of its team is running (the state `hh-hub status` shows: stop the team first), and while a pane this hub
+started for it is still coming up. Its tasks keep their ids (`alpha-12` stays `alpha-12` under the new name) and task files keep
+their names; new tasks use the new name and continue the count, never an id that already exists. Its notes, hold and recovery counts
+move with it. An orchestrator woken later keeps the name it was recorded under (`wake` uses the recorded name); only a fresh `start`
+names it `<new name>-orchestrator`. Ask the owner first.
 
 ## 3. The owner asks for work
 

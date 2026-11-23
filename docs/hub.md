@@ -16,9 +16,10 @@ One Claude session in the owner's work folder, the folder above every project, i
   and adds only what the owner confirms. `hh-hub add <project> --repo <folder>...` adds folders to a project that exists,
   and `hh-hub drop <project> <folder>` takes one out (never the home); tasks and memory stay.
 - **Renaming a project.** `hh-hub rename <project> <new name>` changes the project's name in `projects.json` and on every
-  ledger line of its tasks, and moves its notes, hold and recovery counts. Task ids and task files keep their names (an old id
-  still resolves), and the next new task is `<new name>-<n+1>`. It is refused while the owner is away, while a pane this hub
-  started for the project still runs, and when the new name is taken.
+  ledger line of its tasks, and moves its notes, hold, saved MCP file and recovery counts. Task ids and task files keep their
+  names (an old id still resolves), and a new task takes the number after the highest `<name>-N` in the ledger or the task files,
+  so a freed name never reissues an id. It is refused while the owner is away, while the project's orchestrator or any team
+  session runs, while a pane the hub started for it is still coming up, and when the new name is taken or has ledger lines.
 - **Teams in worktrees.** A project's team roots are its home, then each worktree of the home's repository that has a
   `.hivehouse/team.json`. `hh-hub status`, `wake`, `dialog`, `run` and `recover` look in every one (an orchestrator
   registered in two counts once; each agent is listed with its worktree), the away hook lets the marked hub message a
