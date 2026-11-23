@@ -48,6 +48,7 @@ USAGE="usage: hh-hub init
        hh-hub add <project> --repo <folder>...        (a project that exists: more folders)
        hh-hub drop <project> <folder>                 (never the home)
        hh-hub remove <project>
+       hh-hub rename <project> <new name>             (the project's tasks keep their ids; refused while the owner is away)
        hh-hub name [<name>]
        hh-hub status [<project>] [--json]
        hh-hub task <project> [--text <text>]          (no --text: the text is read from stdin)
@@ -838,6 +839,48 @@ remove)
   jq --arg n "$1" '.projects |= map(select(.name != $n))' "$f" > "$f.tmp$$" && mv "$f.tmp$$" "$f"
   seal_hub "$root"
   echo "$1" ;;
+
+rename)
+  # a project under a new name: its entry, its ledger lines (the ids stay, so old ids and task files still resolve), and the hub's
+  # records keyed by its name. Refused while the owner is away (a session started for it is addressed by the old name) and while a pane
+  # this hub started for it still runs. Every file is built beside itself and moved into place, so a failure leaves the old one whole.
+  [ $# -eq 2 ] || hh_die 64 "$USAGE"
+  old="$1"; new="$2"; check_name "$old"; check_name "$new"; root=$(hub_root) || exit $?
+  [ -n "$(project "$root" "$old")" ] || hh_die 2 "no project named $old in this hub"
+  ! delegate_for_hub "$root" || hh_die 4 "the owner is away: a project is renamed only while they are here"
+  lock "$root"
+  [ -z "$(project "$root" "$new")" ] || hh_die 4 "a project named $new is already in this hub"
+  hd="$root/$HH_HUB_DIR"
+  refuse_pending "$root" "$old"
+  if [ -f "$hd/runs/$old.json" ]; then
+    hh_recorded_pane_is "$(hh_json_get "$hd/runs/$old.json" .socket)" "$(hh_json_get "$hd/runs/$old.json" .pane)" "$(hh_json_get "$hd/runs/$old.json" .pane_pid)" "$(hh_json_get "$hd/runs/$old.json" .pane_started)"
+    [ $? -eq 1 ] || hh_die 4 "a line is still being typed into $old's orchestrator (hh-hub run); wait for it, then rename"
+    rm -f "$hd/runs/$old.json"
+  fi
+  for k in "memory/$new.md" "holds/$new" "panes/$new.json" "runs/$new.json"; do
+    [ ! -e "$hd/$k" ] || hh_die 4 "$hd/$k already exists (left from a project once named $new): move it away first"
+  done
+  pf="$hd/projects.json"; tf="$hd/tasks.jsonl"; moved=$(jq -r --arg o "$old" 'select(.project == $o) | .id' "$tf" 2>/dev/null | grep -c .)
+  jq --arg o "$old" --arg n "$new" '.projects |= map(if .name == $o then .name = $n else . end)' "$pf" > "$pf.tmp$$" || { rm -f "$pf.tmp$$"; exit 1; }
+  jq -c --arg o "$old" --arg n "$new" 'if .project == $o then .project = $n else . end' "$tf" > "$tf.tmp$$" || { rm -f "$pf.tmp$$" "$tf.tmp$$"; exit 1; }
+  if [ -f "$hd/recovery.jsonl" ]; then   # the daily caps count items by project name: keep them counting
+    jq -c --arg o "$old" --arg n "$new" 'if .item == $o then .item = $n elif ((.item // "") | startswith($o + "/")) then .item = $n + (.item | ltrimstr($o)) else . end' "$hd/recovery.jsonl" > "$hd/recovery.jsonl.tmp$$" \
+      || { rm -f "$pf.tmp$$" "$tf.tmp$$" "$hd/recovery.jsonl.tmp$$"; exit 1; }
+  fi
+  if [ -f "$hd/recovery-state.json" ]; then
+    jq -c --arg o "$old" --arg n "$new" 'if has($o) then . + {($n): .[$o]} | del(.[$o]) else . end' "$hd/recovery-state.json" > "$hd/recovery-state.json.tmp$$" \
+      || { rm -f "$pf.tmp$$" "$tf.tmp$$" "$hd/recovery.jsonl.tmp$$" "$hd/recovery-state.json.tmp$$"; exit 1; }
+  fi
+  if [ -f "$hd/hung-state.json" ]; then   # keyed project/agent
+    jq -c --arg o "$old" --arg n "$new" 'with_entries(if (.key | startswith($o + "/")) then .key = $n + (.key | ltrimstr($o)) else . end)' "$hd/hung-state.json" > "$hd/hung-state.json.tmp$$" \
+      || { rm -f "$pf.tmp$$" "$tf.tmp$$" "$hd"/*.tmp$$; exit 1; }
+  fi
+  mv "$tf.tmp$$" "$tf" && mv "$pf.tmp$$" "$pf" || exit 1
+  for k in recovery.jsonl recovery-state.json hung-state.json; do [ ! -f "$hd/$k.tmp$$" ] || mv "$hd/$k.tmp$$" "$hd/$k"; done
+  [ ! -e "$hd/memory/$old.md" ] || mv "$hd/memory/$old.md" "$hd/memory/$new.md"   # the hub's notes on it
+  [ ! -e "$hd/holds/$old" ] || mv "$hd/holds/$old" "$hd/holds/$new"   # and the owner's hold
+  seal_hub "$root"
+  echo "renamed $old to $new: $moved task records moved (ids unchanged)" ;;
 
 status)
   want=""; json=0
