@@ -842,25 +842,46 @@ remove)
 
 rename)
   # a project under a new name: its entry, its ledger lines (the ids stay, so old ids and task files still resolve), and the hub's
-  # records keyed by its name. Refused while the owner is away (a session started for it is addressed by the old name) and while a pane
-  # this hub started for it still runs. Every file is built beside itself and moved into place, so a failure leaves the old one whole.
+  # records keyed by its name. Refused while the owner is away (a session started for it is addressed by the old name), while its
+  # orchestrator or any session of its team runs (the state hh-hub status reports), and while a pane this hub started for it is still
+  # coming up. Every file is built beside itself and moved into place, so a failure leaves the old one whole.
   [ $# -eq 2 ] || hh_die 64 "$USAGE"
   old="$1"; new="$2"; check_name "$old"; check_name "$new"; root=$(hub_root) || exit $?
-  [ -n "$(project "$root" "$old")" ] || hh_die 2 "no project named $old in this hub"
-  ! delegate_for_hub "$root" || hh_die 4 "the owner is away: a project is renamed only while they are here"
   lock "$root"
+  need_project "$root" "$old"
+  ! delegate_for_hub "$root" || hh_die 4 "the owner is away: a project is renamed only while they are here"
   [ -z "$(project "$root" "$new")" ] || hh_die 4 "a project named $new is already in this hub"
   hd="$root/$HH_HUB_DIR"
-  refuse_pending "$root" "$old"
+  orch_state "$root" "$old" "$HOME_DIR"
+  case "$O_STATE" in
+    running) IFS=$'\x1f' read -r tsock tpane _ _ <<< "$(session_target "$O_ROOT" "$O_AGENT")"
+             hh_die 4 "$old's orchestrator is running in pane ${tpane:-?}: stop the team first, then rename" ;;
+    unregistered) hh_die 4 "a live session outside hivehouse is $old's orchestrator (pane ${O_PANE:-?}): stop it first, then rename" ;;
+    unknown) hh_die 4 "cannot tell whether $old's orchestrator is running: nothing was renamed" ;;
+  esac
+  for tr in "${O_ROOTS[@]}"; do
+    for a in $(jq -r '.agents[]?.name' "$tr/$HH_STATE_DIR/team.json" 2>/dev/null); do
+      hh_is_agent_name "$a" || continue
+      hh_team_agent_is "$tr" "$a"; case $? in
+        0) hh_die 4 "$old's agent $a is running (team root $tr): stop the team first, then rename" ;;
+        1) ;;
+        *) hh_die 4 "cannot tell whether $old's agent $a is running (team root $tr): nothing was renamed" ;;
+      esac
+    done
+  done
+  refuse_pending "$root" "$old"   # a stale pane record is removed; a live pane no session has registered from is still coming up
   if [ -f "$hd/runs/$old.json" ]; then
     hh_recorded_pane_is "$(hh_json_get "$hd/runs/$old.json" .socket)" "$(hh_json_get "$hd/runs/$old.json" .pane)" "$(hh_json_get "$hd/runs/$old.json" .pane_pid)" "$(hh_json_get "$hd/runs/$old.json" .pane_started)"
     [ $? -eq 1 ] || hh_die 4 "a line is still being typed into $old's orchestrator (hh-hub run); wait for it, then rename"
     rm -f "$hd/runs/$old.json"
   fi
-  for k in "memory/$new.md" "holds/$new" "panes/$new.json" "runs/$new.json"; do
+  for k in "memory/$new.md" "holds/$new" "panes/$new.json" "panes/$new-mcp.json" "runs/$new.json"; do
     [ ! -e "$hd/$k" ] || hh_die 4 "$hd/$k already exists (left from a project once named $new): move it away first"
   done
-  pf="$hd/projects.json"; tf="$hd/tasks.jsonl"; moved=$(jq -r --arg o "$old" 'select(.project == $o) | .id' "$tf" 2>/dev/null | grep -c .)
+  pf="$hd/projects.json"; tf="$hd/tasks.jsonl"
+  [ "$(jq -r --arg n "$new" 'select(.project == $n) | .id' "$tf" 2>/dev/null | grep -c .)" -eq 0 ] || hh_die 4 "the ledger already holds tasks of a project once named $new: they would join $old's"
+  lines=$(jq -r --arg o "$old" 'select(.project == $o) | .id' "$tf" 2>/dev/null | grep -c .)
+  ids=$(jq -r --arg o "$old" 'select(.project == $o) | .id' "$tf" 2>/dev/null | sort -u | grep -c .)
   jq --arg o "$old" --arg n "$new" '.projects |= map(if .name == $o then .name = $n else . end)' "$pf" > "$pf.tmp$$" || { rm -f "$pf.tmp$$"; exit 1; }
   jq -c --arg o "$old" --arg n "$new" 'if .project == $o then .project = $n else . end' "$tf" > "$tf.tmp$$" || { rm -f "$pf.tmp$$" "$tf.tmp$$"; exit 1; }
   if [ -f "$hd/recovery.jsonl" ]; then   # the daily caps count items by project name: keep them counting
@@ -875,12 +896,15 @@ rename)
     jq -c --arg o "$old" --arg n "$new" 'with_entries(if (.key | startswith($o + "/")) then .key = $n + (.key | ltrimstr($o)) else . end)' "$hd/hung-state.json" > "$hd/hung-state.json.tmp$$" \
       || { rm -f "$pf.tmp$$" "$tf.tmp$$" "$hd"/*.tmp$$; exit 1; }
   fi
-  mv "$tf.tmp$$" "$tf" && mv "$pf.tmp$$" "$pf" || exit 1
-  for k in recovery.jsonl recovery-state.json hung-state.json; do [ ! -f "$hd/$k.tmp$$" ] || mv "$hd/$k.tmp$$" "$hd/$k"; done
-  [ ! -e "$hd/memory/$old.md" ] || mv "$hd/memory/$old.md" "$hd/memory/$new.md"   # the hub's notes on it
-  [ ! -e "$hd/holds/$old" ] || mv "$hd/holds/$old" "$hd/holds/$new"   # and the owner's hold
+  mv "$tf.tmp$$" "$tf" && mv "$pf.tmp$$" "$pf" || { rm -f "$pf.tmp$$" "$tf.tmp$$" "$hd"/*.tmp$$; hh_die 1 "the rename failed moving the ledger or projects.json into place: check $hd"; }
+  for k in recovery.jsonl recovery-state.json hung-state.json; do
+    [ ! -f "$hd/$k.tmp$$" ] || mv "$hd/$k.tmp$$" "$hd/$k" || hh_die 1 "the project is renamed but $hd/$k could not be updated"
+  done
+  for k in "memory/$old.md:memory/$new.md" "holds/$old:holds/$new" "panes/$old-mcp.json:panes/$new-mcp.json"; do   # the hub's notes, the owner's hold, the saved MCP file
+    [ ! -e "$hd/${k%%:*}" ] || mv "$hd/${k%%:*}" "$hd/${k#*:}" || hh_die 1 "the project is renamed but $hd/${k%%:*} could not be moved to $hd/${k#*:}"
+  done
   seal_hub "$root"
-  echo "renamed $old to $new: $moved task records moved (ids unchanged)" ;;
+  echo "renamed $old to $new: $ids task ids ($lines ledger lines) moved, ids unchanged" ;;
 
 status)
   want=""; json=0
@@ -998,6 +1022,11 @@ task)
   [ -n "$(printf '%s' "$text" | tr -d '[:space:]')" ] || hh_die 4 "a task needs its text"
   lock "$root"
   n=$(jq -r --arg p "$name" 'select(.project == $p) | .id' "$root/$HH_HUB_DIR/tasks.jsonl" | sort -u | grep -c .)
+  # never an id that exists: a name freed by remove or rename keeps its old ids in the ledger and task files, so the next number is past the
+  # highest <name>-N anywhere there, whatever project the ledger now gives it to
+  top=$({ jq -r --arg p "$name-" '.id | select(startswith($p)) | ltrimstr($p) | select(test("^[0-9]+$"))' "$root/$HH_HUB_DIR/tasks.jsonl"
+          ls "$root/$HH_HUB_DIR/tasks" 2>/dev/null | sed -n "s/^$name-\([0-9][0-9]*\)\.md\$/\1/p"; } | sort -n | tail -1)
+  [ -z "$top" ] || [ "$n" -ge "$top" ] || n=$top
   id="$name-$((n + 1))"
   folders=$(printf '%s' "$PROJ" | jq -r '.home as $h | .repos[] | "\(if . == $h then 1 else 0 end)\t\(.)"' | while IFS=$'\t' read -r ish f; do
     if [ "$ish" = 1 ]; then printf -- '- %s (home: the team works from here)\n' "$(abs "$root" "$f")"; else printf -- '- %s\n' "$(abs "$root" "$f")"; fi

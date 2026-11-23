@@ -19,10 +19,17 @@ bash -c 'cd "$1" && hh-hub self --name hub' _ "$H" >/dev/null 2>&1 || true
 for i in 1 2 3; do hub task alpha --text "alpha work $i" >/dev/null; done
 hub task beta --text "beta work" >/dev/null
 hub log alpha-2 question --note "which one?" >/dev/null; hub log alpha-3 done >/dev/null
-echo "notes on alpha" > "$P/memory/alpha.md"; mkdir -p "$P/holds"; : > "$P/holds/alpha"
+mkdir -p "$P/panes"; echo '{"mcpServers":{}}' > "$P/panes/alpha-mcp.json"; echo "notes on alpha" > "$P/memory/alpha.md"; mkdir -p "$P/holds"; : > "$P/holds/alpha"
 printf '{"epoch":%s,"action":"wake","item":"alpha"}\n{"epoch":%s,"action":"blocked-restart","item":"alpha/dev"}\n{"epoch":%s,"action":"wake","item":"beta"}\n' "$NOW" "$NOW" "$NOW" > "$P/recovery.jsonl"
 printf '{"alpha":{"dev":"running"},"beta":{"dev":"stopped"}}\n' > "$P/recovery-state.json"
 printf '{"alpha/dev":{"pid":"1"},"beta/dev":{"pid":"2"}}\n' > "$P/hung-state.json"
+live() {  # live <name> <cwd>: a running process named claude, with Claude Code's record of it; prints its pid
+  ( exec -a claude sleep 120 ) >/dev/null 2>&1 & local p=$!; disown "$p"; t_track "$p"; sleep 0.2
+  mkdir -p "$CLAUDE_CONFIG_DIR/sessions"
+  jq -nc --argjson p "$p" --arg n "$1" --arg c "$2" '{pid:$p, name:$n, cwd:$c, tmux:"work:@3.%77", kind:"interactive"}' > "$CLAUDE_CONFIG_DIR/sessions/$p.json"
+  echo "$p"
+}
+kp=$(hh_tmux list-panes -t keep -F '#{pane_id}' | head -1); ki=$(hh_pane_identity "$HH_TMUX_SOCKET" "$kp")
 pj() { jq -c '.projects' "$P/projects.json"; }
 snap() { cp "$P/projects.json" "$T_TMP/pj.saved"; cp "$P/tasks.jsonl" "$T_TMP/tj.saved"; }
 unchanged() { cmp -s "$P/projects.json" "$T_TMP/pj.saved" && cmp -s "$P/tasks.jsonl" "$T_TMP/tj.saved" && ok "$1: projects.json and tasks.jsonl untouched" || bad "$1: a record changed after a refusal"; }
@@ -38,6 +45,17 @@ hub rename alpha alpha >/dev/null 2>&1; assert_status "the same name is refused"
 mkdir -p "$P/memory"; echo stale > "$P/memory/gamma.md"
 hub rename alpha gamma >/dev/null 2>&1; assert_status "a leftover note under the new name is refused" $? 4; unchanged "leftover note"
 rm -f "$P/memory/gamma.md"
+echo '{}' > "$P/panes/gamma.json" 2>/dev/null || { mkdir -p "$P/panes"; echo '{}' > "$P/panes/gamma.json"; }
+hub rename alpha gamma >/dev/null 2>&1; assert_status "a leftover pane record under the new name is refused" $? 4; unchanged "leftover pane record"; rm -f "$P/panes/gamma.json"
+echo '{}' > "$P/panes/gamma-mcp.json"
+hub rename alpha gamma >/dev/null 2>&1; assert_status "a leftover MCP file under the new name is refused" $? 4; unchanged "leftover MCP file"; rm -f "$P/panes/gamma-mcp.json"
+mkdir -p "$P/runs"; echo '{}' > "$P/runs/gamma.json"
+hub rename alpha gamma >/dev/null 2>&1; assert_status "a leftover run record under the new name is refused" $? 4; unchanged "leftover run record"; rm -f "$P/runs/gamma.json"
+: > "$P/holds/gamma"
+hub rename alpha gamma >/dev/null 2>&1; assert_status "a leftover hold under the new name is refused" $? 4; unchanged "leftover hold"; rm -f "$P/holds/gamma"
+cp "$P/tasks.jsonl" "$T_TMP/tj.real"; jq -nc '{id:"gamma-1", project:"gamma", event:"asked", at:"2026-01-01T00:00:00Z"}' >> "$P/tasks.jsonl"; snap
+hub rename alpha gamma >/dev/null 2>&1; assert_status "a ledger line of a project once named the new name is refused" $? 4; unchanged "leftover ledger line"
+cp "$T_TMP/tj.real" "$P/tasks.jsonl"; snap
 DB=$(t_delegate_bin "$DF")
 if (cd "$H" && "$DB/hh-hub" status >/dev/null 2>&1) && [ -n "$(cd "$H" && "$DB/hh-hub" status --json | jq -r '.hub.away // empty')" ]; then
   (cd "$H" && "$DB/hh-hub" rename alpha gamma >/dev/null 2>&1); assert_status "while the owner is away it is refused" $? 4; unchanged "away"
@@ -50,6 +68,22 @@ rm -f "$P/panes/alpha.json"
 mkdir -p "$P/runs"; jq -nc --arg p "$dp" --arg s "$HH_TMUX_SOCKET" --arg i "${di%%$'\t'*}" --arg t "${di#*$'\t'}" '{pane:$p, socket:$s, pane_pid:$i, pane_started:$t, kind:"overnight", line:"x", typed:false, sender_pid:"1", sender_started:"x", at:"2026-10-06T00:00:00Z"}' > "$P/runs/alpha.json"
 hub rename alpha gamma >/dev/null 2>&1; assert_status "a line still being typed into its orchestrator's pane is refused" $? 4; unchanged "running run"
 hh_tmux kill-pane -t "$dp"
+# the hub's wake record outlives the start: the pane is the live orchestrator, registered, and that is a running session, not one coming up
+CP=$(live alpha-orchestrator "$H/alpha"); mkdir -p "$H/alpha/$T_STATE/team/orchestrator"
+jq -nc --arg k "$HH_TMUX_SOCKET" --arg kp "$kp" --arg p "${ki%%$'\t'*}" --arg s "${ki#*$'\t'}" --arg c "$CP" --arg cs "$(hh_lstart "$CP")" \
+  '{agents:[{name:"orchestrator", pane:$kp, socket:$k, pane_pid:$p, pane_started:$s, claude_pid:$c, claude_started:$cs, name_full:"alpha-orchestrator"}]}' > "$H/alpha/$T_STATE/team.json"
+jq -nc --arg p "$kp" --arg s "$HH_TMUX_SOCKET" --arg i "${ki%%$'\t'*}" --arg t "${ki#*$'\t'}" '{pane:$p, socket:$s, pane_pid:$i, pane_started:$t, kind:"wake", line:"x", typed:true, sender_pid:"1", sender_started:"x", at:"2026-10-06T00:00:00Z"}' > "$P/panes/alpha.json"
+assert_eq "(the fixture) status reports the orchestrator running" "$(hub status alpha --json | jq -r '.projects[0].orchestrator.state')" "running"
+err=$(hub rename alpha gamma 2>&1 >/dev/null); assert_status "a running orchestrator refuses the rename" $? 4
+assert_contains "...saying it runs, not that it is coming up" "$err" "orchestrator is running in pane $kp"
+unchanged "running orchestrator"
+kill "$CP"; sleep 0.3
+jq -nc --arg k "$HH_TMUX_SOCKET" --arg kp "$kp" --arg p "${ki%%$'\t'*}" --arg s "${ki#*$'\t'}" '{agents:[{name:"impl", pane:$kp, socket:$k, pane_pid:$p, pane_started:$s}]}' > "$H/alpha/$T_STATE/team.json"
+rm -f "$P/panes/alpha.json"
+err=$(hub rename alpha gamma 2>&1 >/dev/null); assert_status "a running team agent refuses it too" $? 4
+assert_contains "...naming the agent" "$err" "agent impl is running"
+unchanged "running agent"
+rm -f "$H/alpha/$T_STATE/team.json"
 sleep 30 & lp=$!; t_track $lp
 mkdir "$P/lock"; hh_holder_json "$lp" > "$P/lock/holder.json"
 hub rename alpha gamma >/dev/null 2>&1; assert_status "rename waits for the hub's lock and gives up" $? 4; unchanged "locked"
@@ -61,7 +95,7 @@ ids_before=$(jq -r '.id' "$P/tasks.jsonl" | tr '\n' ' ')
 beta_before=$(jq -c 'select(.project == "beta")' "$P/tasks.jsonl")
 # a run record whose pane is gone is stale: the rename removes it
 out=$(hub rename alpha gamma); assert_status "rename" $? 0
-assert_eq "...prints one line saying what moved" "$out" "renamed alpha to gamma: 5 task records moved (ids unchanged)"
+assert_eq "...prints one line saying what moved" "$out" "renamed alpha to gamma: 3 task ids (5 ledger lines) moved, ids unchanged"
 assert_eq "...the project entry has the new name, its home and repos unchanged" "$(jq -c '.projects[] | select(.name == "gamma")' "$P/projects.json")" '{"name":"gamma","home":"alpha","repos":["alpha"]}'
 assert_eq "...no project is left under the old name" "$(jq -r '[.projects[].name] | join(",")' "$P/projects.json")" "gamma,beta"
 assert_eq "...the ledger has the same number of lines" "$(wc -l < "$P/tasks.jsonl" | tr -d ' ')" "$lines"
@@ -72,6 +106,7 @@ assert_eq "...the other project's lines are untouched" "$(jq -c 'select(.project
 assert_eq "...the other project's entry is untouched" "$(jq -c '.projects[] | select(.name == "beta")' "$P/projects.json")" '{"name":"beta","home":"beta","repos":["beta"]}'
 assert_eq "...task files keep their names" "$(ls "$P/tasks" | tr '\n' ' ')" "alpha-1.md alpha-2.md alpha-3.md beta-1.md "
 assert_eq "...the hub's notes follow" "$(cat "$P/memory/gamma.md" 2>/dev/null)|$([ -e "$P/memory/alpha.md" ] && echo left)" "notes on alpha|"
+assert_eq "...so does the saved MCP file" "$([ -f "$P/panes/gamma-mcp.json" ] && echo yes)|$([ -e "$P/panes/alpha-mcp.json" ] && echo left)" "yes|"
 assert_eq "...so does the hold" "$([ -f "$P/holds/gamma" ] && echo yes)|$([ -e "$P/holds/alpha" ] && echo left)" "yes|"
 assert_eq "...a stale run record is gone" "$([ -e "$P/runs/alpha.json" ] && echo left)" ""
 assert_eq "...recovery.jsonl items follow, another project's do not" "$(jq -r '.item' "$P/recovery.jsonl" | tr '\n' ' ')" "gamma gamma/dev beta "
@@ -91,7 +126,21 @@ assert_eq "...and is the new project's" "$(jq -r 'select(.id == "gamma-4") | .pr
 assert_eq "...beta's own count is unaffected" "$(hub task beta --text more | cut -f1)" "beta-2"
 assert_eq "an old id's state is read as before" "$(hub tasks gamma | grep '^alpha-2' | cut -f2)" "question"
 
+# ---- a freed name never reissues an id ----
+mk alpha2; hub add alpha --home alpha2 >/dev/null
+echo "kept text" > "$P/tasks/alpha-1.md"
+nt=$(hub task alpha --text "reused name"); assert_eq "a project added under the freed name starts past the old ids, not at 1" "${nt%%$'\t'*}" "alpha-4"
+assert_eq "...and the old task file was not overwritten" "$(cat "$P/tasks/alpha-1.md")" "kept text"
+hub remove alpha >/dev/null; hub add alpha --home alpha2 >/dev/null
+nt=$(hub task alpha --text "again"); assert_eq "after a remove and add the count goes on past the highest id" "${nt%%$'\t'*}" "alpha-5"
+rm -f "$P/tasks/alpha-5.md" "$P/tasks/alpha-4.md"; : > "$P/tasks/alpha-9.md"
+nt=$(hub task alpha --text "file only"); assert_eq "a task file with no ledger line still holds its number" "${nt%%$'\t'*}" "alpha-10"
+hub remove alpha >/dev/null
+mk delta; hub add delta --home delta >/dev/null
+for i in 1 7; do jq -nc --arg i "delta-$i" '{id:$i, project:"delta", event:"asked", at:"2026-01-01T00:00:00Z"}' >> "$P/tasks.jsonl"; done
+nt=$(hub task delta --text "gap"); assert_eq "ids with a gap: the next is past the highest in the ledger, not the count" "${nt%%$'\t'*}" "delta-8"
+
 # ---- and back again ----
-hub rename gamma alpha >/dev/null; assert_status "a rename back" $? 0
-assert_eq "...the ledger has the old project name and every id again" "$(jq -r 'select(.project == "alpha") | .id' "$P/tasks.jsonl" | sort -u | tr '\n' ' ')" "alpha-1 alpha-2 alpha-3 gamma-4 "
+hub rename gamma alpha >/dev/null 2>&1; assert_status "a rename back onto a name whose ledger lines remain is refused" $? 4
+assert_eq "...the gamma project and its ids are unchanged" "$(jq -r 'select(.project == "gamma") | .id' "$P/tasks.jsonl" | sort -u | tr '\n' ' ')" "alpha-1 alpha-2 alpha-3 gamma-4 "
 cd /; t_done
